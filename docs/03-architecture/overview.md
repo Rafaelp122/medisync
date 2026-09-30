@@ -4,16 +4,22 @@
 
 | Metadado | Detalhamento |
 | :--- | :--- |
-| **Estilo Arquitetural** | Arquitetura Hexagonal (Ports & Adapters) em Monólito Modular |
-| **Paradigma de Tipagem** | Subtipagem Estrutural via `typing.Protocol` (Python 3.12+) |
+| **Estilo Arquitetural** | Hexagonal Pragmático (Ports & Adapters) em Monólito Modular |
+| **Paradigma de Tipagem** | Modelos Ricos (SQLAlchemy 2.0) + Chaves Clínicas em UUIDv7 + Subtipagem Estrutural via `typing.Protocol` (PEP 544) |
+| **Comunicação Inter-Módulos** | Síncrona via Ports & Adapters (`typing.Protocol`) \| Assíncrona via Event Bus em Memória |
+| **Isolamento de Fronteiras** | Tach (Verificação estática de dependências e interfaces públicas em Rust) |
 | **Qualidade & Métricas** | FURPS+ / ISO 25010 \| C4 Model (Contexto, Contêineres e Componentes) |
 | **Status do Documento** | Aprovado (Linha de Base de Arquitetura Macro) |
 
 ---
 
-## 1. Princípios Arquiteturais e Abordagem Hexagonal Idiomática
+## 1. Princípios Arquiteturais e Abordagem Hexagonal Pragmática
 
-O MediSync Express adota a **Arquitetura Hexagonal (Ports and Adapters)** combinada com os princípios de **Monólito Modular**. Essa escolha decorre de uma restrição crítica de domínio: regras de saúde pública, normas éticas do CFM e salvaguardas de atendimento não podem ser contaminadas por decisões voláteis de infraestrutura, bancos de dados, servidores de mídia ou gateways externos.
+O **MediSync Express** adota a **Arquitetura Hexagonal Pragmática (Ports and Adapters)** combinada com os princípios de **Monólito Modular**. Essa abordagem busca o equilíbrio ideal entre:
+1. **Desacoplamento de Infraestruturas Voláteis**: Componentes externos ou voláteis (servidores de mídia WebRTC, brokers em memória, provedores de assinatura digital e gateways externos) são isolados atrás de **Portas** (`typing.Protocol`).
+2. **Eliminação do "Mapper Hell" (Modelos Ricos)**: Em vez de duplicar classes em entidades puras e modelos de banco com conversores manuais (`to_domain`/`to_orm`), as entidades de domínio persistidas são modeladas diretamente como **Modelos Ricos do SQLAlchemy 2.0 (`Mapped[...]`)**, contendo regras de negócio, validações e transições de estado, preservando o Unit of Work e o Identity Map.
+3. **Comunicação Inter-Módulos Blindada**: Nenhum módulo acessa tabelas, modelos internos ou repositórios de outro módulo diretamente. A comunicação entre módulos ocorre estritamente por **Ports & Adapters (`typing.Protocol`)** para chamadas síncronas ou por **Event Bus em Memória** para notificações de domínio assíncronas.
+4. **Governança de Fronteiras via Tach**: O controle estrito de importações entre módulos e camadas é garantido em tempo de desenvolvimento e CI pelo **Tach**, impedindo vazamento de dependências.
 
 ```mermaid
 flowchart TD
@@ -23,49 +29,92 @@ flowchart TD
         Worker["ARQ Consumers (Background Jobs)"]
     end
 
-    subgraph Hexagon["Hexágono de Domínio (Core da Aplicação)"]
-        InPorts["Portas de Entrada<br/>(Driving Ports / Use Cases)"]
-        Domain["Domínio Puro<br/>(Entidades, Agregados, Invariantes)"]
-        OutPorts["Portas de Saída<br/>(Driven Ports / typing.Protocol)"]
+    subgraph Hexagon["Hexágono da Aplicação (Core Modular)"]
+        Services["Serviços de Domínio & Casos de Uso<br/><i>(Orquestração e Transações)</i>"]
+        RichModels["Modelos de Domínio Ricos (SQLAlchemy 2.0)<br/><i>(Estado, Invariantes e Transições)</i>"]
+        EventBus["Event Bus em Memória<br/><i>(Domain Events Desacoplados)</i>"]
+        OutPorts["Portas de Saída (typing.Protocol)<br/><i>(Subtipagem Estrutural PEP 544)</i>"]
 
-        InPorts --> Domain
-        Domain --> OutPorts
+        Services --> RichModels
+        Services --> EventBus
+        Services --> OutPorts
     end
 
     subgraph DrivenAdapters["Adaptadores de Saída (Driven Adapters)"]
-        Postgres["PostgreSQL 16 (SQLAlchemy 2.0 Async)"]
-        Valkey["Valkey 7+ (Fila Atômica & Cache)"]
-        LiveKit["LiveKit SFU (Mídia WebRTC)"]
-        ICP["PSC Nuvem (Assinatura ICP-Brasil)"]
-        S3["MinIO / S3 (Document Storage)"]
+        Postgres["PostgreSQL 16 (SQLAlchemy 2.0 Async + RLS)"]
+        Valkey["Valkey 7+ (Fila Atômica & Cache via Lua)"]
+        LiveKit["LiveKit SFU (Mídia WebRTC SRTP)"]
+        ICP["PSC Nuvem (Assinatura ICP-Brasil PAdES)"]
+        S3["MinIO / S3 (Guarda Perene de PDFs)"]
     end
 
-    HTTP --> InPorts
-    WS --> InPorts
-    Worker --> InPorts
+    HTTP --> Services
+    WS --> Services
+    Worker --> Services
 
-    OutPorts -.->|Satisfaz Protocol| Postgres
+    RichModels -.->|Persistência Nativa Async| Postgres
     OutPorts -.->|Satisfaz Protocol| Valkey
     OutPorts -.->|Satisfaz Protocol| LiveKit
     OutPorts -.->|Satisfaz Protocol| ICP
     OutPorts -.->|Satisfaz Protocol| S3
 ```
 
-### 1.1 Por que `typing.Protocol` para as Portas (Ports)?
+---
 
-Em linguagens como Java ou C#, portas são convencionalmente modeladas como `interfaces` explícitas. Em Python, no entanto, forçar herança de classes abstratas (`abc.ABC`) introduz acoplamento de herança, rigidez desnecessária e atrito no uso de ferramentas de análise estática.
+### 1.1 Dupla Estratégia de Comunicação Inter-Módulos
 
-O MediSync Express adota **Subtipagem Estrutural (*Static Duck Typing*) via `typing.Protocol`** (PEP 544):
+Para garantir independência total entre os Bounded Contexts sem overhead de rede:
 
-1. **Desacoplamento Absoluto**: O domínio e os casos de uso definem exatamente os métodos de que precisam em um `Protocol`. Qualquer adaptador de infraestrutura que implemente esses métodos satisfaz a porta automaticamente, sem necessidade de importar ou herdar classes do domínio.
-2. **Checagem Estrita em Tempo de Análise**: Os checadores estáticos de tipo (`basedpyright` ou `mypy` em modo *strict*) validam em tempo de compilação/CI se os adaptadores atendem a 100% dos contratos das portas.
-3. **Testabilidade Impecável e Rápida**: Test doubles (fakes em memória, stubs e spies) são implementados de forma limpa, direta e sem bibliotecas mágicas de mock, acelerando drasticamente o ciclo de feedback em testes unitários.
+```mermaid
+flowchart LR
+    subgraph ModuloA["Módulo A (ex: Triage)"]
+        ServiceA["TriageService"]
+        PortA["Interface Requerida<br/>(typing.Protocol)"]
+    end
+
+    subgraph ModuloB["Módulo B (ex: Billing)"]
+        AdapterB["BillingAdapter<br/>(Implementa Protocol)"]
+        ServiceB["BillingService"]
+    end
+
+    subgraph EventInfrastructure["Infraestrutura de Eventos"]
+        Bus["In-Memory Event Bus<br/>(asyncio / PyPubSub)"]
+    end
+
+    ServiceA -->|1. Chamada Síncrona / Comando| PortA
+    PortA -.->|Injeção no Container| AdapterB
+    AdapterB --> ServiceB
+
+    ServiceA -->|2. Notificação Assíncrona de Mudança| Bus
+    Bus -.->|Dispara Handler| ServiceB
+```
+
+1. **Comunicação Síncrona via Ports & Adapters (`typing.Protocol`)**:
+   * O módulo consumidor declara em `ports.py` a interface exata dos métodos de que precisa.
+   * O módulo provedor implementa essa interface em um adaptador público.
+   * A injeção é resolvida no container de dependências do FastAPI (`Depends`).
+   * *Regra de Ouro*: O módulo consumidor **nunca** importa modelos do SQLAlchemy do módulo provedor; apenas tipos primitivos ou DTOs imutáveis (`dataclass(frozen=True)`).
+
+2. **Comunicação Assíncrona via Event Bus em Memória**:
+   * Quando uma mutação relevante de estado ocorre, o módulo emite um evento de domínio desacoplado (ex.: `AtendimentoTriadoEvent`, `ConsultaFinalizadaEvent`).
+   * O Event Bus entrega a mensagem aos ouvintes registrados em corrotinas concorrentes assíncronas no mesmo processo (`asyncio.create_task`).
+   * Elimina completamente o acoplamento temporal e de dependência entre módulos.
 
 ---
 
-### 1.2 Exemplo Idiomático de Porta e Adaptador em Python
+### 1.2 Por que `typing.Protocol` para as Portas (Ports)?
 
-#### 1. A Porta de Saída no Domínio/Aplicação (`ports.py`):
+Em Python, portas modeladas com herança de classes abstratas (`abc.ABC`) geram acoplamento rígido de tipos. Adotamos **Subtipagem Estrutural (*Static Duck Typing*) via `typing.Protocol`** (PEP 544):
+
+1. **Desacoplamento Absoluto**: Adaptadores de infraestrutura e módulos parceiros satisfazem a porta automaticamente caso implementem os métodos exigidos, sem precisar herdar classes da porta.
+2. **Checagem Estrita em Tempo de CI**: Checadores como `basedpyright` validam em modo *strict* se adaptadores atendem a 100% dos contratos.
+3. **Testes Instantâneos**: Test doubles (fakes em memória, stubs) são escritos diretamente em Python puro, acelerando o ciclo de testes unitários sem bibliotecas mágicas de mock.
+
+---
+
+### 1.3 Exemplo Idiomático de Porta e Adaptador de Fila
+
+#### 1. A Porta de Saída do Módulo de Fila (`src/modules/queue/domain/ports.py`):
 ```python
 from typing import Protocol, runtime_checkable
 from uuid import UUID
@@ -74,8 +123,10 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class QueueEntry:
-    patient_id: UUID
-    severity_level: int
+    organizacao_id: int
+    atendimento_id: UUID
+    paciente_id: UUID
+    prioridade_clinica: int
     enqueued_at: datetime
 
 @runtime_checkable
@@ -86,48 +137,56 @@ class QueueEnginePort(Protocol):
         """Insere o paciente na fila clínica e retorna sua posição relativa."""
         ...
 
-    async def acquire_next_patient(self, doctor_id: UUID) -> QueueEntry | None:
-        """Aloca atomicamente o próximo paciente de maior gravidade para o médico."""
+    async def acquire_next_patient(self, organizacao_id: int, doctor_id: UUID) -> UUID | None:
+        """Aloca atomicamente o próximo atendimento de maior gravidade para o médico."""
         ...
 
-    async def release_call_lock(self, doctor_id: UUID, patient_id: UUID) -> None:
+    async def release_call_lock(self, organizacao_id: int, doctor_id: UUID, atendimento_id: UUID) -> None:
         """Libera a trava de alocação em caso de no-show (ring timeout de 45s)."""
         ...
 ```
 
-#### 2. O Caso de Uso Consumindo a Porta (`use_cases.py`):
+#### 2. O Caso de Uso Consumindo a Porta (`src/modules/queue/application/use_cases.py`):
 ```python
 from uuid import UUID
+from src.modules.queue.domain.ports import QueueEnginePort
 
 class CallNextPatientUseCase:
     def __init__(self, queue_engine: QueueEnginePort) -> None:
         self._queue = queue_engine  # Acoplamento apenas ao Protocol
 
-    async def execute(self, doctor_id: UUID) -> QueueEntry | None:
-        # Executa invariante contratual RN02
-        allocated_entry = await self._queue.acquire_next_patient(doctor_id)
-        return allocated_entry
+    async def execute(self, organizacao_id: int, doctor_id: UUID) -> UUID | None:
+        # Executa invariante contratual RN02 via script atômico no Valkey
+        atendimento_id = await self._queue.acquire_next_patient(organizacao_id, doctor_id)
+        return atendimento_id
 ```
 
-#### 3. O Adaptador de Infraestrutura Concreta (`valkey_adapter.py`):
+#### 3. O Adaptador Concreto (`src/modules/queue/infrastructure/valkey_adapter.py`):
 ```python
-# Não herda de QueueEnginePort! Satisfaz o protocolo estruturalmente.
+from uuid import UUID
 from redis.asyncio import Redis
+from src.modules.queue.domain.ports import QueueEntry
 
 class ValkeyQueueAdapter:
+    """Implementa QueueEnginePort estruturalmente (sem herança)."""
+
     def __init__(self, client: Redis) -> None:
         self._client = client
 
     async def enqueue_patient(self, entry: QueueEntry) -> int:
-        # Implementação concreta via script Lua e ZSET atômico
+        # Score ponderado de 64 bits: (prioridade * 10^12) + timestamp
+        score = (entry.prioridade_clinica * (10**12)) + int(entry.enqueued_at.timestamp())
+        key = f"fila:{entry.organizacao_id}:aptos"
+        await self._client.zadd(key, {str(entry.atendimento_id): score})
+        pos = await self._client.zrank(key, str(entry.atendimento_id))
+        return (pos + 1) if pos is not None else 1
+
+    async def acquire_next_patient(self, organizacao_id: int, doctor_id: UUID) -> UUID | None:
+        # Execução do script Lua atômico com double-locking de 45s
         ...
 
-    async def acquire_next_patient(self, doctor_id: UUID) -> QueueEntry | None:
-        # Obtenção atômica respeitando prioridade e FIFO
-        ...
-
-    async def release_call_lock(self, doctor_id: UUID, patient_id: UUID) -> None:
-        # Liberação de lock em memória
+    async def release_call_lock(self, organizacao_id: int, doctor_id: UUID, atendimento_id: UUID) -> None:
+        # Liberação determinística pós-timeout
         ...
 ```
 
@@ -136,8 +195,6 @@ class ValkeyQueueAdapter:
 ## 2. Topologia do Sistema (Modelo C4)
 
 ### 2.1 C4 Nível 1: Diagrama de Contexto de Sistema
-
-O diagrama abaixo contextualiza o MediSync Express frente aos seus usuários e sistemas externos:
 
 ```mermaid
 flowchart TD
@@ -204,7 +261,7 @@ flowchart TD
 
 ## 3. Decomposição Modular do Código (`src/`)
 
-O repositório é organizado em **módulos verticais de negócio**, onde cada módulo constitui um hexágono autônomo com camadas estritas:
+O repositório é organizado em **módulos verticais de negócio**, correspondentes a *Bounded Contexts* do DDD. O controle estrito de dependências é auditado pelo **Tach**:
 
 ```plaintext
 src/
@@ -212,39 +269,61 @@ src/
 │   ├── config.py                      # Configurações tipadas (Pydantic BaseSettings)
 │   ├── database.py                    # Engine assíncrona SQLAlchemy e sessionmaker
 │   ├── valkey.py                      # Pool assíncrono do Valkey
+│   ├── event_bus.py                   # In-memory Event Bus assíncrono
 │   └── telemetry.py                   # Exportação de métricas e instrumentação
 │
 └── modules/
+    ├── identity/                      # Bounded Context de Identidade, Autenticação e Multi-Tenancy
+    │   ├── domain/                    # Modelos ricos: Organizacao, Usuario, Profissional (CRM/UF)
+    │   ├── application/               # Autenticação JWT, Argon2id, RBAC, propagação de tenant
+    │   ├── infrastructure/            # Repositórios SQLAlchemy e políticas Postgres RLS
+    │   └── presentation/              # Endpoints de login, refresh e onboarding
+    │
     ├── triage/                        # Módulo de Acolhimento, Triagem e TCLE
-    │   ├── domain/                    # Entidades (TriageAssessment), Invariantes (RN01, RN04)
-    │   ├── application/               # Use cases e Ports (TriageRepository, EmergencyNotifier)
-    │   ├── infrastructure/            # Adaptador PostgreSQL e carga de terminologias
-    │   └── presentation/              # Rotas FastAPI e schemas de acolhimento
+    │   ├── domain/                    # Modelos ricos: Triagem, TCLE, Invariantes (RN01, RN04), Ports
+    │   ├── application/               # Use cases de triagem e Ports (EmergencyNotifierPort)
+    │   ├── infrastructure/            # Adaptador PostgreSQL e carga de terminologias abertas
+    │   └── presentation/              # Rotas FastAPI e schemas Pydantic de acolhimento
     │
     ├── queue/                         # Módulo de Fila Dinâmica e Controle de Admissão
-    │   ├── domain/                    # Invariantes de Alocação e Backpressure (RN02, RN05)
-    │   ├── application/               # Use cases (CallNext, ResolveTimeout) e Ports (QueueEnginePort)
-    │   ├── infrastructure/            # Adaptador Valkey (Lua scripts) e agendamento ARQ
+    │   ├── domain/                    # Regras de Alocação e Backpressure (RN02, RN05), Ports
+    │   ├── application/               # Use cases (CallNext, ResolveTimeout)
+    │   ├── infrastructure/            # Adaptador Valkey (Lua scripts) e agendador ARQ
     │   └── presentation/              # WebSockets de notificação de avanço e painel de fila
     │
     ├── consultation/                  # Módulo de Teleconsulta, PEP e Prescrição
-    │   ├── domain/                    # Agregado MedicalConsultation, Invariante do Ato Médico (RN06)
-    │   ├── application/               # Use cases de abertura, evolução clínica e conclusão
+    │   ├── domain/                    # Agregado Atendimento, PEP, Prescrição, Invariante do Ato Médico (RN06)
+    │   ├── application/               # Use cases de abertura, evolução e conclusão
     │   ├── infrastructure/            # Adaptador LiveKit SFU e Adaptador PyHanko/PSC ICP-Brasil
     │   └── presentation/              # Endpoints da sala médica e download de receitas
     │
     └── billing/                       # Módulo de Elegibilidade e Liquidação
         ├── domain/                    # Regras de cobertura e máquina de estados (RN03)
         ├── application/               # Use cases de validação assíncrona e contingência
-        ├── infrastructure/            # Adaptador SUS (no-op) e adaptadores de planos de saúde
+        ├── infrastructure/            # Adaptador SUS (no-op) e adaptadores de planos privados
         └── presentation/              # Webhooks de liquidação e parametrização de cotas
 ```
 
 ---
 
-## 4. Requisitos Não Funcionais (FURPS+ / ISO 25010)
+## 4. Governança de Fronteiras Modulares com Tach
 
-Os requisitos não funcionais definem os critérios técnicos mensuráveis e homologáveis da plataforma:
+Para assegurar que o monólito modular permaneça desacoplado sem degradação arquitetural ao longo do tempo, o projeto utiliza **[Tach](https://github.com/gauge-sh/tach)**:
+
+1. **Configuração Declarativa (`tach.toml`)**:
+   * Cada módulo em `src/modules/*` é declarado como um módulo fechado.
+   * **Modelos Ricos e Dependência ORM**: O domínio de cada módulo pode importar `sqlalchemy.orm` para definir suas entidades ricas (`Mapped[...]`), mas **jamais** importa infraestrutura externa ou modelos de outro módulo.
+   * **Comunicação Inter-Módulos Blindada**: Consumidores acessam outros módulos exclusivamente através de portas públicas (`typing.Protocol`), manipulando tipos primitivos ou DTOs imutáveis (`dataclass(frozen=True)`).
+   * As portas e eventos em `domain/ports.py` e `events.py` representam as **únicas interfaces públicas expostas**.
+2. **Comando de Verificação Contínua**:
+   ```bash
+   tach check
+   ```
+   Integrado ao pipeline de CI e aos hooks de pré-commit, o `tach check` bloqueia qualquer PR que tente importar diretamente arquivos privados de outro módulo.
+
+---
+
+## 5. Requisitos Não Funcionais (FURPS+ / ISO 25010)
 
 | ID | Categoria | Critério Mensurável (Nível de Serviço) | Método de Homologação / Teste |
 | :--- | :--- | :--- | :--- |
@@ -256,15 +335,14 @@ Os requisitos não funcionais definem os critérios técnicos mensuráveis e hom
 | **RNF-06** | Assinatura Digital | Suporte à emissão de receitas e atestados em PDF com assinatura digital padrão ICP-Brasil em nuvem via OAuth2/PSC. | Validação dos arquivos PDF no verificador oficial de conformidade do ITI. |
 | **RNF-07** | Acessibilidade Digital | Conformidade estrita com as diretrizes WCAG 2.1 Nível AA: contraste mínimo de 4,5:1 e alvos de toque $\ge 48\times 48\text{ dp}$. | Auditoria automatizada via Axe/Lighthouse (score $\ge 95$) e testes com leitores de tela. |
 | **RNF-08** | Portabilidade & Deploy | Manifesto declarativo de contêineres (`docker compose`) permitindo subida completa de ambiente em menos de 10 minutos. | Execução de rotina limpa de provisionamento e migração automatizada em ambiente isolado. |
-| **RNF-09** | Arquitetura Hexagonal | Domínio 100% desacoplado de infraestrutura via `typing.Protocol`, permitindo execução de testes com mocks/fakes. | Verificação estática com `basedpyright` (modo estrito) e verificação de regras com `import-linter`. |
+| **RNF-09** | Governança Modular | Arquitetura Hexagonal Pragmática com `typing.Protocol` e validação estrita de fronteiras modulares via Tach. | Execução de `tach check` e `basedpyright` (modo estrito) no pipeline CI. |
 | **RNF-10** | Desempenho de Telemetria | Consolidação e atualização dos indicadores do painel operacional com defasagem temporal inferior a 5 segundos. | Teste de latência ponta a ponta entre a emissão do evento assistencial e a renderização no dashboard. |
 
 ---
 
-## 5. Governança Ágil de Decisões de Arquitetura (ADRs)
+## 6. Documentação Técnica de Apoio aos Módulos
 
-Para preservar o projeto contra a paralisia por análise e o anti-padrão BDUF (*Big Design Up Front*):
-
-1. **Nenhuma ADR Especulativa Prévia**: Nenhuma decisão arquitetural deve ser registrada antes de o time enfrentar o problema de implementação concreto.
-2. **Critério de Nascimento de uma ADR**: Uma ADR em `docs/adrs/` só deve ser criada quando surgir uma decisão técnica estruturante, com trade-offs reais entre alternativas viáveis e impacto de longo prazo.
-3. **Formato Padrão**: As decisões registradas seguirão o padrão clássico de Michael Nygard: Contexto, Forças, Opções Consideradas, Decisão Tomada e Consequências Verificadas.
+Para guiar a implementação sem cair em burocracias de RFCs estáticas, a macro-arquitetura é complementada por **três guias técnicos vivos**:
+* 📄 **[Modelo de Dados Relacional e Regras Forenses (data-model.md)](data-model.md)**: Diagrama Entidade-Relacionamento (DER), DDL das 10 tabelas, políticas Postgres RLS e snapshots forenses do CFM.
+* 📄 **[Concorrência, Fila Valkey e Ring Timeout (concurrency-and-queues.md)](concurrency-and-queues.md)**: Script Lua atômico com double-locking de 45s, fórmula do score do ZSET e agendamento de tarefas no ARQ Worker.
+* 📄 **[Conformidade Clínica, Telemedicina e ICP-Brasil (compliance-and-telemedicine.md)](compliance-and-telemedicine.md)**: Topologia WebRTC com LiveKit SFU, fluxo de assinatura digital PAdES-LTV com PyHanko e guarda em S3/MinIO.

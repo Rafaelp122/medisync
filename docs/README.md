@@ -2,7 +2,7 @@
 
 Bem-vindo à documentação oficial do **MediSync Express**, plataforma de código aberto para Pronto-Atendimento Virtual (PA Digital 24/7).
 
-Para garantir rigor técnico sem cair na armadilha do modelo cascata (*Big Design Up Front*), a documentação do projeto é estritamente segregada em **três pilares ortogonais de responsabilidade única**:
+Para garantir rigor técnico e agilidade real sem cair na armadilha do modelo cascata (*Big Design Up Front*), a documentação do projeto é estritamente segregada em **três pilares ortogonais de responsabilidade única**:
 
 ```mermaid
 flowchart LR
@@ -16,15 +16,17 @@ flowchart LR
 
     subgraph P3["3. Engenharia (Architecture)"]
         AR["docs/03-architecture/<br/>overview.md<br/><i>O COMO</i>"]
+        BM["docs/03-architecture/<br/>data-model.md<br/>concurrency-and-queues.md<br/>compliance-and-telemedicine.md<br/><i>BLUEPRINTS TÉCNICOS</i>"]
     end
 
-    subgraph P4["4. Evolução Ágil"]
-        ADR["docs/adrs/<br/>Decisões Reais no Código<br/><i>TRADE-OFFS</i>"]
+    subgraph P4["4. Decisões Estruturais (ADRs)"]
+        ADR["docs/adrs/<br/>ADR-001 a ADR-007<br/><i>TRADE-OFFS & EVOLUÇÃO</i>"]
     end
 
     BV -->|Direciona| SP
     SP -->|Vincula Invariantes| AR
-    AR -->|Gera Sob Demanda| ADR
+    AR -->|Especifica Detalhes| BM
+    AR -->|Fundamenta com Trade-offs| ADR
 ```
 
 ---
@@ -61,17 +63,35 @@ flowchart LR
 ### 📄 [03. Macro-Arquitetura do Sistema](03-architecture/overview.md)
 * **Responsabilidade**: *Architecture & Engineering Foundations* (O Como).
 * **Conteúdo**:
-  * **Arquitetura Hexagonal Idiomática em Python**:
-    * Desacoplamento absoluto do domínio;
-    * Portas de entrada e saída modeladas estritamente com `typing.Protocol` (PEP 544 - Subtipagem Estrutural / *Static Duck Typing*);
-    * Exemplos práticos de use cases e adaptadores;
+  * **Hexagonal Pragmático em Python**:
+    * Modelos Ricos no SQLAlchemy 2.0 (`Mapped[...]`) para o domínio persistido (zero *Mapper Hell*);
+    * Portas externas e de fronteira inter-módulos modeladas com `typing.Protocol` (PEP 544);
+    * Comunicação inter-módulos em duas vias: *Ports & Adapters* (síncrona) e *Event Bus em memória* (assíncrona);
+    * Isolamento estrito de fronteiras e módulos auditado via **Tach** (`tach check`);
   * **Topologia C4**: Diagramas de Contexto (Nível 1) e Contêineres (Nível 2);
-  * Decomposição Modular do Código (`src/` dividido em módulos verticais com hexágonos internos);
-  * Matriz de Requisitos Não Funcionais (FURPS+ / ISO 25010: latência $\le 200\text{ ms}$, resiliência do worker, WebRTC $\le 150\text{ ms}$, segurança TLS 1.3/AES-256 e acessibilidade WCAG 2.1 AA).
+  * Decomposição Modular do Código (`src/` dividido em módulos verticais: `identity`, `triage`, `queue`, `consultation`, `billing`);
+  * Matriz de Requisitos Não Funcionais (FURPS+ / ISO 25010: fila $\le 200\text{ ms}$, resiliência do worker, WebRTC $\le 150\text{ ms}$, segurança TLS 1.3/AES-256 e acessibilidade WCAG 2.1 AA).
 
 ---
 
-## 2. Registro de Decisões de Arquitetura (ADRs)
+## 2. Blueprints Técnicos de Engenharia
+
+Para orientar a implementação sem burocracia de RFCs estáticas:
+* 📄 **[Modelo de Dados Relacional e Governança Forense](03-architecture/data-model.md)**: Diagrama Entidade-Relacionamento (DER), DDL das 10 tabelas relacionais, políticas PostgreSQL RLS nativas e regras forenses do CFM para snapshots clínicos.
+* 📄 **[Concorrência, Fila Valkey e Ring Timeout](03-architecture/concurrency-and-queues.md)**: Script Lua atômico com double-locking de 45s, fórmula do score ponderado de 64 bits para o ZSET do Valkey e agendamento de tarefas no ARQ Worker.
+* 📄 **[Conformidade Clínica, Telemedicina e ICP-Brasil](03-architecture/compliance-and-telemedicine.md)**: Topologia WebRTC com LiveKit SFU, fluxo de assinatura digital PAdES-LTV com PyHanko e armazenamento de PDFs no S3/MinIO via presigned URLs.
+
+---
+
+## 3. Registro de Decisões de Arquitetura (ADRs)
 
 * Diretório: **[`docs/adrs/`](adrs/README.md)**
-* **Diretriz Ágil**: Nenhuma decisão arquitetural é pré-fabricada de forma especulativa. As ADRs são registradas **sob demanda ao longo do desenvolvimento**, documentando tensões reais, alternativas avaliadas e consequências observadas em testes e benchmarks de código.
+* **Decisões Estruturantes Consolidadas**:
+  * **[ADR-001](adrs/ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md)**: Hexagonal Pragmático com Modelos Ricos, Protocols e Tach
+  * **[ADR-002](adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md)**: Alocação Atômica via Valkey Sorted Sets e Scripts Lua
+  * **[ADR-003](adrs/ADR-003-Multi-Tenancy-Logico-Postgres-RLS.md)**: Multi-Tenancy Lógico com Defesa em Profundidade no PostgreSQL (RLS)
+  * **[ADR-004](adrs/ADR-004-Worker-Assincrono-ARQ-sobre-Valkey.md)**: Adoção do Motor de Tarefas Assíncronas ARQ sobre Valkey
+  * **[ADR-005](adrs/ADR-005-Desacoplamento-de-Midia-LiveKit-SFU.md)**: Desacoplamento do Servidor de Mídia WebRTC via LiveKit SFU
+  * **[ADR-006](adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md)**: Assinatura Digital ICP-Brasil em Nuvem via PSCs e PAdES
+  * **[ADR-007](adrs/ADR-007-Auditoria-Imutavel-Append-Only.md)**: Trilha de Auditoria Imutável Append-Only via DCL e Triggers Restritivas
+* **Diretriz Ágil**: Novas decisões são registradas sob demanda quando a equipe de engenharia se depara com encruzilhadas técnicas reais ao longo da implementação.
