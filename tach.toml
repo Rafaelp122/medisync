@@ -1,0 +1,34 @@
+interfaces = []
+exact = false
+forbid_circular_dependencies = true
+source_roots = ["src"]
+
+[[modules]]
+path = "core"
+depends_on = []
+layer = "shared"
+
+[[modules]]
+path = "modules.identity"
+depends_on = ["core"]
+layer = "domain"
+
+[[modules]]
+path = "modules.triage"
+depends_on = ["core"]
+layer = "domain"
+
+[[modules]]
+path = "modules.queue"
+depends_on = ["core"]
+layer = "domain"
+
+[[modules]]
+path = "modules.consultation"
+depends_on = ["core"]
+layer = "domain"
+
+[[modules]]
+path = "modules.billing"
+depends_on = ["core"]
+layer = "domain"
