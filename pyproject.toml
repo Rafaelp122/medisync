@@ -1,0 +1,67 @@
+[project]
+name = "medisync"
+version = "0.1.0"
+description = "MediSync Express — Plataforma de Pronto-Atendimento Virtual (PA Digital 24/7)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.4.0",
+]
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.18.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "pytest-xdist>=3.6.0",
+    "ruff>=0.6.0",
+    "tach>=0.18.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["src", "tests"]
+extend-exclude = [".agents", "docs"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # Pyflakes
+    "I",     # isort
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "TCH",   # flake8-type-checking
+    "ASYNC", # flake8-async
+    "S",     # flake8-bandit
+    "RUF",   # Ruff-specific rules
+]
+ignore = [
+    "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = [
+    "S101", # Allow assert in tests
+    "S105", # Allow hardcoded passwords in test fixtures
+    "S106", # Allow hardcoded credentials in test fixtures
+]
+
+[tool.basedpyright]
+include = ["src", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--strict-markers -ra"
