@@ -102,8 +102,13 @@ medisync/
 
 #### Configuração do Pytest
 * `testpaths = ["tests"]`
-* `asyncio_mode = "auto"`
-* `addopts = "--strict-markers -ra --cov=src --cov-report=term-missing --cov-fail-under=85"` (para suites completas de teste).
+* **Assincronismo Nativamente Ativo (`pytest-asyncio`)**:
+  * `asyncio_mode = "auto"`: Permite que funções de teste assíncronas (`async def test_*`) e fixtures assíncronas sejam executadas diretamente sem necessidade de decorar com `@pytest.mark.asyncio`.
+  * `asyncio_default_fixture_loop_scope = "function"`: Garante isolamento estrito de event loop por teste, em conformidade com o `pytest-asyncio>=0.24`.
+* **Paralelismo (`pytest-xdist`)**:
+  * Disponível via flag `-n auto` (ou `-n <workers>`).
+  * Integrado com receitas dedicadas no `justfile` para permitir execução paralela em suítes unitárias, mantendo a suíte de integração com estado de banco protegida contra colisões de workers.
+* `addopts = "--strict-markers -ra --cov=src --cov-report=term-missing --cov-fail-under=85"`
 
 ---
 
@@ -145,13 +150,17 @@ typecheck:
 tach:
     uv run tach check
 
-# Executa testes unitários e de integração
+# Executa testes unitários e de integração com cobertura
 test:
     uv run pytest
 
-# Executa testes rápidos sem medição de cobertura
+# Executa testes em paralelo com todos os cores da CPU (pytest-xdist)
+test-parallel:
+    uv run pytest -n auto
+
+# Executa testes rápidos em paralelo sem medição de cobertura (para fluxo TDD ágil)
 test-fast:
-    uv run pytest --no-cov
+    uv run pytest -n auto --no-cov
 
 # Portão de qualidade completo (executado antes de commits/PRs)
 check: fmt lint typecheck tach test
