@@ -43,7 +43,6 @@ class Profissional(Base):
     cpf: Mapped[str] = mapped_column(String(14), nullable=False)
     nome_completo: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
-    senha_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     papel: Mapped[str] = mapped_column(String(32), nullable=False)
     crm: Mapped[str | None] = mapped_column(String(20), nullable=True)
     crm_uf: Mapped[str | None] = mapped_column(String(2), nullable=True)
@@ -60,7 +59,6 @@ class Profissional(Base):
         cpf: str,
         nome_completo: str,
         email: str,
-        senha_hash: str,
         papel: str,
         crm: str | None = None,
         crm_uf: str | None = None,
@@ -85,16 +83,11 @@ class Profissional(Base):
             cpf=digits,
             nome_completo=nome_completo,
             email=email.strip().lower(),
-            senha_hash=senha_hash,
             papel=papel,
             crm=crm.strip() if crm else None,
             crm_uf=crm_uf.strip().upper() if crm_uf else None,
             ativo=ativo,
         )
-
-    def alterar_senha_hash(self, novo_hash: str) -> None:
-        """Update password hash without coupling to hashing implementation."""
-        self.senha_hash = novo_hash
 
     def is_medico(self) -> bool:
         return self.papel == "MEDICO"

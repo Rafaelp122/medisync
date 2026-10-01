@@ -4,7 +4,6 @@ from datetime import date
 import pytest
 from sqlalchemy.exc import IntegrityError
 from src.core.database import Base, async_session_factory, engine
-from src.core.security import hash_password, verify_password
 
 from tests.factories.identity import (
     make_dependente,
@@ -37,20 +36,22 @@ async def test_persist_organizacao_and_profissional() -> None:
         assert org.id is not None
         assert org.id > 0
 
-        hashed = hash_password("Argon2SecurePassword")
         prof = make_profissional(
             organizacao_id=org.id,
             email="plantao@prefeitura.gov.br",
             cpf="12345678909",
-            senha_hash=hashed,
+            nome_completo="Dr. Carlos Plantonista",
+            papel="MEDICO",
+            crm="998877",
+            crm_uf="SP",
         )
         session.add(prof)
         await session.commit()
         await session.refresh(prof)
 
         assert prof.id is not None
-        assert prof.senha_hash.startswith("$argon2id$")
-        assert verify_password("Argon2SecurePassword", prof.senha_hash) is True
+        assert prof.papel == "MEDICO"
+        assert prof.crm == "998877"
 
 
 @pytest.mark.asyncio

@@ -56,7 +56,6 @@ def test_profissional_medico_requires_crm_and_uf():
             cpf="123.456.789-00",
             nome_completo="Dr. Roberto Silva",
             email="roberto@medisync.com",
-            senha_hash="dummy",
             papel="MEDICO",
             crm=None,
             crm_uf=None,
@@ -69,7 +68,6 @@ def test_profissional_non_medico_allows_empty_crm():
         cpf="123.456.789-00",
         nome_completo="Gestor Carlos",
         email="carlos@medisync.com",
-        senha_hash="dummy",
         papel="GESTOR_UNIDADE",
     )
     assert prof.is_medico() is False
@@ -88,26 +86,26 @@ def test_profissional_invalid_cpf_raises_validation_error():
             cpf="123",  # Invalid length
             nome_completo="Carlos",
             email="carlos@medisync.com",
-            senha_hash="dummy",
             papel="GESTOR_UNIDADE",
         )
 
 
-def test_profissional_alterar_senha_hash():
+def test_profissional_model_attributes_and_defaults():
     prof = Profissional(
         organizacao_id=1,
         cpf="12345678900",
         nome_completo="Dra. Paula Souza",
         email="paula@medisync.com",
-        senha_hash="initial_hash",
         papel="MEDICO",
         crm="123456",
         crm_uf="SP",
     )
-    assert prof.senha_hash == "initial_hash"
-    prof.alterar_senha_hash("$argon2id$v=19$m=65536,t=3,p=4$newhash")
-    assert prof.senha_hash == "$argon2id$v=19$m=65536,t=3,p=4$newhash"
+    assert prof.nome_completo == "Dra. Paula Souza"
+    assert prof.email == "paula@medisync.com"
+    assert prof.crm == "123456"
+    assert prof.crm_uf == "SP"
     assert prof.is_medico() is True
+    assert prof.ativo is True
 
 
 def test_paciente_pediatrico_without_cpf_succeeds_with_cns():
