@@ -230,13 +230,13 @@ flowchart TD
     end
 
     subgraph AppLayer["Camada de Aplicação (Backend)"]
-        API["FastAPI Web API Core<br/>[Python 3.12+ / Uvicorn]"]
+        API["FastAPI Web API Core<br/>[Python 3.12+ / Granian (Rust)]"]
         Worker["ARQ Task Workers<br/>[asyncio + background tasks]"]
     end
 
     subgraph DataLayer["Camada de Persistência & Mensageria"]
-        DB[(PostgreSQL 16<br/>Dados Clínicos, RLS & Auditoria)]
-        Cache[(Valkey 7+<br/>Fila em Memória, Locks & Pub/Sub)]
+        DB[(PostgreSQL 17<br/>Dados Clínicos, RLS & Auditoria (Psycopg 3))]
+        Cache[(Valkey 8.0<br/>Fila em Memória, Locks & Pub/Sub)]
         Storage[(MinIO / S3<br/>PDFs de Prontuários e Prescrições)]
     end
 

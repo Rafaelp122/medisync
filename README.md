@@ -172,10 +172,10 @@ A governança do repositório é estritamente segregada em três pilares ortogon
 | Camada | Tecnologia Adotada | Papel Arquitetural |
 | :--- | :--- | :--- |
 | **Linguagem & Runtime** | Python 3.12+ | Tipagem moderna (`typing.Protocol`, `TypeIs`), alta performance assíncrona. |
-| **Framework Web API** | FastAPI + Uvicorn | Endpoints REST assíncronos de alta vazão, injeção de dependência nativa e OpenAPI. |
-| **Persistência Relacional** | PostgreSQL 16 + SQLAlchemy 2.0 Async | Modelos de domínio ricos (`Mapped[...]`), queries assíncronas com `asyncpg`. |
+| **Framework Web API** | FastAPI + Granian (Rust) | Runtime ASGI em Rust de altíssima vazão, WebSockets nativos, latência ultra-baixa e OpenAPI. |
+| **Persistência Relacional** | PostgreSQL 17 + SQLAlchemy 2.0 Async | Modelos de domínio ricos (`Mapped[...]`), queries assíncronas nativas com `psycopg 3` (`psycopg[binary]`). |
 | **Isolamento de Dados** | PostgreSQL Row-Level Security (RLS) | Blindagem multi-tenant no nível do kernel do banco de dados. |
-| **Fila em Memória & Locks** | Valkey 7+ (AOF ativo) | ZSET atômico com scripts Lua para alocação médico-paciente sem condições de corrida. |
+| **Fila em Memória & Locks** | Valkey 8.0 (AOF ativo) | ZSET atômico com scripts Lua para alocação médico-paciente sem condições de corrida. |
 | **Task Worker Assíncrono** | ARQ (`arq` sobre `asyncio`) | Tarefas em background e resolução de Ring Timeout de 45 segundos via jobs diferidos. |
 | **Mídia em Tempo Real** | LiveKit SFU (Go) | Roteamento de áudio/vídeo WebRTC seguro (SRTP) com latência $\le 150\text{ ms}$. |
 | **Assinatura Digital & PDF** | PyHanko + ReportLab | Emissão de receitas e atestados em PDF/A com assinatura PAdES-LTV padrão ICP-Brasil. |

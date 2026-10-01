@@ -14,7 +14,7 @@
 Em pronto-atendimento virtual com múltiplos médicos chamando pacientes simultaneamente em alta demanda:
 1. **Risco Crítico de Overbooking**: Dois médicos clicarem em *"Chamar Próximo"* simultaneamente e receberem o mesmo paciente.
 2. **Tempo de Resposta**: A reordenação contínua da fila e a captura da trava devem ocorrer em $\le 200\text{ ms}$ (RNF-01).
-3. **Escalabilidade Multi-Processo**: A solução precisa funcionar com múltiplos workers Uvicorn e réplicas de contêineres sem depender de travas em memória de um único processo Python.
+3. **Escalabilidade Multi-Processo**: A solução precisa funcionar com múltiplos workers Granian e réplicas de contêineres sem depender de travas em memória de um único processo Python.
 
 ---
 
@@ -34,9 +34,9 @@ Em pronto-atendimento virtual com múltiplos médicos chamando pacientes simulta
 
 ### Opção 2: Travas em Memória no Processo Python (`asyncio.Lock`)
 * *Prós*: Desempenho em nanossegundos em teste local.
-* *Contras*: Inviável em produção, pois não sincroniza múltiplos workers do Uvicorn nem múltiplos nós de contêiner.
+* *Contras*: Inviável em produção, pois não sincroniza múltiplos workers do Granian nem múltiplos nós de contêiner.
 
-### Opção 3: Valkey 7+ com Sorted Sets (ZSET) e Script Lua Atômico (Adotada)
+### Opção 3: Valkey 8.0 com Sorted Sets (ZSET) e Script Lua Atômico (Adotada)
 * *Prós*: Operação indivisível em motor single-threaded em memória; pontuação determinística de 64 bits combinando prioridade e timestamp; lock duplo (`lock:medico`, `lock:atendimento`) com TTL de 45 segundos; licença BSD 3-Clause permissiva (Linux Foundation).
 * *Contras*: Exige manutenção de servidor Valkey em memória e reconciliação com o PostgreSQL.
 

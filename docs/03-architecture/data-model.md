@@ -2,7 +2,7 @@
 
 ## MediSync Express — Plataforma de Código Aberto para Pronto-Atendimento Virtual (PA Digital 24/| **Metadado** | Detalhamento |
 | :--- | :--- |
-| **Banco de Dados** | PostgreSQL 16 (com extensões `uuid-ossp` e `pgcrypto`) |
+| **Banco de Dados** | PostgreSQL 17 (com extensões `uuid-ossp` e `pgcrypto`) |
 | **Paradigma ORM & IDs** | Modelos Ricos no SQLAlchemy 2.0 (`Mapped[...]`) \| Chaves Clínicas em UUIDv7 (RFC 9562) |
 | **Multi-Tenancy** | Segregação Lógica via Coluna `organizacao_id` e Row-Level Security (RLS) nativo |
 | **Marco Regulatório** | Resolução CFM nº 2.314/2022 \| Resolução CFM nº 1.821/2007 \| LGPD Art. 11 |
@@ -473,6 +473,6 @@ FOR EACH ROW EXECUTE FUNCTION trg_prevent_audit_mutation();
 
 ---
 
-## 5. Governança de Migrações com Alembic Assíncrono (`asyncpg`)
+## 5. Governança de Migrações com Alembic Assíncrono (`psycopg 3`)
 
-As migrações operam 100% nativas em `asyncio` utilizando o driver `asyncpg` e `run_sync`, garantindo integridade transacional sem dependência de drivers síncronos legados (`psycopg2`).
+As migrações operam 100% nativas em `asyncio` utilizando o driver oficial `psycopg 3` (`psycopg[binary]`) e `run_sync`, garantindo máxima compatibilidade com PostgreSQL 17 e tipagem estrita com `basedpyright`.

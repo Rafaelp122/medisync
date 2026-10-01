@@ -37,7 +37,7 @@ O pronto-atendimento virtual requer execução assíncrona de rotinas em segundo
 * *Contras*: Bloqueante, baseado em processos síncronos forçados (`fork`), sem suporte nativo a corrotinas do `asyncio`.
 
 ### Opção 3: ARQ sobre Valkey (Adotada)
-* *Prós*: 100% nativo em `asyncio` em Python; reutiliza a instância do Valkey já presente no projeto; suporte nativo a jobs diferidos (`_defer_by=timedelta(seconds=45)`) com precisão de milissegundos; compartilha as mesmas conexões do `asyncpg` e `httpx.AsyncClient`.
+* *Prós*: 100% nativo em `asyncio` em Python; reutiliza a instância do Valkey já presente no projeto; suporte nativo a jobs diferidos (`_defer_by=timedelta(seconds=45)`) com precisão de milissegundos; compartilha as mesmas conexões do `psycopg 3` e `httpx.AsyncClient`.
 * *Contras*: Menor quantidade de extensões prontas em relação ao Celery, mas suficiente e perfeito para o ecossistema assíncrono moderno.
 
 ---
