@@ -50,6 +50,9 @@ ignore = [
     "S101", # Allow assert in tests
     "S105", # Allow hardcoded passwords in test fixtures
     "S106", # Allow hardcoded credentials in test fixtures
+    "S310", # Allow urllib.request.urlopen in tests
+    "S603", # Allow subprocess call in tests
+    "S607", # Allow partial executable path in tests
 ]
 
 [tool.basedpyright]

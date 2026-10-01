@@ -38,3 +38,24 @@ test-fast:
 
 # Portão de qualidade completo (executado antes de commits ou PRs)
 check: fmt lint typecheck tach test
+
+# Inicia toda a topologia de contêineres em background e aguarda ficarem saudáveis
+up:
+    docker compose up -d --wait postgres valkey livekit minio
+    docker compose up -d minio-init
+
+# Para os contêineres locais
+down:
+    docker compose down
+
+# Acompanha logs dos contêineres em tempo real
+logs:
+    docker compose logs -f
+
+# Exibe status e saúde dos contêineres
+ps:
+    docker compose ps
+
+# Remove contêineres e apaga volumes persistentes
+clean-docker:
+    docker compose down -v
