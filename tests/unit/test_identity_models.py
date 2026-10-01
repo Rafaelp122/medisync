@@ -93,21 +93,20 @@ def test_profissional_invalid_cpf_raises_validation_error():
         )
 
 
-def test_profissional_password_hashing():
+def test_profissional_alterar_senha_hash():
     prof = Profissional(
         organizacao_id=1,
         cpf="12345678900",
         nome_completo="Dra. Paula Souza",
         email="paula@medisync.com",
-        senha_hash="",
+        senha_hash="initial_hash",
         papel="MEDICO",
         crm="123456",
         crm_uf="SP",
     )
-    prof.set_password("SenhaForte@2026")
-    assert prof.senha_hash.startswith("$argon2id$")
-    assert prof.verify_password("SenhaForte@2026") is True
-    assert prof.verify_password("SenhaErrada") is False
+    assert prof.senha_hash == "initial_hash"
+    prof.alterar_senha_hash("$argon2id$v=19$m=65536,t=3,p=4$newhash")
+    assert prof.senha_hash == "$argon2id$v=19$m=65536,t=3,p=4$newhash"
     assert prof.is_medico() is True
 
 
