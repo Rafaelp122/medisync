@@ -9,10 +9,17 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import Session, SessionTransaction
+from sqlalchemy.orm import DeclarativeBase, Session, SessionTransaction
 
 from src.core.config import get_settings
 from src.core.context import current_tenant_id
+
+
+class Base(DeclarativeBase):
+    """Shared declarative base for all rich SQLAlchemy 2.0 domain models."""
+
+    pass
+
 
 settings = get_settings()
 

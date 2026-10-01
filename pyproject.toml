@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "granian>=1.6.0",
     "psycopg[binary]>=3.2.0",
+    "pwdlib[argon2]>=0.2.0",
     "pydantic>=2.8.0",
     "pydantic-settings>=2.4.0",
     "sqlalchemy[asyncio]>=2.0.35",
