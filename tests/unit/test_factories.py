@@ -43,3 +43,36 @@ def test_make_triagem_factory_defaults() -> None:
     assert triagem.queixa_principal == "Febre alta e calafrios"
     assert triagem.prioridade_calculada == 3
     assert triagem.alerta_samu_disparado is False
+
+
+def test_make_consultation_factories_defaults() -> None:
+    from src.modules.consultation.domain.models import (
+        DocumentoClinico,
+        DocumentoItem,
+        EvolucaoClinica,
+        TipoDocumentoClinico,
+    )
+
+    from tests.factories.consultation import (
+        make_documento_clinico,
+        make_documento_item,
+        make_evolucao_clinica,
+    )
+
+    evolucao = make_evolucao_clinica(organizacao_id=1)
+    assert isinstance(evolucao, EvolucaoClinica)
+    assert evolucao.id is not None
+    assert evolucao.organizacao_id == 1
+    assert evolucao.cid10_principal == "J00"
+
+    doc = make_documento_clinico(organizacao_id=1)
+    assert isinstance(doc, DocumentoClinico)
+    assert doc.id is not None
+    assert doc.organizacao_id == 1
+    assert doc.tipo_documento == TipoDocumentoClinico.RECEITA_SIMPLES
+
+    item = make_documento_item(organizacao_id=1, documento_id=doc.id)
+    assert isinstance(item, DocumentoItem)
+    assert item.id is not None
+    assert item.organizacao_id == 1
+    assert item.medicamento == "Dipirona 500mg"
