@@ -108,19 +108,19 @@ class LuaScriptManager:
         keys_and_args: list[Any] = list(keys) + list(args)
 
         try:
-            return await client.evalsha(sha, numkeys, *keys_and_args)  # pyright: ignore[reportUnknownMemberType]
+            return await client.evalsha(sha, numkeys, *keys_and_args)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
         except (NoScriptError, ResponseError) as exc:
             # Self-healing: if Valkey flushed script cache (SCRIPT FLUSH / restart)
             if isinstance(exc, NoScriptError) or "NOSCRIPT" in str(exc):
                 # Reload script on the fly
-                reloaded_sha = await client.script_load(script_content)  # pyright: ignore[reportUnknownMemberType]
+                reloaded_sha = await client.script_load(script_content)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
                 sha = str(reloaded_sha)
                 self._sha_cache[script_name] = sha
                 try:
-                    return await client.evalsha(sha, numkeys, *keys_and_args)  # pyright: ignore[reportUnknownMemberType]
+                    return await client.evalsha(sha, numkeys, *keys_and_args)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
                 except Exception:
                     # Final resilient fallback directly evaluating the Lua script
-                    return await client.eval(script_content, numkeys, *keys_and_args)  # pyright: ignore[reportUnknownMemberType]
+                    return await client.eval(script_content, numkeys, *keys_and_args)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
             raise LuaScriptError(
                 f"Failed to execute Lua script '{script_name}': {exc}"
             ) from exc

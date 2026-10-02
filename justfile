@@ -39,6 +39,10 @@ test-fast:
 # Portão de qualidade completo (executado antes de commits ou PRs)
 check: fmt lint typecheck tach test
 
+# Inicia o background worker assíncrono ARQ sobre Valkey
+worker:
+    uv run arq src.worker.WorkerSettings
+
 # Inicia toda a topologia de contêineres em background e aguarda ficarem saudáveis
 up:
     docker compose up -d --wait postgres valkey livekit minio

@@ -175,7 +175,7 @@ class ControleAdmissaoService:
     ) -> None:
         """Adds doctor to the active shift roster in Valkey."""
         k = f"plantao:{organizacao_id}:medicos_ativos"
-        await self._valkey.sadd(k, str(medico_id))  # pyright: ignore[reportUnknownMemberType]
+        await self._valkey.sadd(k, str(medico_id))  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType]
 
     async def desregistrar_medico_ativo(
         self,
@@ -184,7 +184,7 @@ class ControleAdmissaoService:
     ) -> None:
         """Removes doctor from the active shift roster in Valkey."""
         k = f"plantao:{organizacao_id}:medicos_ativos"
-        await self._valkey.srem(k, str(medico_id))  # pyright: ignore[reportUnknownMemberType]
+        await self._valkey.srem(k, str(medico_id))  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType]
 
     async def obter_medicos_ativos_count(
         self,
@@ -192,8 +192,8 @@ class ControleAdmissaoService:
     ) -> int:
         """Returns the number of active doctors on shift for the organization."""
         k = f"plantao:{organizacao_id}:medicos_ativos"
-        count = await self._valkey.scard(k)  # pyright: ignore[reportUnknownMemberType]
-        return int(count)
+        count = await self._valkey.scard(k)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
+        return int(count)  # pyright: ignore[reportUnknownArgumentType]
 
     async def incrementar_admissoes_hoje(
         self,

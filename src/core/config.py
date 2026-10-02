@@ -47,6 +47,15 @@ class Settings(BaseSettings):
     VALKEY_HEALTH_CHECK_INTERVAL: int = 30
     VALKEY_RETRY_ATTEMPTS: int = 3
 
+    # --- ARQ Background Worker (Valkey 8.0 Engine) ---
+    ARQ_QUEUE_NAME: str = "arq:queue"
+    ARQ_HEALTH_CHECK_KEY: str = "medisync:worker:health"
+    ARQ_HEALTH_CHECK_INTERVAL: int = 10
+    ARQ_MAX_JOBS: int = 20
+    ARQ_JOB_TIMEOUT: int = 60
+    ARQ_KEEP_RESULT: int = 3600
+    ARQ_JOB_COMPLETION_WAIT: int = 10
+
     # --- LiveKit SFU (WebRTC Media Server) ---
     LIVEKIT_HOST: str = "localhost"
     LIVEKIT_PORT: int = 7880

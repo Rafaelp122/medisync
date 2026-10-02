@@ -32,3 +32,9 @@ layer = "domain"
 path = "modules.billing"
 depends_on = ["core"]
 layer = "domain"
+
+[[modules]]
+path = "worker"
+depends_on = ["core", "modules.queue"]
+layer = "infrastructure"
+
