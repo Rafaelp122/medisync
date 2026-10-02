@@ -86,6 +86,7 @@ async def setup_rls_test_environment() -> AsyncGenerator[None, None]:
                 """
             )
         )
+    await asyncio.to_thread(_run_alembic_upgrade_head)
 
 
 @pytest.mark.asyncio

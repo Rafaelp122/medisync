@@ -71,6 +71,7 @@ async def ensure_clean_migration_state() -> AsyncGenerator[None, None]:
                 """
             )
         )
+    await asyncio.to_thread(_run_alembic_upgrade_head)
 
 
 @pytest.mark.asyncio

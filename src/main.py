@@ -45,6 +45,17 @@ def create_app() -> FastAPI:
             request_id=get_current_request_id(),
         )
 
+    # 4. Feature routers
+    from src.modules.identity.presentation.routers import (
+        onboarding_router,
+        pacientes_router,
+    )
+
+    app.include_router(onboarding_router)
+    app.include_router(pacientes_router)
+    app.include_router(onboarding_router, prefix="/api/v1")
+    app.include_router(pacientes_router, prefix="/api/v1")
+
     return app
 
 
