@@ -33,3 +33,11 @@ class AtendimentoNaoEncontradoError(NotFoundError):
     status_code: int = 404
     title: str = "Atendimento Não Encontrado"
     code: str = "ATENDIMENTO_NAO_ENCONTRADO"
+
+
+class FilaVaziaError(DomainError):
+    """Raised when the queue has no eligible patients waiting."""
+
+    status_code: int = 404
+    title: str = "Fila Vazia"
+    code: str = "FILA_VAZIA"
