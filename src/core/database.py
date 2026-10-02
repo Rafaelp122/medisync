@@ -60,6 +60,8 @@ def _set_tenant_rls_on_begin(
         text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
         {"tenant_id": tenant_val},
     )
+    if tenant_id is not None:
+        connection.execute(text("SET LOCAL ROLE medisync_app"))
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:

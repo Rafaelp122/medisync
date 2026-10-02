@@ -301,8 +301,8 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name="pk_atendimentos"),
         sa.CheckConstraint(
             "status IN ('TRIADO_AGUARDANDO_ELEGIBILIDADE', 'APTO_PARA_CHAMADA', "
-            "'CHAMANDO_PACIENTE', 'EM_ANDAMENTO', 'PACIENTE_AUSENTE', "
-            "'CONCLUIDO', 'CANCELADO')",
+            "'CHAMANDO_PACIENTE', 'EM_ATENDIMENTO', 'PACIENTE_AUSENTE', "
+            "'CONCLUIDO', 'CANCELADO_PACIENTE')",
             name="chk_atendimento_status",
         ),
         sa.CheckConstraint(
@@ -643,7 +643,3 @@ def downgrade() -> None:
 
     # 3. Remover função gen_uuidv7
     op.execute("DROP FUNCTION IF EXISTS gen_uuidv7();")
-
-    # 4. Remover extensões
-    op.execute('DROP EXTENSION IF EXISTS "pgcrypto";')
-    op.execute('DROP EXTENSION IF EXISTS "uuid-ossp";')
