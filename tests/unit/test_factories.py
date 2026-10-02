@@ -76,3 +76,19 @@ def test_make_consultation_factories_defaults() -> None:
     assert item.id is not None
     assert item.organizacao_id == 1
     assert item.medicamento == "Dipirona 500mg"
+
+
+def test_make_audit_event_factory_defaults() -> None:
+    from src.core.audit.models import AtorPapel, AtorTipo, AuditEvent
+
+    from tests.factories.audit import make_audit_event
+
+    evt = make_audit_event(organizacao_id=1)
+    assert isinstance(evt, AuditEvent)
+    assert evt.id is not None
+    assert evt.organizacao_id == 1
+    assert evt.atendimento_id is not None
+    assert evt.ator_tipo == AtorTipo.PROFISSIONAL
+    assert evt.ator_papel == AtorPapel.MEDICO
+    assert evt.ator_id is not None
+    assert evt.tipo_evento == "STATUS_ATENDIMENTO_ATUALIZADO"
