@@ -4,15 +4,24 @@ from src.modules.queue.application import (
     AdquirirProximoPacienteCommand,
     AlocacaoChamadaResult,
     AlocarChamadaCommand,
+    AvaliacaoAdmissaoResult,
+    AvaliarAdmissaoCommand,
+    IngressarFilaComBackpressureCommand,
     IngressarFilaCommand,
     IngressarFilaResult,
+    LoggingQueueOverflowNotifier,
+    QueueOverflowEvent,
+    QueueOverflowNotifierPort,
 )
 from src.modules.queue.application.services import (
     AlocacaoChamadaService,
+    ControleAdmissaoService,
     FilaService,
+    avaliar_capacidade_admissao,
     calcular_score_fila,
 )
 from src.modules.queue.domain import (
+    AdmissaoFilaSuspensaError,
     Atendimento,
     AtendimentoNaoDisponivelError,
     AtendimentoNaoEncontradoError,
@@ -24,6 +33,7 @@ from src.modules.queue.domain import (
 )
 
 __all__ = [
+    "AdmissaoFilaSuspensaError",
     "AdquirirProximoPacienteCommand",
     "AlocacaoChamadaResult",
     "AlocacaoChamadaService",
@@ -31,13 +41,21 @@ __all__ = [
     "Atendimento",
     "AtendimentoNaoDisponivelError",
     "AtendimentoNaoEncontradoError",
+    "AvaliacaoAdmissaoResult",
+    "AvaliarAdmissaoCommand",
+    "ControleAdmissaoService",
     "FilaService",
     "FilaVaziaError",
+    "IngressarFilaComBackpressureCommand",
     "IngressarFilaCommand",
     "IngressarFilaResult",
+    "LoggingQueueOverflowNotifier",
     "MedicoOcupadoError",
     "PrioridadeClinica",
+    "QueueOverflowEvent",
+    "QueueOverflowNotifierPort",
     "StatusAtendimento",
     "TransicaoEstadoInvalidaError",
+    "avaliar_capacidade_admissao",
     "calcular_score_fila",
 ]

@@ -1,6 +1,7 @@
 """Queue domain layer."""
 
 from src.modules.queue.domain.exceptions import (
+    AdmissaoFilaSuspensaError,
     AtendimentoNaoDisponivelError,
     AtendimentoNaoEncontradoError,
     FilaVaziaError,
@@ -14,6 +15,7 @@ from src.modules.queue.domain.models import (
 )
 
 __all__ = [
+    "AdmissaoFilaSuspensaError",
     "Atendimento",
     "AtendimentoNaoDisponivelError",
     "AtendimentoNaoEncontradoError",

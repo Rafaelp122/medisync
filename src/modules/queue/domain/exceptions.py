@@ -41,3 +41,15 @@ class FilaVaziaError(DomainError):
     status_code: int = 404
     title: str = "Fila Vazia"
     code: str = "FILA_VAZIA"
+
+
+class AdmissaoFilaSuspensaError(DomainError):
+    """Raised when queue admission is suspended due to backpressure or quotas (RN05)."""
+
+    status_code: int = 503
+    title: str = "Admissão na Fila Suspensa"
+    code: str = "ADMISSAO_FILA_SUSPENSA"
+
+    def __init__(self, detail: str, motivo: str = "CAPACIDADE_EXCEDIDA") -> None:
+        super().__init__(detail)
+        self.motivo = motivo

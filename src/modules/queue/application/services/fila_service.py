@@ -12,13 +12,19 @@ from src.modules.queue.application.dtos import (
     AdquirirProximoPacienteCommand,
     AlocacaoChamadaResult,
     AlocarChamadaCommand,
+    AvaliarAdmissaoCommand,
+    IngressarFilaComBackpressureCommand,
     IngressarFilaCommand,
     IngressarFilaResult,
 )
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
+from src.modules.queue.application.services.controle_admissao_service import (
+    ControleAdmissaoService,
+)
 from src.modules.queue.domain.exceptions import (
+    AdmissaoFilaSuspensaError,
     AtendimentoNaoDisponivelError,
     MedicoOcupadoError,
 )
@@ -65,12 +71,16 @@ class FilaService:
         valkey: Redis,
         db_session: AsyncSession,
         alocacao_service: AlocacaoChamadaService | None = None,
+        controle_admissao: ControleAdmissaoService | None = None,
     ) -> None:
         self._valkey = valkey
         self._db_session = db_session
         self._alocacao_service = alocacao_service or AlocacaoChamadaService(
             valkey=valkey,
             db_session=db_session,
+        )
+        self._controle_admissao = controle_admissao or ControleAdmissaoService(
+            valkey=valkey
         )
 
     async def ingressar_fila(
@@ -103,6 +113,40 @@ class FilaService:
             score=score,
             posicao=posicao,
         )
+
+    async def admitir_com_backpressure(
+        self,
+        command: IngressarFilaComBackpressureCommand,
+    ) -> IngressarFilaResult:
+        """Admits patient with stochastic backpressure check (RN05)."""
+        pacientes_aguardando = await self.obter_tamanho_fila(command.organizacao_id)
+
+        avaliacao_cmd = AvaliarAdmissaoCommand(
+            organizacao_id=command.organizacao_id,
+            medicos_ativos=command.medicos_ativos,
+            tempo_restante_segundos=command.tempo_restante_segundos,
+            pacientes_aguardando=pacientes_aguardando,
+            total_admissoes_hoje=command.total_admissoes_hoje,
+            tma_estimado_segundos=command.tma_estimado_segundos,
+            alpha_margem=command.alpha_margem,
+            cota_diaria_maxima=command.cota_diaria_maxima,
+        )
+        avaliacao = await self._controle_admissao.avaliar_admissao(avaliacao_cmd)
+
+        if not avaliacao.admissao_permitida:
+            motivo = avaliacao.motivo_bloqueio or "CAPACIDADE_EXCEDIDA"
+            raise AdmissaoFilaSuspensaError(
+                detail=avaliacao.mensagem_explicativa,
+                motivo=motivo,
+            )
+
+        ing_cmd = IngressarFilaCommand(
+            organizacao_id=command.organizacao_id,
+            atendimento_id=command.atendimento_id,
+            prioridade_clinica=command.prioridade_clinica,
+            data_entrada_fila=command.data_entrada_fila,
+        )
+        return await self.ingressar_fila(ing_cmd)
 
     async def adquirir_proximo_paciente(
         self,
