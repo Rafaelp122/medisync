@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     VALKEY_HOST: str = "localhost"
     VALKEY_PORT: int = 6379
     VALKEY_URL: str = "valkey://localhost:6379/0"
+    VALKEY_MAX_CONNECTIONS: int = 50
+    VALKEY_SOCKET_TIMEOUT: float = 5.0
+    VALKEY_CONNECT_TIMEOUT: float = 5.0
+    VALKEY_HEALTH_CHECK_INTERVAL: int = 30
+    VALKEY_RETRY_ATTEMPTS: int = 3
 
     # --- LiveKit SFU (WebRTC Media Server) ---
     LIVEKIT_HOST: str = "localhost"
@@ -77,6 +82,16 @@ class Settings(BaseSettings):
             f"postgresql+psycopg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
             f"{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
+
+    @computed_field  # pyright: ignore[reportUntypedFunctionDecorator]
+    @property
+    def async_valkey_url(self) -> str:
+        """Resolve the Valkey URL into a redis-py compatible URL scheme."""
+        if self.VALKEY_URL.startswith("valkey://"):
+            return self.VALKEY_URL.replace("valkey://", "redis://", 1)
+        if self.VALKEY_URL.startswith("valkeys://"):
+            return self.VALKEY_URL.replace("valkeys://", "rediss://", 1)
+        return self.VALKEY_URL
 
 
 @lru_cache
