@@ -1,6 +1,5 @@
 """Unit tests for AuditEvent domain model, actor validations, and immutability."""
 
-
 import pytest
 from src.core.audit.exceptions import (
     AuditoriaImutavelError,

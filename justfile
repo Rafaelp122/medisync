@@ -59,3 +59,19 @@ ps:
 # Remove contêineres e apaga volumes persistentes
 clean-docker:
     docker compose down -v
+
+# Aplica migrações pendentes no banco de dados
+migrate:
+    uv run alembic upgrade head
+
+# Reverte a última migração aplicada
+rollback:
+    uv run alembic downgrade -1
+
+# Reverte todas as migrações até o estado inicial limpo
+rollback-base:
+    uv run alembic downgrade base
+
+# Exibe o histórico cronológico de migrações
+migration-history:
+    uv run alembic history
