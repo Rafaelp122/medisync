@@ -20,6 +20,7 @@ from src.worker.tasks import (
     ping_task,
     reconciliar_fila_orphans_task,
     resolver_ring_timeout_task,
+    validar_elegibilidade_task,
 )
 
 __all__ = [
@@ -38,4 +39,5 @@ __all__ = [
     "resolver_ring_timeout_task",
     "shutdown",
     "startup",
+    "validar_elegibilidade_task",
 ]

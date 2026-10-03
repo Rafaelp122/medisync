@@ -17,6 +17,7 @@ from src.worker.tasks import (
     ping_task,
     reconciliar_fila_orphans_task,
     resolver_ring_timeout_task,
+    validar_elegibilidade_task,
 )
 
 logger = logging.getLogger("medisync.worker")
@@ -69,6 +70,10 @@ class WorkerSettings:
         func(
             cast("Any", reconciliar_fila_orphans_task),
             name="reconciliar_fila_orphans_task",
+        ),
+        func(
+            cast("Any", validar_elegibilidade_task),
+            name="validar_elegibilidade_task",
         ),
     ]
     cron_jobs: Sequence[CronJob] = [
