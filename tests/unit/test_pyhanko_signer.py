@@ -236,7 +236,7 @@ async def test_cloud_psc_oauth2_client_assinar_hash() -> None:
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = mock_malformed
         with pytest.raises(
-            AssinaturaDigitalInvalidaError, match="Resposta inválida recebida"
+            AssinaturaDigitalInvalidaError, match="Resposta inválida do PSC"
         ):
             await client.assinar_hash(
                 provider="birdid",
