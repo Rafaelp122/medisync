@@ -8,6 +8,11 @@ from arq.connections import ArqRedis
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.realtime import (
+    channel_doctor_calls,
+    channel_queue_patient,
+    publish_realtime_event,
+)
 from src.modules.queue.application.dtos import (
     AlocacaoChamadaResult,
     AlocarChamadaCommand,
@@ -147,6 +152,42 @@ class AlocacaoChamadaService:
                     atendimento.id,
                     command.telefone_paciente,
                 )
+
+        # 5. Broadcast real-time WebSocket events via Valkey Pub/Sub
+        # Trigger doctor incoming call modal and notify waiting patient
+        try:
+            chamada_ts = (
+                atendimento.chamada_iniciada_em or datetime.now(UTC)
+            ).isoformat()
+            await publish_realtime_event(
+                valkey=self._valkey,
+                channel=channel_doctor_calls(command.medico_id),
+                payload={
+                    "event": "INCOMING_CALL",
+                    "atendimento_id": str(atendimento.id),
+                    "medico_id": str(command.medico_id),
+                    "ttl_segundos": command.ttl_segundos,
+                    "chamada_iniciada_em": chamada_ts,
+                },
+            )
+            await publish_realtime_event(
+                valkey=self._valkey,
+                channel=channel_queue_patient(command.atendimento_id),
+                payload={
+                    "event": "CALLED",
+                    "atendimento_id": str(atendimento.id),
+                    "medico_id": str(command.medico_id),
+                    "status": atendimento.status,
+                    "ttl_segundos": command.ttl_segundos,
+                    "chamada_iniciada_em": chamada_ts,
+                },
+            )
+        except Exception:
+            logger.exception(
+                "Failed to broadcast realtime call events for attendance %s. "
+                "Queue progression continued unaffected.",
+                atendimento.id,
+            )
 
         logger.info(
             "Call allocated successfully: medico=%s, atendimento=%s (org=%d)",

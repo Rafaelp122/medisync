@@ -113,15 +113,25 @@ def create_app() -> FastAPI:
         )
 
     # 4. Feature routers
+    from src.modules.consultation.presentation.routers import (
+        doctor_ws_router,
+    )
     from src.modules.identity.presentation.routers import (
         onboarding_router,
         pacientes_router,
+    )
+    from src.modules.queue.presentation.routers import (
+        queue_ws_router,
     )
 
     app.include_router(onboarding_router)
     app.include_router(pacientes_router)
     app.include_router(onboarding_router, prefix="/api/v1")
     app.include_router(pacientes_router, prefix="/api/v1")
+
+    # 5. Real-time WebSocket signaling routers
+    app.include_router(queue_ws_router)
+    app.include_router(doctor_ws_router)
 
     return app
 
