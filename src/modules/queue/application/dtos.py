@@ -15,6 +15,7 @@ class AlocarChamadaCommand:
     medico_id: UUID
     atendimento_id: UUID
     ttl_segundos: int = 45
+    telefone_paciente: str | None = None
 
 
 @dataclass(frozen=True)

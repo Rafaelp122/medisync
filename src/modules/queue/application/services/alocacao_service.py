@@ -12,6 +12,7 @@ from src.modules.queue.application.dtos import (
     AlocacaoChamadaResult,
     AlocarChamadaCommand,
 )
+from src.modules.queue.application.ports.notification_port import NotificationPort
 from src.modules.queue.domain.exceptions import (
     AtendimentoNaoDisponivelError,
     AtendimentoNaoEncontradoError,
@@ -35,11 +36,13 @@ class AlocacaoChamadaService:
         db_session: AsyncSession,
         lua_manager: LuaScriptManager | None = None,
         arq_pool: ArqRedis | None = None,
+        notification_adapter: NotificationPort | None = None,
     ) -> None:
         self._valkey = valkey
         self._db_session = db_session
         self._lua_manager = lua_manager or get_lua_script_manager()
         self._arq_pool = arq_pool
+        self._notification_adapter = notification_adapter
 
     async def alocar_chamada(
         self,
@@ -124,6 +127,26 @@ class AlocacaoChamadaService:
                 _defer_by=timedelta(seconds=command.ttl_segundos),
                 _job_id=f"ring_timeout:{command.atendimento_id}",
             )
+
+        # 4. Dispatch call notification to patient (WhatsApp/SMS)
+        # Message failures MUST NOT block transactional queue progression
+        if self._notification_adapter is not None and command.telefone_paciente:
+            try:
+                await self._notification_adapter.send_whatsapp(
+                    to=command.telefone_paciente,
+                    template="chamada_consulta",
+                    params={
+                        "atendimento_id": str(atendimento.id),
+                        "medico_id": str(command.medico_id),
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to dispatch call notification for attendance %s (to=%s). "
+                    "Queue progression continued unaffected.",
+                    atendimento.id,
+                    command.telefone_paciente,
+                )
 
         logger.info(
             "Call allocated successfully: medico=%s, atendimento=%s (org=%d)",

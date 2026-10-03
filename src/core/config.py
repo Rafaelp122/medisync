@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     MINIO_DEFAULT_BUCKET: str = "medisync-docs"
     MINIO_USE_SSL: bool = False
 
+    # --- Messaging & Notifications (WhatsApp / SMS) ---
+    NOTIFICATION_PROVIDER: Literal["console", "fake", "noop"] = "console"
+    NOTIFICATION_RATE_LIMIT_CAPACITY: int = 5
+    NOTIFICATION_RATE_LIMIT_REFILL_RATE: float = 0.05
+    NOTIFICATION_RATE_LIMIT_TTL_SECONDS: int = 3600
+
     @computed_field  # pyright: ignore[reportUntypedFunctionDecorator]
     @property
     def async_database_url(self) -> str:
