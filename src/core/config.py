@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     LIVEKIT_API_KEY: str = "devkey"
     LIVEKIT_API_SECRET: str = "secret"
 
-    # --- MinIO (S3-Compatible Document Storage) ---
+    # --- MinIO / AWS S3 Document Storage (ADR-006 & Issue #27) ---
     MINIO_ROOT_USER: str = "medisync"
     MINIO_ROOT_PASSWORD: str = "medisync123"
     MINIO_HOST: str = "localhost"
@@ -72,6 +72,13 @@ class Settings(BaseSettings):
     MINIO_ENDPOINT: str = "http://localhost:9000"
     MINIO_DEFAULT_BUCKET: str = "medisync-docs"
     MINIO_USE_SSL: bool = False
+
+    S3_ENDPOINT_URL: str = "http://localhost:9000"
+    S3_BUCKET_NAME: str = "medisync-docs"
+    S3_ACCESS_KEY_ID: str = "medisync"
+    S3_SECRET_ACCESS_KEY: str = "medisync123"
+    S3_REGION_NAME: str = "us-east-1"
+    S3_PRESIGNED_EXPIRATION_SECONDS: int = 300
 
     # --- Messaging & Notifications (WhatsApp / SMS) ---
     NOTIFICATION_PROVIDER: Literal["console", "fake", "noop"] = "console"

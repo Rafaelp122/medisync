@@ -1,6 +1,6 @@
 """Domain exceptions for consultation, clinical evolutions and prescriptions."""
 
-from src.core.errors import DomainError, ValidationError
+from src.core.errors import DomainError, NotFoundError, ValidationError
 
 
 class PrescricaoFisicaObrigatoriaError(ValidationError):
@@ -37,3 +37,11 @@ class AssinaturaDigitalInvalidaError(DomainError):
     status_code: int = 422
     title: str = "Falha na Assinatura Digital ICP-Brasil"
     code: str = "ASSINATURA_DIGITAL_INVALIDA"
+
+
+class DocumentoNaoEncontradoNoStorageError(NotFoundError):
+    """Raised when an object key is not found in Object Storage."""
+
+    status_code: int = 404
+    title: str = "Documento Não Encontrado no Storage"
+    code: str = "DOCUMENTO_STORAGE_NAO_ENCONTRADO"

@@ -15,6 +15,7 @@ from src.modules.consultation.application.ports.pdf_generator_port import (
     DocumentoPDFPayload,
     PDFGeneratorPort,
 )
+from src.modules.consultation.application.ports.storage_port import StoragePort
 
 __all__ = [
     "DoctorCertificateCredentials",
@@ -24,6 +25,7 @@ __all__ = [
     "LiveKitMediaPort",
     "PDFGeneratorPort",
     "SignatureMetadataDTO",
+    "StoragePort",
     "build_participant_identity",
     "build_room_name",
 ]

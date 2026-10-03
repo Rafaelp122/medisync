@@ -27,6 +27,7 @@ from src.modules.consultation.application.ports.pdf_generator_port import (
     DocumentoPDFPayload,
     PDFGeneratorPort,
 )
+from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     ConsultaInvalidaError,
@@ -56,6 +57,7 @@ class PEPService:
         session: AsyncSession,
         pdf_generator: PDFGeneratorPort | None = None,
         signer: ICPBrasilSignerPort | None = None,
+        storage: StoragePort | None = None,
     ) -> None:
         self._session = session
         if pdf_generator is None:
@@ -73,6 +75,25 @@ class PEPService:
 
             signer = PyHankoSigner()
         self._signer = signer
+
+        if storage is None:
+            from src.modules.consultation.infrastructure.s3_storage import (
+                FakeStorageAdapter,
+            )
+
+            storage = FakeStorageAdapter()
+        self._storage = storage
+
+    @property
+    def storage(self) -> StoragePort:
+        """Return the injected storage port instance."""
+        return self._storage
+
+    def is_documento_assinado(self, doc: DocumentoClinico) -> bool:
+        """Check if document has been digitally signed with PAdES ICP-Brasil."""
+        return doc.id in _DOCUMENTOS_ASSINADOS_CACHE or doc.chave_s3.startswith(
+            f"orgs/{doc.organizacao_id}/consultations/"
+        )
 
     async def _verificar_atendimento_finalizado(self, atendimento_id: UUID) -> bool:
         """Check whether the underlying attendance reached terminal status in DB."""
@@ -372,6 +393,10 @@ class PEPService:
                 f"Documento clínico '{documento_id}' não encontrado."
             )
 
+        if doc.chave_s3:
+            with contextlib.suppress(Exception):
+                return await self._storage.obter_documento(doc.chave_s3)
+
         if documento_id in _DOCUMENTOS_ASSINADOS_CACHE:
             return _DOCUMENTOS_ASSINADOS_CACHE[documento_id]
 
@@ -538,6 +563,13 @@ class PEPService:
         new_hash = hashlib.sha256(signed_bytes).hexdigest()
         doc.sha256_hash = new_hash
         doc.assinado_em = datetime.now(UTC)
+
+        s3_key = (
+            f"orgs/{doc.organizacao_id}/consultations/{doc.atendimento_id}/"
+            f"documents/{doc.id}.pdf"
+        )
+        await self._storage.salvar_documento(s3_key, signed_bytes)
+        doc.chave_s3 = s3_key
         _DOCUMENTOS_ASSINADOS_CACHE[doc.id] = signed_bytes
         await self._session.flush()
 

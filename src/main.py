@@ -117,6 +117,7 @@ def create_app() -> FastAPI:
         consultation_router,
         doctor_ws_router,
         livekit_router,
+        validation_router,
     )
     from src.modules.identity.presentation.routers import (
         onboarding_router,
@@ -130,6 +131,7 @@ def create_app() -> FastAPI:
     app.include_router(pacientes_router)
     app.include_router(livekit_router)
     app.include_router(consultation_router)
+    app.include_router(validation_router)
     app.include_router(onboarding_router, prefix="/api/v1")
     app.include_router(pacientes_router, prefix="/api/v1")
     app.include_router(livekit_router, prefix="/api/v1")

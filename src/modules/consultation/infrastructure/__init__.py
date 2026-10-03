@@ -14,14 +14,20 @@ from src.modules.consultation.infrastructure.pyhanko_signer import (
     FakeICPBrasilSigner,
     PyHankoSigner,
 )
+from src.modules.consultation.infrastructure.s3_storage import (
+    FakeStorageAdapter,
+    S3StorageAdapter,
+)
 
 __all__ = [
     "CloudPSCOAuth2Client",
     "FakeICPBrasilSigner",
     "FakeLiveKitAdapter",
     "FakePDFGenerator",
+    "FakeStorageAdapter",
     "LiveKitAdapter",
     "PyHankoSigner",
     "ReportLabPDFGenerator",
+    "S3StorageAdapter",
     "get_livekit_adapter",
 ]

@@ -5,6 +5,7 @@ description = "MediSync Express — Plataforma de Pronto-Atendimento Virtual (PA
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aioboto3>=13.0.0",
     "alembic>=1.13.0",
     "arq>=0.28.0",
     "cryptography>=43.0.0",
