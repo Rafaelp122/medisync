@@ -24,6 +24,7 @@ _EXPECTED_TABLES = frozenset(
         "documentos_clinicos",
         "documento_itens",
         "audit_events",
+        "usuarios_credenciais",
     ]
 )
 

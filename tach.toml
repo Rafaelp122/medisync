@@ -9,6 +9,11 @@ depends_on = []
 layer = "shared"
 
 [[modules]]
+path = "modules.auth"
+depends_on = ["core"]
+layer = "domain"
+
+[[modules]]
 path = "modules.identity"
 depends_on = ["core"]
 layer = "domain"

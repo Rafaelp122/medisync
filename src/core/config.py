@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     SECRET_KEY: str = "dev-insecure-secret-key-change-in-production-min-32-chars"
 
+    # --- Authentication & Session Security (OWASP & CFM 2.314/2022) ---
+    JWT_SECRET_KEY: str = (
+        "dev-insecure-jwt-secret-key-change-in-production-min-32-chars"
+    )
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    AUTH_RATE_LIMIT_MAX_ATTEMPTS: int = 5
+    AUTH_RATE_LIMIT_WINDOW_SECONDS: int = 900
+
     # --- Relational Database (PostgreSQL 17 / Psycopg 3) ---
     POSTGRES_USER: str = "medisync"
     POSTGRES_PASSWORD: str = "medisync"
