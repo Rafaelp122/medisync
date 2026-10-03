@@ -77,7 +77,7 @@ class PDFACanvas(canvas.Canvas):
             '    <rdf:Description rdf:about=""\n'
             '        xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
             '      <dc:title><rdf:Alt><rdf:li xml:lang="x-default">'
-            "Documento Clínico MediSync</rdf:li></rdf:Alt></dc:title>\n"
+            "Documento Clinico MediSync</rdf:li></rdf:Alt></dc:title>\n"
             "      <dc:creator><rdf:Seq><rdf:li>"
             "MediSync Express</rdf:li></rdf:Seq></dc:creator>\n"
             "    </rdf:Description>\n"

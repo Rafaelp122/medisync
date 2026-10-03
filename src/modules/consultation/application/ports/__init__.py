@@ -1,5 +1,10 @@
 """Consultation module application ports."""
 
+from src.modules.consultation.application.ports.icp_brasil_signer_port import (
+    DoctorCertificateCredentials,
+    ICPBrasilSignerPort,
+    SignatureMetadataDTO,
+)
 from src.modules.consultation.application.ports.livekit_media_port import (
     LiveKitMediaPort,
     build_participant_identity,
@@ -12,10 +17,13 @@ from src.modules.consultation.application.ports.pdf_generator_port import (
 )
 
 __all__ = [
+    "DoctorCertificateCredentials",
     "DocumentoItemPDFDTO",
     "DocumentoPDFPayload",
+    "ICPBrasilSignerPort",
     "LiveKitMediaPort",
     "PDFGeneratorPort",
+    "SignatureMetadataDTO",
     "build_participant_identity",
     "build_room_name",
 ]

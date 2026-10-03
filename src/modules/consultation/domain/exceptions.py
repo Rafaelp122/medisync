@@ -29,3 +29,11 @@ class ConsultaInvalidaError(ValidationError):
     status_code: int = 422
     title: str = "Registro de Consulta Inválido"
     code: str = "CONSULTA_INVALIDA"
+
+
+class AssinaturaDigitalInvalidaError(DomainError):
+    """Raised when digital signing fails or returns invalid signature."""
+
+    status_code: int = 422
+    title: str = "Falha na Assinatura Digital ICP-Brasil"
+    code: str = "ASSINATURA_DIGITAL_INVALIDA"

@@ -18,6 +18,10 @@ from src.modules.consultation.application.dtos import (
     RegistrarEvolucaoSOAPCommand,
     TMAStatusDTO,
 )
+from src.modules.consultation.application.ports.icp_brasil_signer_port import (
+    DoctorCertificateCredentials,
+    ICPBrasilSignerPort,
+)
 from src.modules.consultation.application.ports.pdf_generator_port import (
     DocumentoItemPDFDTO,
     DocumentoPDFPayload,
@@ -41,6 +45,7 @@ from src.modules.consultation.domain.models._substances import (
 _CID10_REGEX = re.compile(r"^[A-Z][0-9]{2}(\.[0-9]{1,2})?$")
 _PROHIBITED_DOC_TYPES = frozenset({"NOTIFICACAO_RECEITA_A", "NOTIFICACAO_RECEITA_B"})
 _STATUS_TERMINAIS = frozenset({"CONCLUIDO", "PACIENTE_AUSENTE", "CANCELADO_PACIENTE"})
+_DOCUMENTOS_ASSINADOS_CACHE: dict[UUID, bytes] = {}
 
 
 class PEPService:
@@ -50,6 +55,7 @@ class PEPService:
         self,
         session: AsyncSession,
         pdf_generator: PDFGeneratorPort | None = None,
+        signer: ICPBrasilSignerPort | None = None,
     ) -> None:
         self._session = session
         if pdf_generator is None:
@@ -59,6 +65,14 @@ class PEPService:
 
             pdf_generator = ReportLabPDFGenerator()
         self._pdf_generator = pdf_generator
+
+        if signer is None:
+            from src.modules.consultation.infrastructure.pyhanko_signer import (
+                PyHankoSigner,
+            )
+
+            signer = PyHankoSigner()
+        self._signer = signer
 
     async def _verificar_atendimento_finalizado(self, atendimento_id: UUID) -> bool:
         """Check whether the underlying attendance reached terminal status in DB."""
@@ -358,6 +372,9 @@ class PEPService:
                 f"Documento clínico '{documento_id}' não encontrado."
             )
 
+        if documento_id in _DOCUMENTOS_ASSINADOS_CACHE:
+            return _DOCUMENTOS_ASSINADOS_CACHE[documento_id]
+
         org_nome = "MediSync Pronto-Atendimento Virtual"
         org_cnpj: str | None = None
         org_cnes: str | None = None
@@ -365,28 +382,22 @@ class PEPService:
         org_tel: str | None = None
 
         with contextlib.suppress(Exception):
-            org_res = await self._session.execute(
-                text(
-                    "SELECT razao_social, nome_fantasia, cnpj, cnes, "
-                    "endereco, telefone FROM organizacoes WHERE id = :org_id"
-                ),
-                {"org_id": doc.organizacao_id},
-            )
-            org_row = org_res.mappings().first()
-            if org_row:
-                org_nome = str(
-                    org_row.get("nome_fantasia")
-                    or org_row.get("razao_social")
-                    or org_nome
+            async with self._session.begin_nested():
+                org_res = await self._session.execute(
+                    text(
+                        "SELECT razao_social, nome_fantasia, cnpj "
+                        "FROM organizacoes WHERE id = :org_id"
+                    ),
+                    {"org_id": doc.organizacao_id},
                 )
-                org_cnpj = str(org_row.get("cnpj")) if org_row.get("cnpj") else None
-                org_cnes = str(org_row.get("cnes")) if org_row.get("cnes") else None
-                org_end = (
-                    str(org_row.get("endereco")) if org_row.get("endereco") else None
-                )
-                org_tel = (
-                    str(org_row.get("telefone")) if org_row.get("telefone") else None
-                )
+                org_row = org_res.mappings().first()
+                if org_row:
+                    org_nome = str(
+                        org_row.get("nome_fantasia")
+                        or org_row.get("razao_social")
+                        or org_nome
+                    )
+                    org_cnpj = str(org_row.get("cnpj")) if org_row.get("cnpj") else None
 
         medico_nome = "Médico Assistente"
         medico_crm = "00000"
@@ -394,19 +405,19 @@ class PEPService:
         medico_rqe: str | None = None
 
         with contextlib.suppress(Exception):
-            med_res = await self._session.execute(
-                text(
-                    "SELECT nome, crm, crm_uf, rqe "
-                    "FROM profissionais WHERE id = :med_id"
-                ),
-                {"med_id": doc.medico_id},
-            )
-            med_row = med_res.mappings().first()
-            if med_row:
-                medico_nome = str(med_row.get("nome") or medico_nome)
-                medico_crm = str(med_row.get("crm") or medico_crm)
-                medico_crm_uf = str(med_row.get("crm_uf") or medico_crm_uf)
-                medico_rqe = str(med_row.get("rqe")) if med_row.get("rqe") else None
+            async with self._session.begin_nested():
+                med_res = await self._session.execute(
+                    text(
+                        "SELECT nome_completo, crm, crm_uf "
+                        "FROM profissionais WHERE id = :med_id"
+                    ),
+                    {"med_id": doc.medico_id},
+                )
+                med_row = med_res.mappings().first()
+                if med_row:
+                    medico_nome = str(med_row.get("nome_completo") or medico_nome)
+                    medico_crm = str(med_row.get("crm") or medico_crm)
+                    medico_crm_uf = str(med_row.get("crm_uf") or medico_crm_uf)
 
         paciente_nome = "Paciente"
         paciente_cpf = "000.000.000-00"
@@ -414,42 +425,52 @@ class PEPService:
         paciente_end: str | None = None
 
         with contextlib.suppress(Exception):
-            pac_res = await self._session.execute(
-                text(
-                    "SELECT p.nome_completo, p.cpf, p.data_nascimento, p.endereco "
-                    "FROM atendimentos a "
-                    "JOIN pacientes p ON a.paciente_id = p.id "
-                    "WHERE a.id = :atend_id"
-                ),
-                {"atend_id": doc.atendimento_id},
-            )
-            pac_row = pac_res.mappings().first()
-            if pac_row:
-                paciente_nome = str(pac_row.get("nome_completo") or paciente_nome)
-                paciente_cpf = str(pac_row.get("cpf") or paciente_cpf)
-                data_n = pac_row.get("data_nascimento")
-                if data_n is not None:
-                    paciente_nasc = (
-                        data_n.strftime("%d/%m/%Y")  # pyright: ignore[reportAttributeAccessIssue]
-                        if hasattr(data_n, "strftime")
-                        else str(data_n)
-                    )
-                paciente_end = (
-                    str(pac_row.get("endereco")) if pac_row.get("endereco") else None
+            async with self._session.begin_nested():
+                pac_res = await self._session.execute(
+                    text(
+                        "SELECT p.nome_completo, p.cpf, p.data_nascimento, "
+                        "p.logradouro, p.numero, p.bairro, p.cidade, p.estado "
+                        "FROM atendimentos a "
+                        "JOIN pacientes p ON a.paciente_id = p.id "
+                        "WHERE a.id = :atend_id"
+                    ),
+                    {"atend_id": doc.atendimento_id},
                 )
+                pac_row = pac_res.mappings().first()
+                if pac_row:
+                    paciente_nome = str(pac_row.get("nome_completo") or paciente_nome)
+                    paciente_cpf = str(pac_row.get("cpf") or paciente_cpf)
+                    data_n = pac_row.get("data_nascimento")
+                    if data_n is not None:
+                        paciente_nasc = (
+                            data_n.strftime("%d/%m/%Y")  # pyright: ignore[reportAttributeAccessIssue]
+                            if hasattr(data_n, "strftime")
+                            else str(data_n)
+                        )
+                    end_parts = [
+                        str(pac_row.get("logradouro") or "").strip(),
+                        str(pac_row.get("numero") or "").strip(),
+                        str(pac_row.get("bairro") or "").strip(),
+                        str(pac_row.get("cidade") or "").strip(),
+                        str(pac_row.get("estado") or "").strip(),
+                    ]
+                    valid_parts = [p for p in end_parts if p]
+                    if valid_parts:
+                        paciente_end = ", ".join(valid_parts)
 
         cid10: str | None = None
         with contextlib.suppress(Exception):
-            ev_res = await self._session.execute(
-                text(
-                    "SELECT cid10_principal FROM evolucoes_clinicas "
-                    "WHERE atendimento_id = :atend_id"
-                ),
-                {"atend_id": doc.atendimento_id},
-            )
-            cid10_val = ev_res.scalar_one_or_none()
-            if cid10_val:
-                cid10 = str(cid10_val)
+            async with self._session.begin_nested():
+                ev_res = await self._session.execute(
+                    text(
+                        "SELECT cid10_principal FROM evolucoes_clinicas "
+                        "WHERE atendimento_id = :atend_id"
+                    ),
+                    {"atend_id": doc.atendimento_id},
+                )
+                cid10_val = ev_res.scalar_one_or_none()
+                if cid10_val:
+                    cid10 = str(cid10_val)
 
         itens_pdf = [
             DocumentoItemPDFDTO(
@@ -485,3 +506,39 @@ class PEPService:
         )
 
         return self._pdf_generator.gerar_pdf(payload)
+
+    async def assinar_documento_clinico(
+        self,
+        documento_id: UUID,
+        credenciais: DoctorCertificateCredentials,
+    ) -> tuple[DocumentoClinico, bytes]:
+        """Sign clinical document with ICP-Brasil PAdES standard via Cloud PSC."""
+        stmt = (
+            select(DocumentoClinico)
+            .where(DocumentoClinico.id == documento_id)
+            .options(selectinload(DocumentoClinico.itens))
+        )
+        res = await self._session.execute(stmt)
+        doc = res.scalar_one_or_none()
+        if doc is None:
+            raise ConsultaInvalidaError(
+                f"Documento clínico '{documento_id}' não encontrado."
+            )
+
+        is_term = await self._verificar_atendimento_finalizado(doc.atendimento_id)
+        if doc.is_finalizado or is_term:
+            raise ConsultaFinalizadaError(
+                "Não é permitido alterar ou assinar documento de "
+                "consulta já finalizada."
+            )
+
+        pdf_bytes = await self.compilar_documento_pdf(documento_id)
+        signed_bytes = await self._signer.assinar_pdf(pdf_bytes, credenciais)
+
+        new_hash = hashlib.sha256(signed_bytes).hexdigest()
+        doc.sha256_hash = new_hash
+        doc.assinado_em = datetime.now(UTC)
+        _DOCUMENTOS_ASSINADOS_CACHE[doc.id] = signed_bytes
+        await self._session.flush()
+
+        return doc, signed_bytes

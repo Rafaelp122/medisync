@@ -82,6 +82,14 @@ class Settings(BaseSettings):
     # --- Clinical Documents & PDF Validation (CFM 2.314/2022) ---
     DOCUMENTS_VALIDATION_URL_PREFIX: str = "https://medisync.app/validar"
 
+    # --- Cloud PSC (ICP-Brasil Assinatura em Nuvem) ---
+    PSC_DEFAULT_PROVIDER: Literal["birdid", "safeid", "vidaas", "fake"] = "fake"
+    PSC_BIRDID_ENDPOINT: str = "https://api.birdid.com.br"
+    PSC_SAFEID_ENDPOINT: str = "https://api.safeid.com.br"
+    PSC_VIDAAS_ENDPOINT: str = "https://api.vidaas.com.br"
+    PSC_CLIENT_ID: str = "medisync-psc-client"
+    PSC_CLIENT_SECRET: str = "dev-psc-secret"
+
     @computed_field  # pyright: ignore[reportUntypedFunctionDecorator]
     @property
     def async_database_url(self) -> str:

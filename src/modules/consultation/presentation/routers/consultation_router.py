@@ -16,6 +16,9 @@ from src.modules.consultation.application.dtos import (
     FinalizarConsultaCommand,
     RegistrarEvolucaoSOAPCommand,
 )
+from src.modules.consultation.application.ports.icp_brasil_signer_port import (
+    DoctorCertificateCredentials,
+)
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.domain.exceptions import ConsultaInvalidaError
 
@@ -153,6 +156,35 @@ class DocumentoClinicoResponse(BaseModel):
     assinado_em: datetime
     is_finalizado: bool
     itens: list[ItemPrescricaoResponse]
+
+
+class AssinarDocumentoRequest(BaseModel):
+    """Payload to authorize digital signature via cloud PSC."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(description="Token OAuth2 do médico emitido pelo provedor PSC")
+    provider: str = Field(
+        default="birdid",
+        description="Provedor PSC (birdid, safeid, vidaas, fake)",
+    )
+    certificate_alias: str | None = Field(
+        default=None,
+        description="Alias ou identificador opcional do certificado no PSC",
+    )
+
+
+class AssinarDocumentoResponse(BaseModel):
+    """Result of digital signature application."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    documento_id: UUID
+    tipo_documento: str
+    sha256_hash: str
+    assinado_em: datetime
+    tamanho_bytes: int
+    status: str = "ASSINADO"
 
 
 class FinalizarConsultaRequest(BaseModel):
@@ -463,4 +495,61 @@ async def obter_documento_pdf(
             "Content-Disposition": f'inline; filename="{documento_id}.pdf"',
             "Content-Type": "application/pdf",
         },
+    )
+
+
+@consultation_router.post(
+    "/consultations/{atendimento_id}/documents/{documento_id}/sign",
+    response_model=AssinarDocumentoResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Aplica assinatura digital PAdES ICP-Brasil no documento clínico via PSC",
+)
+@consultation_router.post(
+    "/api/v1/consultations/{atendimento_id}/documents/{documento_id}/sign",
+    include_in_schema=False,
+    response_model=AssinarDocumentoResponse,
+)
+async def assinar_documento(
+    atendimento_id: Annotated[
+        UUID, Path(description="Identificador único do atendimento")
+    ],
+    documento_id: Annotated[
+        UUID, Path(description="Identificador único do documento clínico")
+    ],
+    payload: AssinarDocumentoRequest,
+    session: SessionDep,
+) -> AssinarDocumentoResponse:
+    """Executa a assinatura digital PAdES em nuvem via PSC (CFM 2.314/2022)."""
+    service = PEPService(session)
+    creds = DoctorCertificateCredentials(
+        token=payload.token,
+        provider=payload.provider,
+        certificate_alias=payload.certificate_alias,
+    )
+    try:
+        doc, signed_bytes = await service.assinar_documento_clinico(
+            documento_id=documento_id,
+            credenciais=creds,
+        )
+    except ConsultaInvalidaError as err:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(err)
+        ) from err
+
+    if doc.atendimento_id != atendimento_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Documento '{documento_id}' não pertence ao "
+                f"atendimento '{atendimento_id}'."
+            ),
+        )
+
+    await session.commit()
+    return AssinarDocumentoResponse(
+        documento_id=doc.id,
+        tipo_documento=str(doc.tipo_documento),
+        sha256_hash=doc.sha256_hash,
+        assinado_em=doc.assinado_em,
+        tamanho_bytes=len(signed_bytes),
     )
