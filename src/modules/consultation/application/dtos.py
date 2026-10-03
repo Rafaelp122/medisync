@@ -1,8 +1,14 @@
 """Data Transfer Objects for the consultation module."""
 
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from src.modules.consultation.domain.models import (
+        DocumentoClinico,
+        EvolucaoClinica,
+    )
 
 
 @dataclass(frozen=True)
@@ -27,3 +33,69 @@ class LiveKitTokenResponseDTO:
     participant_identity: str
     server_url: str
     expires_in: int
+
+
+@dataclass(frozen=True)
+class RegistrarEvolucaoSOAPCommand:
+    """Command to record or update medical SOAP clinical notes."""
+
+    atendimento_id: UUID
+    organizacao_id: int
+    medico_id: UUID
+    anamnese: str  # Subjetivo (S)
+    conduta: str  # Plano (P)
+    exame_fisico_virtual: str | None = None  # Objetivo (O)
+    cid10_principal: str | None = None  # Avaliação (A)
+
+
+@dataclass(frozen=True)
+class CriarItemPrescricaoDTO:
+    """Individual medication item within a digital prescription."""
+
+    medicamento: str
+    dosagem: str
+    posologia: str
+    duracao: str | None = None
+    controle_especial: bool = False
+
+
+@dataclass(frozen=True)
+class EmitirDocumentoClinicoCommand:
+    """Command to issue an electronic clinical document with prescription items."""
+
+    atendimento_id: UUID
+    organizacao_id: int
+    medico_id: UUID
+    tipo_documento: str
+    itens: list[CriarItemPrescricaoDTO] = field(default_factory=list)
+    chave_s3: str = ""
+    sha256_hash: str = ""
+
+
+@dataclass(frozen=True)
+class FinalizarConsultaCommand:
+    """Command to lock attendance records, marking consultation concluded."""
+
+    atendimento_id: UUID
+    organizacao_id: int
+    medico_id: UUID
+
+
+@dataclass(frozen=True)
+class TMAStatusDTO:
+    """Telemetry indicator for Average Consultation Time (TMA), enforcing RN06."""
+
+    atendimento_id: UUID
+    tempo_decorrido_segundos: int
+    tma_planejado_segundos: int
+    excedeu_tma: bool
+    aviso_visual: str
+
+
+@dataclass(frozen=True)
+class ProntuarioResumoDTO:
+    """Aggregated clinical record view for an attendance."""
+
+    evolucao: "EvolucaoClinica | None"
+    documentos: "list[DocumentoClinico]"
+    is_finalizado: bool
