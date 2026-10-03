@@ -1,9 +1,10 @@
 """Application service for atomic call allocation (ADR-002)."""
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from arq.connections import ArqRedis
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,10 +34,12 @@ class AlocacaoChamadaService:
         valkey: Redis,
         db_session: AsyncSession,
         lua_manager: LuaScriptManager | None = None,
+        arq_pool: ArqRedis | None = None,
     ) -> None:
         self._valkey = valkey
         self._db_session = db_session
         self._lua_manager = lua_manager or get_lua_script_manager()
+        self._arq_pool = arq_pool
 
     async def alocar_chamada(
         self,
@@ -110,6 +113,17 @@ class AlocacaoChamadaService:
                 command.atendimento_id,
             )
             raise
+
+        # 3. Schedule deterministic 45s ring timeout in background worker (RN02)
+        if self._arq_pool is not None:
+            await self._arq_pool.enqueue_job(
+                "resolver_ring_timeout_task",
+                organizacao_id=command.organizacao_id,
+                atendimento_id=str(command.atendimento_id),
+                medico_id=str(command.medico_id),
+                _defer_by=timedelta(seconds=command.ttl_segundos),
+                _job_id=f"ring_timeout:{command.atendimento_id}",
+            )
 
         logger.info(
             "Call allocated successfully: medico=%s, atendimento=%s (org=%d)",

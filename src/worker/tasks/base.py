@@ -1,4 +1,4 @@
-"""Worker background tasks and unhandled failure telemetry."""
+"""Worker base tasks and unhandled failure telemetry."""
 
 import functools
 import logging
@@ -46,7 +46,16 @@ def monitored_task[**P, R](
             return await func(ctx, *args, **kwargs)
         except Exception as exc:
             job_id = str(ctx.get("job_id", "unknown"))
-            await on_job_failure(ctx, job_id, exc)
+            import sys
+
+            tasks_pkg = sys.modules.get("src.worker.tasks")
+            if (
+                tasks_pkg is not None
+                and getattr(tasks_pkg, "on_job_failure", None) is not on_job_failure
+            ):
+                await tasks_pkg.on_job_failure(ctx, job_id, exc)
+            else:
+                await on_job_failure(ctx, job_id, exc)
             raise
 
     return wrapper

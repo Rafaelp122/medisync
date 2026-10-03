@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 from arq.connections import RedisSettings
 from arq.typing import WorkerCoroutine
@@ -11,7 +11,11 @@ from arq.worker import Function, func
 from src.core.config import get_settings
 from src.core.database import async_session_factory, engine
 from src.core.valkey import close_valkey_pool, get_valkey_pool
-from src.worker.tasks import on_job_failure, ping_task
+from src.worker.tasks import (
+    on_job_failure,
+    ping_task,
+    resolver_ring_timeout_task,
+)
 
 logger = logging.getLogger("medisync.worker")
 
@@ -55,7 +59,11 @@ class WorkerSettings:
     _app_settings = get_settings()
 
     functions: Sequence[Function | WorkerCoroutine] = [
-        func(ping_task)  # pyright: ignore[reportArgumentType]
+        func(cast("Any", ping_task)),
+        func(
+            cast("Any", resolver_ring_timeout_task),
+            name="resolver_ring_timeout_task",
+        ),
     ]
     cron_jobs: None = None
     on_startup = staticmethod(startup)

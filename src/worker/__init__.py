@@ -14,7 +14,12 @@ from src.worker.settings import (
     shutdown,
     startup,
 )
-from src.worker.tasks import monitored_task, on_job_failure, ping_task
+from src.worker.tasks import (
+    monitored_task,
+    on_job_failure,
+    ping_task,
+    resolver_ring_timeout_task,
+)
 
 __all__ = [
     "WorkerSettings",
@@ -28,6 +33,7 @@ __all__ = [
     "monitored_task",
     "on_job_failure",
     "ping_task",
+    "resolver_ring_timeout_task",
     "shutdown",
     "startup",
 ]

@@ -50,6 +50,9 @@ async def get_db_session_from_ctx(
 
 def get_valkey_from_ctx(ctx: dict[str, Any]) -> Redis:
     """Retrieve asynchronous Redis/Valkey client reusing context connection pool."""
+    client = ctx.get("valkey_client")
+    if client is not None:
+        return cast("Redis", client)
     pool = ctx.get("valkey_pool")
     if pool is not None:
         return Redis(connection_pool=cast("ConnectionPool", pool))
