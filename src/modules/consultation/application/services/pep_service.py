@@ -18,6 +18,11 @@ from src.modules.consultation.application.dtos import (
     RegistrarEvolucaoSOAPCommand,
     TMAStatusDTO,
 )
+from src.modules.consultation.application.ports.pdf_generator_port import (
+    DocumentoItemPDFDTO,
+    DocumentoPDFPayload,
+    PDFGeneratorPort,
+)
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     ConsultaInvalidaError,
@@ -41,8 +46,19 @@ _STATUS_TERMINAIS = frozenset({"CONCLUIDO", "PACIENTE_AUSENTE", "CANCELADO_PACIE
 class PEPService:
     """Application service for Electronic Health Record (PEP) and SOAP workflow."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        pdf_generator: PDFGeneratorPort | None = None,
+    ) -> None:
         self._session = session
+        if pdf_generator is None:
+            from src.modules.consultation.infrastructure.pdf_generator import (
+                ReportLabPDFGenerator,
+            )
+
+            pdf_generator = ReportLabPDFGenerator()
+        self._pdf_generator = pdf_generator
 
     async def _verificar_atendimento_finalizado(self, atendimento_id: UUID) -> bool:
         """Check whether the underlying attendance reached terminal status in DB."""
@@ -327,3 +343,145 @@ class PEPService:
             documentos=documentos,
             is_finalizado=is_finalizado,
         )
+
+    async def compilar_documento_pdf(self, documento_id: UUID) -> bytes:
+        """Compile PDF/A binary with ITI verification QR Code."""
+        stmt = (
+            select(DocumentoClinico)
+            .where(DocumentoClinico.id == documento_id)
+            .options(selectinload(DocumentoClinico.itens))
+        )
+        res = await self._session.execute(stmt)
+        doc = res.scalar_one_or_none()
+        if doc is None:
+            raise ConsultaInvalidaError(
+                f"Documento clínico '{documento_id}' não encontrado."
+            )
+
+        org_nome = "MediSync Pronto-Atendimento Virtual"
+        org_cnpj: str | None = None
+        org_cnes: str | None = None
+        org_end: str | None = None
+        org_tel: str | None = None
+
+        with contextlib.suppress(Exception):
+            org_res = await self._session.execute(
+                text(
+                    "SELECT razao_social, nome_fantasia, cnpj, cnes, "
+                    "endereco, telefone FROM organizacoes WHERE id = :org_id"
+                ),
+                {"org_id": doc.organizacao_id},
+            )
+            org_row = org_res.mappings().first()
+            if org_row:
+                org_nome = str(
+                    org_row.get("nome_fantasia")
+                    or org_row.get("razao_social")
+                    or org_nome
+                )
+                org_cnpj = str(org_row.get("cnpj")) if org_row.get("cnpj") else None
+                org_cnes = str(org_row.get("cnes")) if org_row.get("cnes") else None
+                org_end = (
+                    str(org_row.get("endereco")) if org_row.get("endereco") else None
+                )
+                org_tel = (
+                    str(org_row.get("telefone")) if org_row.get("telefone") else None
+                )
+
+        medico_nome = "Médico Assistente"
+        medico_crm = "00000"
+        medico_crm_uf = "BR"
+        medico_rqe: str | None = None
+
+        with contextlib.suppress(Exception):
+            med_res = await self._session.execute(
+                text(
+                    "SELECT nome, crm, crm_uf, rqe "
+                    "FROM profissionais WHERE id = :med_id"
+                ),
+                {"med_id": doc.medico_id},
+            )
+            med_row = med_res.mappings().first()
+            if med_row:
+                medico_nome = str(med_row.get("nome") or medico_nome)
+                medico_crm = str(med_row.get("crm") or medico_crm)
+                medico_crm_uf = str(med_row.get("crm_uf") or medico_crm_uf)
+                medico_rqe = str(med_row.get("rqe")) if med_row.get("rqe") else None
+
+        paciente_nome = "Paciente"
+        paciente_cpf = "000.000.000-00"
+        paciente_nasc: str | None = None
+        paciente_end: str | None = None
+
+        with contextlib.suppress(Exception):
+            pac_res = await self._session.execute(
+                text(
+                    "SELECT p.nome_completo, p.cpf, p.data_nascimento, p.endereco "
+                    "FROM atendimentos a "
+                    "JOIN pacientes p ON a.paciente_id = p.id "
+                    "WHERE a.id = :atend_id"
+                ),
+                {"atend_id": doc.atendimento_id},
+            )
+            pac_row = pac_res.mappings().first()
+            if pac_row:
+                paciente_nome = str(pac_row.get("nome_completo") or paciente_nome)
+                paciente_cpf = str(pac_row.get("cpf") or paciente_cpf)
+                data_n = pac_row.get("data_nascimento")
+                if data_n is not None:
+                    paciente_nasc = (
+                        data_n.strftime("%d/%m/%Y")  # pyright: ignore[reportAttributeAccessIssue]
+                        if hasattr(data_n, "strftime")
+                        else str(data_n)
+                    )
+                paciente_end = (
+                    str(pac_row.get("endereco")) if pac_row.get("endereco") else None
+                )
+
+        cid10: str | None = None
+        with contextlib.suppress(Exception):
+            ev_res = await self._session.execute(
+                text(
+                    "SELECT cid10_principal FROM evolucoes_clinicas "
+                    "WHERE atendimento_id = :atend_id"
+                ),
+                {"atend_id": doc.atendimento_id},
+            )
+            cid10_val = ev_res.scalar_one_or_none()
+            if cid10_val:
+                cid10 = str(cid10_val)
+
+        itens_pdf = [
+            DocumentoItemPDFDTO(
+                medicamento=it.medicamento,
+                dosagem=it.dosagem,
+                posologia=it.posologia,
+                duracao=it.duracao,
+                controle_especial=it.controle_especial,
+            )
+            for it in doc.itens
+        ]
+
+        payload = DocumentoPDFPayload(
+            documento_id=doc.id,
+            tipo_documento=doc.tipo_documento,
+            data_emissao=doc.assinado_em,
+            organizacao_nome=org_nome,
+            organizacao_cnpj=org_cnpj,
+            organizacao_cnes=org_cnes,
+            organizacao_endereco=org_end,
+            organizacao_telefone=org_tel,
+            medico_nome=medico_nome,
+            medico_crm=medico_crm,
+            medico_crm_uf=medico_crm_uf,
+            medico_rqe=medico_rqe,
+            paciente_nome=paciente_nome,
+            paciente_cpf=paciente_cpf,
+            paciente_data_nascimento=paciente_nasc,
+            paciente_endereco=paciente_end,
+            itens=itens_pdf,
+            cid10=cid10,
+            sha256_hash=doc.sha256_hash,
+        )
+
+        return self._pdf_generator.gerar_pdf(payload)

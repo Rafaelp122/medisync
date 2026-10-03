@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,7 @@ from src.modules.consultation.application.dtos import (
     RegistrarEvolucaoSOAPCommand,
 )
 from src.modules.consultation.application.services.pep_service import PEPService
+from src.modules.consultation.domain.exceptions import ConsultaInvalidaError
 
 consultation_router = APIRouter(tags=["teleconsulta-pep"])
 
@@ -416,4 +417,50 @@ async def obter_tma_status(
         tma_planejado_segundos=tma_dto.tma_planejado_segundos,
         excedeu_tma=tma_dto.excedeu_tma,
         aviso_visual=tma_dto.aviso_visual,
+    )
+
+
+@consultation_router.get(
+    "/consultations/{atendimento_id}/documents/{documento_id}/pdf",
+    summary="Download do documento clínico compilado em padrão PDF/A com QR Code",
+    status_code=status.HTTP_200_OK,
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "Arquivo PDF/A válido com QR Code",
+        },
+        404: {"description": "Documento não encontrado"},
+    },
+)
+@consultation_router.get(
+    "/api/v1/consultations/{atendimento_id}/documents/{documento_id}/pdf",
+    include_in_schema=False,
+    response_class=Response,
+)
+async def obter_documento_pdf(
+    atendimento_id: Annotated[
+        UUID, Path(description="Identificador único do atendimento")
+    ],
+    documento_id: Annotated[
+        UUID, Path(description="Identificador único do documento clínico")
+    ],
+    session: SessionDep,
+) -> Response:
+    """Retorna o documento clínico compilado em PDF/A com QR Code de verificação."""
+    pep_service = PEPService(session)
+    try:
+        pdf_bytes = await pep_service.compilar_documento_pdf(documento_id)
+    except ConsultaInvalidaError as err:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(err)
+        ) from err
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{documento_id}.pdf"',
+            "Content-Type": "application/pdf",
+        },
     )

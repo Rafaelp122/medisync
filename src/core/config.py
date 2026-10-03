@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     NOTIFICATION_RATE_LIMIT_REFILL_RATE: float = 0.05
     NOTIFICATION_RATE_LIMIT_TTL_SECONDS: int = 3600
 
+    # --- Clinical Documents & PDF Validation (CFM 2.314/2022) ---
+    DOCUMENTS_VALIDATION_URL_PREFIX: str = "https://medisync.app/validar"
+
     @computed_field  # pyright: ignore[reportUntypedFunctionDecorator]
     @property
     def async_database_url(self) -> str:
