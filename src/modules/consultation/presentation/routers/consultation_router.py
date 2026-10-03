@@ -21,6 +21,7 @@ from src.modules.consultation.application.ports.icp_brasil_signer_port import (
 )
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.domain.exceptions import ConsultaInvalidaError
+from src.modules.consultation.presentation.dependencies import ClinicalAccessDep
 
 consultation_router = APIRouter(tags=["teleconsulta-pep"])
 
@@ -158,6 +159,17 @@ class DocumentoClinicoResponse(BaseModel):
     itens: list[ItemPrescricaoResponse]
 
 
+class ProntuarioResponse(BaseModel):
+    """Aggregated clinical record protected by Tier 1 and Tier 3 authorization."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    atendimento_id: UUID
+    is_finalizado: bool
+    evolucao: EvolucaoSOAPResponse | None = None
+    documentos: list[DocumentoClinicoResponse] = Field(default_factory=list)
+
+
 class AssinarDocumentoRequest(BaseModel):
     """Payload to authorize digital signature via cloud PSC."""
 
@@ -285,6 +297,84 @@ async def obter_evolucao_soap(
         conduta=evolucao.conduta,
         registrado_em=evolucao.registrado_em,
         is_finalizado=evolucao.is_finalizado,
+    )
+
+
+@consultation_router.get(
+    "/consultations/{atendimento_id}/prontuario",
+    response_model=ProntuarioResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Acesso ao prontuário médico protegido por RBAC e ABAC clínico",
+)
+@consultation_router.get(
+    "/atendimentos/{atendimento_id}/prontuario",
+    response_model=ProntuarioResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+async def obter_prontuario_protegido(
+    atendimento_id: Annotated[
+        UUID, Path(description="Identificador único do atendimento")
+    ],
+    _user: ClinicalAccessDep,
+    session: SessionDep,
+) -> ProntuarioResponse:
+    """Retorna o prontuário eletrônico mediante verificação em 3 camadas:
+    1. Camada 1 (Macro RBAC): papel MEDICO.
+    2. Camada 2 (RLS): isolamento de tenant.
+    3. Camada 3 (ABAC Clínico): médico assistente + TCLE assinado + status ativo.
+    """
+    service = PEPService(session)
+    resumo = await service.obter_prontuario(atendimento_id)
+
+    evolucao_resp: EvolucaoSOAPResponse | None = None
+    if resumo.evolucao is not None:
+        ev = resumo.evolucao
+        evolucao_resp = EvolucaoSOAPResponse(
+            id=ev.id,
+            atendimento_id=ev.atendimento_id,
+            organizacao_id=ev.organizacao_id,
+            medico_id=ev.medico_id,
+            anamnese=ev.anamnese,
+            exame_fisico_virtual=ev.exame_fisico_virtual,
+            cid10_principal=ev.cid10_principal,
+            conduta=ev.conduta,
+            registrado_em=ev.registrado_em,
+            is_finalizado=ev.is_finalizado,
+        )
+
+    documentos_resp: list[DocumentoClinicoResponse] = []
+    for doc in resumo.documentos:
+        documentos_resp.append(
+            DocumentoClinicoResponse(
+                id=doc.id,
+                atendimento_id=doc.atendimento_id,
+                organizacao_id=doc.organizacao_id,
+                medico_id=doc.medico_id,
+                tipo_documento=doc.tipo_documento,
+                chave_s3=doc.chave_s3,
+                sha256_hash=doc.sha256_hash,
+                assinado_em=doc.assinado_em,
+                is_finalizado=doc.is_finalizado,
+                itens=[
+                    ItemPrescricaoResponse(
+                        id=item.id,
+                        medicamento=item.medicamento,
+                        dosagem=item.dosagem,
+                        posologia=item.posologia,
+                        duracao=item.duracao,
+                        controle_especial=item.controle_especial,
+                    )
+                    for item in doc.itens
+                ],
+            )
+        )
+
+    return ProntuarioResponse(
+        atendimento_id=atendimento_id,
+        is_finalizado=resumo.is_finalizado,
+        evolucao=evolucao_resp,
+        documentos=documentos_resp,
     )
 
 
