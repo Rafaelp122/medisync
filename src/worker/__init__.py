@@ -18,6 +18,7 @@ from src.worker.tasks import (
     monitored_task,
     on_job_failure,
     ping_task,
+    reconciliar_fila_orphans_task,
     resolver_ring_timeout_task,
 )
 
@@ -33,6 +34,7 @@ __all__ = [
     "monitored_task",
     "on_job_failure",
     "ping_task",
+    "reconciliar_fila_orphans_task",
     "resolver_ring_timeout_task",
     "shutdown",
     "startup",

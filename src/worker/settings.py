@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from arq.connections import RedisSettings
+from arq.cron import CronJob, cron
 from arq.typing import WorkerCoroutine
 from arq.worker import Function, func
 
@@ -14,6 +15,7 @@ from src.core.valkey import close_valkey_pool, get_valkey_pool
 from src.worker.tasks import (
     on_job_failure,
     ping_task,
+    reconciliar_fila_orphans_task,
     resolver_ring_timeout_task,
 )
 
@@ -64,8 +66,19 @@ class WorkerSettings:
             cast("Any", resolver_ring_timeout_task),
             name="resolver_ring_timeout_task",
         ),
+        func(
+            cast("Any", reconciliar_fila_orphans_task),
+            name="reconciliar_fila_orphans_task",
+        ),
     ]
-    cron_jobs: None = None
+    cron_jobs: Sequence[CronJob] = [
+        cron(
+            cast("Any", reconciliar_fila_orphans_task),
+            second=0,
+            run_at_startup=False,
+            name="reconciliar_fila_orphans_cron",
+        ),
+    ]
     on_startup = staticmethod(startup)
     on_shutdown = staticmethod(shutdown)
     on_job_failure = staticmethod(on_job_failure)

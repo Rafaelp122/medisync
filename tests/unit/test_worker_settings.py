@@ -42,13 +42,21 @@ def test_worker_settings_attributes() -> None:
     assert WorkerSettings.health_check_key == "medisync:worker:health"
     assert WorkerSettings.health_check_interval == 10
     assert WorkerSettings.handle_signals is True
-    assert len(WorkerSettings.functions) == 2
+    assert len(WorkerSettings.functions) == 3
     func_names: list[str] = [
         str(getattr(f, "name", getattr(f, "__name__", "")))
         for f in WorkerSettings.functions
     ]
     assert "ping_task" in func_names
     assert "resolver_ring_timeout_task" in func_names
+    assert "reconciliar_fila_orphans_task" in func_names
+
+    assert WorkerSettings.cron_jobs is not None
+    assert len(WorkerSettings.cron_jobs) == 1
+    cron_names: list[str] = [
+        str(getattr(c, "name", "")) for c in WorkerSettings.cron_jobs
+    ]
+    assert any("reconciliar_fila_orphans" in name for name in cron_names)
 
 
 @pytest.mark.asyncio
