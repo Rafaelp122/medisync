@@ -3,8 +3,6 @@
 from collections.abc import Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from redis.asyncio import Redis
-
 
 @runtime_checkable
 class LuaScriptPort(Protocol):
@@ -12,7 +10,7 @@ class LuaScriptPort(Protocol):
 
     async def execute_script(
         self,
-        client: Redis,
+        client: Any,
         script_name: str,
         keys: Sequence[str] = (),
         args: Sequence[Any] = (),

@@ -41,16 +41,23 @@ def get_notification_adapter() -> NotificationPort | None:
     return LoggingNotificationAdapter()
 
 
-def get_alocacao_service(
-    valkey: ValkeyDep, session: DbSessionDep
+def build_alocacao_service_for_session(
+    valkey: Redis, session: AsyncSession
 ) -> AlocacaoChamadaService:
-    """Build allocation service with mandatory Lua port wired."""
+    """Build allocation service outside request scope (tests/worker tooling)."""
     return AlocacaoChamadaService(
         valkey=valkey,
         db_session=session,
         lua_manager=get_lua_manager(),
         notification_adapter=get_notification_adapter(),
     )
+
+
+def get_alocacao_service(
+    valkey: ValkeyDep, session: DbSessionDep
+) -> AlocacaoChamadaService:
+    """Build allocation service with mandatory Lua port wired."""
+    return build_alocacao_service_for_session(valkey, session)
 
 
 AlocacaoServiceDep = Annotated[AlocacaoChamadaService, Depends(get_alocacao_service)]
@@ -72,15 +79,3 @@ def get_fila_service(valkey: ValkeyDep, session: DbSessionDep) -> FilaService:
 
 
 FilaServiceDep = Annotated[FilaService, Depends(get_fila_service)]
-
-
-def build_alocacao_service_for_session(
-    valkey: Redis, session: AsyncSession
-) -> AlocacaoChamadaService:
-    """Build allocation service outside request scope (tests/worker tooling)."""
-    return AlocacaoChamadaService(
-        valkey=valkey,
-        db_session=session,
-        lua_manager=get_lua_manager(),
-        notification_adapter=get_notification_adapter(),
-    )
