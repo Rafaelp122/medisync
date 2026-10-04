@@ -313,6 +313,11 @@ src/
 > **Prefixo de rotas**: HTTP sob `/api/v1` (`src/main.py`: `APIRouter(prefix="/api/v1")`
 > monta `auth/onboarding/pacientes/consultations/documents`); WebSockets de sinalização
 > (`/ws/queue/{id}`, `/ws/doctor/{id}`) fora do prefixo, montados direto no `app`.
+>
+> **Breakings routers finos**: alias `/atendimentos/{id}/prontuario` removido (usar
+> `/api/v1/consultations/{id}/prontuario`); tenant ausente `400 TENANT_INVALIDO`, login sem
+> tenant `422`, validação órfã `500 DOCUMENTO_INTEGRIDADE`; rate por IP `validate` 30/min +
+> `download` 20/min (`429`+`Retry-After`); novos `EVOLUCAO_NAO_ENCONTRADA` / `DOCUMENTO_CLINICO_NAO_ENCONTRADO` (`404`).
 
 ---
 
