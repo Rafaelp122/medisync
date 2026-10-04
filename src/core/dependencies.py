@@ -5,19 +5,15 @@ from typing import Annotated
 from fastapi import Depends
 
 from src.core.context import get_current_tenant_id
-from src.core.errors import BadRequestError
+from src.core.errors import TenantInvalidoError
 
-
-class TenantInvalidoError(BadRequestError):
-    """Raised when tenant context is missing or non-positive."""
-
-    title = "Organização Inválida"
-    code = "TENANT_INVALIDO"
-
-    def __init__(
-        self, detail: str = "Header X-Tenant-ID obrigatório e positivo."
-    ) -> None:
-        super().__init__(detail, title=self.title, code=self.code)
+__all__ = [
+    "OptionalTenantDep",
+    "TenantDep",
+    "TenantInvalidoError",
+    "get_optional_tenant_id",
+    "get_required_tenant_id",
+]
 
 
 async def get_required_tenant_id() -> int:

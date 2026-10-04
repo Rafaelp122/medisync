@@ -45,3 +45,6 @@ async def test_soap_body_organizacao_divergente_retorna_403() -> None:
             },
         )
     assert resp.status_code == 403
+    body = resp.json()
+    assert body["code"] == "FORBIDDEN"
+    assert body["status"] == 403

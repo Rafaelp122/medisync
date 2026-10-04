@@ -1,10 +1,10 @@
 """Domain exceptions for the identity and onboarding module."""
 
-from src.core.dependencies import TenantInvalidoError
 from src.core.errors import (
     BadRequestError,
     ConflictError,
     NotFoundError,
+    TenantInvalidoError,
     UnauthorizedError,
     ValidationError,
 )

@@ -108,6 +108,18 @@ class ValidationError(DomainError):
     code: str = "VALIDATION_ERROR"
 
 
+class TenantInvalidoError(BadRequestError):
+    """Raised when tenant context is missing or non-positive."""
+
+    title = "Organização Inválida"
+    code = "TENANT_INVALIDO"
+
+    def __init__(
+        self, detail: str = "Header X-Tenant-ID obrigatório e positivo."
+    ) -> None:
+        super().__init__(detail, title=self.title, code=self.code)
+
+
 def create_problem_response(
     status: int,
     title: str,
