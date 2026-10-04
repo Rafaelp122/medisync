@@ -307,16 +307,11 @@ async def assinar_documento(
         provider=payload.provider,
         certificate_alias=payload.certificate_alias,
     )
-    try:
-        doc, signed_bytes = await service.assinar_documento_clinico(
-            documento_id=documento_id,
-            atendimento_id=atendimento_id,
-            credenciais=creds,
-        )
-    except ConsultaInvalidaError as err:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(err)
-        ) from err
+    doc, signed_bytes = await service.assinar_documento_clinico(
+        documento_id=documento_id,
+        atendimento_id=atendimento_id,
+        credenciais=creds,
+    )
 
     return AssinarDocumentoResponse(
         documento_id=doc.id,
