@@ -17,7 +17,7 @@ from src.modules.consultation.application.dtos import (
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
 )
-from src.modules.consultation.application.services.pep_service import PEPService
+from src.modules.consultation.composition import PEPServiceDep
 from src.modules.consultation.domain.exceptions import ConsultaInvalidaError
 from src.modules.consultation.presentation.dependencies import (
     AtendimentoIdPath,
@@ -59,12 +59,12 @@ def _require_matching_tenant(provided: int | None, tenant_id: int) -> int:
 async def salvar_evolucao_soap(
     atendimento_id: AtendimentoIdPath,
     request: RegistrarSOAPRequest,
+    service: PEPServiceDep,
     session: DbSessionDep,
     tenant_id: TenantDep,
 ) -> EvolucaoSOAPResponse:
     """Registra ou atualiza Subjetivo, Objetivo, Avaliação e Plano no PEP."""
     org_id = _require_matching_tenant(request.organizacao_id, tenant_id)
-    service = PEPService(session)
     command = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
         organizacao_id=org_id,
@@ -89,10 +89,9 @@ async def salvar_evolucao_soap(
 )
 async def obter_evolucao_soap(
     atendimento_id: AtendimentoIdPath,
-    session: DbSessionDep,
+    service: PEPServiceDep,
 ) -> EvolucaoSOAPResponse:
     """Retorna as notas SOAP atuais do atendimento."""
-    service = PEPService(session)
     resumo = await service.obter_prontuario(atendimento_id)
     if resumo.evolucao is None:
         raise HTTPException(
@@ -111,14 +110,13 @@ async def obter_evolucao_soap(
 async def obter_prontuario_protegido(
     atendimento_id: AtendimentoIdPath,
     _user: ClinicalAccessDep,
-    session: DbSessionDep,
+    service: PEPServiceDep,
 ) -> ProntuarioResponse:
     """Retorna o prontuário eletrônico mediante verificação em 3 camadas:
     1. Camada 1 (Macro RBAC): papel MEDICO.
     2. Camada 2 (RLS): isolamento de tenant.
     3. Camada 3 (ABAC Clínico): médico assistente + TCLE assinado + status ativo.
     """
-    service = PEPService(session)
     resumo = await service.obter_prontuario(atendimento_id)
 
     evolucao_resp: EvolucaoSOAPResponse | None = None
@@ -145,10 +143,9 @@ async def obter_prontuario_protegido(
 async def validar_prescricao_medicamento(
     atendimento_id: AtendimentoIdPath,
     request: ValidarPrescricaoRequest,
-    session: DbSessionDep,
+    service: PEPServiceDep,
 ) -> dict[str, str]:
     """Verifica se o medicamento exige talonário físico (Listas A/B)."""
-    service = PEPService(session)
     service.validar_prescricao(request.medicamento)
     return {
         "status": "PERMITIDO",
@@ -166,12 +163,12 @@ async def validar_prescricao_medicamento(
 async def emitir_documento_clinico(
     atendimento_id: AtendimentoIdPath,
     request: EmitirDocumentoRequest,
+    service: PEPServiceDep,
     session: DbSessionDep,
     tenant_id: TenantDep,
 ) -> DocumentoClinicoResponse:
     """Emite receita ou atestado aplicando salvaguardas da Portaria 344/98."""
     org_id = _require_matching_tenant(request.organizacao_id, tenant_id)
-    service = PEPService(session)
 
     itens_dto = [
         CriarItemPrescricaoDTO(
@@ -209,12 +206,12 @@ async def emitir_documento_clinico(
 async def finalizar_consulta(
     atendimento_id: AtendimentoIdPath,
     request: FinalizarConsultaRequest,
+    service: PEPServiceDep,
     session: DbSessionDep,
     tenant_id: TenantDep,
 ) -> dict[str, object]:
     """Finaliza teleconsulta travando edição e exclusão de evolução e documentos."""
     org_id = _require_matching_tenant(request.organizacao_id, tenant_id)
-    service = PEPService(session)
     cmd = FinalizarConsultaCommand(
         atendimento_id=atendimento_id,
         organizacao_id=org_id,
@@ -241,7 +238,7 @@ async def finalizar_consulta(
 )
 async def obter_tma_status(
     atendimento_id: AtendimentoIdPath,
-    session: DbSessionDep,
+    service: PEPServiceDep,
     iniciado_em: Annotated[
         datetime | None,
         Query(description="Data e hora de início do atendimento (UTC)"),
@@ -256,7 +253,6 @@ async def obter_tma_status(
     ] = 900,
 ) -> TMAStatusResponse:
     """Calcula telemetria de TMA respeitando a soberania médica (RN06)."""
-    service = PEPService(session)
     inicio = iniciado_em or datetime.now(UTC)
     tma_dto = service.calcular_tma_status(
         atendimento_id=atendimento_id,
@@ -282,12 +278,11 @@ async def obter_tma_status(
 async def obter_documento_pdf(
     atendimento_id: AtendimentoIdPath,
     documento_id: DocumentoIdPath,
-    session: DbSessionDep,
+    service: PEPServiceDep,
 ) -> Response:
     """Retorna o documento clínico compilado em PDF/A com QR Code de verificação."""
-    pep_service = PEPService(session)
     try:
-        pdf_bytes = await pep_service.compilar_documento_pdf(documento_id)
+        pdf_bytes = await service.compilar_documento_pdf(documento_id)
     except ConsultaInvalidaError as err:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(err)
@@ -313,10 +308,10 @@ async def assinar_documento(
     atendimento_id: AtendimentoIdPath,
     documento_id: DocumentoIdPath,
     payload: AssinarDocumentoRequest,
+    service: PEPServiceDep,
     session: DbSessionDep,
 ) -> AssinarDocumentoResponse:
     """Executa a assinatura digital PAdES em nuvem via PSC (CFM 2.314/2022)."""
-    service = PEPService(session)
     creds = DoctorCertificateCredentials(
         token=payload.token,
         provider=payload.provider,

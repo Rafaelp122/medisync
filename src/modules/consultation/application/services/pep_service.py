@@ -55,33 +55,13 @@ class PEPService:
     def __init__(
         self,
         session: AsyncSession,
-        pdf_generator: PDFGeneratorPort | None = None,
-        signer: ICPBrasilSignerPort | None = None,
-        storage: StoragePort | None = None,
+        pdf_generator: PDFGeneratorPort,
+        signer: ICPBrasilSignerPort,
+        storage: StoragePort,
     ) -> None:
         self._session = session
-        if pdf_generator is None:
-            from src.modules.consultation.infrastructure.pdf_generator import (
-                ReportLabPDFGenerator,
-            )
-
-            pdf_generator = ReportLabPDFGenerator()
         self._pdf_generator = pdf_generator
-
-        if signer is None:
-            from src.modules.consultation.infrastructure.pyhanko_signer import (
-                PyHankoSigner,
-            )
-
-            signer = PyHankoSigner()
         self._signer = signer
-
-        if storage is None:
-            from src.modules.consultation.infrastructure.s3_storage import (
-                FakeStorageAdapter,
-            )
-
-            storage = FakeStorageAdapter()
         self._storage = storage
 
     @property

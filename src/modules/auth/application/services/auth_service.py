@@ -40,40 +40,14 @@ class AuthService:
     def __init__(
         self,
         session: AsyncSession,
-        hasher: PasswordHasherPort | None = None,
-        token_service: TokenServicePort | None = None,
-        rate_limiter: AuthRateLimiterPort | None = None,
+        hasher: PasswordHasherPort,
+        token_service: TokenServicePort,
+        rate_limiter: AuthRateLimiterPort,
     ) -> None:
         self._session = session
         settings = get_settings()
-
-        if hasher is None:
-            from src.modules.auth.infrastructure.argon2_hasher import (
-                Argon2PasswordHasher,
-            )
-
-            hasher = Argon2PasswordHasher()
         self._hasher = hasher
-
-        if token_service is None:
-            from src.modules.auth.infrastructure.jwt_token_service import (
-                JWTTokenService,
-            )
-
-            token_service = JWTTokenService(
-                secret_key=settings.JWT_SECRET_KEY,
-                algorithm=settings.JWT_ALGORITHM,
-                access_token_expire_minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
-                refresh_token_expire_days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS,
-            )
         self._token_service = token_service
-
-        if rate_limiter is None:
-            from src.modules.auth.infrastructure.valkey_rate_limiter import (
-                ValkeyAuthRateLimiter,
-            )
-
-            rate_limiter = ValkeyAuthRateLimiter()
         self._rate_limiter = rate_limiter
 
         self._max_attempts = settings.AUTH_RATE_LIMIT_MAX_ATTEMPTS

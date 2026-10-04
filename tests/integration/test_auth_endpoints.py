@@ -8,7 +8,7 @@ from src.core.database import async_session_factory
 from src.core.valkey import get_valkey_pool
 from src.main import app
 from src.modules.auth.application.dtos import CadastrarCredencialCommand
-from src.modules.auth.application.services.auth_service import AuthService
+from src.modules.auth.composition import get_auth_service
 
 from tests.factories.identity import make_organizacao, make_profissional
 
@@ -56,7 +56,7 @@ async def test_auth_full_lifecycle_login_me_refresh_logout() -> None:
         await session.refresh(medico)
 
         # Cadastrar credencial via AuthService
-        service = AuthService(session)
+        service = get_auth_service(session)
         await service.cadastrar_credencial(
             CadastrarCredencialCommand(
                 organizacao_id=org.id,
@@ -161,7 +161,7 @@ async def test_auth_anti_enumeration_and_lockout() -> None:
         await session.commit()
         await session.refresh(medico)
 
-        service = AuthService(session)
+        service = get_auth_service(session)
         await service.cadastrar_credencial(
             CadastrarCredencialCommand(
                 organizacao_id=org.id,
@@ -260,7 +260,7 @@ async def test_auth_cross_tenant_isolation() -> None:
         await session.commit()
         await session.refresh(medico_a)
 
-        service = AuthService(session)
+        service = get_auth_service(session)
         await service.cadastrar_credencial(
             CadastrarCredencialCommand(
                 organizacao_id=org_a.id,

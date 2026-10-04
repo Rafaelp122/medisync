@@ -3,7 +3,6 @@
 from src.modules.consultation.infrastructure.livekit_adapter import (
     FakeLiveKitAdapter,
     LiveKitAdapter,
-    get_livekit_adapter,
 )
 from src.modules.consultation.infrastructure.pdf_generator import (
     FakePDFGenerator,
@@ -29,5 +28,4 @@ __all__ = [
     "PyHankoSigner",
     "ReportLabPDFGenerator",
     "S3StorageAdapter",
-    "get_livekit_adapter",
 ]

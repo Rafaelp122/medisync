@@ -4,9 +4,7 @@ from fastapi import APIRouter, status
 
 from src.core.database import DbSessionDep
 from src.core.dependencies import TenantDep
-from src.modules.identity.application.services.onboarding_service import (
-    OnboardingService,
-)
+from src.modules.identity.composition import OnboardingServiceDep
 from src.modules.identity.presentation.schemas import (
     Fase1Request,
     Fase1Response,
@@ -34,9 +32,9 @@ async def intake_fase_1(
     body: Fase1Request,
     tenant_id: TenantDep,
     session: DbSessionDep,
+    service: OnboardingServiceDep,
 ) -> Fase1Response:
     """Execute Phase 1 rapid intake."""
-    service = OnboardingService()
     result = await service.realizar_fase_1(session, tenant_id, body)
     return Fase1Response.model_validate(result)
 
@@ -55,8 +53,8 @@ async def enrichment_fase_2(
     body: Fase2Request,
     tenant_id: TenantDep,
     session: DbSessionDep,
+    service: OnboardingServiceDep,
 ) -> Fase2Response:
     """Execute Phase 2 regulatory enrichment."""
-    service = OnboardingService()
     result = await service.realizar_fase_2(session, tenant_id, body)
     return Fase2Response.model_validate(result)

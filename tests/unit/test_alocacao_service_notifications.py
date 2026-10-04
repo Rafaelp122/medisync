@@ -11,11 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.notifications import LoggingNotificationAdapter, NotificationPort
 from src.core.uuid7 import uuid7
 from src.modules.queue.application.dtos import AlocarChamadaCommand
+from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
 from src.modules.queue.domain.models import Atendimento, StatusAtendimento
-from src.modules.queue.infrastructure.lua_loader import LuaScriptManager
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ def mock_session() -> AsyncMock:
 
 @pytest.fixture
 def mock_lua_manager() -> AsyncMock:
-    return AsyncMock(spec=LuaScriptManager)
+    return AsyncMock(spec=LuaScriptPort)
 
 
 @pytest.mark.asyncio

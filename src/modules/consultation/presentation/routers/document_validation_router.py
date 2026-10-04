@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from src.core.database import DbSessionDep
 from src.modules.consultation.application.services.pep_service import PEPService
+from src.modules.consultation.composition import PEPServiceDep
 from src.modules.consultation.domain.models import DocumentoClinico
 from src.modules.consultation.presentation.schemas import (
     ItemValidacaoResponse,
@@ -71,6 +72,7 @@ async def validar_documento(
         str, Path(description="Token de validação ou UUID do documento clínico")
     ],
     session: DbSessionDep,
+    service: PEPServiceDep,
 ) -> ValidarDocumentoResponse:
     """Consulta pública da autenticidade e integridade do documento clínico.
 
@@ -136,7 +138,6 @@ async def validar_documento(
         paciente_nome_mascarado = mascarar_nome(raw_nome)
         paciente_cpf_mascarado = mascarar_cpf(raw_cpf)
 
-    service = PEPService(session)
     is_assinado = service.is_documento_assinado(doc)
     status_doc = "ASSINADO" if is_assinado else "EMITIDO"
 
@@ -176,6 +177,7 @@ async def download_documento_presigned(
         str, Path(description="Token de validação ou UUID do documento clínico")
     ],
     session: DbSessionDep,
+    service: PEPServiceDep,
     redirect: Annotated[
         bool,
         Query(
@@ -207,7 +209,6 @@ async def download_documento_presigned(
             detail="Documento clínico não encontrado ou token inválido.",
         )
 
-    service = PEPService(session)
     s3_key = doc.chave_s3
     if not s3_key:
         s3_key = (

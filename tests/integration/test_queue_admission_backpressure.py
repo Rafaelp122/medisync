@@ -21,6 +21,9 @@ from src.modules.queue.application.dtos import (
 from src.modules.queue.application.ports.queue_overflow_notifier import (
     QueueOverflowEvent,
 )
+from src.modules.queue.application.services.alocacao_service import (
+    AlocacaoChamadaService,
+)
 from src.modules.queue.application.services.controle_admissao_service import (
     ControleAdmissaoService,
 )
@@ -29,6 +32,7 @@ from src.modules.queue.domain.exceptions import AdmissaoFilaSuspensaError
 from src.modules.queue.domain.models import (
     PrioridadeClinica,
 )
+from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 
 from tests.factories.identity import (
     make_organizacao,
@@ -106,9 +110,15 @@ async def test_acceptance_criteria_backpressure_rejection_and_queue_preservation
 
             # Ingest 5 existing patients into the queue
             controle = ControleAdmissaoService(valkey=valkey, notifier=spy_notifier)
+            alocacao = AlocacaoChamadaService(
+                valkey=valkey,
+                db_session=session,
+                lua_manager=get_lua_script_manager(),
+            )
             service = FilaService(
                 valkey=valkey,
                 db_session=session,
+                alocacao_service=alocacao,
                 controle_admissao=controle,
             )
 

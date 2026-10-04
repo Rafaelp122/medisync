@@ -9,10 +9,10 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from src.core.config import get_settings
 from src.main import app
+from src.modules.consultation.composition import get_livekit_adapter
 from src.modules.consultation.infrastructure.livekit_adapter import (
     FakeLiveKitAdapter,
     LiveKitAdapter,
-    get_livekit_adapter,
 )
 
 

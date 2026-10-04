@@ -9,7 +9,7 @@ from src.modules.consultation.application.ports.livekit_media_port import (
     build_participant_identity,
     build_room_name,
 )
-from src.modules.consultation.infrastructure.livekit_adapter import get_livekit_adapter
+from src.modules.consultation.composition import get_livekit_adapter
 from src.modules.consultation.presentation.dependencies import AtendimentoIdPath
 from src.modules.consultation.presentation.schemas import (
     LiveKitTokenRequest,

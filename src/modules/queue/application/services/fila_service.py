@@ -75,10 +75,7 @@ class FilaService:
     ) -> None:
         self._valkey = valkey
         self._db_session = db_session
-        self._alocacao_service = alocacao_service or AlocacaoChamadaService(
-            valkey=valkey,
-            db_session=db_session,
-        )
+        self._alocacao_service = alocacao_service
         self._controle_admissao = controle_admissao or ControleAdmissaoService(
             valkey=valkey
         )
@@ -154,6 +151,7 @@ class FilaService:
     ) -> AlocacaoChamadaResult | None:
         """Acquires next most urgent patient with in-memory retry on code -1."""
         k_fila = f"fila:{command.organizacao_id}:aptos"
+        alocacao = self._alocacao_service
 
         for attempt in range(command.max_retries):
             # Query top element in ZSET (O(log N))
@@ -165,6 +163,12 @@ class FilaService:
                     command.medico_id,
                 )
                 return None
+
+            if alocacao is None:
+                raise RuntimeError(
+                    "AlocacaoChamadaService não injetado em FilaService; "
+                    "resolva via queue composition get_fila_service."
+                )
 
             candidate_raw = raw_elements[0]
             candidate_id_str = (
@@ -181,7 +185,7 @@ class FilaService:
                     atendimento_id=candidate_uuid,
                     ttl_segundos=command.ttl_segundos,
                 )
-                return await self._alocacao_service.alocar_chamada(alocar_cmd)
+                return await alocacao.alocar_chamada(alocar_cmd)
             except MedicoOcupadoError:
                 # Doctor is already locked with an active call -> fail immediately
                 logger.warning(

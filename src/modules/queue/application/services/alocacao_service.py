@@ -17,6 +17,7 @@ from src.modules.queue.application.dtos import (
     AlocacaoChamadaResult,
     AlocarChamadaCommand,
 )
+from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
 from src.modules.queue.application.ports.notification_port import NotificationPort
 from src.modules.queue.domain.exceptions import (
     AtendimentoNaoDisponivelError,
@@ -24,10 +25,6 @@ from src.modules.queue.domain.exceptions import (
     MedicoOcupadoError,
 )
 from src.modules.queue.domain.models import Atendimento
-from src.modules.queue.infrastructure.lua_loader import (
-    LuaScriptManager,
-    get_lua_script_manager,
-)
 
 logger = logging.getLogger("medisync.queue.alocacao")
 
@@ -39,13 +36,13 @@ class AlocacaoChamadaService:
         self,
         valkey: Redis,
         db_session: AsyncSession,
-        lua_manager: LuaScriptManager | None = None,
+        lua_manager: LuaScriptPort,
         arq_pool: ArqRedis | None = None,
         notification_adapter: NotificationPort | None = None,
     ) -> None:
         self._valkey = valkey
         self._db_session = db_session
-        self._lua_manager = lua_manager or get_lua_script_manager()
+        self._lua_manager = lua_manager
         self._arq_pool = arq_pool
         self._notification_adapter = notification_adapter
 

@@ -11,7 +11,6 @@ from src.modules.consultation.application.dtos import (
     EmitirDocumentoClinicoCommand,
     TMAStatusDTO,
 )
-from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     ConsultaInvalidaError,
@@ -22,11 +21,12 @@ from tests.factories.consultation import (
     make_documento_clinico,
     make_evolucao_clinica,
 )
+from tests.helpers import make_pep_service
 
 
 def test_validar_prescricao_permitida() -> None:
     """Ensure permitted telemedicine drugs pass validation without error."""
-    service = PEPService(session=AsyncMock())
+    service = make_pep_service(AsyncMock())
 
     # Simple prescription and antimicrobials
     service.validar_prescricao("Dipirona Monoidratada 500mg")
@@ -66,7 +66,7 @@ def test_validar_prescricao_permitida() -> None:
 )
 def test_validar_prescricao_proibida_portaria_344(substancia_proibida: str) -> None:
     """Ensure yellow/blue pad drugs raise PrescricaoFisicaObrigatoriaError."""
-    service = PEPService(session=AsyncMock())
+    service = make_pep_service(AsyncMock())
 
     with pytest.raises(PrescricaoFisicaObrigatoriaError) as exc_info:
         service.validar_prescricao(substancia_proibida)
@@ -83,7 +83,7 @@ def test_validar_prescricao_proibida_portaria_344(substancia_proibida: str) -> N
 @pytest.mark.asyncio
 async def test_emitir_documento_tipo_proibido_falha(tipo_proibido: str) -> None:
     """Ensure requesting yellow or blue notification pad types fails with HTTP 422."""
-    service = PEPService(session=AsyncMock())
+    service = make_pep_service(AsyncMock())
 
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=uuid7(),
@@ -108,7 +108,7 @@ async def test_emitir_documento_tipo_proibido_falha(tipo_proibido: str) -> None:
 
 def test_tma_sovereign_medical_act_preservation() -> None:
     """Ensure RN06: exceeding TMA emits visual indicator but never forces disconnect."""
-    service = PEPService(session=AsyncMock())
+    service = make_pep_service(AsyncMock())
     atend_id = uuid4()
 
     # Scenario 1: Inside planned TMA (e.g. 5 minutes into a 15-minute slot)

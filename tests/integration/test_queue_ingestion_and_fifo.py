@@ -26,6 +26,7 @@ from src.modules.queue.domain.models import (
     PrioridadeClinica,
     StatusAtendimento,
 )
+from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 
 from tests.factories.identity import (
     make_organizacao,
@@ -237,8 +238,16 @@ async def test_acceptance_criterion_3_retry_loop_allocates_second_patient() -> N
 
     async for valkey in get_valkey_client():
         async with async_session_factory() as session:
-            fila_service = FilaService(valkey=valkey, db_session=session)
-            alocacao_service = AlocacaoChamadaService(valkey=valkey, db_session=session)
+            alocacao_service = AlocacaoChamadaService(
+                valkey=valkey,
+                db_session=session,
+                lua_manager=get_lua_script_manager(),
+            )
+            fila_service = FilaService(
+                valkey=valkey,
+                db_session=session,
+                alocacao_service=alocacao_service,
+            )
 
             # Ingest both attendances into Valkey queue
             await fila_service.ingressar_fila(

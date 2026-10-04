@@ -4,11 +4,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, Request, Response, status
 
-from src.core.database import DbSessionDep
 from src.core.dependencies import OptionalTenantDep
 from src.core.errors import NotFoundError, UnauthorizedError
 from src.modules.auth.application.dtos import LoginCommand
-from src.modules.auth.application.services.auth_service import AuthService
+from src.modules.auth.composition import AuthServiceDep
 from src.modules.auth.presentation.helpers import resolve_login_tenant_id
 from src.modules.auth.presentation.schemas import (
     LoginRequest,
@@ -29,7 +28,7 @@ auth_router = APIRouter(prefix="/auth", tags=["Authentication & Sessions (OWASP)
 async def login(
     request: Request,
     body: LoginRequest,
-    session: DbSessionDep,
+    service: AuthServiceDep,
     context_tenant_id: OptionalTenantDep,
 ) -> TokenResponse:
     """Autentica o usuário corporativo emitindo par de tokens de acesso e atualização.
@@ -42,7 +41,6 @@ async def login(
 
     client_ip = request.client.host if request.client else "127.0.0.1"
 
-    service = AuthService(session)
     command = LoginCommand(
         organizacao_id=org_id,
         identificador=body.identificador,
@@ -62,10 +60,9 @@ async def login(
 )
 async def refresh_token(
     body: RefreshTokenRequest,
-    session: DbSessionDep,
+    service: AuthServiceDep,
 ) -> TokenResponse:
     """Rotaciona o refresh token: invalida o token apresentado e emite um novo par."""
-    service = AuthService(session)
     tokens = await service.rotacionar_refresh_token(body.refresh_token)
     return TokenResponse.model_validate(tokens)
 
@@ -77,10 +74,9 @@ async def refresh_token(
 )
 async def logout(
     body: RefreshTokenRequest,
-    session: DbSessionDep,
+    service: AuthServiceDep,
 ) -> Response:
     """Revoga o refresh token fornecido impedindo renovações futuras."""
-    service = AuthService(session)
     service.revogar_sessao(body.refresh_token)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -92,7 +88,7 @@ async def logout(
     summary="Perfil do usuário autenticado a partir do Bearer JWT",
 )
 async def me(
-    session: DbSessionDep,
+    service: AuthServiceDep,
     authorization: Annotated[str | None, Header()] = None,
 ) -> UsuarioPerfilResponse:
     """Valida o Bearer token JWT da requisição e retorna o perfil do usuário ativo."""
@@ -102,7 +98,6 @@ async def me(
         )
 
     token = authorization[7:].strip()
-    service = AuthService(session)
     payload = service.validar_access_token(token)
 
     cred = await service.obter_usuario_por_id(payload.sub, payload.org_id)
