@@ -1,0 +1,94 @@
+# Strict hexagonal boundaries (ADR-001): presentation -> application -> domain;
+# infrastructure -> application/domain; nothing depends on presentation/infrastructure.
+interfaces = []
+exact = false
+forbid_circular_dependencies = true
+source_roots = ["."]
+
+[[modules]]
+path = "src.core"
+depends_on = []
+
+[[modules]]
+path = "src.modules.auth.domain"
+depends_on = ["src.core"]
+
+[[modules]]
+path = "src.modules.auth.application"
+depends_on = ["src.core", "src.modules.auth.domain"]
+
+[[modules]]
+path = "src.modules.auth.infrastructure"
+depends_on = ["src.core", "src.modules.auth.application", "src.modules.auth.domain"]
+
+[[modules]]
+path = "src.modules.auth.presentation"
+depends_on = ["src.core", "src.modules.auth.application"]
+
+[[modules]]
+path = "src.modules.billing.domain"
+depends_on = ["src.core"]
+
+[[modules]]
+path = "src.modules.billing.application"
+depends_on = ["src.core", "src.modules.billing.domain"]
+
+[[modules]]
+path = "src.modules.billing.infrastructure"
+depends_on = ["src.core", "src.modules.billing.application", "src.modules.billing.domain"]
+
+[[modules]]
+path = "src.modules.consultation.domain"
+depends_on = ["src.core"]
+
+[[modules]]
+path = "src.modules.consultation.application"
+depends_on = ["src.core", "src.modules.consultation.domain"]
+
+[[modules]]
+path = "src.modules.consultation.infrastructure"
+depends_on = ["src.core", "src.modules.consultation.application", "src.modules.consultation.domain"]
+
+[[modules]]
+path = "src.modules.consultation.presentation"
+depends_on = ["src.core", "src.modules.consultation.application"]
+
+[[modules]]
+path = "src.modules.identity.domain"
+depends_on = ["src.core"]
+
+[[modules]]
+path = "src.modules.identity.application"
+depends_on = ["src.core", "src.modules.identity.domain"]
+
+[[modules]]
+path = "src.modules.identity.presentation"
+depends_on = ["src.core", "src.modules.identity.application"]
+
+[[modules]]
+path = "src.modules.queue.domain"
+depends_on = ["src.core"]
+
+[[modules]]
+path = "src.modules.queue.application"
+depends_on = ["src.core", "src.modules.queue.domain"]
+
+[[modules]]
+path = "src.modules.queue.infrastructure"
+depends_on = ["src.core", "src.modules.queue.application", "src.modules.queue.domain"]
+
+[[modules]]
+path = "src.modules.queue.presentation"
+depends_on = ["src.core", "src.modules.queue.application"]
+
+[[modules]]
+path = "src.modules.triage.domain"
+depends_on = ["src.core"]
+
+[[modules]]
+path = "src.modules.triage.application"
+depends_on = ["src.core", "src.modules.triage.domain"]
+
+[[modules]]
+path = "src.worker"
+depends_on = ["src.core", "src.modules.queue.application", "src.modules.queue.domain", "src.modules.queue.infrastructure", "src.modules.billing.application", "src.modules.billing.domain", "src.modules.billing.infrastructure"]
