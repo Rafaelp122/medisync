@@ -32,6 +32,8 @@ from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     ConsultaInvalidaError,
+    DocumentoClinicoNaoEncontradoError,
+    EvolucaoNaoEncontradaError,
     PrescricaoFisicaObrigatoriaError,
 )
 from src.modules.consultation.domain.models import (
@@ -311,7 +313,7 @@ class PEPService:
     def calcular_tma_status(
         self,
         atendimento_id: UUID,
-        iniciado_em: datetime,
+        iniciado_em: datetime | None = None,
         tma_planejado_segundos: int = 900,
     ) -> TMAStatusDTO:
         """Compute TMA indicators while preserving sovereign medical act (RN06).
@@ -320,10 +322,11 @@ class PEPService:
         Software is strictly forbidden from forcing disconnection.
         """
         now = datetime.now(UTC)
+        inicio_raw = iniciado_em or now
         iniciado_utc = (
-            iniciado_em
-            if iniciado_em.tzinfo is not None
-            else iniciado_em.replace(tzinfo=UTC)
+            inicio_raw
+            if inicio_raw.tzinfo is not None
+            else inicio_raw.replace(tzinfo=UTC)
         )
         decorrido = max(0, int((now - iniciado_utc).total_seconds()))
         excedeu = decorrido > tma_planejado_segundos
@@ -370,10 +373,24 @@ class PEPService:
                 doc.marcar_finalizado()
 
         return ProntuarioResumoDTO(
+            atendimento_id=atendimento_id,
             evolucao=evolucao,
             documentos=documentos,
             is_finalizado=is_finalizado,
         )
+
+    async def obter_evolucao(self, atendimento_id: UUID) -> EvolucaoClinica:
+        """Return SOAP evolution or raise 404 EvolucaoNaoEncontradaError."""
+        stmt = select(EvolucaoClinica).where(
+            EvolucaoClinica.atendimento_id == atendimento_id
+        )
+        res = await self._session.execute(stmt)
+        evolucao = res.scalar_one_or_none()
+        if evolucao is None:
+            raise EvolucaoNaoEncontradaError(
+                "Nenhuma evolução clínica registrada para este atendimento."
+            )
+        return evolucao
 
     async def compilar_documento_pdf(self, documento_id: UUID) -> bytes:
         """Compile PDF/A binary with ITI verification QR Code."""
@@ -385,7 +402,7 @@ class PEPService:
         res = await self._session.execute(stmt)
         doc = res.scalar_one_or_none()
         if doc is None:
-            raise ConsultaInvalidaError(
+            raise DocumentoClinicoNaoEncontradoError(
                 f"Documento clínico '{documento_id}' não encontrado."
             )
 

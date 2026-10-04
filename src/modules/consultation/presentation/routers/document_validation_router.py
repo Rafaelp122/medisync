@@ -9,7 +9,10 @@ from src.modules.consultation.composition import (
     DocumentValidationServiceDep,
     ValidationRateLimiterDep,
 )
-from src.modules.consultation.presentation.schemas import ValidarDocumentoResponse
+from src.modules.consultation.presentation.schemas import (
+    DownloadUrlResponse,
+    ValidarDocumentoResponse,
+)
 
 validation_router = APIRouter(
     prefix="/documents", tags=["Document Validation & Presigned Storage"]
@@ -82,12 +85,8 @@ async def download_documento_presigned(
     result = await service.gerar_url_download(token_validacao, expiracao_segundos)
     if redirect:
         return RedirectResponse(url=result.download_url, status_code=307)
+    payload = DownloadUrlResponse.model_validate(result)
     return JSONResponse(
-        content={
-            "documento_id": str(result.documento_id),
-            "download_url": result.download_url,
-            "expires_in_seconds": result.expires_in_seconds,
-            "chave_s3": result.chave_s3,
-        },
+        content=payload.model_dump(mode="json"),
         status_code=status.HTTP_200_OK,
     )

@@ -97,6 +97,7 @@ class TMAStatusDTO:
 class ProntuarioResumoDTO:
     """Aggregated clinical record view for an attendance."""
 
+    atendimento_id: UUID
     evolucao: "EvolucaoClinica | None"
     documentos: "list[DocumentoClinico]"
     is_finalizado: bool
@@ -141,3 +142,15 @@ class DownloadResult:
     download_url: str
     expires_in_seconds: int
     chave_s3: str
+
+
+@dataclass(frozen=True)
+class DocumentoAssinadoResult:
+    """Service result for ICP-Brasil PAdES signing (ADR-008 output DTO)."""
+
+    documento_id: UUID
+    tipo_documento: str
+    sha256_hash: str
+    assinado_em: datetime
+    tamanho_bytes: int
+    status: str = "ASSINADO"

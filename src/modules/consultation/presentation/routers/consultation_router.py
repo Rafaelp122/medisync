@@ -1,14 +1,15 @@
 """FastAPI router for PEP clinical SOAP workflow, prescriptions and TMA indicators."""
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Query, Response, status
 
 from src.core.dependencies import TenantDep
 from src.core.errors import ForbiddenError
 from src.modules.consultation.application.dtos import (
     CriarItemPrescricaoDTO,
+    DocumentoAssinadoResult,
     EmitirDocumentoClinicoCommand,
     FinalizarConsultaCommand,
     RegistrarEvolucaoSOAPCommand,
@@ -17,7 +18,6 @@ from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
 )
 from src.modules.consultation.composition import PEPServiceDep
-from src.modules.consultation.domain.exceptions import ConsultaInvalidaError
 from src.modules.consultation.presentation.dependencies import (
     AtendimentoIdPath,
     ClinicalAccessDep,
@@ -30,10 +30,12 @@ from src.modules.consultation.presentation.schemas import (
     EmitirDocumentoRequest,
     EvolucaoSOAPResponse,
     FinalizarConsultaRequest,
+    FinalizarConsultaResponse,
     ProntuarioResponse,
     RegistrarSOAPRequest,
     TMAStatusResponse,
     ValidarPrescricaoRequest,
+    ValidarPrescricaoResponse,
 )
 
 consultation_router = APIRouter(prefix="/consultations", tags=["teleconsulta-pep"])
@@ -88,13 +90,8 @@ async def obter_evolucao_soap(
     service: PEPServiceDep,
 ) -> EvolucaoSOAPResponse:
     """Retorna as notas SOAP atuais do atendimento."""
-    resumo = await service.obter_prontuario(atendimento_id)
-    if resumo.evolucao is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Nenhuma evolução clínica registrada para este atendimento.",
-        )
-    return EvolucaoSOAPResponse.model_validate(resumo.evolucao)
+    evolucao = await service.obter_evolucao(atendimento_id)
+    return EvolucaoSOAPResponse.model_validate(evolucao)
 
 
 @consultation_router.get(
@@ -114,25 +111,12 @@ async def obter_prontuario_protegido(
     3. Camada 3 (ABAC Clínico): médico assistente + TCLE assinado + status ativo.
     """
     resumo = await service.obter_prontuario(atendimento_id)
-
-    evolucao_resp: EvolucaoSOAPResponse | None = None
-    if resumo.evolucao is not None:
-        evolucao_resp = EvolucaoSOAPResponse.model_validate(resumo.evolucao)
-
-    documentos_resp = [
-        DocumentoClinicoResponse.model_validate(doc) for doc in resumo.documentos
-    ]
-
-    return ProntuarioResponse(
-        atendimento_id=atendimento_id,
-        is_finalizado=resumo.is_finalizado,
-        evolucao=evolucao_resp,
-        documentos=documentos_resp,
-    )
+    return ProntuarioResponse.model_validate(resumo)
 
 
 @consultation_router.post(
     "/{atendimento_id}/prescriptions/validate",
+    response_model=ValidarPrescricaoResponse,
     status_code=status.HTTP_200_OK,
     summary="Valida substância medicamentosa contra Portaria SVS/MS nº 344/98",
 )
@@ -140,14 +124,14 @@ async def validar_prescricao_medicamento(
     atendimento_id: AtendimentoIdPath,
     request: ValidarPrescricaoRequest,
     service: PEPServiceDep,
-) -> dict[str, str]:
+) -> ValidarPrescricaoResponse:
     """Verifica se o medicamento exige talonário físico (Listas A/B)."""
     service.validar_prescricao(request.medicamento)
-    return {
-        "status": "PERMITIDO",
-        "medicamento": request.medicamento,
-        "mensagem": "Substância autorizada para prescrição digital em telemedicina.",
-    }
+    return ValidarPrescricaoResponse(
+        status="PERMITIDO",
+        medicamento=request.medicamento,
+        mensagem="Substância autorizada para prescrição digital em telemedicina.",
+    )
 
 
 @consultation_router.post(
@@ -193,6 +177,7 @@ async def emitir_documento_clinico(
 
 @consultation_router.post(
     "/{atendimento_id}/finalize",
+    response_model=FinalizarConsultaResponse,
     status_code=status.HTTP_200_OK,
     summary="Conclui atendimento e bloqueia registros clínicos (Imutabilidade)",
 )
@@ -201,7 +186,7 @@ async def finalizar_consulta(
     request: FinalizarConsultaRequest,
     service: PEPServiceDep,
     tenant_id: TenantDep,
-) -> dict[str, object]:
+) -> FinalizarConsultaResponse:
     """Finaliza teleconsulta travando edição e exclusão de evolução e documentos."""
     org_id = _require_matching_tenant(request.organizacao_id, tenant_id)
     cmd = FinalizarConsultaCommand(
@@ -211,14 +196,14 @@ async def finalizar_consulta(
     )
     evolucao = await service.finalizar_consulta(cmd)
 
-    return {
-        "status": "FINALIZADO",
-        "atendimento_id": str(atendimento_id),
-        "is_finalizado": evolucao.is_finalizado,
-        "mensagem": (
+    return FinalizarConsultaResponse(
+        status="FINALIZADO",
+        atendimento_id=atendimento_id,
+        is_finalizado=evolucao.is_finalizado,
+        mensagem=(
             "Consulta finalizada com sucesso. Registros PEP travados de forma imutável."
         ),
-    }
+    )
 
 
 @consultation_router.get(
@@ -244,10 +229,9 @@ async def obter_tma_status(
     ] = 900,
 ) -> TMAStatusResponse:
     """Calcula telemetria de TMA respeitando a soberania médica (RN06)."""
-    inicio = iniciado_em or datetime.now(UTC)
     tma_dto = service.calcular_tma_status(
         atendimento_id=atendimento_id,
-        iniciado_em=inicio,
+        iniciado_em=iniciado_em,
         tma_planejado_segundos=tma_planejado_segundos,
     )
     return TMAStatusResponse.model_validate(tma_dto)
@@ -272,12 +256,7 @@ async def obter_documento_pdf(
     service: PEPServiceDep,
 ) -> Response:
     """Retorna o documento clínico compilado em PDF/A com QR Code de verificação."""
-    try:
-        pdf_bytes = await service.compilar_documento_pdf(documento_id)
-    except ConsultaInvalidaError as err:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(err)
-        ) from err
+    pdf_bytes = await service.compilar_documento_pdf(documento_id)
 
     return Response(
         content=pdf_bytes,
@@ -313,10 +292,11 @@ async def assinar_documento(
         credenciais=creds,
     )
 
-    return AssinarDocumentoResponse(
+    result = DocumentoAssinadoResult(
         documento_id=doc.id,
         tipo_documento=str(doc.tipo_documento),
         sha256_hash=doc.sha256_hash,
         assinado_em=doc.assinado_em,
         tamanho_bytes=len(signed_bytes),
     )
+    return AssinarDocumentoResponse.model_validate(result)

@@ -151,7 +151,7 @@ class AssinarDocumentoRequest(BaseModel):
 class AssinarDocumentoResponse(BaseModel):
     """Result of digital signature application."""
 
-    model_config = ConfigDict(extra="forbid", from_attributes=True)
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
 
     documento_id: UUID
     tipo_documento: str
@@ -190,6 +190,38 @@ class ValidarPrescricaoRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     medicamento: str = Field(description="Nome do medicamento a validar")
+
+
+class ValidarPrescricaoResponse(BaseModel):
+    """Result of Portaria 344/98 pre-validation (payload preserved)."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    status: str = Field(description="PERMITIDO quando autorizado p/ telemedicina")
+    medicamento: str = Field(description="Nome do medicamento validado")
+    mensagem: str = Field(description="Mensagem autorizativa")
+
+
+class FinalizarConsultaResponse(BaseModel):
+    """Result of consultation finalization (payload preserved)."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    status: str = Field(description="FINALIZADO quando travado imutável")
+    atendimento_id: UUID = Field(description="Identificador do atendimento")
+    is_finalizado: bool = Field(description="True quando imutável")
+    mensagem: str = Field(description="Mensagem de conclusão")
+
+
+class DownloadUrlResponse(BaseModel):
+    """Presigned download payload returned when redirect=false."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    documento_id: UUID
+    download_url: str
+    expires_in_seconds: int
+    chave_s3: str
 
 
 # --- LiveKit WebRTC Schemas ---

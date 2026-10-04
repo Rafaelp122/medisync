@@ -47,6 +47,22 @@ class DocumentoNaoEncontradoNoStorageError(NotFoundError):
     code: str = "DOCUMENTO_STORAGE_NAO_ENCONTRADO"
 
 
+class EvolucaoNaoEncontradaError(NotFoundError):
+    """Raised when no SOAP evolution exists for the attendance."""
+
+    status_code: int = 404
+    title: str = "Evolução Clínica Não Encontrada"
+    code: str = "EVOLUCAO_NAO_ENCONTRADA"
+
+
+class DocumentoClinicoNaoEncontradoError(NotFoundError):
+    """Raised when a clinical document id does not exist."""
+
+    status_code: int = 404
+    title: str = "Documento Clínico Não Encontrado"
+    code: str = "DOCUMENTO_CLINICO_NAO_ENCONTRADO"
+
+
 class DocumentoIntegridadeError(DomainError):
     """Raised when physician/patient directory data is absent (never fabricate)."""
 
