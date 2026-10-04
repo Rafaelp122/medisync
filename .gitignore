@@ -78,3 +78,6 @@ miniodata/
 # Logs
 *.log
 logs/
+
+# Git worktrees (isolated workspaces)
+.worktrees/
