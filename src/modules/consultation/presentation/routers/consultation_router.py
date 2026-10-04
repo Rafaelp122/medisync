@@ -5,8 +5,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
-from src.core.context import get_current_tenant_id
 from src.core.database import DbSessionDep
+from src.core.dependencies import TenantDep
+from src.core.errors import ForbiddenError
 from src.modules.consultation.application.dtos import (
     CriarItemPrescricaoDTO,
     EmitirDocumentoClinicoCommand,
@@ -39,13 +40,14 @@ from src.modules.consultation.presentation.schemas import (
 consultation_router = APIRouter(prefix="/consultations", tags=["teleconsulta-pep"])
 
 
-def _resolve_tenant_id(provided: int | None) -> int:
-    if provided is not None and provided > 0:
-        return provided
-    ctx_tenant = get_current_tenant_id()
-    if ctx_tenant is not None and ctx_tenant > 0:
-        return ctx_tenant
-    return 1
+def _require_matching_tenant(provided: int | None, tenant_id: int) -> int:
+    """Obsolete body organizacao_id: diverge -> 403, coincide/ausente -> ignora."""
+    if provided is not None and provided != tenant_id:
+        raise ForbiddenError(
+            "Organização do corpo diverge do tenant autenticado "
+            "(cabeçalho X-Tenant-ID)."
+        )
+    return tenant_id
 
 
 @consultation_router.post(
@@ -58,9 +60,10 @@ async def salvar_evolucao_soap(
     atendimento_id: AtendimentoIdPath,
     request: RegistrarSOAPRequest,
     session: DbSessionDep,
+    tenant_id: TenantDep,
 ) -> EvolucaoSOAPResponse:
     """Registra ou atualiza Subjetivo, Objetivo, Avaliação e Plano no PEP."""
-    org_id = _resolve_tenant_id(request.organizacao_id)
+    org_id = _require_matching_tenant(request.organizacao_id, tenant_id)
     service = PEPService(session)
     command = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
@@ -164,9 +167,10 @@ async def emitir_documento_clinico(
     atendimento_id: AtendimentoIdPath,
     request: EmitirDocumentoRequest,
     session: DbSessionDep,
+    tenant_id: TenantDep,
 ) -> DocumentoClinicoResponse:
     """Emite receita ou atestado aplicando salvaguardas da Portaria 344/98."""
-    org_id = _resolve_tenant_id(request.organizacao_id)
+    org_id = _require_matching_tenant(request.organizacao_id, tenant_id)
     service = PEPService(session)
 
     itens_dto = [
@@ -206,9 +210,10 @@ async def finalizar_consulta(
     atendimento_id: AtendimentoIdPath,
     request: FinalizarConsultaRequest,
     session: DbSessionDep,
+    tenant_id: TenantDep,
 ) -> dict[str, object]:
     """Finaliza teleconsulta travando edição e exclusão de evolução e documentos."""
-    org_id = _resolve_tenant_id(request.organizacao_id)
+    org_id = _require_matching_tenant(request.organizacao_id, tenant_id)
     service = PEPService(session)
     cmd = FinalizarConsultaCommand(
         atendimento_id=atendimento_id,

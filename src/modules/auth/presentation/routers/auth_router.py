@@ -4,11 +4,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, Request, Response, status
 
-from src.core.context import get_current_tenant_id
 from src.core.database import DbSessionDep
-from src.core.errors import NotFoundError, UnauthorizedError, ValidationError
+from src.core.dependencies import OptionalTenantDep
+from src.core.errors import NotFoundError, UnauthorizedError
 from src.modules.auth.application.dtos import LoginCommand
 from src.modules.auth.application.services.auth_service import AuthService
+from src.modules.auth.presentation.helpers import resolve_login_tenant_id
 from src.modules.auth.presentation.schemas import (
     LoginRequest,
     RefreshTokenRequest,
@@ -29,6 +30,7 @@ async def login(
     request: Request,
     body: LoginRequest,
     session: DbSessionDep,
+    context_tenant_id: OptionalTenantDep,
 ) -> TokenResponse:
     """Autentica o usuário corporativo emitindo par de tokens de acesso e atualização.
 
@@ -36,12 +38,7 @@ async def login(
     genéricas (RFC 7807) para prevenir enumeração de contas, com proteção de
     força bruta via contadores Valkey em janela deslizante.
     """
-    org_id = body.organizacao_id or get_current_tenant_id()
-    if not org_id:
-        raise ValidationError(
-            "Identificador da organização (tenant) não informado "
-            "(preencha no corpo ou no cabeçalho X-Tenant-ID)."
-        )
+    org_id = resolve_login_tenant_id(body.organizacao_id, context_tenant_id)
 
     client_ip = request.client.host if request.client else "127.0.0.1"
 

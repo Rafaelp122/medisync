@@ -1,15 +1,12 @@
 """FastAPI router for progressive 2-phase patient onboarding."""
 
-from typing import Annotated
+from fastapi import APIRouter, status
 
-from fastapi import APIRouter, Depends, status
-
-from src.core.context import get_current_tenant_id
 from src.core.database import DbSessionDep
+from src.core.dependencies import TenantDep
 from src.modules.identity.application.services.onboarding_service import (
     OnboardingService,
 )
-from src.modules.identity.domain.exceptions import TenantInvalidoError
 from src.modules.identity.presentation.schemas import (
     Fase1Request,
     Fase1Response,
@@ -21,19 +18,6 @@ onboarding_router = APIRouter(
     prefix="/onboarding",
     tags=["Onboarding"],
 )
-
-
-def _get_required_tenant_id() -> int:
-    tenant_id = get_current_tenant_id()
-    if tenant_id is None or tenant_id <= 0:
-        raise TenantInvalidoError(
-            "Header 'X-Tenant-ID' ausente ou inválido. "
-            "O acesso multi-tenant requer identificador positivo."
-        )
-    return tenant_id
-
-
-TenantDep = Annotated[int, Depends(_get_required_tenant_id)]
 
 
 @onboarding_router.post(

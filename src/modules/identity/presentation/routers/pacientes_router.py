@@ -3,14 +3,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, status
+from fastapi import APIRouter, Path, status
 
-from src.core.context import get_current_tenant_id
 from src.core.database import DbSessionDep
+from src.core.dependencies import TenantDep
 from src.modules.identity.application.services.dependente_service import (
     DependenteService,
 )
-from src.modules.identity.domain.exceptions import TenantInvalidoError
 from src.modules.identity.presentation.schemas import (
     CriarDependenteRequest,
     DependenteDetalheResponse,
@@ -21,19 +20,6 @@ pacientes_router = APIRouter(
     prefix="/pacientes",
     tags=["Pacientes"],
 )
-
-
-def _get_required_tenant_id() -> int:
-    tenant_id = get_current_tenant_id()
-    if tenant_id is None or tenant_id <= 0:
-        raise TenantInvalidoError(
-            "Header 'X-Tenant-ID' ausente ou inválido. "
-            "O acesso multi-tenant requer identificador positivo."
-        )
-    return tenant_id
-
-
-TenantDep = Annotated[int, Depends(_get_required_tenant_id)]
 
 
 @pacientes_router.post(
