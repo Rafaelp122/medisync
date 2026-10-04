@@ -1,11 +1,10 @@
 """FastAPI router for user authentication and session management."""
 
-from typing import Annotated
+from fastapi import APIRouter, Request, Response, status
 
-from fastapi import APIRouter, Header, Request, Response, status
-
+from src.core.authz import CurrentUserDep
 from src.core.dependencies import OptionalTenantDep
-from src.core.errors import NotFoundError, UnauthorizedError
+from src.core.errors import NotFoundError
 from src.modules.auth.application.dtos import LoginCommand
 from src.modules.auth.composition import AuthServiceDep
 from src.modules.auth.presentation.helpers import resolve_login_tenant_id
@@ -88,19 +87,11 @@ async def logout(
     summary="Perfil do usuário autenticado a partir do Bearer JWT",
 )
 async def me(
+    user: CurrentUserDep,
     service: AuthServiceDep,
-    authorization: Annotated[str | None, Header()] = None,
 ) -> UsuarioPerfilResponse:
-    """Valida o Bearer token JWT da requisição e retorna o perfil do usuário ativo."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise UnauthorizedError(
-            "Cabeçalho de autorização Bearer ausente ou malformado."
-        )
-
-    token = authorization[7:].strip()
-    payload = service.validar_access_token(token)
-
-    cred = await service.obter_usuario_por_id(payload.sub, payload.org_id)
+    """Retorna perfil do usuário ativo a partir do principal central validado."""
+    cred = await service.obter_usuario_por_id(user.usuario_id, user.organizacao_id)
     if cred is None:
         raise NotFoundError("Registro de credencial do usuário não encontrado.")
 

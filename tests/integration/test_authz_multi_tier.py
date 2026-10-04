@@ -5,15 +5,13 @@ Enforces Tier 1 RBAC and Tier 3 Clinical ABAC/ReBAC context.
 
 from collections.abc import AsyncGenerator
 from typing import cast
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from src.core.authz.roles import Role
-from src.core.config import get_settings
 from src.core.database import async_session_factory
 from src.main import app
-from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
 
 from tests.factories.identity import (
     make_organizacao,
@@ -21,13 +19,7 @@ from tests.factories.identity import (
     make_profissional,
 )
 from tests.factories.queue import make_atendimento
-from tests.helpers import clean_database_tables
-
-
-def _create_token(usuario_id: UUID, org_id: int, papel: str) -> str:
-    """Helper to generate signed JWT access tokens."""
-    token_service = JWTTokenService(secret_key=get_settings().JWT_SECRET_KEY)
-    return token_service.gerar_tokens(usuario_id, org_id, papel).access_token
+from tests.helpers import auth_headers, clean_database_tables
 
 
 @pytest.fixture(autouse=True)
@@ -57,9 +49,6 @@ async def test_authz_unauthenticated_request_blocked() -> None:
 async def test_authz_macro_rbac_unauthorized_role_blocked() -> None:
     """Validate Tier 1 Macro RBAC blocks non-medico roles with 403 Problem Details."""
     org_id = 77
-    token_gestor = _create_token(uuid4(), org_id, Role.GESTOR_UNIDADE)
-    token_faturamento = _create_token(uuid4(), org_id, Role.FATURAMENTO)
-    token_paciente = _create_token(uuid4(), org_id, Role.PACIENTE)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(
@@ -72,7 +61,7 @@ async def test_authz_macro_rbac_unauthorized_role_blocked() -> None:
         # 1. GESTOR_UNIDADE blocked
         resp_g = await client.get(
             f"/api/v1/consultations/{atend_id}/prontuario",
-            headers={"Authorization": f"Bearer {token_gestor}"},
+            headers=auth_headers(Role.GESTOR_UNIDADE, org_id, uuid4()),
         )
         assert resp_g.status_code == 403
         err_g = cast("dict[str, object]", resp_g.json())
@@ -82,7 +71,7 @@ async def test_authz_macro_rbac_unauthorized_role_blocked() -> None:
         # 2. FATURAMENTO blocked
         resp_f = await client.get(
             f"/api/v1/consultations/{atend_id}/prontuario",
-            headers={"Authorization": f"Bearer {token_faturamento}"},
+            headers=auth_headers(Role.FATURAMENTO, org_id, uuid4()),
         )
         assert resp_f.status_code == 403
         assert "FATURAMENTO" in str(cast("dict[str, object]", resp_f.json())["detail"])
@@ -90,7 +79,7 @@ async def test_authz_macro_rbac_unauthorized_role_blocked() -> None:
         # 3. PACIENTE blocked
         resp_p = await client.get(
             f"/api/v1/consultations/{atend_id}/prontuario",
-            headers={"Authorization": f"Bearer {token_paciente}"},
+            headers=auth_headers(Role.PACIENTE, org_id, uuid4()),
         )
         assert resp_p.status_code == 403
         assert "PACIENTE" in str(cast("dict[str, object]", resp_p.json())["detail"])
@@ -101,7 +90,6 @@ async def test_authz_tenant_mismatch_blocked() -> None:
     """Validate cross-tenant token usage is blocked with 403 Problem Details."""
     org_a_id = 81
     org_b_id = 82
-    token_medico_org_a = _create_token(uuid4(), org_a_id, Role.MEDICO)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(
@@ -111,7 +99,7 @@ async def test_authz_tenant_mismatch_blocked() -> None:
     ) as client:
         resp = await client.get(
             f"/api/v1/consultations/{uuid4()}/prontuario",
-            headers={"Authorization": f"Bearer {token_medico_org_a}"},
+            headers=auth_headers(Role.MEDICO, org_a_id, uuid4()),
         )
         assert resp.status_code == 403
         err = cast("dict[str, object]", resp.json())
@@ -154,8 +142,6 @@ async def test_authz_clinical_abac_missing_tcle_blocked() -> None:
         await session.commit()
         await session.refresh(atendimento)
 
-    token_medico = _create_token(medico.id, org.id, Role.MEDICO)
-
     transport = ASGITransport(app=app)
     async with AsyncClient(
         transport=transport,
@@ -164,7 +150,7 @@ async def test_authz_clinical_abac_missing_tcle_blocked() -> None:
     ) as client:
         resp = await client.get(
             f"/api/v1/consultations/{atendimento.id}/prontuario",
-            headers={"Authorization": f"Bearer {token_medico}"},
+            headers=auth_headers(Role.MEDICO, org.id, medico.id),
         )
         assert resp.status_code == 403
         err = cast("dict[str, object]", resp.json())
@@ -216,7 +202,6 @@ async def test_authz_clinical_abac_physician_mismatch_blocked() -> None:
         await session.refresh(atendimento)
 
     # Médico intruso tenta acessar prontuário do paciente do colega
-    token_intruso = _create_token(medico_intruso.id, org.id, Role.MEDICO)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(
@@ -226,7 +211,7 @@ async def test_authz_clinical_abac_physician_mismatch_blocked() -> None:
     ) as client:
         resp = await client.get(
             f"/api/v1/consultations/{atendimento.id}/prontuario",
-            headers={"Authorization": f"Bearer {token_intruso}"},
+            headers=auth_headers(Role.MEDICO, org.id, medico_intruso.id),
         )
         assert resp.status_code == 403
         err = cast("dict[str, object]", resp.json())
@@ -268,8 +253,6 @@ async def test_authz_clinical_abac_inactive_encounter_blocked() -> None:
         await session.commit()
         await session.refresh(atendimento)
 
-    token_medico = _create_token(medico.id, org.id, Role.MEDICO)
-
     transport = ASGITransport(app=app)
     async with AsyncClient(
         transport=transport,
@@ -278,7 +261,7 @@ async def test_authz_clinical_abac_inactive_encounter_blocked() -> None:
     ) as client:
         resp = await client.get(
             f"/api/v1/consultations/{atendimento.id}/prontuario",
-            headers={"Authorization": f"Bearer {token_medico}"},
+            headers=auth_headers(Role.MEDICO, org.id, medico.id),
         )
         assert resp.status_code == 403
         err = cast("dict[str, object]", resp.json())
@@ -320,8 +303,6 @@ async def test_authz_full_flow_access_granted() -> None:
         await session.commit()
         await session.refresh(atendimento)
 
-    token_medico = _create_token(medico.id, org.id, Role.MEDICO)
-
     transport = ASGITransport(app=app)
     async with AsyncClient(
         transport=transport,
@@ -331,7 +312,7 @@ async def test_authz_full_flow_access_granted() -> None:
         # Test /api/v1/consultations/{id}/prontuario (alias /atendimentos removido)
         resp = await client.get(
             f"/api/v1/consultations/{atendimento.id}/prontuario",
-            headers={"Authorization": f"Bearer {token_medico}"},
+            headers=auth_headers(Role.MEDICO, org.id, medico.id),
         )
         assert resp.status_code == 200
         data = cast("dict[str, object]", resp.json())

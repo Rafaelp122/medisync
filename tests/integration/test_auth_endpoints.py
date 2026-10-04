@@ -288,3 +288,32 @@ async def test_auth_cross_tenant_isolation() -> None:
         )
         # Deve falhar com 401 por isolamento de tenant
         assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_me_sem_bearer_retorna_401() -> None:
+    """Bearer ausente em /auth/me deve retornar 401 (travamento item 5.2)."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-Tenant-ID": "1"},
+    ) as client:
+        resp = await client.get("/api/v1/auth/me")
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_me_bearer_malformado_retorna_401() -> None:
+    """Bearer malformado em /auth/me deve retornar 401 (travamento item 5.2)."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-Tenant-ID": "1"},
+    ) as client:
+        resp = await client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": "Token abc"},
+        )
+        assert resp.status_code == 401

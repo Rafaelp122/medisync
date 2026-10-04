@@ -2,11 +2,14 @@
 
 from typing import Any
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.core.config import get_settings
 from src.core.database import engine
 from src.modules.auth.application.services.auth_service import AuthService
+from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
@@ -24,6 +27,15 @@ async def clean_database_tables() -> None:
     """Safely truncate all domain tables respecting foreign keys."""
     async with engine.begin() as conn:
         await conn.execute(CLEAN_TABLES_SQL)
+
+
+def auth_headers(papel: str, org_id: int, usuario_id: UUID) -> dict[str, str]:
+    """Emit real JWT access token header for tests (single decode central)."""
+    service = JWTTokenService(secret_key=get_settings().JWT_SECRET_KEY)
+    token = service.gerar_tokens(
+        usuario_id=usuario_id, organizacao_id=org_id, papel=papel
+    ).access_token
+    return {"Authorization": f"Bearer {token}"}
 
 
 def make_auth_service(session: AsyncSession, **overrides: Any) -> AuthService:
