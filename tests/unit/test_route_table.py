@@ -50,12 +50,18 @@ def _http_routes() -> list[tuple[frozenset[str], str]]:
     return entries
 
 
-def test_sem_prefixo_duplo_nem_handler_duplicado() -> None:
-    """Nenhum path com /api/v1/api/v1; nenhum (method,path) duplicado."""
+def test_sem_prefixo_duplo() -> None:
+    """Nenhum path com /api/v1/api/v1."""
     routes = _http_routes()
     assert routes, "app sem rotas HTTP?"
     doubled = sorted({path for _, path in routes if "/api/v1/api/v1" in path})
     assert not doubled, f"duplo prefixo /api/v1/api/v1: {doubled}"
+
+
+def test_sem_handlers_duplicados() -> None:
+    """Nenhum (method,path) duplicado."""
+    routes = _http_routes()
+    assert routes, "app sem rotas HTTP?"
     counts = Counter(routes)
     dups = sorted(
         f"{sorted(methods)} {path} x{count}"
@@ -65,7 +71,7 @@ def test_sem_prefixo_duplo_nem_handler_duplicado() -> None:
     assert not dups, f"handlers duplicados (method,path): {dups}"
 
 
-def test_todo_path_http_api_sob_api_v1() -> None:
+def test_prefixo_api_v1() -> None:
     """Todo path HTTP de API começa com /api/v1 (exceto sistema/docs/ws)."""
     routes = _http_routes()
     assert routes, "app sem rotas HTTP?"
