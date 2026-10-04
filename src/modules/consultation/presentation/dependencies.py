@@ -4,17 +4,15 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, Path
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.authz.dependencies import require_role
 from src.core.authz.models import AuthenticatedUser
 from src.core.authz.roles import Role
-from src.core.database import get_db_session
+from src.core.database import DbSessionDep
 from src.modules.consultation.application.policies.clinical_access_policy import (
     ClinicalAccessPolicy,
 )
 
-SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 MedicoUserDep = Annotated[AuthenticatedUser, Depends(require_role(Role.MEDICO))]
 
 AtendimentoIdPath = Annotated[
@@ -28,7 +26,7 @@ DocumentoIdPath = Annotated[
 async def require_clinical_access(
     atendimento_id: AtendimentoIdPath,
     current_user: MedicoUserDep,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> AuthenticatedUser:
     """Enforce Tier 3 Clinical ABAC/ReBAC context for the requested attendance.
 
