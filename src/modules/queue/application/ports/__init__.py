@@ -1,3 +1,4 @@
+from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
 from src.modules.queue.application.ports.notification_port import (
     ConsoleNotificationAdapter,
     FakeNotificationAdapter,
@@ -24,6 +25,7 @@ __all__ = [
     "LoggingNotificationAdapter",
     "LoggingPacienteAusenteNotifier",
     "LoggingQueueOverflowNotifier",
+    "LuaScriptPort",
     "NotificationPort",
     "NotificationRateLimiter",
     "PacienteAusenteEvent",

@@ -75,7 +75,7 @@ sequenceDiagram
     participant DB as Camada 2: PostgreSQL (Tenant RLS)
     participant Mod as Camada 3: Módulo Consulta (ABAC)
 
-    Med->>API: GET /atendimentos/{id}/prontuario (Bearer JWT)
+    Med->>API: GET /api/v1/consultations/{id}/prontuario (Bearer JWT)
     Note over API: Valida assinatura do token e papel MEDICO
     alt Papel inválido
         API-->>Med: 403 Forbidden (RBAC)

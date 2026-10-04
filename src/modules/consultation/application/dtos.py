@@ -1,6 +1,7 @@
 """Data Transfer Objects for the consultation module."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
@@ -96,6 +97,60 @@ class TMAStatusDTO:
 class ProntuarioResumoDTO:
     """Aggregated clinical record view for an attendance."""
 
+    atendimento_id: UUID
     evolucao: "EvolucaoClinica | None"
     documentos: "list[DocumentoClinico]"
     is_finalizado: bool
+
+
+@dataclass(frozen=True)
+class ItemValidacaoDTO:
+    """Prescribed drug item snapshot for public verification."""
+
+    medicamento: str
+    dosagem: str
+    posologia: str
+    duracao: str | None = None
+    controle_especial: bool = False
+
+
+@dataclass(frozen=True)
+class DocumentoValidacaoResult:
+    """Service result for public document authenticity verification."""
+
+    documento_id: UUID
+    tipo_documento: str
+    status_documento: str
+    sha256_hash: str
+    assinado_em: datetime | None
+    emissor_medico_nome: str
+    emissor_medico_crm: str
+    emissor_medico_uf: str
+    organizacao_nome: str
+    paciente_nome_mascarado: str
+    paciente_cpf_mascarado: str
+    assinatura_digital_valida: bool
+    conformidade_icp_brasil: bool
+    itens: list[ItemValidacaoDTO]
+
+
+@dataclass(frozen=True)
+class DownloadResult:
+    """Service result for presigned download URL generation."""
+
+    documento_id: UUID
+    download_url: str
+    expires_in_seconds: int
+    chave_s3: str
+
+
+@dataclass(frozen=True)
+class DocumentoAssinadoResult:
+    """Service result for ICP-Brasil PAdES signing (ADR-008 output DTO)."""
+
+    documento_id: UUID
+    tipo_documento: str
+    sha256_hash: str
+    assinado_em: datetime
+    tamanho_bytes: int
+    status: str = "ASSINADO"

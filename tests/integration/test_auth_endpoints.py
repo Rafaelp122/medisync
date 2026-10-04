@@ -4,11 +4,11 @@ from typing import Any, cast
 import pytest
 from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.core.valkey import get_valkey_pool
 from src.main import app
 from src.modules.auth.application.dtos import CadastrarCredencialCommand
-from src.modules.auth.application.services.auth_service import AuthService
+from src.modules.auth.composition import get_auth_service
 
 from tests.factories.identity import make_organizacao, make_profissional
 
@@ -23,15 +23,15 @@ async def setup_auth_db() -> AsyncGenerator[None, None]:
     if keys_before:
         await valkey_any.delete(*keys_before)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    from tests.helpers import clean_database_tables
+
+    await clean_database_tables()
     yield
     keys_after = cast("list[str]", await valkey_any.keys("auth:ratelimit:*"))
     if keys_after:
         await valkey_any.delete(*keys_after)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    await clean_database_tables()
 
 
 @pytest.mark.asyncio
@@ -56,7 +56,7 @@ async def test_auth_full_lifecycle_login_me_refresh_logout() -> None:
         await session.refresh(medico)
 
         # Cadastrar credencial via AuthService
-        service = AuthService(session)
+        service = get_auth_service(session)
         await service.cadastrar_credencial(
             CadastrarCredencialCommand(
                 organizacao_id=org.id,
@@ -76,7 +76,7 @@ async def test_auth_full_lifecycle_login_me_refresh_logout() -> None:
     ) as client:
         # 1. Login com credenciais válidas
         login_resp = await client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={
                 "identificador": "dr.lucas@telemed.com.br",
                 "senha": "SenhaForte123!@#",
@@ -94,7 +94,7 @@ async def test_auth_full_lifecycle_login_me_refresh_logout() -> None:
 
         # 2. Consultar perfil em /auth/me usando Bearer token
         me_resp = await client.get(
-            "/auth/me",
+            "/api/v1/auth/me",
             headers={"Authorization": f"Bearer {access_token}"},
         )
         assert me_resp.status_code == 200
@@ -107,7 +107,7 @@ async def test_auth_full_lifecycle_login_me_refresh_logout() -> None:
 
         # 3. Rotacionar refresh token em /auth/refresh
         refresh_resp = await client.post(
-            "/auth/refresh",
+            "/api/v1/auth/refresh",
             json={"refresh_token": refresh_token},
         )
         assert refresh_resp.status_code == 200
@@ -120,21 +120,21 @@ async def test_auth_full_lifecycle_login_me_refresh_logout() -> None:
 
         # 4. Validar que o refresh token antigo foi invalidado (one-time use)
         stale_refresh_resp = await client.post(
-            "/auth/refresh",
+            "/api/v1/auth/refresh",
             json={"refresh_token": refresh_token},
         )
         assert stale_refresh_resp.status_code == 401
 
         # 5. Logout com o novo refresh token
         logout_resp = await client.post(
-            "/auth/logout",
+            "/api/v1/auth/logout",
             json={"refresh_token": new_refresh_token},
         )
         assert logout_resp.status_code == 204
 
         # 6. Validar que o token revogado pelo logout não pode mais ser utilizado
         revoked_refresh_resp = await client.post(
-            "/auth/refresh",
+            "/api/v1/auth/refresh",
             json={"refresh_token": new_refresh_token},
         )
         assert revoked_refresh_resp.status_code == 401
@@ -161,7 +161,7 @@ async def test_auth_anti_enumeration_and_lockout() -> None:
         await session.commit()
         await session.refresh(medico)
 
-        service = AuthService(session)
+        service = get_auth_service(session)
         await service.cadastrar_credencial(
             CadastrarCredencialCommand(
                 organizacao_id=org.id,
@@ -181,7 +181,7 @@ async def test_auth_anti_enumeration_and_lockout() -> None:
     ) as client:
         # 1. Usuário inexistente retorna 401 genérico
         resp_absent = await client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={
                 "identificador": "inexistente@telemed.com.br",
                 "senha": "SenhaQualquer123!",
@@ -194,7 +194,7 @@ async def test_auth_anti_enumeration_and_lockout() -> None:
 
         # 2. Senha errada: mesma mensagem de erro genérica (anti-enumeração)
         resp_wrong = await client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={
                 "identificador": "dra.juliana@telemed.com.br",
                 "senha": "SenhaErrada!",
@@ -208,7 +208,7 @@ async def test_auth_anti_enumeration_and_lockout() -> None:
         # 3. Forçar 3 falhas adicionais (totalizando 4 falhas consecutivas)
         for _ in range(3):
             r = await client.post(
-                "/auth/login",
+                "/api/v1/auth/login",
                 json={
                     "identificador": "dra.juliana@telemed.com.br",
                     "senha": "SenhaErrada!",
@@ -218,7 +218,7 @@ async def test_auth_anti_enumeration_and_lockout() -> None:
 
         # 5ª tentativa incorreta deve bloquear a conta (HTTP 423)
         resp_blocked = await client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={
                 "identificador": "dra.juliana@telemed.com.br",
                 "senha": "SenhaErrada!",
@@ -228,7 +228,7 @@ async def test_auth_anti_enumeration_and_lockout() -> None:
 
         # 6ª tentativa: mesmo com senha correta, rejeitada por bloqueio ativo
         resp_correct_but_blocked = await client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={
                 "identificador": "dra.juliana@telemed.com.br",
                 "senha": "SenhaCorreta123!",
@@ -260,7 +260,7 @@ async def test_auth_cross_tenant_isolation() -> None:
         await session.commit()
         await session.refresh(medico_a)
 
-        service = AuthService(session)
+        service = get_auth_service(session)
         await service.cadastrar_credencial(
             CadastrarCredencialCommand(
                 organizacao_id=org_a.id,
@@ -280,11 +280,40 @@ async def test_auth_cross_tenant_isolation() -> None:
         headers={"X-Tenant-ID": str(org_b.id)},
     ) as client:
         resp = await client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={
                 "identificador": "dr.tenant_a@telemed.com.br",
                 "senha": "SenhaOrgA123!",
             },
         )
         # Deve falhar com 401 por isolamento de tenant
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_me_sem_bearer_retorna_401() -> None:
+    """Bearer ausente em /auth/me deve retornar 401 (travamento item 5.2)."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-Tenant-ID": "1"},
+    ) as client:
+        resp = await client.get("/api/v1/auth/me")
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_me_bearer_malformado_retorna_401() -> None:
+    """Bearer malformado em /auth/me deve retornar 401 (travamento item 5.2)."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-Tenant-ID": "1"},
+    ) as client:
+        resp = await client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": "Token abc"},
+        )
         assert resp.status_code == 401

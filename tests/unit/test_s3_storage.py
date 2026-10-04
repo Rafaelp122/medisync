@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
+from src.core.privacy import mascarar_cpf, mascarar_nome
 from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.domain.exceptions import (
     DocumentoNaoEncontradoNoStorageError,
@@ -12,10 +13,6 @@ from src.modules.consultation.domain.exceptions import (
 from src.modules.consultation.infrastructure.s3_storage import (
     FakeStorageAdapter,
     S3StorageAdapter,
-)
-from src.modules.consultation.presentation.routers.document_validation_router import (
-    mascarar_cpf,
-    mascarar_nome,
 )
 
 

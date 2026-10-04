@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.sign.validation import async_validate_pdf_signature
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.main import app
 
 from tests.factories.identity import (
@@ -18,16 +18,15 @@ from tests.factories.identity import (
     make_profissional,
 )
 from tests.factories.queue import make_atendimento
+from tests.helpers import clean_database_tables
 
 
 @pytest.fixture(autouse=True)
 async def setup_consultation_sign_db() -> AsyncGenerator[None, None]:
     """Ensure database schema is ready before running tests and clean up after."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await clean_database_tables()
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    await clean_database_tables()
 
 
 @pytest.mark.asyncio
@@ -70,7 +69,7 @@ async def test_assinar_documento_clinico_pades_flow() -> None:
     ) as client:
         # 1. Emitir receita simples
         emit_resp = await client.post(
-            f"/consultations/{atendimento.id}/documents",
+            f"/api/v1/consultations/{atendimento.id}/documents",
             json={
                 "medico_id": str(medico.id),
                 "tipo_documento": "RECEITA_SIMPLES",
@@ -91,7 +90,7 @@ async def test_assinar_documento_clinico_pades_flow() -> None:
 
         # 2. Assinar documento com PAdES ICP-Brasil via PSC
         sign_resp = await client.post(
-            f"/consultations/{atendimento.id}/documents/{doc_id}/sign",
+            f"/api/v1/consultations/{atendimento.id}/documents/{doc_id}/sign",
             json={
                 "token": "valid-psc-oauth2-bearer-token",
                 "provider": "fake",
@@ -113,7 +112,7 @@ async def test_assinar_documento_clinico_pades_flow() -> None:
 
         # 3. Baixar PDF assinado e validar criptograficamente
         pdf_resp = await client.get(
-            f"/consultations/{atendimento.id}/documents/{doc_id}/pdf"
+            f"/api/v1/consultations/{atendimento.id}/documents/{doc_id}/pdf"
         )
         assert pdf_resp.status_code == 200
         assert pdf_resp.headers["content-type"] == "application/pdf"
@@ -169,7 +168,7 @@ async def test_assinar_documento_consultation_finalizada_bloqueado() -> None:
     ) as client:
         # Emitir documento
         emit_resp = await client.post(
-            f"/consultations/{atendimento.id}/documents",
+            f"/api/v1/consultations/{atendimento.id}/documents",
             json={
                 "medico_id": str(medico.id),
                 "tipo_documento": "RECEITA_SIMPLES",
@@ -188,7 +187,7 @@ async def test_assinar_documento_consultation_finalizada_bloqueado() -> None:
 
         # Salvar evolução SOAP necessária antes de finalizar
         soap_resp = await client.post(
-            f"/consultations/{atendimento.id}/soap",
+            f"/api/v1/consultations/{atendimento.id}/soap",
             json={
                 "medico_id": str(medico.id),
                 "anamnese": "Paciente refere cefaleia de leve intensidade.",
@@ -199,14 +198,14 @@ async def test_assinar_documento_consultation_finalizada_bloqueado() -> None:
 
         # Finalizar consulta
         fin_resp = await client.post(
-            f"/consultations/{atendimento.id}/finalize",
+            f"/api/v1/consultations/{atendimento.id}/finalize",
             json={"medico_id": str(medico.id)},
         )
         assert fin_resp.status_code == 200
 
         # Tentar assinar documento após finalização -> 409 Conflict
         sign_resp = await client.post(
-            f"/consultations/{atendimento.id}/documents/{doc_id}/sign",
+            f"/api/v1/consultations/{atendimento.id}/documents/{doc_id}/sign",
             json={
                 "token": "valid-token",
                 "provider": "fake",
@@ -258,14 +257,14 @@ async def test_assinar_documento_erros_validacao_e_nao_encontrado() -> None:
         # 1. Documento não encontrado -> 404
         non_existent_doc = uuid4()
         resp_404 = await client.post(
-            f"/consultations/{atendimento.id}/documents/{non_existent_doc}/sign",
+            f"/api/v1/consultations/{atendimento.id}/documents/{non_existent_doc}/sign",
             json={"token": "some-token", "provider": "fake"},
         )
         assert resp_404.status_code == 404
 
         # 2. Token vazio -> 422
         emit_resp = await client.post(
-            f"/consultations/{atendimento.id}/documents",
+            f"/api/v1/consultations/{atendimento.id}/documents",
             json={
                 "medico_id": str(medico.id),
                 "tipo_documento": "RECEITA_SIMPLES",
@@ -282,7 +281,7 @@ async def test_assinar_documento_erros_validacao_e_nao_encontrado() -> None:
         doc_id = emit_resp.json()["id"]
 
         resp_422 = await client.post(
-            f"/consultations/{atendimento.id}/documents/{doc_id}/sign",
+            f"/api/v1/consultations/{atendimento.id}/documents/{doc_id}/sign",
             json={"token": "   ", "provider": "fake"},
         )
         assert resp_422.status_code == 422

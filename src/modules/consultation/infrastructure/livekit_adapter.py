@@ -7,11 +7,6 @@ from typing import Any, cast
 import httpx
 import jwt
 
-from src.core.config import get_settings
-from src.modules.consultation.application.ports.livekit_media_port import (
-    LiveKitMediaPort,
-)
-
 
 class LiveKitAdapter:
     """Production LiveKit adapter for JWT tokens and room lifecycle."""
@@ -238,13 +233,3 @@ class FakeLiveKitAdapter:
         if room_name in self.rooms:
             return []
         return []
-
-
-def get_livekit_adapter() -> LiveKitMediaPort:
-    """Factory dependency providing the configured LiveKit adapter instance."""
-    settings = get_settings()
-    return LiveKitAdapter(
-        api_key=settings.LIVEKIT_API_KEY,
-        api_secret=settings.LIVEKIT_API_SECRET,
-        server_url=settings.LIVEKIT_URL,
-    )

@@ -14,12 +14,12 @@ from src.modules.queue.application.ports import (
     PacienteAusenteEvent,
     PacienteAusenteNotifierPort,
 )
+from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
-from src.modules.queue.infrastructure.lua_loader import LuaScriptManager
 from src.worker.tasks.ring_timeout import resolver_ring_timeout_task
 
 
@@ -219,7 +219,7 @@ async def test_alocacao_service_schedules_arq_job() -> None:
     """
     mock_valkey = AsyncMock(spec=Redis)
     mock_session = AsyncMock(spec=AsyncSession)
-    mock_lua = AsyncMock(spec=LuaScriptManager)
+    mock_lua = AsyncMock(spec=LuaScriptPort)
     mock_lua.execute_script.return_value = 1  # Success
 
     atend_id = uuid4()

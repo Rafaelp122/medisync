@@ -3,16 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Path, status
 
-from src.core.context import get_current_tenant_id
-from src.core.database import get_db_session
-from src.modules.identity.application.services.dependente_service import (
-    CriarDependenteDTO,
-    DependenteService,
-)
-from src.modules.identity.domain.exceptions import TenantInvalidoError
+from src.core.database import DbSessionDep
+from src.core.dependencies import TenantDep
+from src.modules.identity.composition import DependenteServiceDep
 from src.modules.identity.presentation.schemas import (
     CriarDependenteRequest,
     DependenteDetalheResponse,
@@ -23,21 +18,6 @@ pacientes_router = APIRouter(
     prefix="/pacientes",
     tags=["Pacientes"],
 )
-
-SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
-
-
-def _get_required_tenant_id() -> int:
-    tenant_id = get_current_tenant_id()
-    if tenant_id is None or tenant_id <= 0:
-        raise TenantInvalidoError(
-            "Header 'X-Tenant-ID' ausente ou inválido. "
-            "O acesso multi-tenant requer identificador positivo."
-        )
-    return tenant_id
-
-
-TenantDep = Annotated[int, Depends(_get_required_tenant_id)]
 
 
 @pacientes_router.post(
@@ -54,34 +34,17 @@ async def cadastrar_dependente(
     id: Annotated[UUID, Path(description="ID do paciente titular")],
     body: CriarDependenteRequest,
     tenant_id: TenantDep,
-    session: SessionDep,
+    session: DbSessionDep,
+    service: DependenteServiceDep,
 ) -> DependenteResponse:
     """Register or link a dependent to a titular patient."""
-    service = DependenteService()
-    dto = CriarDependenteDTO(
-        grau_parentesco=body.grau_parentesco,
-        dependente_id=body.dependente_id,
-        nome_completo=body.nome_completo,
-        data_nascimento=body.data_nascimento,
-        cpf=body.cpf,
-        cns=body.cns,
-        telefone=body.telefone,
-    )
     result = await service.adicionar_dependente(
         session=session,
         organizacao_id=tenant_id,
         titular_id=id,
-        dados=dto,
+        dados=body,
     )
-
-    return DependenteResponse(
-        id=result.id,
-        organizacao_id=result.organizacao_id,
-        titular_id=result.titular_id,
-        dependente_id=result.dependente_id,
-        grau_parentesco=result.grau_parentesco,
-        vinculado_em=result.vinculado_em,
-    )
+    return DependenteResponse.model_validate(result)
 
 
 @pacientes_router.get(
@@ -97,27 +60,13 @@ async def cadastrar_dependente(
 async def listar_dependentes(
     id: Annotated[UUID, Path(description="ID do paciente titular")],
     tenant_id: TenantDep,
-    session: SessionDep,
+    session: DbSessionDep,
+    service: DependenteServiceDep,
 ) -> list[DependenteDetalheResponse]:
     """List all dependents linked to the titular patient."""
-    service = DependenteService()
     results = await service.listar_dependentes(
         session=session,
         organizacao_id=tenant_id,
         titular_id=id,
     )
-
-    return [
-        DependenteDetalheResponse(
-            id=d.id,
-            titular_id=d.titular_id,
-            dependente_id=d.dependente_id,
-            grau_parentesco=d.grau_parentesco,
-            nome_completo=d.nome_completo,
-            data_nascimento=d.data_nascimento,
-            cpf=d.cpf,
-            cns=d.cns,
-            vinculado_em=d.vinculado_em,
-        )
-        for d in results
-    ]
+    return [DependenteDetalheResponse.model_validate(d) for d in results]

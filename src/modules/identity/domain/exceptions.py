@@ -4,6 +4,7 @@ from src.core.errors import (
     BadRequestError,
     ConflictError,
     NotFoundError,
+    TenantInvalidoError,
     UnauthorizedError,
     ValidationError,
 )
@@ -67,13 +68,11 @@ class IdentificacaoObrigatoriaError(ValidationError):
         super().__init__(detail, title=self.title, code=self.code)
 
 
-class TenantInvalidoError(BadRequestError):
-    """Raised when an invalid or missing tenant is supplied in request context."""
-
-    title = "Organização Inválida"
-    code = "TENANT_INVALIDO"
-
-    def __init__(
-        self, detail: str = "Header X-Tenant-ID obrigatório e positivo."
-    ) -> None:
-        super().__init__(detail, title=self.title, code=self.code)
+__all__ = [
+    "DependenteAutoReferenciaError",
+    "IdentificacaoObrigatoriaError",
+    "PacienteNaoEncontradoError",
+    "TenantInvalidoError",
+    "TokenAcolhimentoInvalidoError",
+    "VinculoDependenteExistenteError",
+]

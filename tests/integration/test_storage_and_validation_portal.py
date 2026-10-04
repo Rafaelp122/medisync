@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.main import app
 from src.modules.consultation.domain.models import DocumentoClinico
 
@@ -16,16 +16,15 @@ from tests.factories.identity import (
     make_profissional,
 )
 from tests.factories.queue import make_atendimento
+from tests.helpers import clean_database_tables
 
 
 @pytest.fixture(autouse=True)
 async def setup_storage_portal_db() -> AsyncGenerator[None, None]:
     """Ensure database schema is clean and ready before running tests."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await clean_database_tables()
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    await clean_database_tables()
 
 
 @pytest.mark.asyncio
@@ -77,7 +76,7 @@ async def test_storage_presigned_url_and_validation_portal_full_flow() -> None:
     ) as client:
         # 1. Emitir receita médica
         emit_resp = await client.post(
-            f"/consultations/{atendimento.id}/documents",
+            f"/api/v1/consultations/{atendimento.id}/documents",
             json={
                 "medico_id": str(medico.id),
                 "tipo_documento": "RECEITA_SIMPLES",
@@ -97,7 +96,7 @@ async def test_storage_presigned_url_and_validation_portal_full_flow() -> None:
 
         # 2. Assinar documento digitalmente com PAdES ICP-Brasil
         sign_resp = await client.post(
-            f"/consultations/{atendimento.id}/documents/{doc_id}/sign",
+            f"/api/v1/consultations/{atendimento.id}/documents/{doc_id}/sign",
             json={
                 "token": "valid-psc-oauth2-bearer-token",
                 "provider": "fake",
@@ -117,7 +116,7 @@ async def test_storage_presigned_url_and_validation_portal_full_flow() -> None:
             assert doc_db.chave_s3 == expected_key
 
         # 4. Validar documento publicamente via Portal de Validação (LGPD compliant)
-        val_resp = await client.get(f"/documents/validate/{doc_id}")
+        val_resp = await client.get(f"/api/v1/documents/validate/{doc_id}")
         assert val_resp.status_code == 200
         val_data = cast("dict[str, object]", val_resp.json())
 
@@ -139,7 +138,9 @@ async def test_storage_presigned_url_and_validation_portal_full_flow() -> None:
         assert itens[0]["medicamento"] == "Paracetamol 750mg"
 
         # 5. Obter URL pré-assinada sem redirecionamento (redirect=false)
-        url_resp = await client.get(f"/documents/download/{doc_id}?redirect=false")
+        url_resp = await client.get(
+            f"/api/v1/documents/download/{doc_id}?redirect=false"
+        )
         assert url_resp.status_code == 200
         url_data = cast("dict[str, object]", url_resp.json())
         assert url_data["documento_id"] == doc_id
@@ -149,7 +150,7 @@ async def test_storage_presigned_url_and_validation_portal_full_flow() -> None:
 
         # 6. Requisitar download com redirecionamento temporário 307
         redirect_resp = await client.get(
-            f"/documents/download/{doc_id}",
+            f"/api/v1/documents/download/{doc_id}",
             follow_redirects=False,
         )
         assert redirect_resp.status_code == 307
@@ -199,7 +200,7 @@ async def test_validation_portal_documento_nao_assinado() -> None:
     ) as client:
         # Emitir atestado médico
         emit_resp = await client.post(
-            f"/consultations/{atendimento.id}/documents",
+            f"/api/v1/consultations/{atendimento.id}/documents",
             json={
                 "medico_id": str(medico.id),
                 "tipo_documento": "ATESTADO_MEDICO",
@@ -217,7 +218,7 @@ async def test_validation_portal_documento_nao_assinado() -> None:
         doc_id = cast("str", emit_resp.json()["id"])
 
         # Consultar no portal antes de assinar
-        val_resp = await client.get(f"/documents/validate/{doc_id}")
+        val_resp = await client.get(f"/api/v1/documents/validate/{doc_id}")
         assert val_resp.status_code == 200
         val_data = cast("dict[str, object]", val_resp.json())
         assert val_data["status_documento"] == "EMITIDO"
@@ -234,17 +235,17 @@ async def test_validation_and_download_not_found() -> None:
         random_id = str(uuid4())
 
         # Validate non-existent
-        resp1 = await client.get(f"/documents/validate/{random_id}")
+        resp1 = await client.get(f"/api/v1/documents/validate/{random_id}")
         assert resp1.status_code == 404
 
         # Validate invalid token format
-        resp2 = await client.get("/documents/validate/not-a-uuid")
+        resp2 = await client.get("/api/v1/documents/validate/not-a-uuid")
         assert resp2.status_code == 404
 
         # Download non-existent
-        resp3 = await client.get(f"/documents/download/{random_id}")
+        resp3 = await client.get(f"/api/v1/documents/download/{random_id}")
         assert resp3.status_code == 404
 
         # Download invalid token format
-        resp4 = await client.get("/documents/download/invalid-token-123")
+        resp4 = await client.get("/api/v1/documents/download/invalid-token-123")
         assert resp4.status_code == 404

@@ -81,7 +81,11 @@ async def test_ingressar_fila_unit() -> None:
     mock_valkey.zadd.return_value = 1
     mock_valkey.zrank.return_value = 0  # 0-indexed rank -> position 1
 
-    service = FilaService(valkey=mock_valkey, db_session=mock_session)
+    service = FilaService(
+        valkey=mock_valkey,
+        db_session=mock_session,
+        alocacao_service=AsyncMock(),
+    )
     atend_id = uuid4()
     cmd = IngressarFilaCommand(
         organizacao_id=1,
@@ -106,7 +110,11 @@ async def test_adquirir_proximo_paciente_fila_vazia() -> None:
     mock_session = AsyncMock()
     mock_valkey.zrange.return_value = []
 
-    service = FilaService(valkey=mock_valkey, db_session=mock_session)
+    service = FilaService(
+        valkey=mock_valkey,
+        db_session=mock_session,
+        alocacao_service=AsyncMock(),
+    )
     cmd = AdquirirProximoPacienteCommand(organizacao_id=1, medico_id=uuid4())
 
     result = await service.adquirir_proximo_paciente(cmd)
@@ -261,7 +269,11 @@ async def test_remover_e_obter_posicao_e_tamanho() -> None:
     mock_valkey.zcard.return_value = 12
     mock_valkey.zrange.return_value = [b"id-1", b"id-2"]
 
-    service = FilaService(valkey=mock_valkey, db_session=mock_session)
+    service = FilaService(
+        valkey=mock_valkey,
+        db_session=mock_session,
+        alocacao_service=AsyncMock(),
+    )
     atend_id = uuid4()
 
     assert await service.remover_da_fila(1, atend_id) is True

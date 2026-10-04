@@ -304,6 +304,37 @@ src/
         └── presentation/              # Webhooks de liquidação e parametrização de cotas
 ```
 
+> **Composition roots (ADR-001 §7)**: `auth/composition.py`, `consultation/composition.py`,
+> `identity/composition.py`, `queue/composition.py` — únicos lugares que importam
+> adaptadores concretos de `infrastructure`. Routers recebem services via `*Dep`
+> (`AuthServiceDep`, `PEPServiceDep`, …). `billing`/`triage` sem composition própria
+> (stateless ou sem presentation).
+>
+> **Prefixo de rotas**: HTTP sob `/api/v1` (`src/main.py`: `APIRouter(prefix="/api/v1")`
+> monta `auth/onboarding/pacientes/consultations/documents`); WebSockets de sinalização
+> (`/ws/queue/{id}`, `/ws/doctor/{id}`) fora do prefixo, montados direto no `app`.
+>
+> **Breakings routers finos**: alias `/atendimentos/{id}/prontuario` removido (usar
+> `/api/v1/consultations/{id}/prontuario`); tenant ausente `400 TENANT_INVALIDO`, login sem
+> tenant `422`, validação órfã `500 DOCUMENTO_INTEGRIDADE`; rate por IP `validate` 30/min +
+> `download` 20/min (`429`+`Retry-After`); novos `EVOLUCAO_NAO_ENCONTRADA` / `DOCUMENTO_CLINICO_NAO_ENCONTRADO` (`404`).
+
+---
+
+### 3.1 Convenção de Schemas e DTOs (ADR-008)
+
+Para erradicar o *Mapper Hell* entre a apresentação e os serviços de aplicação:
+
+1. **Schemas de Entrada (`presentation/schemas.py`)**:
+   * Entradas que vêm exclusivamente do JSON HTTP utilizam o próprio Pydantic (`frozen=True`) diretamente como argumento do Service.
+   * `Command` (`@dataclass(frozen=True)` em `application/dtos.py`) é reservado para agregação contextual (Path Parameters + Tenant Context + Socket IP + Body).
+2. **Schemas de Saída (`presentation/schemas.py`)**:
+   * Devem declarar `model_config = ConfigDict(from_attributes=True)`.
+   * A serialização a partir de entidades ORM ou DTOs de resultado ocorre exclusivamente via `ResponseSchema.model_validate(entidade)` ou pelo motor do FastAPI (`response_model=ResponseSchema`), proibindo mappers manuais.
+3. **Consistência de Localização**:
+   * Todo schema Pydantic vive em `presentation/schemas.py`.
+   * Todo DTO ou Command puro de aplicação vive em `application/dtos.py`.
+
 ---
 
 ## 4. Governança de Fronteiras Modulares com Tach
@@ -312,6 +343,12 @@ Para assegurar que o monólito modular permaneça desacoplado sem degradação a
 
 1. **Configuração Declarativa (`tach.toml`)**:
    * Cada módulo em `src/modules/*` é declarado como um módulo fechado.
+   * **Camadas estritas (Stage B, ADR-001 §7)**: `presentation → application + composition + core`;
+     `composition → application + domain + infrastructure + core`;
+     `infrastructure → application + domain + core`; `application → domain + core`; `domain → core`.
+     Guard extra via `tests/architecture/test_routers_are_thin.py` (AST): router nunca importa
+     `sqlalchemy/infrastructure/domain.models`, nunca chama `.commit()/.refresh()/text()/select()`,
+     nunca levanta `HTTPException` (só `presentation/dependencies.py`), nunca instancia `*Service(`.
    * **Modelos Ricos e Dependência ORM**: O domínio de cada módulo pode importar `sqlalchemy.orm` para definir suas entidades ricas (`Mapped[...]`), mas **jamais** importa infraestrutura externa ou modelos de outro módulo.
    * **Comunicação Inter-Módulos Blindada**: Consumidores acessam outros módulos exclusivamente através de portas públicas (`typing.Protocol`), manipulando tipos primitivos ou DTOs imutáveis (`dataclass(frozen=True)`).
    * As portas e eventos em `domain/ports.py` e `events.py` representam as **únicas interfaces públicas expostas**.

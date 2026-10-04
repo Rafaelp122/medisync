@@ -184,6 +184,17 @@ A governança do repositório é estritamente segregada em três pilares ortogon
 
 ---
 
+### Mudanças de contrato (routers finos)
+- Prefixo único `/api/v1` para todo HTTP; WS fora (`/ws/queue/{id}`, `/ws/doctor/{id}`).
+- Alias `GET /atendimentos/{id}/prontuario` removido; usar `GET /api/v1/consultations/{id}/prontuario`.
+- Tenant ausente → `400 TENANT_INVALIDO`.
+- Login sem tenant → `422`.
+- Validação pública órfã → `500 DOCUMENTO_INTEGRIDADE` (sem dados fabricados).
+- Rate limit por IP: `validate` 30/min, `download` 20/min → `429` + `Retry-After`.
+- Novos codes: `EVOLUCAO_NAO_ENCONTRADA` / `DOCUMENTO_CLINICO_NAO_ENCONTRADO` → `404`.
+
+---
+
 ## 🚀 Como Executar o Projeto
 
 > [!NOTE]

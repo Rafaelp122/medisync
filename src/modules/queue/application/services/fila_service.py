@@ -70,15 +70,13 @@ class FilaService:
         self,
         valkey: Redis,
         db_session: AsyncSession,
-        alocacao_service: AlocacaoChamadaService | None = None,
+        alocacao_service: AlocacaoChamadaService,
         controle_admissao: ControleAdmissaoService | None = None,
     ) -> None:
         self._valkey = valkey
         self._db_session = db_session
-        self._alocacao_service = alocacao_service or AlocacaoChamadaService(
-            valkey=valkey,
-            db_session=db_session,
-        )
+        self._alocacao_service = alocacao_service
+        # app->app default: ControleAdmissaoService is pure (no infra imports).
         self._controle_admissao = controle_admissao or ControleAdmissaoService(
             valkey=valkey
         )

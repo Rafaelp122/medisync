@@ -10,6 +10,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.core.errors import NotFoundError
 from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
     EmitirDocumentoClinicoCommand,
@@ -31,6 +32,8 @@ from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     ConsultaInvalidaError,
+    DocumentoClinicoNaoEncontradoError,
+    EvolucaoNaoEncontradaError,
     PrescricaoFisicaObrigatoriaError,
 )
 from src.modules.consultation.domain.models import (
@@ -55,33 +58,13 @@ class PEPService:
     def __init__(
         self,
         session: AsyncSession,
-        pdf_generator: PDFGeneratorPort | None = None,
-        signer: ICPBrasilSignerPort | None = None,
-        storage: StoragePort | None = None,
+        pdf_generator: PDFGeneratorPort,
+        signer: ICPBrasilSignerPort,
+        storage: StoragePort,
     ) -> None:
         self._session = session
-        if pdf_generator is None:
-            from src.modules.consultation.infrastructure.pdf_generator import (
-                ReportLabPDFGenerator,
-            )
-
-            pdf_generator = ReportLabPDFGenerator()
         self._pdf_generator = pdf_generator
-
-        if signer is None:
-            from src.modules.consultation.infrastructure.pyhanko_signer import (
-                PyHankoSigner,
-            )
-
-            signer = PyHankoSigner()
         self._signer = signer
-
-        if storage is None:
-            from src.modules.consultation.infrastructure.s3_storage import (
-                FakeStorageAdapter,
-            )
-
-            storage = FakeStorageAdapter()
         self._storage = storage
 
     @property
@@ -91,8 +74,10 @@ class PEPService:
 
     def is_documento_assinado(self, doc: DocumentoClinico) -> bool:
         """Check if document has been digitally signed with PAdES ICP-Brasil."""
-        return doc.id in _DOCUMENTOS_ASSINADOS_CACHE or doc.chave_s3.startswith(
-            f"orgs/{doc.organizacao_id}/consultations/"
+        from src.modules.consultation.domain.s3_keys import is_signed_document_key
+
+        return doc.id in _DOCUMENTOS_ASSINADOS_CACHE or is_signed_document_key(
+            doc.chave_s3, doc.organizacao_id
         )
 
     async def _verificar_atendimento_finalizado(self, atendimento_id: UUID) -> bool:
@@ -158,6 +143,7 @@ class PEPService:
             existing.registrado_em = datetime.now(UTC)
 
             await self._session.flush()
+            await self._session.commit()
             return existing
 
         if is_term:
@@ -176,6 +162,7 @@ class PEPService:
         )
         self._session.add(evolucao)
         await self._session.flush()
+        await self._session.commit()
         return evolucao
 
     def validar_prescricao(self, medicamento: str) -> None:
@@ -261,7 +248,17 @@ class PEPService:
             self._session.add(item_entity)
 
         await self._session.flush()
-        return doc
+        await self._session.commit()
+        # Reload with itens eagerly (selectin) so Pydantic model_validate
+        # stays sync-safe; expire_on_commit=False keeps columns, no refresh.
+        reload_stmt = (
+            select(DocumentoClinico)
+            .where(DocumentoClinico.id == doc.id)
+            .options(selectinload(DocumentoClinico.itens))
+        )
+        reload_res = await self._session.execute(reload_stmt)
+        reloaded = reload_res.scalar_one()
+        return reloaded
 
     async def finalizar_consulta(
         self, command: FinalizarConsultaCommand
@@ -310,12 +307,13 @@ class PEPService:
             )
 
         await self._session.flush()
+        await self._session.commit()
         return evolucao
 
     def calcular_tma_status(
         self,
         atendimento_id: UUID,
-        iniciado_em: datetime,
+        iniciado_em: datetime | None = None,
         tma_planejado_segundos: int = 900,
     ) -> TMAStatusDTO:
         """Compute TMA indicators while preserving sovereign medical act (RN06).
@@ -324,10 +322,11 @@ class PEPService:
         Software is strictly forbidden from forcing disconnection.
         """
         now = datetime.now(UTC)
+        inicio_raw = iniciado_em or now
         iniciado_utc = (
-            iniciado_em
-            if iniciado_em.tzinfo is not None
-            else iniciado_em.replace(tzinfo=UTC)
+            inicio_raw
+            if inicio_raw.tzinfo is not None
+            else inicio_raw.replace(tzinfo=UTC)
         )
         decorrido = max(0, int((now - iniciado_utc).total_seconds()))
         excedeu = decorrido > tma_planejado_segundos
@@ -374,10 +373,24 @@ class PEPService:
                 doc.marcar_finalizado()
 
         return ProntuarioResumoDTO(
+            atendimento_id=atendimento_id,
             evolucao=evolucao,
             documentos=documentos,
             is_finalizado=is_finalizado,
         )
+
+    async def obter_evolucao(self, atendimento_id: UUID) -> EvolucaoClinica:
+        """Return SOAP evolution or raise 404 EvolucaoNaoEncontradaError."""
+        stmt = select(EvolucaoClinica).where(
+            EvolucaoClinica.atendimento_id == atendimento_id
+        )
+        res = await self._session.execute(stmt)
+        evolucao = res.scalar_one_or_none()
+        if evolucao is None:
+            raise EvolucaoNaoEncontradaError(
+                "Nenhuma evolução clínica registrada para este atendimento."
+            )
+        return evolucao
 
     async def compilar_documento_pdf(self, documento_id: UUID) -> bytes:
         """Compile PDF/A binary with ITI verification QR Code."""
@@ -389,7 +402,7 @@ class PEPService:
         res = await self._session.execute(stmt)
         doc = res.scalar_one_or_none()
         if doc is None:
-            raise ConsultaInvalidaError(
+            raise DocumentoClinicoNaoEncontradoError(
                 f"Documento clínico '{documento_id}' não encontrado."
             )
 
@@ -535,6 +548,7 @@ class PEPService:
     async def assinar_documento_clinico(
         self,
         documento_id: UUID,
+        atendimento_id: UUID,
         credenciais: DoctorCertificateCredentials,
     ) -> tuple[DocumentoClinico, bytes]:
         """Sign clinical document with ICP-Brasil PAdES standard via Cloud PSC."""
@@ -546,8 +560,12 @@ class PEPService:
         res = await self._session.execute(stmt)
         doc = res.scalar_one_or_none()
         if doc is None:
-            raise ConsultaInvalidaError(
-                f"Documento clínico '{documento_id}' não encontrado."
+            raise NotFoundError(f"Documento clínico '{documento_id}' não encontrado.")
+
+        if doc.atendimento_id != atendimento_id:
+            raise NotFoundError(
+                f"Documento '{documento_id}' não pertence ao "
+                f"atendimento '{atendimento_id}'."
             )
 
         is_term = await self._verificar_atendimento_finalizado(doc.atendimento_id)
@@ -564,13 +582,17 @@ class PEPService:
         doc.sha256_hash = new_hash
         doc.assinado_em = datetime.now(UTC)
 
-        s3_key = (
-            f"orgs/{doc.organizacao_id}/consultations/{doc.atendimento_id}/"
-            f"documents/{doc.id}.pdf"
+        from src.modules.consultation.domain.s3_keys import (
+            build_signed_document_key,
+        )
+
+        s3_key = build_signed_document_key(
+            doc.organizacao_id, doc.atendimento_id, doc.id
         )
         await self._storage.salvar_documento(s3_key, signed_bytes)
         doc.chave_s3 = s3_key
         _DOCUMENTOS_ASSINADOS_CACHE[doc.id] = signed_bytes
         await self._session.flush()
+        await self._session.commit()
 
         return doc, signed_bytes

@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
@@ -47,6 +48,28 @@ async def publish_realtime_event(
         subscribers_count,
     )
     return int(cast("int", subscribers_count))
+
+
+async def stream_channel(
+    websocket: WebSocket,
+    valkey: "Redis",
+    channel: str,
+    event: str,
+    **ids: str,
+) -> None:
+    """Accept WS, send initial {event, timestamp, **ids}, bridge Pub/Sub."""
+    await websocket.accept()
+    payload: dict[str, Any] = {
+        "event": event,
+        "timestamp": datetime.now(UTC).isoformat(),
+        **ids,
+    }
+    await forward_pubsub_to_websocket(
+        valkey=valkey,
+        channel=channel,
+        websocket=websocket,
+        initial_payload=payload,
+    )
 
 
 async def forward_pubsub_to_websocket(

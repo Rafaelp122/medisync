@@ -319,3 +319,13 @@ async def create_item(item: Item):
 ```
 
 See [the path operation reference](references/path-operations.md) for more examples.
+
+## MediSync Express Conventions (ADR-008)
+
+No repositório MediSync, siga mandatoriamente as seguintes regras:
+1. **Localização de Schemas**: Todo schema Pydantic reside em `src/modules/<modulo>/presentation/schemas.py`. Nunca declare schemas inline dentro de arquivos de router.
+2. **Localização de DTOs**: DTOs e Commands residem em `src/modules/<modulo>/application/dtos.py`.
+3. **Inputs 1:1**: Se os dados vêm 100% do corpo JSON, use o schema Pydantic (`frozen=True`) diretamente como entrada do Service. Evite criar DTOs espelho duplicados.
+4. **Commands com Enriquecimento**: Use `@dataclass(frozen=True)` com sufixo `Command` apenas quando o caso de uso precisa combinar dados de múltiplas origens (Path Params, Headers, IP, Body).
+5. **Responses com `from_attributes=True`**: Declare `model_config = ConfigDict(from_attributes=True)` em schemas de Response e faça a conversão via `ResponseSchema.model_validate(entidade)` ou pelo FastAPI, proibindo mapeamentos manuais campo a campo.
+

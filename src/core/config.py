@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     S3_SECRET_ACCESS_KEY: str = "medisync123"
     S3_REGION_NAME: str = "us-east-1"
     S3_PRESIGNED_EXPIRATION_SECONDS: int = 300
+    STORAGE_BACKEND: Literal["fake", "s3"] = "fake"
 
     # --- Messaging & Notifications (WhatsApp / SMS) ---
     NOTIFICATION_PROVIDER: Literal["console", "fake", "noop"] = "console"

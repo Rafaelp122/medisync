@@ -20,10 +20,13 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
 
 ## 2. Princípios Arquiteturais Pétreos (ADR-001)
 
-1. **Hexagonal Pragmático sem Mapper Hell:**
+1. **Hexagonal Pragmático sem Mapper Hell (ADR-001 / ADR-008):**
    * Entidades persistidas com SQLAlchemy 2.0 (`Mapped[...]`) são **modelos ricos** e residem no domínio do próprio módulo.
    * Encapsulam regras clínicas, validações e transições de estado.
-   * **Proibido:** Criar DTOs espelho duplicados com conversores manuais (`to_domain`/`to_orm`).
+   * **Proibido:** Criar DTOs espelho duplicados com conversores manuais (`to_domain`/`to_orm` ou `dto_to_schema`/`schema_to_dto`).
+   * **Entradas (Requests):** Se os dados vêm 100% do corpo JSON, utilize o schema Pydantic (`frozen=True`) diretamente como entrada do Service. Use `@dataclass(frozen=True)` com sufixo `Command` em `application/dtos.py` apenas quando for necessário agregar dados de múltiplas origens (Path Params, Headers de Tenant, IP, etc.).
+   * **Saídas (Responses):** Schemas de resposta devem usar `model_config = ConfigDict(from_attributes=True)` e conversão via `ResponseSchema.model_validate(objeto)`. Proibido mapeamento manual campo a campo.
+   * **Organização Física:** Schemas Pydantic residem exclusivamente em `src/modules/<modulo>/presentation/schemas.py`. Commands/DTOs residem em `src/modules/<modulo>/application/dtos.py`.
 2. **Comunicação Inter-Módulos:**
    * Os módulos em `src/modules/*` são independentes e fechados.
    * Comunicação síncrona ocorre exclusivamente via portas abstratas (`typing.Protocol` do PEP 544) e DTOs imutáveis (`@dataclass(frozen=True)` ou Pydantic v2).
@@ -32,6 +35,11 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
 3. **Tipagem Estrita:**
    * O código deve passar em `basedpyright` com `typeCheckingMode = "strict"`.
    * Evite `Any`. Use tipos genéricos, `Union`, `Literal` ou `Protocol`.
+4. **Transação + Router fino (ADR-001 §6-§7):**
+   * Service commita, um por caso de uso (`await session.commit()` no fim do método público que persiste; helpers/policies nunca commitam).
+   * Router nunca importa `sqlalchemy`/`infrastructure`/`domain.models`, nunca chama `.commit()/.refresh()/text()/select()`, nunca instancia `*Service(` (usa `*Dep` da `composition.py`).
+   * `HTTPException` só em `presentation/dependencies.py` (ex.: `exigir_rate_limit` → 429); routers importam de lá. Erros de domínio via `src/core/errors.py` (`NotFoundError`, `ForbiddenError`, …).
+   * Guardas: `tach check` (Stage B camadas + composition) + `tests/architecture/test_routers_are_thin.py` (AST) devem passar.
 
 ---
 

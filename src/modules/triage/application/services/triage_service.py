@@ -1,8 +1,8 @@
 """Triage evaluation service enforcing clinical safety and SAMU escape (RN04)."""
 
-from dataclasses import dataclass
 from uuid import UUID
 
+from src.modules.triage.application.dtos import ResultadoTriagemDTO
 from src.modules.triage.application.ports.emergency_notifier import (
     INSTRUCAO_SAMU_PADRAO,
     EmergencyAlertDTO,
@@ -14,18 +14,6 @@ from src.modules.triage.domain.classification import (
 )
 from src.modules.triage.domain.exceptions import EmergenciaCriticaSamuError
 from src.modules.triage.domain.models.triagem import Triagem
-
-
-@dataclass(frozen=True)
-class ResultadoTriagemDTO:
-    """Outcome of clinical triage assessment."""
-
-    triagem: Triagem
-    prioridade_clinica: int
-    tcle_hash: str
-    admissao_bloqueada: bool
-    alerta_samu_disparado: bool
-    instrucao_redirecionamento: str | None = None
 
 
 class TriageService:

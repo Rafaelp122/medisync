@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.modules.queue.domain.models import (
     Atendimento,
     PrioridadeClinica,
@@ -20,18 +20,17 @@ from tests.factories.identity import (
     make_profissional,
 )
 from tests.factories.queue import make_atendimento
+from tests.helpers import clean_database_tables
 
 SAMPLE_TCLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 
 @pytest.fixture(autouse=True)
 async def setup_atendimento_tables() -> AsyncGenerator[None, None]:
-    """Create all domain tables before testing and drop on cleanup."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Clean tables before each test and after."""
+    await clean_database_tables()
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    await clean_database_tables()
 
 
 @pytest.mark.asyncio

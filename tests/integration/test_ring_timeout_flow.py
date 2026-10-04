@@ -16,6 +16,7 @@ from src.modules.queue.application.services.alocacao_service import (
 )
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
+from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 from src.worker.settings import WorkerSettings
 
 from tests.factories.identity import (
@@ -210,6 +211,7 @@ async def test_alocar_chamada_schedules_arq_job_in_valkey() -> None:
                 service = AlocacaoChamadaService(
                     valkey=pool,
                     db_session=session,
+                    lua_manager=get_lua_script_manager(),
                     arq_pool=pool,
                 )
                 cmd = AlocarChamadaCommand(

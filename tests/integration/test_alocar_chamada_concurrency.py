@@ -243,7 +243,11 @@ async def test_end_to_end_alocacao_service_with_postgres() -> None:
             await client.zadd(k_fila, {str(atend_id): 1000})  # pyright: ignore[reportUnknownMemberType]
 
             # 3. Execute allocation via service
-            service = AlocacaoChamadaService(valkey=client, db_session=session)
+            service = AlocacaoChamadaService(
+                valkey=client,
+                db_session=session,
+                lua_manager=get_lua_script_manager(),
+            )
             cmd = AlocarChamadaCommand(
                 organizacao_id=org.id,
                 medico_id=med_id,

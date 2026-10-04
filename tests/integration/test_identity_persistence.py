@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 from sqlalchemy.exc import IntegrityError
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 
 from tests.factories.identity import (
     make_dependente,
@@ -11,16 +11,15 @@ from tests.factories.identity import (
     make_paciente,
     make_profissional,
 )
+from tests.helpers import clean_database_tables
 
 
 @pytest.fixture(autouse=True)
 async def setup_identity_tables() -> AsyncGenerator[None, None]:
-    """Create tables in PostgreSQL before testing and drop on cleanup."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Clean tables before each test without dropping shared schema."""
+    await clean_database_tables()
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    await clean_database_tables()
 
 
 @pytest.mark.asyncio
