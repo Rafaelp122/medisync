@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class LoginRequest(BaseModel):
     """Payload for user credentials authentication."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     identificador: str = Field(
         ...,
@@ -34,7 +34,7 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     """Access and refresh tokens pair response."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
 
     access_token: str = Field(
         ..., description="JWT Bearer token de curta duração (15 min)"
@@ -56,7 +56,7 @@ class TokenResponse(BaseModel):
 class RefreshTokenRequest(BaseModel):
     """Payload for rotating refresh token."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     refresh_token: str = Field(
         ...,
@@ -68,7 +68,7 @@ class RefreshTokenRequest(BaseModel):
 class UsuarioPerfilResponse(BaseModel):
     """Current authenticated user profile claims."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
 
     usuario_id: UUID
     organizacao_id: int

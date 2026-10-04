@@ -1,13 +1,16 @@
 """Application service managing pediatric and legal dependent linkages."""
 
-from dataclasses import dataclass
-from datetime import date, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, or_, select
 
 from src.core.errors import ValidationError
+from src.modules.identity.application.dtos import (
+    CriarDependenteDTO,
+    DependenteDetalheDTO,
+    DependenteOutputDTO,
+)
 from src.modules.identity.domain.exceptions import (
     DependenteAutoReferenciaError,
     IdentificacaoObrigatoriaError,
@@ -24,46 +27,6 @@ from src.modules.identity.domain.validators import (
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-
-@dataclass(frozen=True)
-class CriarDependenteDTO:
-    """Input parameters for linking or creating a dependent."""
-
-    grau_parentesco: str
-    dependente_id: UUID | None = None
-    nome_completo: str | None = None
-    data_nascimento: date | None = None
-    cpf: str | None = None
-    cns: str | None = None
-    telefone: str | None = None
-
-
-@dataclass(frozen=True)
-class DependenteOutputDTO:
-    """Summary of created dependent relationship."""
-
-    id: UUID
-    organizacao_id: int
-    titular_id: UUID
-    dependente_id: UUID
-    grau_parentesco: str
-    vinculado_em: datetime
-
-
-@dataclass(frozen=True)
-class DependenteDetalheDTO:
-    """Detailed dependent projection including demographics."""
-
-    id: UUID
-    titular_id: UUID
-    dependente_id: UUID
-    grau_parentesco: str
-    nome_completo: str | None
-    data_nascimento: date
-    cpf: str | None
-    cns: str | None
-    vinculado_em: datetime
 
 
 class DependenteService:

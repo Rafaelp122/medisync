@@ -11,7 +11,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from src.core.authz.roles import Role
 from src.core.config import get_settings
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.main import app
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
 
@@ -21,6 +21,7 @@ from tests.factories.identity import (
     make_profissional,
 )
 from tests.factories.queue import make_atendimento
+from tests.helpers import clean_database_tables
 
 
 def _create_token(usuario_id: UUID, org_id: int, papel: str) -> str:
@@ -32,11 +33,9 @@ def _create_token(usuario_id: UUID, org_id: int, papel: str) -> str:
 @pytest.fixture(autouse=True)
 async def setup_authz_db() -> AsyncGenerator[None, None]:
     """Ensure clean database schema before and after each test."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await clean_database_tables()
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    await clean_database_tables()
 
 
 @pytest.mark.asyncio

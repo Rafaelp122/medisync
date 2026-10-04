@@ -1,15 +1,19 @@
 """Application service orchestrating progressive 2-phase patient onboarding."""
 
-from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING
-from uuid import UUID
 
 from sqlalchemy import ColumnElement, or_, select
 
 from src.core.config import get_settings
 from src.core.errors import ValidationError
 from src.core.security import create_intake_token
+from src.modules.identity.application.dtos import (
+    Fase1InputDTO,
+    Fase1OutputDTO,
+    Fase2InputDTO,
+    Fase2OutputDTO,
+)
 from src.modules.identity.domain.exceptions import (
     IdentificacaoObrigatoriaError,
     PacienteNaoEncontradoError,
@@ -27,64 +31,6 @@ from src.modules.identity.domain.validators import (
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-
-@dataclass(frozen=True)
-class Fase1InputDTO:
-    """Input parameters for Phase 1 clinical intake."""
-
-    nome_completo: str
-    data_nascimento: date
-    telefone: str
-    queixa_principal: str
-    tcle_hash: str
-    cpf: str | None = None
-    cns: str | None = None
-
-
-@dataclass(frozen=True)
-class Fase1OutputDTO:
-    """Output results for Phase 1 clinical intake."""
-
-    paciente_id: UUID
-    token: str
-    status: str
-    mensagem: str
-    is_novo_paciente: bool
-
-
-@dataclass(frozen=True)
-class Fase2InputDTO:
-    """Input parameters for Phase 2 CFM regulatory enrichment."""
-
-    paciente_id: UUID
-    nome_mae: str
-    sexo_biologico: str
-    cep: str
-    logradouro: str
-    numero: str
-    bairro: str
-    cidade: str
-    estado: str
-    alergias: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class Fase2OutputDTO:
-    """Enriched patient output adhering to CFM 1.821/2007."""
-
-    paciente_id: UUID
-    nome_completo: str | None
-    nome_mae: str
-    sexo_biologico: str
-    cep: str
-    logradouro: str
-    numero: str
-    bairro: str
-    cidade: str
-    estado: str
-    alergias: list[str]
-    status: str
 
 
 class OnboardingService:

@@ -50,8 +50,9 @@ async def setup_audit_tables() -> AsyncGenerator[None, None]:
             )
         )
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    from tests.helpers import clean_database_tables
+
+    await clean_database_tables()
 
 
 @pytest.mark.asyncio

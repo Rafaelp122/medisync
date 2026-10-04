@@ -62,13 +62,7 @@ async def login(
     )
 
     tokens = await service.autenticar(command)
-    return TokenResponse(
-        access_token=tokens.access_token,
-        refresh_token=tokens.refresh_token,
-        token_type=tokens.token_type,
-        expires_in=tokens.expires_in,
-        refresh_expires_in=tokens.refresh_expires_in,
-    )
+    return TokenResponse.model_validate(tokens)
 
 
 @auth_router.post(
@@ -89,13 +83,7 @@ async def refresh_token(
     """Rotaciona o refresh token: invalida o token apresentado e emite um novo par."""
     service = AuthService(session)
     tokens = await service.rotacionar_refresh_token(body.refresh_token)
-    return TokenResponse(
-        access_token=tokens.access_token,
-        refresh_token=tokens.refresh_token,
-        token_type=tokens.token_type,
-        expires_in=tokens.expires_in,
-        refresh_expires_in=tokens.refresh_expires_in,
-    )
+    return TokenResponse.model_validate(tokens)
 
 
 @auth_router.post(
@@ -147,10 +135,4 @@ async def me(
     if cred is None:
         raise NotFoundError("Registro de credencial do usuário não encontrado.")
 
-    return UsuarioPerfilResponse(
-        usuario_id=cred.usuario_id,
-        organizacao_id=cred.organizacao_id,
-        identificador=cred.identificador,
-        papel=cred.papel,
-        ativo=cred.ativo,
-    )
+    return UsuarioPerfilResponse.model_validate(cred)

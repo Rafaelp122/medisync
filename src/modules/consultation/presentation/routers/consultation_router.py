@@ -5,7 +5,6 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.context import get_current_tenant_id
@@ -22,6 +21,18 @@ from src.modules.consultation.application.ports.icp_brasil_signer_port import (
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.domain.exceptions import ConsultaInvalidaError
 from src.modules.consultation.presentation.dependencies import ClinicalAccessDep
+from src.modules.consultation.presentation.schemas import (
+    AssinarDocumentoRequest,
+    AssinarDocumentoResponse,
+    DocumentoClinicoResponse,
+    EmitirDocumentoRequest,
+    EvolucaoSOAPResponse,
+    FinalizarConsultaRequest,
+    ProntuarioResponse,
+    RegistrarSOAPRequest,
+    TMAStatusResponse,
+    ValidarPrescricaoRequest,
+)
 
 consultation_router = APIRouter(tags=["teleconsulta-pep"])
 
@@ -35,191 +46,6 @@ def _resolve_tenant_id(provided: int | None) -> int:
     if ctx_tenant is not None and ctx_tenant > 0:
         return ctx_tenant
     return 1
-
-
-class RegistrarSOAPRequest(BaseModel):
-    """Payload to record or update SOAP clinical notes."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    medico_id: UUID = Field(description="Identificador único do médico assistente")
-    anamnese: str = Field(
-        description="Subjetivo (S): Queixa, anamnese e história clínica"
-    )
-    conduta: str = Field(
-        description="Plano (P): Conduta terapêutica, orientações e desfecho"
-    )
-    exame_fisico_virtual: str | None = Field(
-        default=None,
-        description="Objetivo (O): Exame físico por vídeo e sinais observados",
-    )
-    cid10_principal: str | None = Field(
-        default=None,
-        description="Avaliação (A): Código CID-10 principal da hipótese diagnóstica",
-    )
-    organizacao_id: int | None = Field(
-        default=None,
-        description="Identificador da organização de saúde",
-    )
-
-
-class ItemPrescricaoRequest(BaseModel):
-    """Prescription medication item input."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    medicamento: str = Field(
-        description="Nome do princípio ativo ou medicamento comercial"
-    )
-    dosagem: str = Field(description="Dosagem (ex: 500mg, 10mg/ml)")
-    posologia: str = Field(description="Instruções de uso (ex: 1 cp de 8 em 8 horas)")
-    duracao: str | None = Field(default=None, description="Duração do tratamento")
-    controle_especial: bool = Field(
-        default=False,
-        description="Indica se é substância da Lista C1",
-    )
-
-
-class ItemPrescricaoResponse(BaseModel):
-    """Prescription medication item output."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: UUID
-    medicamento: str
-    dosagem: str
-    posologia: str
-    duracao: str | None
-    controle_especial: bool
-
-
-class EmitirDocumentoRequest(BaseModel):
-    """Payload to issue a digital clinical document."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    medico_id: UUID = Field(description="Identificador único do médico")
-    tipo_documento: str = Field(
-        description="Tipo de documento clínico (RECEITA_SIMPLES, etc.)"
-    )
-    itens: list[ItemPrescricaoRequest] = Field(
-        default_factory=list,
-        description="Itens de medicamentos a prescrever",
-    )
-    chave_s3: str | None = Field(
-        default=None, description="Chave de armazenamento S3/MinIO"
-    )
-    sha256_hash: str | None = Field(
-        default=None, description="Hash SHA-256 do documento"
-    )
-    organizacao_id: int | None = Field(
-        default=None, description="Identificador da organização"
-    )
-
-
-class ValidarPrescricaoRequest(BaseModel):
-    """Payload to pre-validate a medication against controlled substances lists."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    medicamento: str = Field(description="Nome do medicamento a validar")
-
-
-class EvolucaoSOAPResponse(BaseModel):
-    """Response containing recorded SOAP clinical evolution notes."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: UUID
-    atendimento_id: UUID
-    organizacao_id: int
-    medico_id: UUID
-    anamnese: str
-    exame_fisico_virtual: str | None
-    cid10_principal: str | None
-    conduta: str
-    registrado_em: datetime
-    is_finalizado: bool
-
-
-class DocumentoClinicoResponse(BaseModel):
-    """Response containing issued clinical document and child items."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: UUID
-    atendimento_id: UUID
-    organizacao_id: int
-    medico_id: UUID
-    tipo_documento: str
-    chave_s3: str
-    sha256_hash: str
-    assinado_em: datetime
-    is_finalizado: bool
-    itens: list[ItemPrescricaoResponse]
-
-
-class ProntuarioResponse(BaseModel):
-    """Aggregated clinical record protected by Tier 1 and Tier 3 authorization."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    atendimento_id: UUID
-    is_finalizado: bool
-    evolucao: EvolucaoSOAPResponse | None = None
-    documentos: list[DocumentoClinicoResponse] = Field(default_factory=list)
-
-
-class AssinarDocumentoRequest(BaseModel):
-    """Payload to authorize digital signature via cloud PSC."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    token: str = Field(description="Token OAuth2 do médico emitido pelo provedor PSC")
-    provider: str = Field(
-        default="birdid",
-        description="Provedor PSC (birdid, safeid, vidaas, fake)",
-    )
-    certificate_alias: str | None = Field(
-        default=None,
-        description="Alias ou identificador opcional do certificado no PSC",
-    )
-
-
-class AssinarDocumentoResponse(BaseModel):
-    """Result of digital signature application."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    documento_id: UUID
-    tipo_documento: str
-    sha256_hash: str
-    assinado_em: datetime
-    tamanho_bytes: int
-    status: str = "ASSINADO"
-
-
-class FinalizarConsultaRequest(BaseModel):
-    """Payload to conclude attendance and lock PEP records."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    medico_id: UUID = Field(description="Identificador do médico assistente")
-    organizacao_id: int | None = Field(
-        default=None, description="Identificador da organização"
-    )
-
-
-class TMAStatusResponse(BaseModel):
-    """Telemetry indicator for Average Consultation Time (TMA), enforcing RN06."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    atendimento_id: UUID
-    tempo_decorrido_segundos: int
-    tma_planejado_segundos: int
-    excedeu_tma: bool
-    aviso_visual: str
 
 
 @consultation_router.post(
@@ -251,18 +77,7 @@ async def salvar_evolucao_soap(
     await session.commit()
     await session.refresh(evolucao)
 
-    return EvolucaoSOAPResponse(
-        id=evolucao.id,
-        atendimento_id=evolucao.atendimento_id,
-        organizacao_id=evolucao.organizacao_id,
-        medico_id=evolucao.medico_id,
-        anamnese=evolucao.anamnese,
-        exame_fisico_virtual=evolucao.exame_fisico_virtual,
-        cid10_principal=evolucao.cid10_principal,
-        conduta=evolucao.conduta,
-        registrado_em=evolucao.registrado_em,
-        is_finalizado=evolucao.is_finalizado,
-    )
+    return EvolucaoSOAPResponse.model_validate(evolucao)
 
 
 @consultation_router.get(
@@ -285,19 +100,7 @@ async def obter_evolucao_soap(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Nenhuma evolução clínica registrada para este atendimento.",
         )
-    evolucao = resumo.evolucao
-    return EvolucaoSOAPResponse(
-        id=evolucao.id,
-        atendimento_id=evolucao.atendimento_id,
-        organizacao_id=evolucao.organizacao_id,
-        medico_id=evolucao.medico_id,
-        anamnese=evolucao.anamnese,
-        exame_fisico_virtual=evolucao.exame_fisico_virtual,
-        cid10_principal=evolucao.cid10_principal,
-        conduta=evolucao.conduta,
-        registrado_em=evolucao.registrado_em,
-        is_finalizado=evolucao.is_finalizado,
-    )
+    return EvolucaoSOAPResponse.model_validate(resumo.evolucao)
 
 
 @consultation_router.get(
@@ -329,46 +132,11 @@ async def obter_prontuario_protegido(
 
     evolucao_resp: EvolucaoSOAPResponse | None = None
     if resumo.evolucao is not None:
-        ev = resumo.evolucao
-        evolucao_resp = EvolucaoSOAPResponse(
-            id=ev.id,
-            atendimento_id=ev.atendimento_id,
-            organizacao_id=ev.organizacao_id,
-            medico_id=ev.medico_id,
-            anamnese=ev.anamnese,
-            exame_fisico_virtual=ev.exame_fisico_virtual,
-            cid10_principal=ev.cid10_principal,
-            conduta=ev.conduta,
-            registrado_em=ev.registrado_em,
-            is_finalizado=ev.is_finalizado,
-        )
+        evolucao_resp = EvolucaoSOAPResponse.model_validate(resumo.evolucao)
 
-    documentos_resp: list[DocumentoClinicoResponse] = []
-    for doc in resumo.documentos:
-        documentos_resp.append(
-            DocumentoClinicoResponse(
-                id=doc.id,
-                atendimento_id=doc.atendimento_id,
-                organizacao_id=doc.organizacao_id,
-                medico_id=doc.medico_id,
-                tipo_documento=doc.tipo_documento,
-                chave_s3=doc.chave_s3,
-                sha256_hash=doc.sha256_hash,
-                assinado_em=doc.assinado_em,
-                is_finalizado=doc.is_finalizado,
-                itens=[
-                    ItemPrescricaoResponse(
-                        id=item.id,
-                        medicamento=item.medicamento,
-                        dosagem=item.dosagem,
-                        posologia=item.posologia,
-                        duracao=item.duracao,
-                        controle_especial=item.controle_especial,
-                    )
-                    for item in doc.itens
-                ],
-            )
-        )
+    documentos_resp = [
+        DocumentoClinicoResponse.model_validate(doc) for doc in resumo.documentos
+    ]
 
     return ProntuarioResponse(
         atendimento_id=atendimento_id,
@@ -442,30 +210,7 @@ async def emitir_documento_clinico(
     await session.commit()
     await session.refresh(doc)
 
-    itens_resp = [
-        ItemPrescricaoResponse(
-            id=item.id,
-            medicamento=item.medicamento,
-            dosagem=item.dosagem,
-            posologia=item.posologia,
-            duracao=item.duracao,
-            controle_especial=item.controle_especial,
-        )
-        for item in doc.itens
-    ]
-
-    return DocumentoClinicoResponse(
-        id=doc.id,
-        atendimento_id=doc.atendimento_id,
-        organizacao_id=doc.organizacao_id,
-        medico_id=doc.medico_id,
-        tipo_documento=str(doc.tipo_documento),
-        chave_s3=doc.chave_s3,
-        sha256_hash=doc.sha256_hash,
-        assinado_em=doc.assinado_em,
-        is_finalizado=doc.is_finalizado,
-        itens=itens_resp,
-    )
+    return DocumentoClinicoResponse.model_validate(doc)
 
 
 @consultation_router.post(
@@ -533,13 +278,7 @@ async def obter_tma_status(
         iniciado_em=inicio,
         tma_planejado_segundos=tma_planejado_segundos,
     )
-    return TMAStatusResponse(
-        atendimento_id=tma_dto.atendimento_id,
-        tempo_decorrido_segundos=tma_dto.tempo_decorrido_segundos,
-        tma_planejado_segundos=tma_dto.tma_planejado_segundos,
-        excedeu_tma=tma_dto.excedeu_tma,
-        aviso_visual=tma_dto.aviso_visual,
-    )
+    return TMAStatusResponse.model_validate(tma_dto)
 
 
 @consultation_router.get(

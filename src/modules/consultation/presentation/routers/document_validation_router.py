@@ -1,13 +1,11 @@
 """Public verification and presigned download router for clinical documents."""
 
 import contextlib
-from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
-from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -15,6 +13,10 @@ from sqlalchemy.orm import selectinload
 from src.core.database import get_db_session
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.domain.models import DocumentoClinico
+from src.modules.consultation.presentation.schemas import (
+    ItemValidacaoResponse,
+    ValidarDocumentoResponse,
+)
 
 SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 
@@ -46,39 +48,6 @@ def mascarar_nome(nome: str) -> str:
         else:
             mascaradas.append(f"{p[0]}{'*' * (len(p) - 1)}")
     return " ".join(mascaradas)
-
-
-class ItemValidacaoResponse(BaseModel):
-    """Prescribed drug item summary for public verification."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    medicamento: str
-    dosagem: str
-    posologia: str
-    duracao: str | None = None
-    controle_especial: bool = False
-
-
-class ValidarDocumentoResponse(BaseModel):
-    """Public verification details with masked patient data (LGPD compliant)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    documento_id: UUID
-    tipo_documento: str
-    status_documento: str
-    sha256_hash: str
-    assinado_em: datetime | None
-    emissor_medico_nome: str
-    emissor_medico_crm: str
-    emissor_medico_uf: str
-    organizacao_nome: str
-    paciente_nome_mascarado: str
-    paciente_cpf_mascarado: str
-    assinatura_digital_valida: bool
-    conformidade_icp_brasil: bool
-    itens: list[ItemValidacaoResponse]
 
 
 def _parse_token_as_uuid(token_validacao: str) -> UUID:
@@ -177,16 +146,7 @@ async def validar_documento(
     is_assinado = service.is_documento_assinado(doc)
     status_doc = "ASSINADO" if is_assinado else "EMITIDO"
 
-    itens_resp = [
-        ItemValidacaoResponse(
-            medicamento=it.medicamento,
-            dosagem=it.dosagem,
-            posologia=it.posologia,
-            duracao=it.duracao,
-            controle_especial=it.controle_especial,
-        )
-        for it in doc.itens
-    ]
+    itens_resp = [ItemValidacaoResponse.model_validate(it) for it in doc.itens]
 
     return ValidarDocumentoResponse(
         documento_id=doc.id,

@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.sign.validation import async_validate_pdf_signature
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.main import app
 
 from tests.factories.identity import (
@@ -18,16 +18,15 @@ from tests.factories.identity import (
     make_profissional,
 )
 from tests.factories.queue import make_atendimento
+from tests.helpers import clean_database_tables
 
 
 @pytest.fixture(autouse=True)
 async def setup_consultation_sign_db() -> AsyncGenerator[None, None]:
     """Ensure database schema is ready before running tests and clean up after."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await clean_database_tables()
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    await clean_database_tables()
 
 
 @pytest.mark.asyncio

@@ -1,16 +1,26 @@
 """Pydantic v2 schemas for progressive onboarding and patient management."""
 
-from datetime import date, datetime
+from datetime import date
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
+
+from src.modules.identity.application.dtos import (
+    CriarDependenteDTO,
+    DependenteDetalheDTO,
+    DependenteOutputDTO,
+    Fase1InputDTO,
+    Fase1OutputDTO,
+    Fase2InputDTO,
+    Fase2OutputDTO,
+)
 
 
-class Fase1Request(BaseModel):
+class Fase1Request(Fase1InputDTO):
     """Payload for Phase 1 clinical intake."""
 
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
 
     nome_completo: str = Field(
         min_length=3,
@@ -54,20 +64,16 @@ class Fase1Request(BaseModel):
     )
 
 
-class Fase1Response(BaseModel):
+class Fase1Response(Fase1OutputDTO):
     """Response after Phase 1 intake execution."""
 
-    paciente_id: UUID
-    token: str = Field(description="Token provisório efêmero de acolhimento")
-    status: str = Field(default="TRIADO_AGUARDANDO_ELEGIBILIDADE")
-    mensagem: str
-    is_novo_paciente: bool
+    model_config = ConfigDict(from_attributes=True)
 
 
-class Fase2Request(BaseModel):
+class Fase2Request(Fase2InputDTO):
     """Payload for Phase 2 CFM regulatory enrichment."""
 
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
 
     paciente_id: UUID = Field(description="ID do paciente obtido na Fase 1")
     nome_mae: str = Field(
@@ -123,27 +129,16 @@ class Fase2Request(BaseModel):
     )
 
 
-class Fase2Response(BaseModel):
+class Fase2Response(Fase2OutputDTO):
     """Response after Phase 2 CFM regulatory enrichment."""
 
-    paciente_id: UUID
-    nome_completo: str | None
-    nome_mae: str
-    sexo_biologico: str
-    cep: str
-    logradouro: str
-    numero: str
-    bairro: str
-    cidade: str
-    estado: str
-    alergias: list[str]
-    status: str
+    model_config = ConfigDict(from_attributes=True)
 
 
-class CriarDependenteRequest(BaseModel):
+class CriarDependenteRequest(CriarDependenteDTO):
     """Payload for linking or creating a patient dependent."""
 
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
 
     grau_parentesco: str = Field(
         min_length=2,
@@ -186,26 +181,13 @@ class CriarDependenteRequest(BaseModel):
     )
 
 
-class DependenteResponse(BaseModel):
+class DependenteResponse(DependenteOutputDTO):
     """Summary of created dependent relationship."""
 
-    id: UUID
-    organizacao_id: int
-    titular_id: UUID
-    dependente_id: UUID
-    grau_parentesco: str
-    vinculado_em: datetime
+    model_config = ConfigDict(from_attributes=True)
 
 
-class DependenteDetalheResponse(BaseModel):
+class DependenteDetalheResponse(DependenteDetalheDTO):
     """Full detail of a dependent including clinical demographics."""
 
-    id: UUID
-    titular_id: UUID
-    dependente_id: UUID
-    grau_parentesco: str
-    nome_completo: str | None
-    data_nascimento: date
-    cpf: str | None
-    cns: str | None
-    vinculado_em: datetime
+    model_config = ConfigDict(from_attributes=True)

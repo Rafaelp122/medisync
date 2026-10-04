@@ -4,7 +4,7 @@ from typing import Any, cast
 import pytest
 from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.core.valkey import get_valkey_pool
 from src.main import app
 from src.modules.auth.application.dtos import CadastrarCredencialCommand
@@ -23,15 +23,15 @@ async def setup_auth_db() -> AsyncGenerator[None, None]:
     if keys_before:
         await valkey_any.delete(*keys_before)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    from tests.helpers import clean_database_tables
+
+    await clean_database_tables()
     yield
     keys_after = cast("list[str]", await valkey_any.keys("auth:ratelimit:*"))
     if keys_after:
         await valkey_any.delete(*keys_after)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    await clean_database_tables()
 
 
 @pytest.mark.asyncio

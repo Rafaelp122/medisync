@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.modules.consultation.domain.models import (
     DocumentoClinico,
     DocumentoItem,
@@ -27,16 +27,15 @@ from tests.factories.identity import (
     make_profissional,
 )
 from tests.factories.queue import make_atendimento
+from tests.helpers import clean_database_tables
 
 
 @pytest.fixture(autouse=True)
 async def setup_consultation_tables() -> AsyncGenerator[None, None]:
-    """Create all domain tables before testing and drop on cleanup."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Clean tables before each test and after."""
+    await clean_database_tables()
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    await clean_database_tables()
 
 
 @pytest.mark.asyncio

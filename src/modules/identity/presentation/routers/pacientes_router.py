@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.context import get_current_tenant_id
 from src.core.database import get_db_session
 from src.modules.identity.application.services.dependente_service import (
-    CriarDependenteDTO,
     DependenteService,
 )
 from src.modules.identity.domain.exceptions import TenantInvalidoError
@@ -58,30 +57,13 @@ async def cadastrar_dependente(
 ) -> DependenteResponse:
     """Register or link a dependent to a titular patient."""
     service = DependenteService()
-    dto = CriarDependenteDTO(
-        grau_parentesco=body.grau_parentesco,
-        dependente_id=body.dependente_id,
-        nome_completo=body.nome_completo,
-        data_nascimento=body.data_nascimento,
-        cpf=body.cpf,
-        cns=body.cns,
-        telefone=body.telefone,
-    )
     result = await service.adicionar_dependente(
         session=session,
         organizacao_id=tenant_id,
         titular_id=id,
-        dados=dto,
+        dados=body,
     )
-
-    return DependenteResponse(
-        id=result.id,
-        organizacao_id=result.organizacao_id,
-        titular_id=result.titular_id,
-        dependente_id=result.dependente_id,
-        grau_parentesco=result.grau_parentesco,
-        vinculado_em=result.vinculado_em,
-    )
+    return DependenteResponse.model_validate(result)
 
 
 @pacientes_router.get(
@@ -106,18 +88,4 @@ async def listar_dependentes(
         organizacao_id=tenant_id,
         titular_id=id,
     )
-
-    return [
-        DependenteDetalheResponse(
-            id=d.id,
-            titular_id=d.titular_id,
-            dependente_id=d.dependente_id,
-            grau_parentesco=d.grau_parentesco,
-            nome_completo=d.nome_completo,
-            data_nascimento=d.data_nascimento,
-            cpf=d.cpf,
-            cns=d.cns,
-            vinculado_em=d.vinculado_em,
-        )
-        for d in results
-    ]
+    return [DependenteDetalheResponse.model_validate(d) for d in results]

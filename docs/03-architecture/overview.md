@@ -306,6 +306,22 @@ src/
 
 ---
 
+### 3.1 Convenção de Schemas e DTOs (ADR-008)
+
+Para erradicar o *Mapper Hell* entre a apresentação e os serviços de aplicação:
+
+1. **Schemas de Entrada (`presentation/schemas.py`)**:
+   * Entradas que vêm exclusivamente do JSON HTTP utilizam o próprio Pydantic (`frozen=True`) diretamente como argumento do Service.
+   * `Command` (`@dataclass(frozen=True)` em `application/dtos.py`) é reservado para agregação contextual (Path Parameters + Tenant Context + Socket IP + Body).
+2. **Schemas de Saída (`presentation/schemas.py`)**:
+   * Devem declarar `model_config = ConfigDict(from_attributes=True)`.
+   * A serialização a partir de entidades ORM ou DTOs de resultado ocorre exclusivamente via `ResponseSchema.model_validate(entidade)` ou pelo motor do FastAPI (`response_model=ResponseSchema`), proibindo mappers manuais.
+3. **Consistência de Localização**:
+   * Todo schema Pydantic vive em `presentation/schemas.py`.
+   * Todo DTO ou Command puro de aplicação vive em `application/dtos.py`.
+
+---
+
 ## 4. Governança de Fronteiras Modulares com Tach
 
 Para assegurar que o monólito modular permaneça desacoplado sem degradação arquitetural ao longo do tempo, o projeto utiliza **[Tach](https://github.com/gauge-sh/tach)**:

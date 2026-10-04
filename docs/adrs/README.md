@@ -15,6 +15,8 @@ Este diretório armazena o registro formal de **Decisões de Arquitetura (ADRs)*
 | **[ADR-005](ADR-005-Desacoplamento-de-Midia-LiveKit-SFU.md)** | Desacoplamento do Servidor de Mídia WebRTC via LiveKit SFU | Aprovado | Servidor de mídia em Go desacoplado com TURNS (porta 443); backend apenas emite tokens JWT, preservando a CPU do Python. |
 | **[ADR-006](ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md)** | Assinatura Digital ICP-Brasil em Nuvem via PSCs e PAdES | Aprovado | Assinatura PAdES-LTV em nuvem com PyHanko e integração OAuth2/PSC, dispensando tokens físicos USB e validando no portal do ITI. |
 | **[ADR-007](ADR-007-Auditoria-Imutavel-Append-Only.md)** | Trilha de Auditoria Imutável Append-Only via DCL e Triggers Restritivas | Aprovado | Chaves em UUIDv7 (sem sequências de banco), blindagem de `audit_events` via `REVOKE UPDATE, DELETE` e Triggers com `RAISE EXCEPTION`. |
+| **[ADR-008](ADR-008-Padronizacao-de-DTOs-e-Eliminacao-de-Mapper-Hell-na-Apresentacao.md)** | Padronização de DTOs e Eliminação de Mapper Hell na Apresentação | Aprovado | Uso de Pydantic v2 imutável em entradas 1:1, `Command` apenas com enriquecimento de contexto, `from_attributes=True` e `model_validate()` em responses (zero mappers manuais). |
+
 
 ---
 
