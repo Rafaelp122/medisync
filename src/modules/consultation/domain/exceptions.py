@@ -45,3 +45,22 @@ class DocumentoNaoEncontradoNoStorageError(NotFoundError):
     status_code: int = 404
     title: str = "Documento Não Encontrado no Storage"
     code: str = "DOCUMENTO_STORAGE_NAO_ENCONTRADO"
+
+
+class DocumentoIntegridadeError(DomainError):
+    """Raised when physician/patient directory data is absent (never fabricate)."""
+
+    status_code: int = 500
+    title: str = "Integridade do Documento Comprometida"
+    code: str = "DOCUMENTO_INTEGRIDADE"
+
+    def __init__(
+        self,
+        detail: str = "Dados de médico/paciente ausentes para o documento.",
+    ) -> None:
+        super().__init__(
+            detail,
+            status_code=self.status_code,
+            title=self.title,
+            code=self.code,
+        )

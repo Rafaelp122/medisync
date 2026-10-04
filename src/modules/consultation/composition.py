@@ -11,6 +11,9 @@ from fastapi import Depends
 
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
+from src.modules.consultation.application.ports.document_directory_port import (
+    DocumentDirectoryPort,
+)
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     ICPBrasilSignerPort,
 )
@@ -21,7 +24,16 @@ from src.modules.consultation.application.ports.pdf_generator_port import (
     PDFGeneratorPort,
 )
 from src.modules.consultation.application.ports.storage_port import StoragePort
+from src.modules.consultation.application.ports.validation_rate_limiter_port import (
+    ValidationRateLimiterPort,
+)
+from src.modules.consultation.application.services.document_validation_service import (
+    DocumentValidationService,
+)
 from src.modules.consultation.application.services.pep_service import PEPService
+from src.modules.consultation.infrastructure.document_directory_sql import (
+    SqlDocumentDirectory,
+)
 from src.modules.consultation.infrastructure.livekit_adapter import LiveKitAdapter
 from src.modules.consultation.infrastructure.pdf_generator import (
     ReportLabPDFGenerator,
@@ -30,6 +42,9 @@ from src.modules.consultation.infrastructure.pyhanko_signer import PyHankoSigner
 from src.modules.consultation.infrastructure.s3_storage import (
     FakeStorageAdapter,
     S3StorageAdapter,
+)
+from src.modules.consultation.infrastructure.valkey_validation_rate_limiter import (
+    ValkeyValidationRateLimiter,
 )
 
 
@@ -71,6 +86,45 @@ def get_pep_service(session: DbSessionDep) -> PEPService:
 
 
 PEPServiceDep = Annotated[PEPService, Depends(get_pep_service)]
+
+
+def get_document_directory(session: DbSessionDep) -> DocumentDirectoryPort:
+    """Provide SQL directory adapter isolated in infra (no identity imports)."""
+    return SqlDocumentDirectory(session)
+
+
+def get_validation_rate_limiter() -> ValidationRateLimiterPort:
+    """Provide Valkey sliding-window limiter for public validation endpoints."""
+    return ValkeyValidationRateLimiter()
+
+
+ValidationRateLimiterDep = Annotated[
+    ValidationRateLimiterPort, Depends(get_validation_rate_limiter)
+]
+
+
+def get_document_validation_service(
+    session: DbSessionDep,
+    directory: Annotated[DocumentDirectoryPort, Depends(get_document_directory)],
+) -> DocumentValidationService:
+    """Build DocumentValidationService with directory, storage and PDF compiler."""
+    pep = PEPService(
+        session=session,
+        pdf_generator=get_pdf_generator(),
+        signer=get_signer(),
+        storage=get_storage(),
+    )
+    return DocumentValidationService(
+        session=session,
+        directory=directory,
+        storage=get_storage(),
+        compilador_pdf=pep.compilar_documento_pdf,
+    )
+
+
+DocumentValidationServiceDep = Annotated[
+    DocumentValidationService, Depends(get_document_validation_service)
+]
 
 
 def get_livekit_adapter() -> LiveKitMediaPort:

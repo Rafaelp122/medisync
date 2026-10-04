@@ -72,8 +72,10 @@ class PEPService:
 
     def is_documento_assinado(self, doc: DocumentoClinico) -> bool:
         """Check if document has been digitally signed with PAdES ICP-Brasil."""
-        return doc.id in _DOCUMENTOS_ASSINADOS_CACHE or doc.chave_s3.startswith(
-            f"orgs/{doc.organizacao_id}/consultations/"
+        from src.modules.consultation.domain.s3_keys import is_signed_document_key
+
+        return doc.id in _DOCUMENTOS_ASSINADOS_CACHE or is_signed_document_key(
+            doc.chave_s3, doc.organizacao_id
         )
 
     async def _verificar_atendimento_finalizado(self, atendimento_id: UUID) -> bool:
@@ -563,9 +565,12 @@ class PEPService:
         doc.sha256_hash = new_hash
         doc.assinado_em = datetime.now(UTC)
 
-        s3_key = (
-            f"orgs/{doc.organizacao_id}/consultations/{doc.atendimento_id}/"
-            f"documents/{doc.id}.pdf"
+        from src.modules.consultation.domain.s3_keys import (
+            build_signed_document_key,
+        )
+
+        s3_key = build_signed_document_key(
+            doc.organizacao_id, doc.atendimento_id, doc.id
         )
         await self._storage.salvar_documento(s3_key, signed_bytes)
         doc.chave_s3 = s3_key
