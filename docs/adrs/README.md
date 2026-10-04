@@ -8,7 +8,7 @@ Este diretório armazena o registro formal de **Decisões de Arquitetura (ADRs)*
 
 | ADR | Título | Status | Decisão Central |
 | :--- | :--- | :--- | :--- |
-| **[ADR-001](ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md)** | Hexagonal Pragmático com Modelos Ricos, Protocols e Tach | Aprovado | Modelos ricos no SQLAlchemy 2.0 (zero Mapper Hell), UUIDv7 nas chaves clínicas, `typing.Protocol` para adaptadores externos e DTOs inter-módulos, Event Bus e Tach. |
+| **[ADR-001](ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md)** | Hexagonal Pragmático com Modelos Ricos, Protocols e Tach | Aprovado | Modelos ricos no SQLAlchemy 2.0 (zero Mapper Hell), UUIDv7 nas chaves clínicas, `typing.Protocol` para adaptadores externos e DTOs inter-módulos, Event Bus e Tach. Adendos §6 (transação: service commita) e §7 (camadas Tach + composition + router fino). |
 | **[ADR-002](ADR-002-Alocacao-Atomica-Valkey-Lua.md)** | Alocação Atômica via Valkey Sorted Sets e Scripts Lua | Aprovado | ZSET com pontuação de 64 bits, desempate FIFO por UUIDv7 e script Lua com códigos de retorno discriminados (`0` vs `-1`) e locks temporizados de 45s. |
 | **[ADR-003](ADR-003-Multi-Tenancy-Logico-Postgres-RLS.md)** | Multi-Tenancy Lógico com Defesa em Profundidade no PostgreSQL (RLS) | Aprovado | Coluna `organizacao_id` combinada com `ContextVar` e Row-Level Security (RLS) nativo com cobertura de 100% das tabelas multi-tenant. |
 | **[ADR-004](ADR-004-Worker-Assincrono-ARQ-sobre-Valkey.md)** | Adoção do Motor de Tarefas Assíncronas ARQ sobre Valkey | Aprovado | Processamento em segundo plano 100% nativo em `asyncio` com jobs diferidos (`_defer_by=45`), compartilhando instâncias do Valkey. |

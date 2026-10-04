@@ -1,6 +1,9 @@
-# Stage A (baseline routers-di, ADR-001/ADR-008): só fronteiras inter-módulos,
-# sem checagem de camadas (presentation/application/domain/infrastructure).
-# Stage B estrito guardado em scratch/tach_stageB.toml; será restaurado na Fase 1+.
+# Stage B estrito (ADR-001): camadas hexagonais + composition roots.
+# presentation -> application + composition + core
+# composition -> application + domain + infrastructure + core
+# infrastructure -> application + domain + core
+# application -> domain + core | domain -> core
+# worker -> core + queue/billing camadas
 interfaces = []
 exact = false
 forbid_circular_dependencies = true
@@ -11,29 +14,101 @@ path = "src.core"
 depends_on = []
 
 [[modules]]
-path = "src.modules.auth"
+path = "src.modules.auth.domain"
 depends_on = ["src.core"]
 
 [[modules]]
-path = "src.modules.billing"
+path = "src.modules.auth.application"
+depends_on = ["src.core", "src.modules.auth.domain"]
+
+[[modules]]
+path = "src.modules.auth.infrastructure"
+depends_on = ["src.core", "src.modules.auth.application", "src.modules.auth.domain"]
+
+[[modules]]
+path = "src.modules.auth.composition"
+depends_on = ["src.core", "src.modules.auth.application", "src.modules.auth.domain", "src.modules.auth.infrastructure"]
+
+[[modules]]
+path = "src.modules.auth.presentation"
+depends_on = ["src.core", "src.modules.auth.application", "src.modules.auth.composition"]
+
+[[modules]]
+path = "src.modules.billing.domain"
 depends_on = ["src.core"]
 
 [[modules]]
-path = "src.modules.consultation"
+path = "src.modules.billing.application"
+depends_on = ["src.core", "src.modules.billing.domain"]
+
+[[modules]]
+path = "src.modules.billing.infrastructure"
+depends_on = ["src.core", "src.modules.billing.application", "src.modules.billing.domain"]
+
+[[modules]]
+path = "src.modules.consultation.domain"
 depends_on = ["src.core"]
 
 [[modules]]
-path = "src.modules.identity"
+path = "src.modules.consultation.application"
+depends_on = ["src.core", "src.modules.consultation.domain"]
+
+[[modules]]
+path = "src.modules.consultation.infrastructure"
+depends_on = ["src.core", "src.modules.consultation.application", "src.modules.consultation.domain"]
+
+[[modules]]
+path = "src.modules.consultation.composition"
+depends_on = ["src.core", "src.modules.consultation.application", "src.modules.consultation.domain", "src.modules.consultation.infrastructure"]
+
+[[modules]]
+path = "src.modules.consultation.presentation"
+depends_on = ["src.core", "src.modules.consultation.application", "src.modules.consultation.composition"]
+
+[[modules]]
+path = "src.modules.identity.domain"
 depends_on = ["src.core"]
 
 [[modules]]
-path = "src.modules.queue"
+path = "src.modules.identity.application"
+depends_on = ["src.core", "src.modules.identity.domain"]
+
+[[modules]]
+path = "src.modules.identity.composition"
+depends_on = ["src.core", "src.modules.identity.application", "src.modules.identity.domain"]
+
+[[modules]]
+path = "src.modules.identity.presentation"
+depends_on = ["src.core", "src.modules.identity.application", "src.modules.identity.composition"]
+
+[[modules]]
+path = "src.modules.queue.domain"
 depends_on = ["src.core"]
 
 [[modules]]
-path = "src.modules.triage"
+path = "src.modules.queue.application"
+depends_on = ["src.core", "src.modules.queue.domain"]
+
+[[modules]]
+path = "src.modules.queue.infrastructure"
+depends_on = ["src.core", "src.modules.queue.application", "src.modules.queue.domain"]
+
+[[modules]]
+path = "src.modules.queue.composition"
+depends_on = ["src.core", "src.modules.queue.application", "src.modules.queue.domain", "src.modules.queue.infrastructure"]
+
+[[modules]]
+path = "src.modules.queue.presentation"
+depends_on = ["src.core", "src.modules.queue.application", "src.modules.queue.composition"]
+
+[[modules]]
+path = "src.modules.triage.domain"
 depends_on = ["src.core"]
+
+[[modules]]
+path = "src.modules.triage.application"
+depends_on = ["src.core", "src.modules.triage.domain"]
 
 [[modules]]
 path = "src.worker"
-depends_on = ["src.core", "src.modules.queue", "src.modules.billing"]
+depends_on = ["src.core", "src.modules.queue.application", "src.modules.queue.domain", "src.modules.queue.infrastructure", "src.modules.billing.application", "src.modules.billing.domain", "src.modules.billing.infrastructure"]

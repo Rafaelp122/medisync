@@ -2,13 +2,14 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Path, Query, Request, Response, status
+from fastapi import APIRouter, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from src.modules.consultation.composition import (
     DocumentValidationServiceDep,
     ValidationRateLimiterDep,
 )
+from src.modules.consultation.presentation.dependencies import exigir_rate_limit
 from src.modules.consultation.presentation.schemas import (
     DownloadUrlResponse,
     ValidarDocumentoResponse,
@@ -21,22 +22,6 @@ validation_router = APIRouter(
 _VALIDATE_LIMITE = 30
 _DOWNLOAD_LIMITE = 20
 _JANELA_SEGUNDOS = 60
-
-
-async def _exigir_rate_limit(
-    limiter: ValidationRateLimiterDep,
-    chave: str,
-    limite: int,
-) -> None:
-    res = await limiter.verificar_e_incrementar(
-        chave=chave, limite=limite, janela_segundos=_JANELA_SEGUNDOS
-    )
-    if not res.permitido:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Muitas requisições. Tente novamente em instantes.",
-            headers={"Retry-After": str(res.retry_after_segundos)},
-        )
 
 
 @validation_router.get(
@@ -53,7 +38,9 @@ async def validar_documento(
 ) -> ValidarDocumentoResponse:
     """Consulta pública da autenticidade com mascaramento LGPD."""
     ip = request.client.host if request.client else "127.0.0.1"
-    await _exigir_rate_limit(limiter, f"ip:{ip}:validate", _VALIDATE_LIMITE)
+    await exigir_rate_limit(
+        limiter, f"ip:{ip}:validate", _VALIDATE_LIMITE, _JANELA_SEGUNDOS
+    )
     result = await service.validar_documento(token_validacao)
     return ValidarDocumentoResponse.model_validate(result)
 
@@ -81,7 +68,9 @@ async def download_documento_presigned(
 ) -> Response:
     """Gera Presigned URL de curta duração para download seguro mediado pelo S3."""
     ip = request.client.host if request.client else "127.0.0.1"
-    await _exigir_rate_limit(limiter, f"ip:{ip}:download", _DOWNLOAD_LIMITE)
+    await exigir_rate_limit(
+        limiter, f"ip:{ip}:download", _DOWNLOAD_LIMITE, _JANELA_SEGUNDOS
+    )
     result = await service.gerar_url_download(token_validacao, expiracao_segundos)
     if redirect:
         return RedirectResponse(url=result.download_url, status_code=307)

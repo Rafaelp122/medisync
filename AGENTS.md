@@ -35,7 +35,11 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
 3. **Tipagem Estrita:**
    * O código deve passar em `basedpyright` com `typeCheckingMode = "strict"`.
    * Evite `Any`. Use tipos genéricos, `Union`, `Literal` ou `Protocol`.
-4. **Transação:** service commita, um por caso de uso; router fino sem commit/refresh.
+4. **Transação + Router fino (ADR-001 §6-§7):**
+   * Service commita, um por caso de uso (`await session.commit()` no fim do método público que persiste; helpers/policies nunca commitam).
+   * Router nunca importa `sqlalchemy`/`infrastructure`/`domain.models`, nunca chama `.commit()/.refresh()/text()/select()`, nunca instancia `*Service(` (usa `*Dep` da `composition.py`).
+   * `HTTPException` só em `presentation/dependencies.py` (ex.: `exigir_rate_limit` → 429); routers importam de lá. Erros de domínio via `src/core/errors.py` (`NotFoundError`, `ForbiddenError`, …).
+   * Guardas: `tach check` (Stage B camadas + composition) + `tests/architecture/test_routers_are_thin.py` (AST) devem passar.
 
 ---
 

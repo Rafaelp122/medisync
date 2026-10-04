@@ -82,3 +82,18 @@ Adotamos a **Opção 3: Hexagonal Pragmático com Modelos Ricos no SQLAlchemy 2.
 * **Motivo**: elimina double `DbSession` e split transaction/stale refresh em `consultation_router` x `PEPService`.
 * Com `expire_on_commit=False`, sem `refresh` salvo coluna server-generated; relações p/ resposta recarregadas via `selectinload` (ex.: `emitir_documento`).
 * `assinar_documento_clinico(documento_id, atendimento_id, credenciais)` valida pertencimento antes de compilar/PSC (`NotFoundError` → 404) para não assinar doc alheio.
+
+---
+
+## 7. Adendo — Camadas Tach + composition roots (2026-10-04)
+
+* **Stage B estrito ativo em `tach.toml`** (ex-`scratch/tach_stageB.toml`, removido por redundância):
+  * `presentation → application + composition + core` (nunca `domain.models`, `infrastructure`, `sqlalchemy`).
+  * `composition → application + domain + infrastructure + core` — único lugar que importa adaptadores concretos.
+  * `infrastructure → application + domain + core`; `application → domain + core`; `domain → core`.
+  * `worker → core + queue/billing` camadas (`application/domain/infrastructure`).
+* **Router fino (guard `tests/architecture/test_routers_are_thin.py`, AST sem deps novas)**:
+  * Sem `import sqlalchemy/infrastructure/domain.models`; sem `.commit()/.refresh()/text()/select()`.
+  * Sem `HTTPException` — só `presentation/dependencies.py` pode levantar HTTP (ex.: `exigir_rate_limit` → 429).
+  * Sem instanciação `*Service(` — services chegam via `*Dep` da composition (`AuthServiceDep`, `PEPServiceDep`, …).
+* **Prefixo de rotas**: HTTP sob `/api/v1` (`src/main.py` monta `APIRouter(prefix="/api/v1")`); WebSockets (`/ws/...`) fora do prefixo.
