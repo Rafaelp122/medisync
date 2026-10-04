@@ -8,7 +8,7 @@ Não corrigir rotas nesta task.
 
 from collections import Counter
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import Any
 
 from src.main import app
 
@@ -18,12 +18,15 @@ _NON_API_PATHS = frozenset(
 
 
 def _expand(routes: Iterable[Any]) -> Iterable[Any]:
-    """Expande _IncludedRouter lazy (FastAPI>=0.14x) até as rotas efetivas."""
+    """Expande _IncludedRouter lazy (FastAPI>=0.142) até contextos efetivos."""
     for route in routes:
+        if hasattr(route, "path"):
+            yield route
+            continue
         expand: Any = getattr(route, "effective_candidates", None)
         if callable(expand):
-            nested: Iterable[Any] = cast("Iterable[Any]", expand())
-            yield from _expand(nested)
+            candidates: Any = expand()
+            yield from _expand(candidates)
         else:
             yield getattr(route, "original_route", route)
 
@@ -32,14 +35,17 @@ def _http_routes() -> list[tuple[frozenset[str], str]]:
     """Lista (methods, path) de rotas HTTP; ignora websockets."""
     entries: list[tuple[frozenset[str], str]] = []
     for route in _expand(app.routes):
+        original: Any = getattr(route, "original_route", None)
+        original_path: Any = getattr(original, "path", "")
+        if isinstance(original_path, str) and original_path.startswith("/ws"):
+            continue
+        if "WebSocket" in type(original).__name__:
+            continue
         raw_methods: Any = getattr(route, "methods", None)
-        methods: set[str] = set(raw_methods or set())
+        methods: set[str] = set[str](raw_methods or ())
         if not methods:
             continue
-        raw_path: Any = getattr(route, "path", None) or getattr(
-            route, "path_format", ""
-        )
-        path = str(raw_path)
+        path = str(getattr(route, "path", ""))
         entries.append((frozenset(methods), path))
     return entries
 
