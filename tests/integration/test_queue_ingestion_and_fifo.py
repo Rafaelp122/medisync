@@ -89,7 +89,16 @@ async def test_acceptance_criterion_1_urgency_precedence_rn01() -> None:
 
     async for valkey in get_valkey_client():
         async with async_session_factory() as session:
-            service = FilaService(valkey=valkey, db_session=session)
+            alocacao_service = AlocacaoChamadaService(
+                valkey=valkey,
+                db_session=session,
+                lua_manager=get_lua_script_manager(),
+            )
+            service = FilaService(
+                valkey=valkey,
+                db_session=session,
+                alocacao_service=alocacao_service,
+            )
 
             # Ingest in random/arbitrary order
             for item_id, prio, t in [
@@ -141,7 +150,16 @@ async def test_acceptance_criterion_2_uuidv7_sub_millisecond_fifo() -> None:
 
     async for valkey in get_valkey_client():
         async with async_session_factory() as session:
-            service = FilaService(valkey=valkey, db_session=session)
+            alocacao_service = AlocacaoChamadaService(
+                valkey=valkey,
+                db_session=session,
+                lua_manager=get_lua_script_manager(),
+            )
+            service = FilaService(
+                valkey=valkey,
+                db_session=session,
+                alocacao_service=alocacao_service,
+            )
 
             # Ingest in REVERSE order: id_2 FIRST, id_1 SECOND
             await service.ingressar_fila(

@@ -200,9 +200,15 @@ async def test_acceptance_criterion_3_queue_overflow_transit_event_emitted() -> 
     async for valkey in get_valkey_client():
         async with async_session_factory() as session:
             controle = ControleAdmissaoService(valkey=valkey, notifier=spy_notifier)
+            alocacao = AlocacaoChamadaService(
+                valkey=valkey,
+                db_session=session,
+                lua_manager=get_lua_script_manager(),
+            )
             service = FilaService(
                 valkey=valkey,
                 db_session=session,
+                alocacao_service=alocacao,
                 controle_admissao=controle,
             )
 
@@ -255,9 +261,15 @@ async def test_rejection_no_active_doctors_emits_event() -> None:
     async for valkey in get_valkey_client():
         async with async_session_factory() as session:
             controle = ControleAdmissaoService(valkey=valkey, notifier=spy_notifier)
+            alocacao = AlocacaoChamadaService(
+                valkey=valkey,
+                db_session=session,
+                lua_manager=get_lua_script_manager(),
+            )
             service = FilaService(
                 valkey=valkey,
                 db_session=session,
+                alocacao_service=alocacao,
                 controle_admissao=controle,
             )
 
@@ -287,9 +299,15 @@ async def test_rejection_daily_quota_reached_emits_event() -> None:
     async for valkey in get_valkey_client():
         async with async_session_factory() as session:
             controle = ControleAdmissaoService(valkey=valkey, notifier=spy_notifier)
+            alocacao = AlocacaoChamadaService(
+                valkey=valkey,
+                db_session=session,
+                lua_manager=get_lua_script_manager(),
+            )
             service = FilaService(
                 valkey=valkey,
                 db_session=session,
+                alocacao_service=alocacao,
                 controle_admissao=controle,
             )
 

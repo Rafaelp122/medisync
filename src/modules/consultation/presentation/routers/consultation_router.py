@@ -5,7 +5,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
-from src.core.database import DbSessionDep
 from src.core.dependencies import TenantDep
 from src.core.errors import ForbiddenError
 from src.modules.consultation.application.dtos import (
@@ -60,7 +59,6 @@ async def salvar_evolucao_soap(
     atendimento_id: AtendimentoIdPath,
     request: RegistrarSOAPRequest,
     service: PEPServiceDep,
-    session: DbSessionDep,
     tenant_id: TenantDep,
 ) -> EvolucaoSOAPResponse:
     """Registra ou atualiza Subjetivo, Objetivo, Avaliação e Plano no PEP."""
@@ -75,8 +73,6 @@ async def salvar_evolucao_soap(
         cid10_principal=request.cid10_principal,
     )
     evolucao = await service.salvar_evolucao_soap(command)
-    await session.commit()
-    await session.refresh(evolucao)
 
     return EvolucaoSOAPResponse.model_validate(evolucao)
 
@@ -164,7 +160,6 @@ async def emitir_documento_clinico(
     atendimento_id: AtendimentoIdPath,
     request: EmitirDocumentoRequest,
     service: PEPServiceDep,
-    session: DbSessionDep,
     tenant_id: TenantDep,
 ) -> DocumentoClinicoResponse:
     """Emite receita ou atestado aplicando salvaguardas da Portaria 344/98."""
@@ -192,8 +187,6 @@ async def emitir_documento_clinico(
     )
 
     doc = await service.emitir_documento(cmd)
-    await session.commit()
-    await session.refresh(doc)
 
     return DocumentoClinicoResponse.model_validate(doc)
 
@@ -207,7 +200,6 @@ async def finalizar_consulta(
     atendimento_id: AtendimentoIdPath,
     request: FinalizarConsultaRequest,
     service: PEPServiceDep,
-    session: DbSessionDep,
     tenant_id: TenantDep,
 ) -> dict[str, object]:
     """Finaliza teleconsulta travando edição e exclusão de evolução e documentos."""
@@ -218,7 +210,6 @@ async def finalizar_consulta(
         medico_id=request.medico_id,
     )
     evolucao = await service.finalizar_consulta(cmd)
-    await session.commit()
 
     return {
         "status": "FINALIZADO",
@@ -309,7 +300,6 @@ async def assinar_documento(
     documento_id: DocumentoIdPath,
     payload: AssinarDocumentoRequest,
     service: PEPServiceDep,
-    session: DbSessionDep,
 ) -> AssinarDocumentoResponse:
     """Executa a assinatura digital PAdES em nuvem via PSC (CFM 2.314/2022)."""
     creds = DoctorCertificateCredentials(
@@ -320,6 +310,7 @@ async def assinar_documento(
     try:
         doc, signed_bytes = await service.assinar_documento_clinico(
             documento_id=documento_id,
+            atendimento_id=atendimento_id,
             credenciais=creds,
         )
     except ConsultaInvalidaError as err:
@@ -327,16 +318,6 @@ async def assinar_documento(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(err)
         ) from err
 
-    if doc.atendimento_id != atendimento_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=(
-                f"Documento '{documento_id}' não pertence ao "
-                f"atendimento '{atendimento_id}'."
-            ),
-        )
-
-    await session.commit()
     return AssinarDocumentoResponse(
         documento_id=doc.id,
         tipo_documento=str(doc.tipo_documento),

@@ -72,3 +72,13 @@ Adotamos a **Opção 3: Hexagonal Pragmático com Modelos Ricos no SQLAlchemy 2.
 
 ### Riscos Mitigados:
 * *Risco de Regras Vazarem para Roteadores*: Mitigado por regras do Tach que proíbem o roteador HTTP de importar repositórios ou executar queries diretamente sem a mediação do serviço.
+
+---
+
+## 6. Adendo — Transação: service commita, um por caso de uso (2026-10-04)
+
+* **Regra**: método público de Service que persiste commita uma vez ao fim (`await session.commit()`); helpers/policies nunca commitam.
+* **Router**: fino, sem `session.commit()/refresh()`; recebe `PEPServiceDep` (sessão compartilhada via DI), sem `DbSessionDep` própria quando só commitava.
+* **Motivo**: elimina double `DbSession` e split transaction/stale refresh em `consultation_router` x `PEPService`.
+* Com `expire_on_commit=False`, sem `refresh` salvo coluna server-generated; relações p/ resposta recarregadas via `selectinload` (ex.: `emitir_documento`).
+* `assinar_documento_clinico(documento_id, atendimento_id, credenciais)` valida pertencimento antes de compilar/PSC (`NotFoundError` → 404) para não assinar doc alheio.

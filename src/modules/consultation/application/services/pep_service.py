@@ -10,6 +10,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.core.errors import NotFoundError
 from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
     EmitirDocumentoClinicoCommand,
@@ -138,6 +139,7 @@ class PEPService:
             existing.registrado_em = datetime.now(UTC)
 
             await self._session.flush()
+            await self._session.commit()
             return existing
 
         if is_term:
@@ -156,6 +158,7 @@ class PEPService:
         )
         self._session.add(evolucao)
         await self._session.flush()
+        await self._session.commit()
         return evolucao
 
     def validar_prescricao(self, medicamento: str) -> None:
@@ -241,7 +244,17 @@ class PEPService:
             self._session.add(item_entity)
 
         await self._session.flush()
-        return doc
+        await self._session.commit()
+        # Reload with itens eagerly (selectin) so Pydantic model_validate
+        # stays sync-safe; expire_on_commit=False keeps columns, no refresh.
+        reload_stmt = (
+            select(DocumentoClinico)
+            .where(DocumentoClinico.id == doc.id)
+            .options(selectinload(DocumentoClinico.itens))
+        )
+        reload_res = await self._session.execute(reload_stmt)
+        reloaded = reload_res.scalar_one()
+        return reloaded
 
     async def finalizar_consulta(
         self, command: FinalizarConsultaCommand
@@ -290,6 +303,7 @@ class PEPService:
             )
 
         await self._session.flush()
+        await self._session.commit()
         return evolucao
 
     def calcular_tma_status(
@@ -515,6 +529,7 @@ class PEPService:
     async def assinar_documento_clinico(
         self,
         documento_id: UUID,
+        atendimento_id: UUID,
         credenciais: DoctorCertificateCredentials,
     ) -> tuple[DocumentoClinico, bytes]:
         """Sign clinical document with ICP-Brasil PAdES standard via Cloud PSC."""
@@ -526,8 +541,12 @@ class PEPService:
         res = await self._session.execute(stmt)
         doc = res.scalar_one_or_none()
         if doc is None:
-            raise ConsultaInvalidaError(
-                f"Documento clínico '{documento_id}' não encontrado."
+            raise NotFoundError(f"Documento clínico '{documento_id}' não encontrado.")
+
+        if doc.atendimento_id != atendimento_id:
+            raise NotFoundError(
+                f"Documento '{documento_id}' não pertence ao "
+                f"atendimento '{atendimento_id}'."
             )
 
         is_term = await self._verificar_atendimento_finalizado(doc.atendimento_id)
@@ -552,5 +571,6 @@ class PEPService:
         doc.chave_s3 = s3_key
         _DOCUMENTOS_ASSINADOS_CACHE[doc.id] = signed_bytes
         await self._session.flush()
+        await self._session.commit()
 
         return doc, signed_bytes

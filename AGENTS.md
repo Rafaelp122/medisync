@@ -35,6 +35,7 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
 3. **Tipagem Estrita:**
    * O código deve passar em `basedpyright` com `typeCheckingMode = "strict"`.
    * Evite `Any`. Use tipos genéricos, `Union`, `Literal` ou `Protocol`.
+4. **Transação:** service commita, um por caso de uso; router fino sem commit/refresh.
 
 ---
 
