@@ -247,6 +247,7 @@ async def test_fila_service_admitir_com_backpressure() -> None:
     service = FilaService(
         valkey=mock_valkey,
         db_session=mock_session,
+        alocacao_service=AsyncMock(),
         controle_admissao=controle,
     )
 

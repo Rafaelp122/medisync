@@ -1,15 +1,12 @@
 """FastAPI router for LiveKit WebRTC SFU room token issuance."""
 
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 
 from src.modules.consultation.application.ports.livekit_media_port import (
-    LiveKitMediaPort,
     build_participant_identity,
     build_room_name,
 )
-from src.modules.consultation.composition import get_livekit_adapter
+from src.modules.consultation.composition import LiveKitAdapterDep
 from src.modules.consultation.presentation.dependencies import AtendimentoIdPath
 from src.modules.consultation.presentation.schemas import (
     LiveKitTokenRequest,
@@ -17,8 +14,6 @@ from src.modules.consultation.presentation.schemas import (
 )
 
 livekit_router = APIRouter(prefix="/consultations", tags=["teleconsulta-webrtc"])
-
-LiveKitAdapterDep = Annotated[LiveKitMediaPort, Depends(get_livekit_adapter)]
 
 
 @livekit_router.post(
