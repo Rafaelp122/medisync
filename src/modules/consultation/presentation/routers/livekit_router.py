@@ -1,9 +1,8 @@
 """FastAPI router for LiveKit WebRTC SFU room token issuance."""
 
 from typing import Annotated
-from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, status
+from fastapi import APIRouter, Depends, status
 
 from src.modules.consultation.application.ports.livekit_media_port import (
     LiveKitMediaPort,
@@ -11,26 +10,25 @@ from src.modules.consultation.application.ports.livekit_media_port import (
     build_room_name,
 )
 from src.modules.consultation.infrastructure.livekit_adapter import get_livekit_adapter
+from src.modules.consultation.presentation.dependencies import AtendimentoIdPath
 from src.modules.consultation.presentation.schemas import (
     LiveKitTokenRequest,
     LiveKitTokenResponse,
 )
 
-livekit_router = APIRouter(tags=["teleconsulta-webrtc"])
+livekit_router = APIRouter(prefix="/consultations", tags=["teleconsulta-webrtc"])
 
 LiveKitAdapterDep = Annotated[LiveKitMediaPort, Depends(get_livekit_adapter)]
 
 
 @livekit_router.post(
-    "/consultations/{atendimento_id}/livekit/token",
+    "/{atendimento_id}/livekit/token",
     response_model=LiveKitTokenResponse,
     status_code=status.HTTP_200_OK,
     summary="Emite token JWT assinado para sala de teleconsulta no LiveKit SFU",
 )
 async def generate_teleconsulta_room_token(
-    atendimento_id: Annotated[
-        UUID, Path(description="Identificador único do atendimento")
-    ],
+    atendimento_id: AtendimentoIdPath,
     request: LiveKitTokenRequest,
     livekit_adapter: LiveKitAdapterDep,
 ) -> LiveKitTokenResponse:

@@ -76,7 +76,7 @@ async def test_auth_full_lifecycle_login_me_refresh_logout() -> None:
     ) as client:
         # 1. Login com credenciais válidas
         login_resp = await client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={
                 "identificador": "dr.lucas@telemed.com.br",
                 "senha": "SenhaForte123!@#",
@@ -94,7 +94,7 @@ async def test_auth_full_lifecycle_login_me_refresh_logout() -> None:
 
         # 2. Consultar perfil em /auth/me usando Bearer token
         me_resp = await client.get(
-            "/auth/me",
+            "/api/v1/auth/me",
             headers={"Authorization": f"Bearer {access_token}"},
         )
         assert me_resp.status_code == 200
@@ -107,7 +107,7 @@ async def test_auth_full_lifecycle_login_me_refresh_logout() -> None:
 
         # 3. Rotacionar refresh token em /auth/refresh
         refresh_resp = await client.post(
-            "/auth/refresh",
+            "/api/v1/auth/refresh",
             json={"refresh_token": refresh_token},
         )
         assert refresh_resp.status_code == 200
@@ -120,21 +120,21 @@ async def test_auth_full_lifecycle_login_me_refresh_logout() -> None:
 
         # 4. Validar que o refresh token antigo foi invalidado (one-time use)
         stale_refresh_resp = await client.post(
-            "/auth/refresh",
+            "/api/v1/auth/refresh",
             json={"refresh_token": refresh_token},
         )
         assert stale_refresh_resp.status_code == 401
 
         # 5. Logout com o novo refresh token
         logout_resp = await client.post(
-            "/auth/logout",
+            "/api/v1/auth/logout",
             json={"refresh_token": new_refresh_token},
         )
         assert logout_resp.status_code == 204
 
         # 6. Validar que o token revogado pelo logout não pode mais ser utilizado
         revoked_refresh_resp = await client.post(
-            "/auth/refresh",
+            "/api/v1/auth/refresh",
             json={"refresh_token": new_refresh_token},
         )
         assert revoked_refresh_resp.status_code == 401
@@ -181,7 +181,7 @@ async def test_auth_anti_enumeration_and_lockout() -> None:
     ) as client:
         # 1. Usuário inexistente retorna 401 genérico
         resp_absent = await client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={
                 "identificador": "inexistente@telemed.com.br",
                 "senha": "SenhaQualquer123!",
@@ -194,7 +194,7 @@ async def test_auth_anti_enumeration_and_lockout() -> None:
 
         # 2. Senha errada: mesma mensagem de erro genérica (anti-enumeração)
         resp_wrong = await client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={
                 "identificador": "dra.juliana@telemed.com.br",
                 "senha": "SenhaErrada!",
@@ -208,7 +208,7 @@ async def test_auth_anti_enumeration_and_lockout() -> None:
         # 3. Forçar 3 falhas adicionais (totalizando 4 falhas consecutivas)
         for _ in range(3):
             r = await client.post(
-                "/auth/login",
+                "/api/v1/auth/login",
                 json={
                     "identificador": "dra.juliana@telemed.com.br",
                     "senha": "SenhaErrada!",
@@ -218,7 +218,7 @@ async def test_auth_anti_enumeration_and_lockout() -> None:
 
         # 5ª tentativa incorreta deve bloquear a conta (HTTP 423)
         resp_blocked = await client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={
                 "identificador": "dra.juliana@telemed.com.br",
                 "senha": "SenhaErrada!",
@@ -228,7 +228,7 @@ async def test_auth_anti_enumeration_and_lockout() -> None:
 
         # 6ª tentativa: mesmo com senha correta, rejeitada por bloqueio ativo
         resp_correct_but_blocked = await client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={
                 "identificador": "dra.juliana@telemed.com.br",
                 "senha": "SenhaCorreta123!",
@@ -280,7 +280,7 @@ async def test_auth_cross_tenant_isolation() -> None:
         headers={"X-Tenant-ID": str(org_b.id)},
     ) as client:
         resp = await client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={
                 "identificador": "dr.tenant_a@telemed.com.br",
                 "senha": "SenhaOrgA123!",

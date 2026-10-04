@@ -66,7 +66,7 @@ async def test_obter_documento_pdf_endpoint() -> None:
     ) as client:
         # 1. Emitir receita simples
         emit_resp = await client.post(
-            f"/consultations/{atendimento.id}/documents",
+            f"/api/v1/consultations/{atendimento.id}/documents",
             json={
                 "medico_id": str(medico.id),
                 "tipo_documento": "RECEITA_SIMPLES",
@@ -86,7 +86,7 @@ async def test_obter_documento_pdf_endpoint() -> None:
 
         # 2. Requisitar PDF gerado
         pdf_resp = await client.get(
-            f"/consultations/{atendimento.id}/documents/{doc_id}/pdf"
+            f"/api/v1/consultations/{atendimento.id}/documents/{doc_id}/pdf"
         )
         assert pdf_resp.status_code == 200
         assert pdf_resp.headers["content-type"] == "application/pdf"
@@ -101,6 +101,6 @@ async def test_obter_documento_pdf_endpoint() -> None:
         # 3. Requisitar PDF com ID inexistente -> 404
         non_existent_id = uuid4()
         not_found_resp = await client.get(
-            f"/consultations/{atendimento.id}/documents/{non_existent_id}/pdf"
+            f"/api/v1/consultations/{atendimento.id}/documents/{non_existent_id}/pdf"
         )
         assert not_found_resp.status_code == 404

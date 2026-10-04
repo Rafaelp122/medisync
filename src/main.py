@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
@@ -127,17 +127,14 @@ def create_app() -> FastAPI:
         queue_ws_router,
     )
 
-    app.include_router(auth_router)
-    app.include_router(onboarding_router)
-    app.include_router(pacientes_router)
-    app.include_router(livekit_router)
-    app.include_router(consultation_router)
-    app.include_router(validation_router)
-    app.include_router(auth_router, prefix="/api/v1")
-    app.include_router(onboarding_router, prefix="/api/v1")
-    app.include_router(pacientes_router, prefix="/api/v1")
-    app.include_router(livekit_router, prefix="/api/v1")
-    app.include_router(consultation_router, prefix="/api/v1")
+    api_v1 = APIRouter(prefix="/api/v1")
+    api_v1.include_router(auth_router)
+    api_v1.include_router(onboarding_router)
+    api_v1.include_router(pacientes_router)
+    api_v1.include_router(livekit_router)
+    api_v1.include_router(consultation_router)
+    api_v1.include_router(validation_router)
+    app.include_router(api_v1)
 
     # 5. Real-time WebSocket signaling routers
     app.include_router(queue_ws_router)

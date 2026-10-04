@@ -3,10 +3,9 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.context import get_current_tenant_id
-from src.core.database import get_db_session
+from src.core.database import DbSessionDep
 from src.modules.identity.application.services.onboarding_service import (
     OnboardingService,
 )
@@ -22,8 +21,6 @@ onboarding_router = APIRouter(
     prefix="/onboarding",
     tags=["Onboarding"],
 )
-
-SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 
 
 def _get_required_tenant_id() -> int:
@@ -52,7 +49,7 @@ TenantDep = Annotated[int, Depends(_get_required_tenant_id)]
 async def intake_fase_1(
     body: Fase1Request,
     tenant_id: TenantDep,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> Fase1Response:
     """Execute Phase 1 rapid intake."""
     service = OnboardingService()
@@ -73,7 +70,7 @@ async def intake_fase_1(
 async def enrichment_fase_2(
     body: Fase2Request,
     tenant_id: TenantDep,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> Fase2Response:
     """Execute Phase 2 regulatory enrichment."""
     service = OnboardingService()

@@ -85,7 +85,7 @@ async def test_onboarding_fase_1_happy_path_under_45s(
             "cpf": "111.444.777-35",
         }
         res = await client.post(
-            "/onboarding/fase-1",
+            "/api/v1/onboarding/fase-1",
             json=payload,
             headers={"X-Tenant-ID": str(org1.id)},
         )
@@ -122,7 +122,7 @@ async def test_onboarding_fase_1_deduplication_reuses_patient(
     ) as client:
         # First submission
         res1 = await client.post(
-            "/onboarding/fase-1",
+            "/api/v1/onboarding/fase-1",
             json={
                 "nome_completo": "Ana Maria Braga",
                 "data_nascimento": "1975-04-01",
@@ -139,7 +139,7 @@ async def test_onboarding_fase_1_deduplication_reuses_patient(
 
         # Second submission with new phone and updated complaint
         res2 = await client.post(
-            "/onboarding/fase-1",
+            "/api/v1/onboarding/fase-1",
             json={
                 "nome_completo": "Ana Maria Braga",
                 "data_nascimento": "1975-04-01",
@@ -169,7 +169,7 @@ async def test_onboarding_fase_1_validation_errors(
     ) as client:
         # 1. Missing both CPF and CNS
         res_no_doc = await client.post(
-            "/onboarding/fase-1",
+            "/api/v1/onboarding/fase-1",
             json={
                 "nome_completo": "Paciente Sem Documento",
                 "data_nascimento": "1990-01-01",
@@ -185,7 +185,7 @@ async def test_onboarding_fase_1_validation_errors(
 
         # 2. Invalid CPF check digits
         res_bad_cpf = await client.post(
-            "/onboarding/fase-1",
+            "/api/v1/onboarding/fase-1",
             json={
                 "nome_completo": "Paciente CPF Invalido",
                 "data_nascimento": "1990-01-01",
@@ -200,7 +200,7 @@ async def test_onboarding_fase_1_validation_errors(
 
         # 3. Missing X-Tenant-ID header
         res_no_tenant = await client.post(
-            "/onboarding/fase-1",
+            "/api/v1/onboarding/fase-1",
             json={
                 "nome_completo": "Paciente Sem Tenant",
                 "data_nascimento": "1990-01-01",
@@ -227,7 +227,7 @@ async def test_onboarding_fase_2_enrichment_happy_path(
     ) as client:
         # Step 1: Intake
         intake_res = await client.post(
-            "/onboarding/fase-1",
+            "/api/v1/onboarding/fase-1",
             json={
                 "nome_completo": "Juliana Paes",
                 "data_nascimento": "1979-03-26",
@@ -255,7 +255,7 @@ async def test_onboarding_fase_2_enrichment_happy_path(
             "alergias": ["Dipirona", "Anti-inflamatórios não esteroides"],
         }
         res2 = await client.post(
-            "/onboarding/fase-2",
+            "/api/v1/onboarding/fase-2",
             json=fase2_payload,
             headers={"X-Tenant-ID": str(org1.id)},
         )
@@ -283,7 +283,7 @@ async def test_onboarding_fase_2_cfm_validation_failures(
     ) as client:
         # Non-existent patient
         res_404 = await client.post(
-            "/onboarding/fase-2",
+            "/api/v1/onboarding/fase-2",
             json={
                 "paciente_id": str(uuid7()),
                 "nome_mae": "Maria da Silva",
@@ -302,7 +302,7 @@ async def test_onboarding_fase_2_cfm_validation_failures(
 
         # Incomplete mother name (single name)
         intake_res = await client.post(
-            "/onboarding/fase-1",
+            "/api/v1/onboarding/fase-1",
             json={
                 "nome_completo": "Lucas Santos",
                 "data_nascimento": "1995-07-10",
@@ -316,7 +316,7 @@ async def test_onboarding_fase_2_cfm_validation_failures(
         paciente_id = intake_res.json()["paciente_id"]
 
         res_single_name = await client.post(
-            "/onboarding/fase-2",
+            "/api/v1/onboarding/fase-2",
             json={
                 "paciente_id": paciente_id,
                 "nome_mae": "Maria",  # Violates CFM 1.821/2007 (must be full name)
@@ -346,7 +346,7 @@ async def test_dependente_management_lifecycle(
     ) as client:
         # 1. Create titular
         intake_titular = await client.post(
-            "/onboarding/fase-1",
+            "/api/v1/onboarding/fase-1",
             json={
                 "nome_completo": "Mariana Ribeiro (Titular)",
                 "data_nascimento": "1988-12-05",
@@ -361,7 +361,7 @@ async def test_dependente_management_lifecycle(
 
         # 2. Anti-reflexive check: titular cannot be dependent of themselves
         res_self = await client.post(
-            f"/pacientes/{titular_id}/dependentes",
+            f"/api/v1/pacientes/{titular_id}/dependentes",
             json={
                 "grau_parentesco": "FILHO",
                 "dependente_id": titular_id,
@@ -373,7 +373,7 @@ async def test_dependente_management_lifecycle(
 
         # 3. Create new minor dependent
         res_dep1 = await client.post(
-            f"/pacientes/{titular_id}/dependentes",
+            f"/api/v1/pacientes/{titular_id}/dependentes",
             json={
                 "grau_parentesco": "FILHO",
                 "nome_completo": "Enzo Gabriel Ribeiro",
@@ -390,7 +390,7 @@ async def test_dependente_management_lifecycle(
 
         # 4. Duplicate linkage fails with 409 Conflict
         res_dup = await client.post(
-            f"/pacientes/{titular_id}/dependentes",
+            f"/api/v1/pacientes/{titular_id}/dependentes",
             json={
                 "grau_parentesco": "FILHO",
                 "dependente_id": dep1_id,
@@ -402,7 +402,7 @@ async def test_dependente_management_lifecycle(
 
         # 5. List dependents
         res_list = await client.get(
-            f"/pacientes/{titular_id}/dependentes",
+            f"/api/v1/pacientes/{titular_id}/dependentes",
             headers={"X-Tenant-ID": str(org1.id)},
         )
         assert res_list.status_code == 200
@@ -425,7 +425,7 @@ async def test_tenant_isolation_onboarding_and_dependents(
     ) as client:
         # Create patient in Tenant 1
         intake_res = await client.post(
-            "/onboarding/fase-1",
+            "/api/v1/onboarding/fase-1",
             json={
                 "nome_completo": "Paciente Tenant 1",
                 "data_nascimento": "1992-08-20",
@@ -441,7 +441,7 @@ async def test_tenant_isolation_onboarding_and_dependents(
 
         # Tenant 2 attempts Phase 2 enrichment on Tenant 1 patient -> 404
         res_enrich_t2 = await client.post(
-            "/onboarding/fase-2",
+            "/api/v1/onboarding/fase-2",
             json={
                 "paciente_id": paciente_id,
                 "nome_mae": "Mae de Teste",
@@ -459,7 +459,7 @@ async def test_tenant_isolation_onboarding_and_dependents(
 
         # Tenant 2 attempts to link dependent to Tenant 1 patient -> 404
         res_dep_t2 = await client.post(
-            f"/pacientes/{paciente_id}/dependentes",
+            f"/api/v1/pacientes/{paciente_id}/dependentes",
             json={
                 "grau_parentesco": "FILHO",
                 "nome_completo": "Filho Ilegitimo",

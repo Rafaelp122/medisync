@@ -17,11 +17,16 @@ from src.modules.consultation.application.policies.clinical_access_policy import
 SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 MedicoUserDep = Annotated[AuthenticatedUser, Depends(require_role(Role.MEDICO))]
 
+AtendimentoIdPath = Annotated[
+    UUID, Path(description="Identificador único do atendimento")
+]
+DocumentoIdPath = Annotated[
+    UUID, Path(description="Identificador único do documento clínico")
+]
+
 
 async def require_clinical_access(
-    atendimento_id: Annotated[
-        UUID, Path(description="Identificador único do atendimento")
-    ],
+    atendimento_id: AtendimentoIdPath,
     current_user: MedicoUserDep,
     session: SessionDep,
 ) -> AuthenticatedUser:

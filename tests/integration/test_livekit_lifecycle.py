@@ -80,7 +80,7 @@ async def test_livekit_token_endpoint_patient() -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
-            f"/consultations/{atendimento_id}/livekit/token",
+            f"/api/v1/consultations/{atendimento_id}/livekit/token",
             json=payload,
         )
 
@@ -106,7 +106,7 @@ async def test_livekit_token_endpoint_validation_errors() -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
-            f"/consultations/{atendimento_id}/livekit/token",
+            f"/api/v1/consultations/{atendimento_id}/livekit/token",
             json=payload,
         )
     assert resp.status_code == 422
@@ -131,7 +131,7 @@ async def test_livekit_adapter_dependency_override() -> None:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
-                f"/consultations/{atendimento_id}/livekit/token",
+                f"/api/v1/consultations/{atendimento_id}/livekit/token",
                 json=payload,
             )
 

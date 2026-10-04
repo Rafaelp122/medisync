@@ -4,10 +4,9 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.context import get_current_tenant_id
-from src.core.database import get_db_session
+from src.core.database import DbSessionDep
 from src.modules.identity.application.services.dependente_service import (
     DependenteService,
 )
@@ -22,8 +21,6 @@ pacientes_router = APIRouter(
     prefix="/pacientes",
     tags=["Pacientes"],
 )
-
-SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 
 
 def _get_required_tenant_id() -> int:
@@ -53,7 +50,7 @@ async def cadastrar_dependente(
     id: Annotated[UUID, Path(description="ID do paciente titular")],
     body: CriarDependenteRequest,
     tenant_id: TenantDep,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> DependenteResponse:
     """Register or link a dependent to a titular patient."""
     service = DependenteService()
@@ -79,7 +76,7 @@ async def cadastrar_dependente(
 async def listar_dependentes(
     id: Annotated[UUID, Path(description="ID do paciente titular")],
     tenant_id: TenantDep,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> list[DependenteDetalheResponse]:
     """List all dependents linked to the titular patient."""
     service = DependenteService()

@@ -4,13 +4,12 @@ import contextlib
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from fastapi import APIRouter, HTTPException, Path, Query, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.core.database import get_db_session
+from src.core.database import DbSessionDep
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.domain.models import DocumentoClinico
 from src.modules.consultation.presentation.schemas import (
@@ -18,9 +17,9 @@ from src.modules.consultation.presentation.schemas import (
     ValidarDocumentoResponse,
 )
 
-SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
-
-validation_router = APIRouter(tags=["Document Validation & Presigned Storage"])
+validation_router = APIRouter(
+    prefix="/documents", tags=["Document Validation & Presigned Storage"]
+)
 
 
 def mascarar_cpf(cpf: str) -> str:
@@ -62,21 +61,16 @@ def _parse_token_as_uuid(token_validacao: str) -> UUID:
 
 
 @validation_router.get(
-    "/documents/validate/{token_validacao}",
+    "/validate/{token_validacao}",
     response_model=ValidarDocumentoResponse,
     status_code=status.HTTP_200_OK,
     summary="Validação pública de autenticidade de documento clínico (QR Code CFM/ITI)",
-)
-@validation_router.get(
-    "/api/v1/documents/validate/{token_validacao}",
-    include_in_schema=False,
-    response_model=ValidarDocumentoResponse,
 )
 async def validar_documento(
     token_validacao: Annotated[
         str, Path(description="Token de validação ou UUID do documento clínico")
     ],
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> ValidarDocumentoResponse:
     """Consulta pública da autenticidade e integridade do documento clínico.
 
@@ -167,7 +161,7 @@ async def validar_documento(
 
 
 @validation_router.get(
-    "/documents/download/{token_validacao}",
+    "/download/{token_validacao}",
     summary="Download seguro do documento clínico via Presigned URL temporária",
     status_code=status.HTTP_307_TEMPORARY_REDIRECT,
     response_class=Response,
@@ -177,16 +171,11 @@ async def validar_documento(
         404: {"description": "Documento não encontrado"},
     },
 )
-@validation_router.get(
-    "/api/v1/documents/download/{token_validacao}",
-    include_in_schema=False,
-    response_class=Response,
-)
 async def download_documento_presigned(
     token_validacao: Annotated[
         str, Path(description="Token de validação ou UUID do documento clínico")
     ],
-    session: SessionDep,
+    session: DbSessionDep,
     redirect: Annotated[
         bool,
         Query(

@@ -2,13 +2,11 @@
 
 from datetime import UTC, datetime
 from typing import Annotated
-from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from src.core.context import get_current_tenant_id
-from src.core.database import get_db_session
+from src.core.database import DbSessionDep
 from src.modules.consultation.application.dtos import (
     CriarItemPrescricaoDTO,
     EmitirDocumentoClinicoCommand,
@@ -20,7 +18,11 @@ from src.modules.consultation.application.ports.icp_brasil_signer_port import (
 )
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.domain.exceptions import ConsultaInvalidaError
-from src.modules.consultation.presentation.dependencies import ClinicalAccessDep
+from src.modules.consultation.presentation.dependencies import (
+    AtendimentoIdPath,
+    ClinicalAccessDep,
+    DocumentoIdPath,
+)
 from src.modules.consultation.presentation.schemas import (
     AssinarDocumentoRequest,
     AssinarDocumentoResponse,
@@ -34,9 +36,7 @@ from src.modules.consultation.presentation.schemas import (
     ValidarPrescricaoRequest,
 )
 
-consultation_router = APIRouter(tags=["teleconsulta-pep"])
-
-SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
+consultation_router = APIRouter(prefix="/consultations", tags=["teleconsulta-pep"])
 
 
 def _resolve_tenant_id(provided: int | None) -> int:
@@ -49,17 +49,15 @@ def _resolve_tenant_id(provided: int | None) -> int:
 
 
 @consultation_router.post(
-    "/consultations/{atendimento_id}/soap",
+    "/{atendimento_id}/soap",
     response_model=EvolucaoSOAPResponse,
     status_code=status.HTTP_200_OK,
     summary="Registra ou atualiza evolução clínica SOAP no prontuário eletrônico (PEP)",
 )
 async def salvar_evolucao_soap(
-    atendimento_id: Annotated[
-        UUID, Path(description="Identificador único do atendimento")
-    ],
+    atendimento_id: AtendimentoIdPath,
     request: RegistrarSOAPRequest,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> EvolucaoSOAPResponse:
     """Registra ou atualiza Subjetivo, Objetivo, Avaliação e Plano no PEP."""
     org_id = _resolve_tenant_id(request.organizacao_id)
@@ -81,16 +79,14 @@ async def salvar_evolucao_soap(
 
 
 @consultation_router.get(
-    "/consultations/{atendimento_id}/soap",
+    "/{atendimento_id}/soap",
     response_model=EvolucaoSOAPResponse,
     status_code=status.HTTP_200_OK,
     summary="Obtém a evolução clínica SOAP registrada para o atendimento",
 )
 async def obter_evolucao_soap(
-    atendimento_id: Annotated[
-        UUID, Path(description="Identificador único do atendimento")
-    ],
-    session: SessionDep,
+    atendimento_id: AtendimentoIdPath,
+    session: DbSessionDep,
 ) -> EvolucaoSOAPResponse:
     """Retorna as notas SOAP atuais do atendimento."""
     service = PEPService(session)
@@ -104,23 +100,15 @@ async def obter_evolucao_soap(
 
 
 @consultation_router.get(
-    "/consultations/{atendimento_id}/prontuario",
+    "/{atendimento_id}/prontuario",
     response_model=ProntuarioResponse,
     status_code=status.HTTP_200_OK,
     summary="Acesso ao prontuário médico protegido por RBAC e ABAC clínico",
 )
-@consultation_router.get(
-    "/atendimentos/{atendimento_id}/prontuario",
-    response_model=ProntuarioResponse,
-    status_code=status.HTTP_200_OK,
-    include_in_schema=False,
-)
 async def obter_prontuario_protegido(
-    atendimento_id: Annotated[
-        UUID, Path(description="Identificador único do atendimento")
-    ],
+    atendimento_id: AtendimentoIdPath,
     _user: ClinicalAccessDep,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> ProntuarioResponse:
     """Retorna o prontuário eletrônico mediante verificação em 3 camadas:
     1. Camada 1 (Macro RBAC): papel MEDICO.
@@ -147,16 +135,14 @@ async def obter_prontuario_protegido(
 
 
 @consultation_router.post(
-    "/consultations/{atendimento_id}/prescriptions/validate",
+    "/{atendimento_id}/prescriptions/validate",
     status_code=status.HTTP_200_OK,
     summary="Valida substância medicamentosa contra Portaria SVS/MS nº 344/98",
 )
 async def validar_prescricao_medicamento(
-    atendimento_id: Annotated[
-        UUID, Path(description="Identificador único do atendimento")
-    ],
+    atendimento_id: AtendimentoIdPath,
     request: ValidarPrescricaoRequest,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> dict[str, str]:
     """Verifica se o medicamento exige talonário físico (Listas A/B)."""
     service = PEPService(session)
@@ -169,17 +155,15 @@ async def validar_prescricao_medicamento(
 
 
 @consultation_router.post(
-    "/consultations/{atendimento_id}/documents",
+    "/{atendimento_id}/documents",
     response_model=DocumentoClinicoResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Emite documento clínico eletrônico com itens de prescrição",
 )
 async def emitir_documento_clinico(
-    atendimento_id: Annotated[
-        UUID, Path(description="Identificador único do atendimento")
-    ],
+    atendimento_id: AtendimentoIdPath,
     request: EmitirDocumentoRequest,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> DocumentoClinicoResponse:
     """Emite receita ou atestado aplicando salvaguardas da Portaria 344/98."""
     org_id = _resolve_tenant_id(request.organizacao_id)
@@ -214,16 +198,14 @@ async def emitir_documento_clinico(
 
 
 @consultation_router.post(
-    "/consultations/{atendimento_id}/finalize",
+    "/{atendimento_id}/finalize",
     status_code=status.HTTP_200_OK,
     summary="Conclui atendimento e bloqueia registros clínicos (Imutabilidade)",
 )
 async def finalizar_consulta(
-    atendimento_id: Annotated[
-        UUID, Path(description="Identificador único do atendimento")
-    ],
+    atendimento_id: AtendimentoIdPath,
     request: FinalizarConsultaRequest,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> dict[str, object]:
     """Finaliza teleconsulta travando edição e exclusão de evolução e documentos."""
     org_id = _resolve_tenant_id(request.organizacao_id)
@@ -247,16 +229,14 @@ async def finalizar_consulta(
 
 
 @consultation_router.get(
-    "/consultations/{atendimento_id}/tma-status",
+    "/{atendimento_id}/tma-status",
     response_model=TMAStatusResponse,
     status_code=status.HTTP_200_OK,
     summary="Consulta telemetria discreta de TMA sem desconexão forçada (RN06)",
 )
 async def obter_tma_status(
-    atendimento_id: Annotated[
-        UUID, Path(description="Identificador único do atendimento")
-    ],
-    session: SessionDep,
+    atendimento_id: AtendimentoIdPath,
+    session: DbSessionDep,
     iniciado_em: Annotated[
         datetime | None,
         Query(description="Data e hora de início do atendimento (UTC)"),
@@ -282,7 +262,7 @@ async def obter_tma_status(
 
 
 @consultation_router.get(
-    "/consultations/{atendimento_id}/documents/{documento_id}/pdf",
+    "/{atendimento_id}/documents/{documento_id}/pdf",
     summary="Download do documento clínico compilado em padrão PDF/A com QR Code",
     status_code=status.HTTP_200_OK,
     response_class=Response,
@@ -294,19 +274,10 @@ async def obter_tma_status(
         404: {"description": "Documento não encontrado"},
     },
 )
-@consultation_router.get(
-    "/api/v1/consultations/{atendimento_id}/documents/{documento_id}/pdf",
-    include_in_schema=False,
-    response_class=Response,
-)
 async def obter_documento_pdf(
-    atendimento_id: Annotated[
-        UUID, Path(description="Identificador único do atendimento")
-    ],
-    documento_id: Annotated[
-        UUID, Path(description="Identificador único do documento clínico")
-    ],
-    session: SessionDep,
+    atendimento_id: AtendimentoIdPath,
+    documento_id: DocumentoIdPath,
+    session: DbSessionDep,
 ) -> Response:
     """Retorna o documento clínico compilado em PDF/A com QR Code de verificação."""
     pep_service = PEPService(session)
@@ -328,25 +299,16 @@ async def obter_documento_pdf(
 
 
 @consultation_router.post(
-    "/consultations/{atendimento_id}/documents/{documento_id}/sign",
+    "/{atendimento_id}/documents/{documento_id}/sign",
     response_model=AssinarDocumentoResponse,
     status_code=status.HTTP_200_OK,
     summary="Aplica assinatura digital PAdES ICP-Brasil no documento clínico via PSC",
 )
-@consultation_router.post(
-    "/api/v1/consultations/{atendimento_id}/documents/{documento_id}/sign",
-    include_in_schema=False,
-    response_model=AssinarDocumentoResponse,
-)
 async def assinar_documento(
-    atendimento_id: Annotated[
-        UUID, Path(description="Identificador único do atendimento")
-    ],
-    documento_id: Annotated[
-        UUID, Path(description="Identificador único do documento clínico")
-    ],
+    atendimento_id: AtendimentoIdPath,
+    documento_id: DocumentoIdPath,
     payload: AssinarDocumentoRequest,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> AssinarDocumentoResponse:
     """Executa a assinatura digital PAdES em nuvem via PSC (CFM 2.314/2022)."""
     service = PEPService(session)

@@ -2,11 +2,10 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request, Response, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Header, Request, Response, status
 
 from src.core.context import get_current_tenant_id
-from src.core.database import get_db_session
+from src.core.database import DbSessionDep
 from src.core.errors import NotFoundError, UnauthorizedError, ValidationError
 from src.modules.auth.application.dtos import LoginCommand
 from src.modules.auth.application.services.auth_service import AuthService
@@ -17,26 +16,19 @@ from src.modules.auth.presentation.schemas import (
     UsuarioPerfilResponse,
 )
 
-SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
-
-auth_router = APIRouter(tags=["Authentication & Sessions (OWASP)"])
+auth_router = APIRouter(prefix="/auth", tags=["Authentication & Sessions (OWASP)"])
 
 
 @auth_router.post(
-    "/auth/login",
+    "/login",
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
     summary="Autenticação com Argon2id e emissão de JWT (Anti-Brute Force)",
 )
-@auth_router.post(
-    "/api/v1/auth/login",
-    include_in_schema=False,
-    response_model=TokenResponse,
-)
 async def login(
     request: Request,
     body: LoginRequest,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> TokenResponse:
     """Autentica o usuário corporativo emitindo par de tokens de acesso e atualização.
 
@@ -66,19 +58,14 @@ async def login(
 
 
 @auth_router.post(
-    "/auth/refresh",
+    "/refresh",
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
     summary="Rotação de refresh token com detecção de reuso",
 )
-@auth_router.post(
-    "/api/v1/auth/refresh",
-    include_in_schema=False,
-    response_model=TokenResponse,
-)
 async def refresh_token(
     body: RefreshTokenRequest,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> TokenResponse:
     """Rotaciona o refresh token: invalida o token apresentado e emite um novo par."""
     service = AuthService(session)
@@ -87,18 +74,13 @@ async def refresh_token(
 
 
 @auth_router.post(
-    "/auth/logout",
+    "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Revogação de sessão e logout de usuário",
 )
-@auth_router.post(
-    "/api/v1/auth/logout",
-    include_in_schema=False,
-    status_code=status.HTTP_204_NO_CONTENT,
-)
 async def logout(
     body: RefreshTokenRequest,
-    session: SessionDep,
+    session: DbSessionDep,
 ) -> Response:
     """Revoga o refresh token fornecido impedindo renovações futuras."""
     service = AuthService(session)
@@ -107,18 +89,13 @@ async def logout(
 
 
 @auth_router.get(
-    "/auth/me",
+    "/me",
     response_model=UsuarioPerfilResponse,
     status_code=status.HTTP_200_OK,
     summary="Perfil do usuário autenticado a partir do Bearer JWT",
 )
-@auth_router.get(
-    "/api/v1/auth/me",
-    include_in_schema=False,
-    response_model=UsuarioPerfilResponse,
-)
 async def me(
-    session: SessionDep,
+    session: DbSessionDep,
     authorization: Annotated[str | None, Header()] = None,
 ) -> UsuarioPerfilResponse:
     """Valida o Bearer token JWT da requisição e retorna o perfil do usuário ativo."""

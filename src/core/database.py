@@ -1,7 +1,9 @@
 """Asynchronous database engine, session factory, and RLS listener."""
 
 from collections.abc import AsyncGenerator
+from typing import Annotated
 
+from fastapi import Depends
 from sqlalchemy import Connection, event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -68,3 +70,6 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """Yield an isolated asynchronous SQLAlchemy session for request/task lifecycle."""
     async with async_session_factory() as session:
         yield session
+
+
+DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]

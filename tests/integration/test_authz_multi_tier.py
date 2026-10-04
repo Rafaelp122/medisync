@@ -46,7 +46,7 @@ async def test_authz_unauthenticated_request_blocked() -> None:
         transport=transport,
         base_url="http://test",
     ) as client:
-        resp = await client.get(f"/consultations/{uuid4()}/prontuario")
+        resp = await client.get(f"/api/v1/consultations/{uuid4()}/prontuario")
         assert resp.status_code == 401
         err = cast("dict[str, object]", resp.json())
         assert err["title"] == "Unauthorized"
@@ -71,7 +71,7 @@ async def test_authz_macro_rbac_unauthorized_role_blocked() -> None:
 
         # 1. GESTOR_UNIDADE blocked
         resp_g = await client.get(
-            f"/consultations/{atend_id}/prontuario",
+            f"/api/v1/consultations/{atend_id}/prontuario",
             headers={"Authorization": f"Bearer {token_gestor}"},
         )
         assert resp_g.status_code == 403
@@ -81,7 +81,7 @@ async def test_authz_macro_rbac_unauthorized_role_blocked() -> None:
 
         # 2. FATURAMENTO blocked
         resp_f = await client.get(
-            f"/consultations/{atend_id}/prontuario",
+            f"/api/v1/consultations/{atend_id}/prontuario",
             headers={"Authorization": f"Bearer {token_faturamento}"},
         )
         assert resp_f.status_code == 403
@@ -89,7 +89,7 @@ async def test_authz_macro_rbac_unauthorized_role_blocked() -> None:
 
         # 3. PACIENTE blocked
         resp_p = await client.get(
-            f"/consultations/{atend_id}/prontuario",
+            f"/api/v1/consultations/{atend_id}/prontuario",
             headers={"Authorization": f"Bearer {token_paciente}"},
         )
         assert resp_p.status_code == 403
@@ -110,7 +110,7 @@ async def test_authz_tenant_mismatch_blocked() -> None:
         headers={"X-Tenant-ID": str(org_b_id)},  # Requesting Org B with Org A token
     ) as client:
         resp = await client.get(
-            f"/consultations/{uuid4()}/prontuario",
+            f"/api/v1/consultations/{uuid4()}/prontuario",
             headers={"Authorization": f"Bearer {token_medico_org_a}"},
         )
         assert resp.status_code == 403
@@ -163,7 +163,7 @@ async def test_authz_clinical_abac_missing_tcle_blocked() -> None:
         headers={"X-Tenant-ID": str(org.id)},
     ) as client:
         resp = await client.get(
-            f"/consultations/{atendimento.id}/prontuario",
+            f"/api/v1/consultations/{atendimento.id}/prontuario",
             headers={"Authorization": f"Bearer {token_medico}"},
         )
         assert resp.status_code == 403
@@ -225,7 +225,7 @@ async def test_authz_clinical_abac_physician_mismatch_blocked() -> None:
         headers={"X-Tenant-ID": str(org.id)},
     ) as client:
         resp = await client.get(
-            f"/consultations/{atendimento.id}/prontuario",
+            f"/api/v1/consultations/{atendimento.id}/prontuario",
             headers={"Authorization": f"Bearer {token_intruso}"},
         )
         assert resp.status_code == 403
@@ -277,7 +277,7 @@ async def test_authz_clinical_abac_inactive_encounter_blocked() -> None:
         headers={"X-Tenant-ID": str(org.id)},
     ) as client:
         resp = await client.get(
-            f"/consultations/{atendimento.id}/prontuario",
+            f"/api/v1/consultations/{atendimento.id}/prontuario",
             headers={"Authorization": f"Bearer {token_medico}"},
         )
         assert resp.status_code == 403
@@ -328,18 +328,14 @@ async def test_authz_full_flow_access_granted() -> None:
         base_url="http://test",
         headers={"X-Tenant-ID": str(org.id)},
     ) as client:
-        # Test both /consultations/{id}/prontuario and /atendimentos/{id}/prontuario
-        for endpoint in [
-            f"/consultations/{atendimento.id}/prontuario",
-            f"/atendimentos/{atendimento.id}/prontuario",
-        ]:
-            resp = await client.get(
-                endpoint,
-                headers={"Authorization": f"Bearer {token_medico}"},
-            )
-            assert resp.status_code == 200
-            data = cast("dict[str, object]", resp.json())
-            assert data["atendimento_id"] == str(atendimento.id)
-            assert data["is_finalizado"] is False
-            assert "evolucao" in data
-            assert "documentos" in data
+        # Test /api/v1/consultations/{id}/prontuario (alias /atendimentos removido)
+        resp = await client.get(
+            f"/api/v1/consultations/{atendimento.id}/prontuario",
+            headers={"Authorization": f"Bearer {token_medico}"},
+        )
+        assert resp.status_code == 200
+        data = cast("dict[str, object]", resp.json())
+        assert data["atendimento_id"] == str(atendimento.id)
+        assert data["is_finalizado"] is False
+        assert "evolucao" in data
+        assert "documentos" in data
