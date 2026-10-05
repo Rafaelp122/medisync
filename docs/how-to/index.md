@@ -5,8 +5,8 @@
 ## Guias
 
 - [Setup local](dev-environment/setup-local.md) — deps, `.env`, serviços.
-- [Backend](backend/index.md) — receitas API/workers/filas.
-- [Troubleshooting](troubleshooting/index.md) — erros comuns e diagnóstico.
+- [Create Module Endpoint](backend/create-module-endpoint.md) — receitas API/workers/filas.
+- [Run Tests](backend/run-tests.md) — erros comuns e diagnóstico.
 
 ## Verificação
 

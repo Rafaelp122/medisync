@@ -4,8 +4,8 @@
 
 ## Guias
 
-- [Quickstart](quickstart.md) — stack up e happy path.
-- [First Feature](first-feature.md) — endpoint vertical completo.
+- [Onboarding Quickstart](onboarding-quickstart.md) — stack up e happy path.
+- [Backend First Feature](backend-first-feature.md) — endpoint vertical completo.
 
 ## Verificação
 
