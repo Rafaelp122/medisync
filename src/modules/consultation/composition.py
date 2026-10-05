@@ -5,12 +5,16 @@ Routers and tests must resolve PEPService via get_pep_service/PEPServiceDep
 and LiveKit adapter via get_livekit_adapter/LiveKitAdapterDep.
 """
 
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
 
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
+from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoReaderPort,
+)
 from src.modules.consultation.application.ports.document_directory_port import (
     DocumentDirectoryPort,
 )
@@ -23,6 +27,9 @@ from src.modules.consultation.application.ports.livekit_media_port import (
 from src.modules.consultation.application.ports.pdf_generator_port import (
     PDFGeneratorPort,
 )
+from src.modules.consultation.application.ports.signed_cache_port import (
+    SignedCachePort,
+)
 from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.application.ports.validation_rate_limiter_port import (
     ValidationRateLimiterPort,
@@ -30,11 +37,23 @@ from src.modules.consultation.application.ports.validation_rate_limiter_port imp
 from src.modules.consultation.application.services.document_validation_service import (
     DocumentValidationService,
 )
+from src.modules.consultation.application.services.documento_service import (
+    DocumentoService,
+)
+from src.modules.consultation.application.services.evolucao_service import (
+    EvolucaoService,
+)
 from src.modules.consultation.application.services.pep_service import PEPService
+from src.modules.consultation.infrastructure.atendimento_reader_sql import (
+    SqlAtendimentoReader,
+)
 from src.modules.consultation.infrastructure.document_directory_sql import (
     SqlDocumentDirectory,
 )
 from src.modules.consultation.infrastructure.livekit_adapter import LiveKitAdapter
+from src.modules.consultation.infrastructure.memory_signed_cache import (
+    MemorySignedCache,
+)
 from src.modules.consultation.infrastructure.pdf_generator import (
     ReportLabPDFGenerator,
 )
@@ -48,8 +67,9 @@ from src.modules.consultation.infrastructure.valkey_validation_rate_limiter impo
 )
 
 
+@lru_cache(maxsize=1)
 def get_storage() -> StoragePort:
-    """Provide object storage adapter selected by STORAGE_BACKEND setting."""
+    """Provide process-wide object storage adapter (single Fake/S3 instance)."""
     settings = get_settings()
     if settings.STORAGE_BACKEND == "s3":
         return S3StorageAdapter(
@@ -75,13 +95,60 @@ def get_signer() -> ICPBrasilSignerPort:
     return PyHankoSigner()
 
 
-def get_pep_service(session: DbSessionDep) -> PEPService:
-    """Build PEPService with all mandatory ports wired (no infra defaults)."""
-    return PEPService(
+@lru_cache(maxsize=1)
+def get_signed_cache() -> SignedCachePort:
+    """Provide process-wide signed-document cache (single Memory instance)."""
+    return MemorySignedCache()
+
+
+# Multi-worker production wiring (requires a shared Valkey client):
+# def get_signed_cache_valkey(valkey: Redis) -> SignedCachePort:
+#     from src.modules.consultation.infrastructure.valkey_signed_cache import (
+#         ValkeySignedCache,
+#     )
+#     return ValkeySignedCache(valkey)
+
+
+def get_documento_service(session: DbSessionDep) -> DocumentoService:
+    """Build DocumentoService owning emitir/compilar/assinar canonical keys."""
+    return DocumentoService(
         session=session,
         pdf_generator=get_pdf_generator(),
         signer=get_signer(),
         storage=get_storage(),
+        cache=get_signed_cache(),
+    )
+
+
+def get_atendimento_reader(session: DbSessionDep) -> AtendimentoReaderPort:
+    """Provide SQL reader concentrating all queue-owned atendimentos reads."""
+    return SqlAtendimentoReader(session)
+
+
+def get_evolucao_service(
+    session: DbSessionDep,
+    reader: AtendimentoReaderPort | None = None,
+) -> EvolucaoService:
+    """Build EvolucaoService owning SOAP persistence with terminal guard."""
+    return EvolucaoService(
+        session=session,
+        reader=reader if reader is not None else get_atendimento_reader(session),
+    )
+
+
+def get_pep_service(session: DbSessionDep) -> PEPService:
+    """Build PEPService with all mandatory ports wired (no infra defaults)."""
+    reader = get_atendimento_reader(session)
+    documento_service = get_documento_service(session)
+    evolucao_service = get_evolucao_service(session, reader)
+    return PEPService(
+        session=session,
+        pdf_generator=get_pdf_generator(),
+        signer=get_signer(),
+        storage=documento_service.storage,
+        documento_service=documento_service,
+        atendimento_reader=reader,
+        evolucao_service=evolucao_service,
     )
 
 
@@ -108,17 +175,13 @@ def get_document_validation_service(
     directory: Annotated[DocumentDirectoryPort, Depends(get_document_directory)],
 ) -> DocumentValidationService:
     """Build DocumentValidationService with directory, storage and PDF compiler."""
-    pep = PEPService(
-        session=session,
-        pdf_generator=get_pdf_generator(),
-        signer=get_signer(),
-        storage=get_storage(),
-    )
+    documento_service = get_documento_service(session)
     return DocumentValidationService(
         session=session,
         directory=directory,
-        storage=get_storage(),
-        compilador_pdf=pep.compilar_documento_pdf,
+        storage=documento_service.storage,
+        compilador_pdf=documento_service.compilar_pdf,
+        cache=documento_service.cache,
     )
 
 

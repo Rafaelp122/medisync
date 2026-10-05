@@ -1,5 +1,9 @@
 """Consultation module application ports."""
 
+from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoReaderPort,
+    AtendimentoResumoDTO,
+)
 from src.modules.consultation.application.ports.document_directory_port import (
     DadosVerificacaoDirectory,
     DocumentDirectoryPort,
@@ -19,6 +23,9 @@ from src.modules.consultation.application.ports.pdf_generator_port import (
     DocumentoPDFPayload,
     PDFGeneratorPort,
 )
+from src.modules.consultation.application.ports.signed_cache_port import (
+    SignedCachePort,
+)
 from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.application.ports.validation_rate_limiter_port import (
     ValidationRateLimiterPort,
@@ -26,6 +33,8 @@ from src.modules.consultation.application.ports.validation_rate_limiter_port imp
 )
 
 __all__ = [
+    "AtendimentoReaderPort",
+    "AtendimentoResumoDTO",
     "DadosVerificacaoDirectory",
     "DoctorCertificateCredentials",
     "DocumentDirectoryPort",
@@ -35,6 +44,7 @@ __all__ = [
     "LiveKitMediaPort",
     "PDFGeneratorPort",
     "SignatureMetadataDTO",
+    "SignedCachePort",
     "StoragePort",
     "ValidationRateLimitResult",
     "ValidationRateLimiterPort",

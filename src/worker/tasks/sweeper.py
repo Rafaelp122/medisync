@@ -7,9 +7,9 @@ from typing import Any
 from sqlalchemy import select, text
 
 from src.core.context import tenant_context
-from src.modules.queue.application.services.fila_service import calcular_score_fila
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
+from src.modules.queue.domain.scoring import calcular_score as calcular_score_fila
 from src.worker.context import get_db_session_from_ctx, get_valkey_from_ctx
 from src.worker.tasks.base import monitored_task
 

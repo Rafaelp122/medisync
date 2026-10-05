@@ -336,12 +336,14 @@ class Atendimento(Base):
 
         Score = (prioridade_clinica * 10^12) + timestamp_entrada_epoch
         """
+        # lazy import: scoring imports PrioridadeClinica from models (cycle)
+        from src.modules.queue.domain.scoring import calcular_score
+
         if self.data_entrada_fila is None:
             raise ValidationError(
                 "Atendimento sem data de entrada na fila não possui score calculado."
             )
-        epoch = int(self.data_entrada_fila.timestamp())
-        return (int(self.prioridade_clinica) * 1_000_000_000_000) + epoch
+        return calcular_score(int(self.prioridade_clinica), self.data_entrada_fila)
 
     def _assegurar_nao_finalizado(self) -> None:
         if self.is_finalizado:

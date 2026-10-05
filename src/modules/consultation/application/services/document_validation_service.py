@@ -18,23 +18,20 @@ from src.modules.consultation.application.dtos import (
 from src.modules.consultation.application.ports.document_directory_port import (
     DocumentDirectoryPort,
 )
+from src.modules.consultation.application.ports.signed_cache_port import (
+    SignedCachePort,
+)
 from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.domain.exceptions import (
     DocumentoNaoEncontradoNoStorageError,
 )
 from src.modules.consultation.domain.models import DocumentoClinico
-from src.modules.consultation.domain.s3_keys import (
-    build_signed_document_key,
-    is_signed_document_key,
-)
+from src.modules.consultation.domain.s3_keys import build_signed_document_key
 
 logger = logging.getLogger("medisync.validation")
 
 _MSG_VALIDACAO_INVALIDA = "Token de validação inválido ou documento não encontrado."
 _MSG_DOC_AUSENTE = "Documento clínico não encontrado ou token inválido."
-
-# Module-level signed cache mirrors PEPService behaviour for status detection.
-_DOCUMENTOS_ASSINADOS_CACHE: dict[UUID, bool] = {}
 
 
 class DocumentValidationService:
@@ -46,11 +43,13 @@ class DocumentValidationService:
         directory: DocumentDirectoryPort,
         storage: StoragePort,
         compilador_pdf: Callable[[UUID], Awaitable[bytes]],
+        cache: SignedCachePort | None = None,
     ) -> None:
         self._session = session
         self._directory = directory
         self._storage = storage
         self._compilador_pdf = compilador_pdf
+        self._cache = cache
 
     @staticmethod
     def parse_token(token_validacao: str) -> UUID:
@@ -60,10 +59,11 @@ class DocumentValidationService:
         except (ValueError, AttributeError) as err:
             raise NotFoundError(_MSG_VALIDACAO_INVALIDA) from err
 
-    def _is_assinado(self, doc: DocumentoClinico) -> bool:
-        if doc.id in _DOCUMENTOS_ASSINADOS_CACHE:
-            return True
-        return is_signed_document_key(doc.chave_s3, doc.organizacao_id)
+    async def _is_assinado(self, doc: DocumentoClinico) -> bool:
+        """Return True only when SignedCachePort holds a mark for the doc."""
+        if self._cache is None:
+            return False
+        return await self._cache.is_assinado(doc.id)
 
     @staticmethod
     def build_s3_key(organizacao_id: int, atendimento_id: UUID, doc_id: UUID) -> str:
@@ -91,7 +91,7 @@ class DocumentValidationService:
             doc.organizacao_id, doc.medico_id, doc.atendimento_id
         )
 
-        is_assinado = self._is_assinado(doc)
+        is_assinado = await self._is_assinado(doc)
         status_doc = "ASSINADO" if is_assinado else "EMITIDO"
         itens = [
             ItemValidacaoDTO(

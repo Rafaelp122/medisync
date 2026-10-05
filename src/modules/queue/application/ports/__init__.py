@@ -1,3 +1,7 @@
+from src.modules.queue.application.ports.allocation_port import (
+    AllocationPort,
+    AlocacaoCodigo,
+)
 from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
 from src.modules.queue.application.ports.notification_port import (
     ConsoleNotificationAdapter,
@@ -20,6 +24,8 @@ from src.modules.queue.application.ports.queue_overflow_notifier import (
 )
 
 __all__ = [
+    "AllocationPort",
+    "AlocacaoCodigo",
     "ConsoleNotificationAdapter",
     "FakeNotificationAdapter",
     "LoggingNotificationAdapter",

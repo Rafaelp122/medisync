@@ -14,7 +14,7 @@ from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.core.notifications import LoggingNotificationAdapter
 from src.core.valkey import get_valkey_client
-from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
+from src.modules.queue.application.ports.allocation_port import AllocationPort
 from src.modules.queue.application.ports.notification_port import NotificationPort
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
@@ -28,7 +28,7 @@ from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 ValkeyDep = Annotated[Redis, Depends(get_valkey_client)]
 
 
-def get_lua_manager() -> LuaScriptPort:
+def get_lua_manager() -> AllocationPort:
     """Provide singleton Lua script manager satisfying the application port."""
     return get_lua_script_manager()
 

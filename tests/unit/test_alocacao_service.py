@@ -8,7 +8,10 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.uuid7 import uuid7
 from src.modules.queue.application.dtos import AlocarChamadaCommand
-from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
+from src.modules.queue.application.ports.allocation_port import (
+    AllocationPort,
+    AlocacaoCodigo,
+)
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
@@ -33,7 +36,7 @@ def mock_session() -> AsyncMock:
 
 @pytest.fixture
 def mock_lua_manager() -> AsyncMock:
-    return AsyncMock(spec=LuaScriptPort)
+    return AsyncMock(spec=AllocationPort)
 
 
 @pytest.fixture
@@ -55,7 +58,7 @@ async def test_alocar_chamada_medico_ocupado_retorna_409(
     mock_lua_manager: AsyncMock,
 ) -> None:
     """Verify code 0 from Lua raises MedicoOcupadoError (HTTP 409)."""
-    mock_lua_manager.execute_script.return_value = 0
+    mock_lua_manager.alocar_chamada.return_value = AlocacaoCodigo.MEDICO_OCUPADO
 
     cmd = AlocarChamadaCommand(
         organizacao_id=1,
@@ -73,7 +76,7 @@ async def test_alocar_chamada_atendimento_indisponivel_retorna_409(
     mock_lua_manager: AsyncMock,
 ) -> None:
     """Verify code -1 from Lua raises AtendimentoNaoDisponivelError (HTTP 409)."""
-    mock_lua_manager.execute_script.return_value = -1
+    mock_lua_manager.alocar_chamada.return_value = AlocacaoCodigo.INDISPONIVEL
 
     cmd = AlocarChamadaCommand(
         organizacao_id=1,
@@ -93,7 +96,7 @@ async def test_alocar_chamada_sucesso(
     mock_lua_manager: AsyncMock,
 ) -> None:
     """Verify code 1 transitions attendance to CHAMANDO_PACIENTE and commits."""
-    mock_lua_manager.execute_script.return_value = 1
+    mock_lua_manager.alocar_chamada.return_value = AlocacaoCodigo.SUCESSO
 
     atend_id = uuid7()
     med_id = uuid4()
@@ -131,7 +134,7 @@ async def test_alocar_chamada_rollback_quando_atendimento_inexistente_no_banco(
     mock_lua_manager: AsyncMock,
 ) -> None:
     """Verify locks are released if attendance is not found in DB."""
-    mock_lua_manager.execute_script.return_value = 1
+    mock_lua_manager.alocar_chamada.return_value = AlocacaoCodigo.SUCESSO
     mock_session.get.return_value = None
 
     atend_id = uuid7()
@@ -161,7 +164,7 @@ async def test_alocar_chamada_rollback_quando_transicao_invalida(
     mock_lua_manager: AsyncMock,
 ) -> None:
     """Verify locks are released if DB entity transition raises error."""
-    mock_lua_manager.execute_script.return_value = 1
+    mock_lua_manager.alocar_chamada.return_value = AlocacaoCodigo.SUCESSO
 
     atend_id = uuid7()
     med_id = uuid4()

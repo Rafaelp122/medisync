@@ -11,7 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.notifications import LoggingNotificationAdapter, NotificationPort
 from src.core.uuid7 import uuid7
 from src.modules.queue.application.dtos import AlocarChamadaCommand
-from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
+from src.modules.queue.application.ports.allocation_port import (
+    AllocationPort,
+    AlocacaoCodigo,
+)
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
@@ -30,7 +33,7 @@ def mock_session() -> AsyncMock:
 
 @pytest.fixture
 def mock_lua_manager() -> AsyncMock:
-    return AsyncMock(spec=LuaScriptPort)
+    return AsyncMock(spec=AllocationPort)
 
 
 @pytest.mark.asyncio
@@ -40,7 +43,7 @@ async def test_alocacao_dispatches_notification_when_phone_provided(
     mock_lua_manager: AsyncMock,
 ) -> None:
     """Verify that call allocation dispatches a WhatsApp notification to the patient."""
-    mock_lua_manager.execute_script.return_value = 1
+    mock_lua_manager.alocar_chamada.return_value = AlocacaoCodigo.SUCESSO
 
     atend_id = uuid7()
     med_id = uuid4()
@@ -97,7 +100,7 @@ async def test_message_failure_does_not_block_queue_progression(
     the allocation transaction commits, locks remain in Valkey, and result is returned.
     """
 
-    mock_lua_manager.execute_script.return_value = 1
+    mock_lua_manager.alocar_chamada.return_value = AlocacaoCodigo.SUCESSO
 
     atend_id = uuid7()
     med_id = uuid4()
@@ -149,7 +152,7 @@ async def test_rate_limited_notification_does_not_block_queue_progression(
     does not impede call allocation.
     """
 
-    mock_lua_manager.execute_script.return_value = 1
+    mock_lua_manager.alocar_chamada.return_value = AlocacaoCodigo.SUCESSO
 
     atend_id = uuid7()
     med_id = uuid4()

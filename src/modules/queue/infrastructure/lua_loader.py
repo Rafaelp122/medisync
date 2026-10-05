@@ -4,10 +4,13 @@ import hashlib
 from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError, ResponseError
+
+if TYPE_CHECKING:
+    from src.modules.queue.application.ports.allocation_port import AlocacaoCodigo
 
 
 class LuaScriptError(Exception):
@@ -124,6 +127,15 @@ class LuaScriptManager:
             raise LuaScriptError(
                 f"Failed to execute Lua script '{script_name}': {exc}"
             ) from exc
+
+    async def alocar_chamada(
+        self, client: Redis, keys: Sequence[str], args: Sequence[Any]
+    ) -> "AlocacaoCodigo":
+        """Typed allocation hiding raw Lua int codes behind AlocacaoCodigo."""
+        from src.modules.queue.application.ports.allocation_port import AlocacaoCodigo
+
+        raw: Any = await self.execute_script(client, "alocar_chamada", keys, args)
+        return AlocacaoCodigo(int(raw))
 
 
 @lru_cache

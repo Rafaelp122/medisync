@@ -9,6 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import Settings
 
 
+@pytest.fixture(autouse=True)
+def _clear_composition_cache() -> None:
+    from src.modules.consultation import composition
+
+    composition.get_storage.cache_clear()
+    composition.get_signed_cache.cache_clear()
+    yield
+    composition.get_storage.cache_clear()
+    composition.get_signed_cache.cache_clear()
+
+
 def test_lua_script_manager_satisfies_lua_script_port() -> None:
     """LuaScriptManager must structurally satisfy the application port."""
     from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
