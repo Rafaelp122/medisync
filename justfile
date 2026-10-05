@@ -79,3 +79,7 @@ rollback-base:
 # Exibe o histórico cronológico de migrações
 migration-history:
     uv run alembic history
+
+# Valida links src/docs referenciados nos .md e proíbe cola >5 linhas
+docs-check:
+    uv run python scripts/docs_check.py

@@ -5,7 +5,7 @@
 ## Contexto
 
 Primeiro endpoint toca 4 camadas sem vazar SQL no router nem instanciar service na mão.
-Padrão vale para qualquer módulo em `src/modules/*`. Exemplo canônico abaixo usa identity onboarding; fila usa mesmo esqueleto com Valkey + Lua.
+Padrão vale para qualquer módulo em `src/modules/`. Exemplo canônico abaixo usa identity onboarding; fila usa mesmo esqueleto com Valkey + Lua.
 
 ## Conceito
 
@@ -16,7 +16,7 @@ Proibido no router: importar `sqlalchemy`, `infrastructure`, `domain.models`; ch
 
 ### Composition `*Dep`
 
-Service é stateless e vem de `src/modules/<modulo>/composition.py` via `Annotated[..., Depends(...)]`.
+Service é stateless e vem de `src/modules/identity/composition.py` via `Annotated[..., Depends(...)]`.
 Router nunca faz `OnboardingService()`. Troca de impl (mock em teste, outra infra) acontece na composition, não no router.
 
 ### Service commita 1x, helpers nunca

@@ -114,81 +114,29 @@ Em Python, portas modeladas com herança de classes abstratas (`abc.ABC`) geram 
 
 ### 1.3 Exemplo Idiomático de Porta e Adaptador de Fila
 
-#### 1. A Porta de Saída do Módulo de Fila (`src/modules/queue/domain/ports.py`):
+#### 1. A Porta de Saída do Módulo de Fila (`src/modules/queue/application/ports/allocation_port.py`):
 ```python
-from typing import Protocol, runtime_checkable
-from uuid import UUID
-from datetime import datetime
-from dataclasses import dataclass
-
-@dataclass(frozen=True)
-class QueueEntry:
-    organizacao_id: int
-    atendimento_id: UUID
-    paciente_id: UUID
-    prioridade_clinica: int
-    enqueued_at: datetime
-
-@runtime_checkable
-class QueueEnginePort(Protocol):
-    """Porta de saída para manipulação atômica da fila de espera."""
-
-    async def enqueue_patient(self, entry: QueueEntry) -> int:
-        """Insere o paciente na fila clínica e retorna sua posição relativa."""
-        ...
-
-    async def acquire_next_patient(self, organizacao_id: int, doctor_id: UUID) -> UUID | None:
-        """Aloca atomicamente o próximo atendimento de maior gravidade para o médico."""
-        ...
-
-    async def release_call_lock(self, organizacao_id: int, doctor_id: UUID, atendimento_id: UUID) -> None:
-        """Libera a trava de alocação em caso de no-show (ring timeout de 45s)."""
-        ...
+from typing import Protocol
+class AllocationPort(Protocol):
+    async def alocar_chamada(self, client, keys, args): ...
 ```
+Ver fonte completa em `src/modules/queue/application/ports/allocation_port.py`.
 
-#### 2. O Caso de Uso Consumindo a Porta (`src/modules/queue/application/use_cases.py`):
+#### 2. O Caso de Uso Consumindo a Porta (`src/modules/queue/application/services/alocacao_service.py`):
 ```python
-from uuid import UUID
-from src.modules.queue.domain.ports import QueueEnginePort
-
-class CallNextPatientUseCase:
-    def __init__(self, queue_engine: QueueEnginePort) -> None:
-        self._queue = queue_engine  # Acoplamento apenas ao Protocol
-
-    async def execute(self, organizacao_id: int, doctor_id: UUID) -> UUID | None:
-        # Executa invariante contratual RN02 via script atômico no Valkey
-        atendimento_id = await self._queue.acquire_next_patient(organizacao_id, doctor_id)
-        return atendimento_id
+codigo = await self._lua_manager.alocar_chamada(client, keys, args)
+atendimento.iniciar_chamada(command.medico_id)
+await self._db_session.commit()
 ```
+Ver fluxo completo em `src/modules/queue/application/services/alocacao_service.py`.
 
-#### 3. O Adaptador Concreto (`src/modules/queue/infrastructure/valkey_adapter.py`):
+#### 3. O Adaptador Concreto (`src/modules/queue/infrastructure/lua/alocar_chamada.lua`):
 ```python
-from uuid import UUID
-from redis.asyncio import Redis
-from src.modules.queue.domain.ports import QueueEntry
-
-class ValkeyQueueAdapter:
-    """Implementa QueueEnginePort estruturalmente (sem herança)."""
-
-    def __init__(self, client: Redis) -> None:
-        self._client = client
-
-    async def enqueue_patient(self, entry: QueueEntry) -> int:
-        # Score ponderado de 64 bits: (prioridade * 10^12) + timestamp
-        score = (entry.prioridade_clinica * (10**12)) + int(entry.enqueued_at.timestamp())
-        key = f"fila:{entry.organizacao_id}:aptos"
-        await self._client.zadd(key, {str(entry.atendimento_id): score})
-        pos = await self._client.zrank(key, str(entry.atendimento_id))
-        return (pos + 1) if pos is not None else 1
-
-    async def acquire_next_patient(self, organizacao_id: int, doctor_id: UUID) -> UUID | None:
-        # Execução do script Lua atômico com double-locking de 45s
-        ...
-
-    async def release_call_lock(self, organizacao_id: int, doctor_id: UUID, atendimento_id: UUID) -> None:
-        # Liberação determinística pós-timeout
-        ...
+codigo = await lua_manager.alocar_chamada(client, keys, args)
+if codigo == AlocacaoCodigo.SUCESSO:
+    await session.commit()
 ```
+Script atômico em `src/modules/queue/infrastructure/lua/alocar_chamada.lua`, loader em `src/modules/queue/infrastructure/lua_loader.py`.
 
 ---
 
@@ -342,7 +290,7 @@ Para erradicar o *Mapper Hell* entre a apresentação e os serviços de aplicaç
 Para assegurar que o monólito modular permaneça desacoplado sem degradação arquitetural ao longo do tempo, o projeto utiliza **[Tach](https://github.com/gauge-sh/tach)**:
 
 1. **Configuração Declarativa (`tach.toml`)**:
-   * Cada módulo em `src/modules/*` é declarado como um módulo fechado.
+   * Cada módulo em `src/modules/` é declarado como um módulo fechado.
    * **Camadas estritas (Stage B, ADR-001 §7)**: `presentation → application + composition + core`;
      `composition → application + domain + infrastructure + core`;
      `infrastructure → application + domain + core`; `application → domain + core`; `domain → core`.
