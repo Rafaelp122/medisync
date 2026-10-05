@@ -11,7 +11,7 @@ flowchart LR
     end
 
     subgraph P2["2. Produto (Solution Space)"]
-        SP["docs/explanation/<br/>specification.md<br/><i>O QUÊ</i>"]
+        SP["docs/explanation/<br/>product-specification.md<br/><i>O QUÊ</i>"]
     end
 
     subgraph P3["3. Engenharia (Architecture)"]
