@@ -15,6 +15,7 @@ from src.modules.consultation.application.policies.clinical_access_policy import
 from src.modules.consultation.application.ports.validation_rate_limiter_port import (
     ValidationRateLimiterPort,
 )
+from src.modules.consultation.composition import get_atendimento_reader
 
 MedicoUserDep = Annotated[AuthenticatedUser, Depends(require_role(Role.MEDICO))]
 
@@ -42,7 +43,7 @@ async def require_clinical_access(
     await ClinicalAccessPolicy.validar_acesso_clinico(
         atendimento_id=atendimento_id,
         medico_id=current_user.usuario_id,
-        session=session,
+        reader=get_atendimento_reader(session),
     )
     return current_user
 

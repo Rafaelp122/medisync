@@ -11,6 +11,9 @@ from fastapi import Depends
 
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
+from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoReaderPort,
+)
 from src.modules.consultation.application.ports.document_directory_port import (
     DocumentDirectoryPort,
 )
@@ -36,7 +39,13 @@ from src.modules.consultation.application.services.document_validation_service i
 from src.modules.consultation.application.services.documento_service import (
     DocumentoService,
 )
+from src.modules.consultation.application.services.evolucao_service import (
+    EvolucaoService,
+)
 from src.modules.consultation.application.services.pep_service import PEPService
+from src.modules.consultation.infrastructure.atendimento_reader_sql import (
+    SqlAtendimentoReader,
+)
 from src.modules.consultation.infrastructure.document_directory_sql import (
     SqlDocumentDirectory,
 )
@@ -108,15 +117,35 @@ def get_documento_service(session: DbSessionDep) -> DocumentoService:
     )
 
 
+def get_atendimento_reader(session: DbSessionDep) -> AtendimentoReaderPort:
+    """Provide SQL reader concentrating all queue-owned atendimentos reads."""
+    return SqlAtendimentoReader(session)
+
+
+def get_evolucao_service(
+    session: DbSessionDep,
+    reader: AtendimentoReaderPort | None = None,
+) -> EvolucaoService:
+    """Build EvolucaoService owning SOAP persistence with terminal guard."""
+    return EvolucaoService(
+        session=session,
+        reader=reader if reader is not None else get_atendimento_reader(session),
+    )
+
+
 def get_pep_service(session: DbSessionDep) -> PEPService:
     """Build PEPService with all mandatory ports wired (no infra defaults)."""
+    reader = get_atendimento_reader(session)
     documento_service = get_documento_service(session)
+    evolucao_service = get_evolucao_service(session, reader)
     return PEPService(
         session=session,
         pdf_generator=get_pdf_generator(),
         signer=get_signer(),
         storage=documento_service.storage,
         documento_service=documento_service,
+        atendimento_reader=reader,
+        evolucao_service=evolucao_service,
     )
 
 

@@ -1,7 +1,6 @@
 """PEP clinical workflow service enforcing SOAP and Portaria 344/98 safeguards."""
 
 import contextlib
-import re
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -16,6 +15,9 @@ from src.modules.consultation.application.dtos import (
     RegistrarEvolucaoSOAPCommand,
     TMAStatusDTO,
 )
+from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoReaderPort,
+)
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
     ICPBrasilSignerPort,
@@ -27,10 +29,12 @@ from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.application.services.documento_service import (
     DocumentoService,
 )
+from src.modules.consultation.application.services.evolucao_service import (
+    EvolucaoService,
+)
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     ConsultaInvalidaError,
-    EvolucaoNaoEncontradaError,
 )
 from src.modules.consultation.domain.models import (
     DocumentoClinico,
@@ -40,9 +44,6 @@ from src.modules.consultation.domain.models._substances import (
     validar_substancia_permitida_telemedicina,
 )
 from src.modules.consultation.domain.s3_keys import is_signed_document_key
-
-_CID10_REGEX = re.compile(r"^[A-Z][0-9]{2}(\.[0-9]{1,2})?$")
-_STATUS_TERMINAIS = frozenset({"CONCLUIDO", "PACIENTE_AUSENTE", "CANCELADO_PACIENTE"})
 
 
 class PEPService:
@@ -55,11 +56,14 @@ class PEPService:
         signer: ICPBrasilSignerPort,
         storage: StoragePort,
         documento_service: DocumentoService | None = None,
+        atendimento_reader: AtendimentoReaderPort | None = None,
+        evolucao_service: EvolucaoService | None = None,
     ) -> None:
         self._session = session
         self._pdf_generator = pdf_generator
         self._signer = signer
         self._storage = storage
+        self._reader = atendimento_reader
         self._documentos = (
             documento_service
             if documento_service is not None
@@ -69,6 +73,11 @@ class PEPService:
                 signer=signer,
                 storage=storage,
             )
+        )
+        self._evolucao = (
+            evolucao_service
+            if evolucao_service is not None
+            else EvolucaoService(session=session, reader=atendimento_reader)
         )
 
     @property
@@ -81,94 +90,35 @@ class PEPService:
         """Return the owned clinical document lifecycle service."""
         return self._documentos
 
+    @property
+    def evolucao_service(self) -> EvolucaoService:
+        """Return the owned SOAP evolution service."""
+        return self._evolucao
+
+    @property
+    def atendimento_reader(self) -> AtendimentoReaderPort | None:
+        """Return the injected attendance reader port, if any."""
+        return self._reader
+
+    async def _is_terminal(self, atendimento_id: UUID) -> bool:
+        """Return True when queue-owned attendance reached terminal status."""
+        if self._reader is None:
+            return False
+        try:
+            resumo = await self._reader.obter_resumo(atendimento_id)
+        except Exception:
+            return False
+        return bool(resumo is not None and resumo.is_terminal)
+
     def is_documento_assinado(self, doc: DocumentoClinico) -> bool:
         """Deprecated: prefer DocumentoService.is_assinado (async, cache-aware)."""
         return is_signed_document_key(doc.chave_s3, doc.organizacao_id)
 
-    async def _verificar_atendimento_finalizado(self, atendimento_id: UUID) -> bool:
-        """Check whether the underlying attendance reached terminal status in DB."""
-        try:
-            status_stmt = text("SELECT status FROM atendimentos WHERE id = :atend_id")
-            res = await self._session.execute(status_stmt, {"atend_id": atendimento_id})
-            val = res.scalar_one_or_none()
-            if val is not None:
-                return str(val).strip().upper() in _STATUS_TERMINAIS
-        except Exception:
-            return False
-        return False
-
     async def salvar_evolucao_soap(
         self, command: RegistrarEvolucaoSOAPCommand
     ) -> EvolucaoClinica:
-        """Record or update SOAP clinical notes for an attendance."""
-        stmt = select(EvolucaoClinica).where(
-            EvolucaoClinica.atendimento_id == command.atendimento_id
-        )
-        result = await self._session.execute(stmt)
-        existing = result.scalar_one_or_none()
-
-        is_term = await self._verificar_atendimento_finalizado(command.atendimento_id)
-
-        if existing is not None:
-            if existing.is_finalizado or is_term:
-                existing.marcar_finalizado()
-                raise ConsultaFinalizadaError(
-                    "Não é permitido alterar evolução de consulta finalizada."
-                )
-
-            # Validate fields on update
-            if not command.anamnese or not command.anamnese.strip():
-                raise ConsultaInvalidaError(
-                    "Anamnese clínica é obrigatória e não pode ser vazia."
-                )
-            if not command.conduta or not command.conduta.strip():
-                raise ConsultaInvalidaError(
-                    "Conduta clínica é obrigatória e não pode ser vazia."
-                )
-
-            clean_cid10: str | None = None
-            if command.cid10_principal and command.cid10_principal.strip():
-                c = command.cid10_principal.strip().upper()
-                if not _CID10_REGEX.match(c):
-                    raise ConsultaInvalidaError(
-                        f"Código CID-10 inválido: '{command.cid10_principal}'. "
-                        "Formato esperado: letra maiúscula seguida de 2 dígitos "
-                        "e subcategoria opcional (ex.: J00, J02.9, A09.0)."
-                    )
-                clean_cid10 = c
-
-            existing.anamnese = command.anamnese.strip()
-            existing.conduta = command.conduta.strip()
-            existing.exame_fisico_virtual = (
-                command.exame_fisico_virtual.strip()
-                if command.exame_fisico_virtual and command.exame_fisico_virtual.strip()
-                else None
-            )
-            existing.cid10_principal = clean_cid10
-            existing.registrado_em = datetime.now(UTC)
-
-            await self._session.flush()
-            await self._session.commit()
-            return existing
-
-        if is_term:
-            raise ConsultaFinalizadaError(
-                "Não é permitido criar evolução de consulta já finalizada."
-            )
-
-        evolucao = EvolucaoClinica(
-            organizacao_id=command.organizacao_id,
-            atendimento_id=command.atendimento_id,
-            medico_id=command.medico_id,
-            anamnese=command.anamnese,
-            conduta=command.conduta,
-            exame_fisico_virtual=command.exame_fisico_virtual,
-            cid10_principal=command.cid10_principal,
-        )
-        self._session.add(evolucao)
-        await self._session.flush()
-        await self._session.commit()
-        return evolucao
+        """Delegate SOAP evolution persistence to EvolucaoService."""
+        return await self._evolucao.salvar_evolucao_soap(command)
 
     def validar_prescricao(self, medicamento: str) -> None:
         """Validate single medication against Portaria 344/98 Lists A & B."""
@@ -196,7 +146,7 @@ class PEPService:
                 "a evolução SOAP antes da finalização."
             )
 
-        is_term = await self._verificar_atendimento_finalizado(command.atendimento_id)
+        is_term = await self._is_terminal(command.atendimento_id)
         if evolucao.is_finalizado or is_term:
             evolucao.marcar_finalizado()
             raise ConsultaFinalizadaError(
@@ -214,7 +164,13 @@ class PEPService:
         for doc in documentos:
             doc.marcar_finalizado()
 
-        # Update attendance status in database to CONCLUIDO
+        # NOTE (Task 7 follow-up): atendimentos.status is queue-owned (ADR-001)
+        # and this UPDATE should move behind a queue status-transition port.
+        # Kept because EvolucaoClinica.is_finalizado is in-memory only (no DB
+        # column): CONCLUIDO is today the sole persistent finalization marker
+        # enforcing cross-session immutability. Removing it breaks
+        # test_finalizar_consulta_service_commit_visivel_outra_sessao and the
+        # post-finalize 409 guards. Do not delete without a persistent marker.
         with contextlib.suppress(Exception):
             update_stmt = text(
                 "UPDATE atendimentos SET status = 'CONCLUIDO', "
@@ -284,7 +240,7 @@ class PEPService:
         doc_res = await self._session.execute(doc_stmt)
         documentos = list(doc_res.scalars().all())
 
-        is_term = await self._verificar_atendimento_finalizado(atendimento_id)
+        is_term = await self._is_terminal(atendimento_id)
         is_finalizado = bool((evolucao and evolucao.is_finalizado) or is_term)
         if evolucao and is_finalizado:
             evolucao.marcar_finalizado()
@@ -300,17 +256,8 @@ class PEPService:
         )
 
     async def obter_evolucao(self, atendimento_id: UUID) -> EvolucaoClinica:
-        """Return SOAP evolution or raise 404 EvolucaoNaoEncontradaError."""
-        stmt = select(EvolucaoClinica).where(
-            EvolucaoClinica.atendimento_id == atendimento_id
-        )
-        res = await self._session.execute(stmt)
-        evolucao = res.scalar_one_or_none()
-        if evolucao is None:
-            raise EvolucaoNaoEncontradaError(
-                "Nenhuma evolução clínica registrada para este atendimento."
-            )
-        return evolucao
+        """Delegate SOAP evolution retrieval to EvolucaoService."""
+        return await self._evolucao.obter_evolucao(atendimento_id)
 
     async def compilar_documento_pdf(self, documento_id: UUID) -> bytes:
         """Delegate PDF/A compilation to DocumentoService."""
