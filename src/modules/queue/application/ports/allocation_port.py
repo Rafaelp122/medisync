@@ -1,7 +1,9 @@
 """Typed allocation port hiding Valkey Lua int codes."""
 
 from enum import IntEnum
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
+
+from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
 
 
 class AlocacaoCodigo(IntEnum):
@@ -13,11 +15,11 @@ class AlocacaoCodigo(IntEnum):
 
 
 @runtime_checkable
-class AllocationPort(Protocol):
+class AllocationPort(LuaScriptPort, Protocol):
     """Port for typed atomic allocation without exposing Lua ints."""
 
     async def alocar_chamada(
-        self, client: object, keys: list[str], args: list[object]
+        self, client: Any, keys: list[str], args: list[object]
     ) -> AlocacaoCodigo:
         """Allocate doctor/patient pair atomically.
 

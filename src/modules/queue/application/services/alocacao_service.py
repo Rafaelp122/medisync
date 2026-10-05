@@ -2,7 +2,6 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import cast
 from uuid import UUID
 
 from arq.connections import ArqRedis
@@ -22,7 +21,6 @@ from src.modules.queue.application.ports.allocation_port import (
     AllocationPort,
     AlocacaoCodigo,
 )
-from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
 from src.modules.queue.application.ports.notification_port import NotificationPort
 from src.modules.queue.domain.exceptions import (
     AtendimentoNaoDisponivelError,
@@ -41,7 +39,7 @@ class AlocacaoChamadaService:
         self,
         valkey: Redis,
         db_session: AsyncSession,
-        lua_manager: LuaScriptPort | AllocationPort,
+        lua_manager: AllocationPort,
         arq_pool: ArqRedis | None = None,
         notification_adapter: NotificationPort | None = None,
     ) -> None:
@@ -68,13 +66,12 @@ class AlocacaoChamadaService:
         k_fila = f"fila:{command.organizacao_id}:aptos"
 
         # 1. Execute Lua script for sub-10ms atomic allocation in Valkey
-        allocation_manager = cast("AllocationPort", self._lua_manager)
         allocation_args: list[object] = [
             str(command.medico_id),
             str(command.atendimento_id),
             command.ttl_segundos,
         ]
-        codigo = await allocation_manager.alocar_chamada(
+        codigo = await self._lua_manager.alocar_chamada(
             client=self._valkey,
             keys=[k_medico, k_atend, k_fila],
             args=allocation_args,
