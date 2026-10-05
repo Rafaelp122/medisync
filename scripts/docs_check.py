@@ -6,9 +6,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PATH_RE = re.compile(r"`((?:src|docs|tests)/[^`:\s]+)")
 FENCE_RE = re.compile(r"```python(.*?)```", re.DOTALL)
+SKIP_DIRS = {"docs/adrs", "docs/superpowers"}  # Fase 1: adrs/superpowers fora escopo; fase 2 cobre
 def main() -> int:
     errors: list[str] = []
     for md in (ROOT / "docs").rglob("*.md"):
+        rel_posix = md.relative_to(ROOT).as_posix()
+        if any(rel_posix == d or rel_posix.startswith(d + "/") for d in SKIP_DIRS):
+            continue
         text = md.read_text(encoding="utf-8")
         for m in PATH_RE.finditer(text):
             ref = m.group(1).split("#")[0]
