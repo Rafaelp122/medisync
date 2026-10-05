@@ -1,13 +1,12 @@
 """Queue ingestion, 64-bit priority scoring, and acquisition service (RN01)."""
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from uuid import UUID
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.errors import ValidationError
 from src.modules.queue.application.dtos import (
     AdquirirProximoPacienteCommand,
     AlocacaoChamadaResult,
@@ -29,38 +28,24 @@ from src.modules.queue.domain.exceptions import (
     MedicoOcupadoError,
 )
 from src.modules.queue.domain.models import PrioridadeClinica
+from src.modules.queue.domain.scoring import (
+    SCORE_PRIORITY_MULTIPLIER as _MULT,
+)
+from src.modules.queue.domain.scoring import (
+    calcular_score as _domain_score,
+)
 
 logger = logging.getLogger("medisync.queue.fila")
 
-# Invariant multiplier for clinical urgency levels 1 to 5 (RN01, ADR-002)
-SCORE_PRIORITY_MULTIPLIER = 1_000_000_000_000
+SCORE_PRIORITY_MULTIPLIER = _MULT
 
 
 def calcular_score_fila(
     prioridade_clinica: int | PrioridadeClinica,
     timestamp_epoch: int | float | datetime | None = None,
 ) -> int:
-    """Calculates deterministic 64-bit score for clinical queue sorting (RN01).
-
-    Formula:
-        Score = (prioridade_clinica * 10^12) + timestamp_segundos
-
-    Lower scores indicate higher precedence in Valkey ZSET ascending order.
-    """
-    prioridade_int = int(prioridade_clinica)
-    if prioridade_int < 1 or prioridade_int > 5:
-        raise ValidationError(
-            "Prioridade clínica deve ser entre 1 e 5 (1=Emergência, 5=Não Urgente)."
-        )
-
-    if timestamp_epoch is None:
-        ts_segundos = int(datetime.now(UTC).timestamp())
-    elif isinstance(timestamp_epoch, datetime):
-        ts_segundos = int(timestamp_epoch.timestamp())
-    else:
-        ts_segundos = int(timestamp_epoch)
-
-    return (prioridade_int * SCORE_PRIORITY_MULTIPLIER) + ts_segundos
+    """Backward-compat wrapper delegating to domain scoring single source."""
+    return _domain_score(prioridade_clinica, timestamp_epoch)
 
 
 class FilaService:

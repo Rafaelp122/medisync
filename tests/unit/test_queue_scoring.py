@@ -27,3 +27,13 @@ def test_score_aceita_none_usando_now() -> None:
     score = calcular_score(3, None)
     depois = int(datetime.now(UTC).timestamp())
     assert 3_000_000_000_000 + antes <= score <= 3_000_000_000_000 + depois
+
+
+def test_fila_service_e_modelo_usam_mesma_formula() -> None:
+    from src.modules.queue.application.services.fila_service import (
+        calcular_score_fila as svc_score,
+    )
+    from src.modules.queue.domain.scoring import calcular_score as dom_score
+
+    ts = datetime(2026, 5, 1, 10, 0, 0, tzinfo=UTC)
+    assert svc_score(2, ts) == dom_score(2, ts)
