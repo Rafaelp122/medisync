@@ -1,5 +1,9 @@
 """Consultation module application ports."""
 
+from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoReaderPort,
+    AtendimentoResumoDTO,
+)
 from src.modules.consultation.application.ports.document_directory_port import (
     DadosVerificacaoDirectory,
     DocumentDirectoryPort,
@@ -29,6 +33,8 @@ from src.modules.consultation.application.ports.validation_rate_limiter_port imp
 )
 
 __all__ = [
+    "AtendimentoReaderPort",
+    "AtendimentoResumoDTO",
     "DadosVerificacaoDirectory",
     "DoctorCertificateCredentials",
     "DocumentDirectoryPort",
