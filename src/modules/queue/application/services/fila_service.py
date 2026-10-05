@@ -30,8 +30,6 @@ from src.modules.queue.domain.exceptions import (
 from src.modules.queue.domain.models import PrioridadeClinica
 from src.modules.queue.domain.scoring import (
     SCORE_PRIORITY_MULTIPLIER as _MULT,
-)
-from src.modules.queue.domain.scoring import (
     calcular_score as _domain_score,
 )
 

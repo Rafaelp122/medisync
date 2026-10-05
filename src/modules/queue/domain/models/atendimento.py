@@ -336,6 +336,7 @@ class Atendimento(Base):
 
         Score = (prioridade_clinica * 10^12) + timestamp_entrada_epoch
         """
+        # lazy import: scoring imports PrioridadeClinica from models (cycle)
         from src.modules.queue.domain.scoring import calcular_score
 
         if self.data_entrada_fila is None:
