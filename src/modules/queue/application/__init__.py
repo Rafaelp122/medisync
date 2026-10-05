@@ -20,7 +20,6 @@ from src.modules.queue.application.services import (
     ControleAdmissaoService,
     FilaService,
     avaliar_capacidade_admissao,
-    calcular_score_fila,
 )
 
 __all__ = [
@@ -39,5 +38,4 @@ __all__ = [
     "QueueOverflowEvent",
     "QueueOverflowNotifierPort",
     "avaliar_capacidade_admissao",
-    "calcular_score_fila",
 ]

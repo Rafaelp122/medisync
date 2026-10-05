@@ -19,13 +19,13 @@ from src.modules.queue.application.services.alocacao_service import (
 )
 from src.modules.queue.application.services.fila_service import (
     FilaService,
-    calcular_score_fila,
 )
 from src.modules.queue.domain.models import (
     Atendimento,
     PrioridadeClinica,
     StatusAtendimento,
 )
+from src.modules.queue.domain.scoring import calcular_score
 from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 
 from tests.factories.identity import (
@@ -184,7 +184,7 @@ async def test_acceptance_criterion_2_uuidv7_sub_millisecond_fifo() -> None:
             score_1 = await valkey.zscore(k_fila, str(id_1))  # pyright: ignore[reportUnknownMemberType]
             score_2 = await valkey.zscore(k_fila, str(id_2))  # pyright: ignore[reportUnknownMemberType]
             assert score_1 == score_2
-            assert score_1 == float(calcular_score_fila(priority, fixed_time))
+            assert score_1 == float(calcular_score(priority, fixed_time))
 
             # Valkey ZSET must sort id_1 BEFORE id_2 due to lexicographical tie-breaking
             queue = await service.listar_fila(org_id)

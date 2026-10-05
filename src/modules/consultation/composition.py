@@ -136,6 +136,9 @@ def get_evolucao_service(
     )
 
 
+DocumentoServiceDep = Annotated[DocumentoService, Depends(get_documento_service)]
+
+
 def get_pep_service(session: DbSessionDep) -> PEPService:
     """Build PEPService with all mandatory ports wired (no infra defaults)."""
     reader = get_atendimento_reader(session)

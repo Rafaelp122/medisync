@@ -1,5 +1,6 @@
 """Unit tests for composition providers (DI Fase 3 without infra defaults)."""
 
+from collections.abc import Generator
 from typing import cast
 from unittest.mock import AsyncMock
 
@@ -10,7 +11,7 @@ from src.core.config import Settings
 
 
 @pytest.fixture(autouse=True)
-def _clear_composition_cache() -> None:
+def _clear_composition_cache() -> Generator[None, None, None]:
     from src.modules.consultation import composition
 
     composition.get_storage.cache_clear()

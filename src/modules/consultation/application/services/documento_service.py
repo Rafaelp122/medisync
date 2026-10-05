@@ -2,7 +2,6 @@
 
 Owns emitir/compilar/assinar for DocumentoClinico using the canonical
 ``orgs/{org}/consultations/...`` key builder plus SignedCachePort.
-PEPService keeps thin wrappers delegating here for backwards compatibility.
 """
 
 import contextlib
@@ -61,7 +60,7 @@ class DocumentoService:
         pdf_generator: PDFGeneratorPort,
         signer: ICPBrasilSignerPort,
         storage: StoragePort,
-        cache: SignedCachePort | None = None,
+        cache: SignedCachePort,
     ) -> None:
         self._session = session
         self._pdf_generator = pdf_generator
@@ -75,14 +74,12 @@ class DocumentoService:
         return self._storage
 
     @property
-    def cache(self) -> SignedCachePort | None:
-        """Return the injected signed-document cache, if any."""
+    def cache(self) -> SignedCachePort:
+        """Return the injected signed-document cache."""
         return self._cache
 
     async def is_assinado(self, doc: DocumentoClinico) -> bool:
         """Check SignedCachePort only; key prefix matches unsigned docs too."""
-        if self._cache is None:
-            return False
         return await self._cache.is_assinado(doc.id)
 
     async def _verificar_atendimento_finalizado(self, atendimento_id: UUID) -> bool:
@@ -339,10 +336,6 @@ class DocumentoService:
 
         return self._pdf_generator.gerar_pdf(payload)
 
-    async def compilar_documento_pdf(self, documento_id: UUID) -> bytes:
-        """Backwards-compatible alias for compilar_pdf."""
-        return await self.compilar_pdf(documento_id)
-
     async def assinar(
         self,
         documento_id: UUID,
@@ -385,18 +378,8 @@ class DocumentoService:
         )
         await self._storage.salvar_documento(s3_key, signed_bytes)
         doc.chave_s3 = s3_key
-        if self._cache is not None:
-            await self._cache.marcar_assinado(doc.id)
+        await self._cache.marcar_assinado(doc.id)
         await self._session.flush()
         await self._session.commit()
 
         return doc, signed_bytes
-
-    async def assinar_documento_clinico(
-        self,
-        documento_id: UUID,
-        atendimento_id: UUID,
-        credenciais: DoctorCertificateCredentials,
-    ) -> tuple[DocumentoClinico, bytes]:
-        """Backwards-compatible alias for assinar."""
-        return await self.assinar(documento_id, atendimento_id, credenciais)

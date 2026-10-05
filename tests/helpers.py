@@ -10,7 +10,16 @@ from src.core.config import get_settings
 from src.core.database import engine
 from src.modules.auth.application.services.auth_service import AuthService
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
+from src.modules.consultation.application.services.documento_service import (
+    DocumentoService,
+)
+from src.modules.consultation.application.services.evolucao_service import (
+    EvolucaoService,
+)
 from src.modules.consultation.application.services.pep_service import PEPService
+from src.modules.consultation.infrastructure.memory_signed_cache import (
+    MemorySignedCache,
+)
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
@@ -56,11 +65,31 @@ def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
     pdf_generator: Any = overrides.get("pdf_generator", AsyncMock())
     signer: Any = overrides.get("signer", AsyncMock())
     storage: Any = overrides.get("storage", AsyncMock())
+    cache: Any = overrides.get("cache", MemorySignedCache())
+    documento_service: Any = overrides.get("documento_service")
+    if documento_service is None:
+        documento_service = DocumentoService(
+            session=session,
+            pdf_generator=pdf_generator,
+            signer=signer,
+            storage=storage,
+            cache=cache,
+        )
+    atendimento_reader: Any = overrides.get("atendimento_reader")
+    if atendimento_reader is None:
+        atendimento_reader = AsyncMock()
+        atendimento_reader.obter_resumo.return_value = None
+    evolucao_service: Any = overrides.get("evolucao_service")
+    if evolucao_service is None:
+        evolucao_service = EvolucaoService(session=session, reader=atendimento_reader)
     return PEPService(
         session=session,
         pdf_generator=pdf_generator,
         signer=signer,
         storage=storage,
+        documento_service=documento_service,
+        atendimento_reader=atendimento_reader,
+        evolucao_service=evolucao_service,
     )
 
 

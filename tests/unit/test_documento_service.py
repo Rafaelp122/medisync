@@ -146,7 +146,7 @@ def _service(
         pdf_generator=cast("Any", MagicMock()),
         signer=cast("Any", AsyncMock()),
         storage=storage if storage is not None else cast("Any", AsyncMock()),
-        cache=cache,
+        cache=cache if cache is not None else MemorySignedCache(),
     )
 
 
@@ -220,6 +220,7 @@ async def test_compilar_storage_hit_nao_recompila() -> None:
         pdf_generator=pdf_generator,
         signer=cast("Any", AsyncMock()),
         storage=storage,
+        cache=MemorySignedCache(),
     )
 
     assert await svc.compilar_pdf(doc_id) == b"%PDF-armazenado%"
@@ -228,7 +229,7 @@ async def test_compilar_storage_hit_nao_recompila() -> None:
 
 @pytest.mark.asyncio
 async def test_compilar_storage_miss_compila_4_blocos() -> None:
-    """Storage miss must compile via SQL blocks and pdf generator (alias compat)."""
+    """Storage miss must compile via SQL blocks and pdf generator."""
     atend_id = uuid7()
     med_id = uuid7()
     doc_id = uuid7()
@@ -245,9 +246,10 @@ async def test_compilar_storage_miss_compila_4_blocos() -> None:
         pdf_generator=pdf_generator,
         signer=cast("Any", AsyncMock()),
         storage=storage,
+        cache=MemorySignedCache(),
     )
 
-    assert await svc.compilar_documento_pdf(doc_id) == b"%PDF-compilado%"
+    assert await svc.compilar_pdf(doc_id) == b"%PDF-compilado%"
     pdf_generator.gerar_pdf.assert_called_once()
 
 

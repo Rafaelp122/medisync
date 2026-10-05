@@ -9,9 +9,9 @@ from sqlalchemy import text
 from src.core.context import tenant_context
 from src.core.database import Base, async_session_factory, engine
 from src.core.valkey import close_valkey_pool, get_valkey_client
-from src.modules.queue.application.services.fila_service import calcular_score_fila
 from src.modules.queue.domain.models import PrioridadeClinica
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
+from src.modules.queue.domain.scoring import calcular_score
 from src.worker.settings import startup
 from src.worker.tasks.sweeper import reconciliar_fila_orphans_task
 
@@ -97,9 +97,7 @@ async def test_end_to_end_sweeper_restores_orphaned_appointment() -> None:
         # Verify restored into Valkey with deterministic 64-bit score
         async for valkey in get_valkey_client():
             restored_score = await valkey.zscore(k_fila, str(atend.id))  # pyright: ignore[reportUnknownMemberType]
-            expected_score = calcular_score_fila(
-                PrioridadeClinica.MUITO_URGENTE, entrada
-            )
+            expected_score = calcular_score(PrioridadeClinica.MUITO_URGENTE, entrada)
             assert restored_score is not None
             assert int(restored_score) == expected_score
     finally:
@@ -189,7 +187,7 @@ async def test_end_to_end_sweeper_idempotent_when_already_in_queue() -> None:
 
     # Pre-populate Valkey ZSET
     k_fila = f"fila:{org.id}:aptos"
-    expected_score = calcular_score_fila(PrioridadeClinica.URGENTE, entrada)
+    expected_score = calcular_score(PrioridadeClinica.URGENTE, entrada)
     async for valkey in get_valkey_client():
         await valkey.zadd(k_fila, {str(atend.id): expected_score})  # pyright: ignore[reportUnknownMemberType]
 

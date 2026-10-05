@@ -18,7 +18,6 @@ from src.modules.queue.application.services import (
     ControleAdmissaoService,
     FilaService,
     avaliar_capacidade_admissao,
-    calcular_score_fila,
 )
 from src.modules.queue.domain import (
     AdmissaoFilaSuspensaError,
@@ -57,5 +56,4 @@ __all__ = [
     "StatusAtendimento",
     "TransicaoEstadoInvalidaError",
     "avaliar_capacidade_admissao",
-    "calcular_score_fila",
 ]
