@@ -5,6 +5,7 @@ Routers and tests must resolve PEPService via get_pep_service/PEPServiceDep
 and LiveKit adapter via get_livekit_adapter/LiveKitAdapterDep.
 """
 
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
@@ -66,8 +67,9 @@ from src.modules.consultation.infrastructure.valkey_validation_rate_limiter impo
 )
 
 
+@lru_cache(maxsize=1)
 def get_storage() -> StoragePort:
-    """Provide object storage adapter selected by STORAGE_BACKEND setting."""
+    """Provide process-wide object storage adapter (single Fake/S3 instance)."""
     settings = get_settings()
     if settings.STORAGE_BACKEND == "s3":
         return S3StorageAdapter(
@@ -93,8 +95,9 @@ def get_signer() -> ICPBrasilSignerPort:
     return PyHankoSigner()
 
 
+@lru_cache(maxsize=1)
 def get_signed_cache() -> SignedCachePort:
-    """Provide process-local signed-document cache (tests/single-worker)."""
+    """Provide process-wide signed-document cache (single Memory instance)."""
     return MemorySignedCache()
 
 

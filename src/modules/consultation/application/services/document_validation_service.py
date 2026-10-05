@@ -26,10 +26,7 @@ from src.modules.consultation.domain.exceptions import (
     DocumentoNaoEncontradoNoStorageError,
 )
 from src.modules.consultation.domain.models import DocumentoClinico
-from src.modules.consultation.domain.s3_keys import (
-    build_signed_document_key,
-    is_signed_document_key,
-)
+from src.modules.consultation.domain.s3_keys import build_signed_document_key
 
 logger = logging.getLogger("medisync.validation")
 
@@ -63,9 +60,10 @@ class DocumentValidationService:
             raise NotFoundError(_MSG_VALIDACAO_INVALIDA) from err
 
     async def _is_assinado(self, doc: DocumentoClinico) -> bool:
-        if self._cache is not None and await self._cache.is_assinado(doc.id):
-            return True
-        return is_signed_document_key(doc.chave_s3, doc.organizacao_id)
+        """Return True only when SignedCachePort holds a mark for the doc."""
+        if self._cache is None:
+            return False
+        return await self._cache.is_assinado(doc.id)
 
     @staticmethod
     def build_s3_key(organizacao_id: int, atendimento_id: UUID, doc_id: UUID) -> str:

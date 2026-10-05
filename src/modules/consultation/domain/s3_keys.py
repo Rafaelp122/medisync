@@ -14,5 +14,12 @@ def build_signed_document_key(
 
 
 def is_signed_document_key(chave_s3: str, organizacao_id: int) -> bool:
-    """Check if storage key follows signed-document canonical prefix."""
+    """Legacy helper: key prefix no longer indicates signed status.
+
+    .. deprecated::
+        Emitted documents now use the same canonical
+        ``orgs/{org}/consultations/...`` key as signed ones, so prefix
+        matches unsigned documents too. Use SignedCachePort
+        (``DocumentoService.is_assinado``) as source of truth instead.
+    """
     return chave_s3.startswith(f"orgs/{organizacao_id}/consultations/")

@@ -46,10 +46,7 @@ from src.modules.consultation.domain.models import (
 from src.modules.consultation.domain.models._substances import (
     validar_substancia_permitida_telemedicina,
 )
-from src.modules.consultation.domain.s3_keys import (
-    build_signed_document_key,
-    is_signed_document_key,
-)
+from src.modules.consultation.domain.s3_keys import build_signed_document_key
 
 _PROHIBITED_DOC_TYPES = frozenset({"NOTIFICACAO_RECEITA_A", "NOTIFICACAO_RECEITA_B"})
 _STATUS_TERMINAIS = frozenset({"CONCLUIDO", "PACIENTE_AUSENTE", "CANCELADO_PACIENTE"})
@@ -83,10 +80,10 @@ class DocumentoService:
         return self._cache
 
     async def is_assinado(self, doc: DocumentoClinico) -> bool:
-        """Check cache first, then fall back to canonical key prefix."""
-        if self._cache is not None and await self._cache.is_assinado(doc.id):
-            return True
-        return is_signed_document_key(doc.chave_s3, doc.organizacao_id)
+        """Check SignedCachePort only; key prefix matches unsigned docs too."""
+        if self._cache is None:
+            return False
+        return await self._cache.is_assinado(doc.id)
 
     async def _verificar_atendimento_finalizado(self, atendimento_id: UUID) -> bool:
         """Check whether the underlying attendance reached terminal status in DB."""

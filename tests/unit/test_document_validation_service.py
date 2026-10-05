@@ -13,12 +13,18 @@ from src.modules.consultation.application.ports.document_directory_port import (
     DadosVerificacaoDirectory,
     DocumentDirectoryPort,
 )
+from src.modules.consultation.application.ports.signed_cache_port import (
+    SignedCachePort,
+)
 from src.modules.consultation.application.services.document_validation_service import (
     DocumentValidationService,
 )
 from src.modules.consultation.domain.exceptions import (
     DocumentoIntegridadeError,
     DocumentoNaoEncontradoNoStorageError,
+)
+from src.modules.consultation.infrastructure.memory_signed_cache import (
+    MemorySignedCache,
 )
 from src.modules.consultation.infrastructure.s3_storage import FakeStorageAdapter
 
@@ -105,6 +111,7 @@ def _service(
     exc: Exception | None = None,
     storage: FakeStorageAdapter | None = None,
     compiler: Callable[[UUID], Awaitable[bytes]] | None = None,
+    cache: SignedCachePort | None = None,
 ) -> DocumentValidationService:
     async def _default_compiler(_doc_id: UUID) -> bytes:
         return b"%PDF-fake-bytes"
@@ -114,6 +121,7 @@ def _service(
         directory=FakeDirectory(dados or _dados_padrao(), exc),
         storage=storage or FakeStorageAdapter(),
         compilador_pdf=compiler or _default_compiler,
+        cache=cache,
     )
 
 
@@ -145,7 +153,9 @@ async def test_validar_assinado_vs_emitido() -> None:
         chave_s3=f"orgs/7/consultations/{atend_id}/documents/{doc_id}.pdf",
         assinado_em=datetime.now(UTC),
     )
-    svc = _service(doc_assinado)
+    cache_assinado = MemorySignedCache()
+    await cache_assinado.marcar_assinado(doc_id)
+    svc = _service(doc_assinado, cache=cache_assinado)
     res = await svc.validar_documento(str(doc_id))
     assert res.status_documento == "ASSINADO"
     assert res.assinatura_digital_valida is True
@@ -167,6 +177,26 @@ async def test_validar_assinado_vs_emitido() -> None:
     assert res2.status_documento == "EMITIDO"
     assert res2.assinatura_digital_valida is False
     assert res2.assinado_em is None
+
+
+@pytest.mark.asyncio
+async def test_validar_chave_canonica_sem_cache_e_emitido() -> None:
+    """Canonical key alone must not imply signed status (Task 8 regression)."""
+    doc_id = uuid4()
+    atend_id = uuid4()
+    doc = FakeDoc(
+        id=doc_id,
+        organizacao_id=7,
+        atendimento_id=atend_id,
+        medico_id=uuid4(),
+        chave_s3=f"orgs/7/consultations/{atend_id}/documents/{doc_id}.pdf",
+        assinado_em=datetime.now(UTC),
+    )
+    svc = _service(doc, cache=MemorySignedCache())
+    res = await svc.validar_documento(str(doc_id))
+    assert res.status_documento == "EMITIDO"
+    assert res.assinatura_digital_valida is False
+    assert res.assinado_em is None
 
 
 @pytest.mark.asyncio

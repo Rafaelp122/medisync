@@ -43,7 +43,6 @@ from src.modules.consultation.domain.models import (
 from src.modules.consultation.domain.models._substances import (
     validar_substancia_permitida_telemedicina,
 )
-from src.modules.consultation.domain.s3_keys import is_signed_document_key
 
 
 class PEPService:
@@ -111,8 +110,13 @@ class PEPService:
         return bool(resumo is not None and resumo.is_terminal)
 
     def is_documento_assinado(self, doc: DocumentoClinico) -> bool:
-        """Deprecated: prefer DocumentoService.is_assinado (async, cache-aware)."""
-        return is_signed_document_key(doc.chave_s3, doc.organizacao_id)
+        """Deprecated: prefer DocumentoService.is_assinado (async, cache-aware).
+
+        Sync context cannot query SignedCachePort reliably, and key prefix
+        matches unsigned documents too. Always returns False; use the
+        async cache-aware check instead.
+        """
+        return False
 
     async def salvar_evolucao_soap(
         self, command: RegistrarEvolucaoSOAPCommand
