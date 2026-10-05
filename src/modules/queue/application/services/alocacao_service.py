@@ -2,6 +2,7 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from uuid import UUID
 
 from arq.connections import ArqRedis
@@ -16,6 +17,10 @@ from src.core.realtime import (
 from src.modules.queue.application.dtos import (
     AlocacaoChamadaResult,
     AlocarChamadaCommand,
+)
+from src.modules.queue.application.ports.allocation_port import (
+    AllocationPort,
+    AlocacaoCodigo,
 )
 from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
 from src.modules.queue.application.ports.notification_port import NotificationPort
@@ -36,7 +41,7 @@ class AlocacaoChamadaService:
         self,
         valkey: Redis,
         db_session: AsyncSession,
-        lua_manager: LuaScriptPort,
+        lua_manager: LuaScriptPort | AllocationPort,
         arq_pool: ArqRedis | None = None,
         notification_adapter: NotificationPort | None = None,
     ) -> None:
@@ -63,19 +68,19 @@ class AlocacaoChamadaService:
         k_fila = f"fila:{command.organizacao_id}:aptos"
 
         # 1. Execute Lua script for sub-10ms atomic allocation in Valkey
-        res = await self._lua_manager.execute_script(
+        allocation_manager = cast("AllocationPort", self._lua_manager)
+        allocation_args: list[object] = [
+            str(command.medico_id),
+            str(command.atendimento_id),
+            command.ttl_segundos,
+        ]
+        codigo = await allocation_manager.alocar_chamada(
             client=self._valkey,
-            script_name="alocar_chamada",
             keys=[k_medico, k_atend, k_fila],
-            args=[
-                str(command.medico_id),
-                str(command.atendimento_id),
-                command.ttl_segundos,
-            ],
+            args=allocation_args,
         )
-        code = int(res)
 
-        if code == 0:
+        if codigo == AlocacaoCodigo.MEDICO_OCUPADO:
             logger.warning(
                 "Doctor %s is already locked with active call (org=%d)",
                 command.medico_id,
@@ -85,7 +90,7 @@ class AlocacaoChamadaService:
                 f"Médico '{command.medico_id}' já possui uma chamada ou consulta ativa."
             )
 
-        if code == -1:
+        if codigo == AlocacaoCodigo.INDISPONIVEL:
             logger.info(
                 "Patient %s is no longer available in queue (org=%d)",
                 command.atendimento_id,
