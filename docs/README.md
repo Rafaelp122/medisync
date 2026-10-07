@@ -7,16 +7,16 @@ Para garantir rigor técnico e agilidade real sem cair na armadilha do modelo ca
 ```mermaid
 flowchart LR
     subgraph P1["1. Negócio (Problem Space)"]
-        BV["docs/01-business/<br/>business-vision.md<br/><i>O PORQUÊ</i>"]
+        BV["docs/explanation/<br/>business-vision.md<br/><i>O PORQUÊ</i>"]
     end
 
     subgraph P2["2. Produto (Solution Space)"]
-        SP["docs/02-product/<br/>specification.md<br/><i>O QUÊ</i>"]
+        SP["docs/explanation/<br/>product-specification.md<br/><i>O QUÊ</i>"]
     end
 
     subgraph P3["3. Engenharia (Architecture)"]
-        AR["docs/03-architecture/<br/>overview.md<br/><i>O COMO</i>"]
-        BM["docs/03-architecture/<br/>data-model.md<br/>concurrency-and-queues.md<br/>compliance-and-telemedicine.md<br/><i>BLUEPRINTS TÉCNICOS</i>"]
+        AR["docs/explanation/architecture/<br/>overview.md<br/><i>O COMO</i>"]
+        BM["docs/explanation/architecture/<br/>data-model.md<br/>concurrency-and-queues.md<br/>compliance-and-telemedicine.md<br/><i>BLUEPRINTS TÉCNICOS</i>"]
     end
 
     subgraph P4["4. Decisões Estruturais (ADRs)"]
@@ -33,7 +33,7 @@ flowchart LR
 
 ## 1. Estrutura da Documentação
 
-### 📄 [01. Modelagem de Negócio & Visão de Produto](01-business/business-vision.md)
+### 📄 [01. Modelagem de Negócio & Visão de Produto](explanation/business-vision.md)
 * **Responsabilidade**: *Problem Space* (O Porquê).
 * **Conteúdo**:
   * Contexto do Pronto-Atendimento Virtual (PA Digital 24/7);
@@ -44,7 +44,7 @@ flowchart LR
   * Matriz de Necessidades de Negócio (NEC-01 a NEC-08);
   * Dualidade de Modelos Operacionais: Atenção Pública (SUS) vs. Saúde Privada.
 
-### 📄 [02. Especificação de Produto & Invariantes de Domínio](02-product/specification.md)
+### 📄 [02. Especificação de Produto & Invariantes de Domínio](explanation/product-specification.md)
 * **Responsabilidade**: *Solution Space* (O Quê).
 * **Conteúdo**:
   * Marco Regulatório e Salvaguardas Éticas (CFM nº 2.314/2022, 1.821/2007 e LGPD Art. 11);
@@ -60,7 +60,7 @@ flowchart LR
   * Requisitos de Transição (RT-01 a RT-03);
   * Matriz de Rastreabilidade Vertical Auditável.
 
-### 📄 [03. Macro-Arquitetura do Sistema](03-architecture/overview.md)
+### 📄 [03. Macro-Arquitetura do Sistema](explanation/architecture/overview.md)
 * **Responsabilidade**: *Architecture & Engineering Foundations* (O Como).
 * **Conteúdo**:
   * **Hexagonal Pragmático em Python**:
@@ -77,9 +77,9 @@ flowchart LR
 ## 2. Blueprints Técnicos de Engenharia
 
 Para orientar a implementação sem burocracia de RFCs estáticas:
-* 📄 **[Modelo de Dados Relacional e Governança Forense](03-architecture/data-model.md)**: Diagrama Entidade-Relacionamento (DER), DDL das 10 tabelas relacionais, políticas PostgreSQL RLS nativas e regras forenses do CFM para snapshots clínicos.
-* 📄 **[Concorrência, Fila Valkey e Ring Timeout](03-architecture/concurrency-and-queues.md)**: Script Lua atômico com double-locking de 45s, fórmula do score ponderado de 64 bits para o ZSET do Valkey e agendamento de tarefas no ARQ Worker.
-* 📄 **[Conformidade Clínica, Telemedicina e ICP-Brasil](03-architecture/compliance-and-telemedicine.md)**: Topologia WebRTC com LiveKit SFU, fluxo de assinatura digital PAdES-LTV com PyHanko e armazenamento de PDFs no S3/MinIO via presigned URLs.
+* 📄 **[Modelo de Dados Relacional e Governança Forense](explanation/architecture/data-model.md)**: Diagrama Entidade-Relacionamento (DER), DDL das 10 tabelas relacionais, políticas PostgreSQL RLS nativas e regras forenses do CFM para snapshots clínicos.
+* 📄 **[Concorrência, Fila Valkey e Ring Timeout](explanation/architecture/concurrency-and-queues.md)**: Script Lua atômico com double-locking de 45s, fórmula do score ponderado de 64 bits para o ZSET do Valkey e agendamento de tarefas no ARQ Worker.
+* 📄 **[Conformidade Clínica, Telemedicina e ICP-Brasil](explanation/architecture/compliance-and-telemedicine.md)**: Topologia WebRTC com LiveKit SFU, fluxo de assinatura digital PAdES-LTV com PyHanko e armazenamento de PDFs no S3/MinIO via presigned URLs.
 
 ---
 

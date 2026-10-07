@@ -104,43 +104,22 @@ Mecanismos baseados em expiração de chaves pub/sub do Redis são inadequados p
 Imediatamente após o script Lua alocar o paciente, a API agenda uma tarefa no ARQ com precisão de milissegundos:
 
 ```python
-# Disparo no momento da chamada:
-await arq_pool.enqueue_job(
-    "resolver_ring_timeout_task",
-    organizacao_id=org_id,
-    atendimento_id=atendimento_id,
-    medico_id=medico_id,
+await arq_pool.enqueue_job("resolver_ring_timeout_task", organizacao_id=org_id,
+    atendimento_id=atendimento_id, medico_id=medico_id,
     _defer_by=timedelta(seconds=45),
-    _job_id=f"ring_timeout:{atendimento_id}",
-)
+    _job_id=f"ring_timeout:{atendimento_id}")
 ```
+Ver chamada real em `src/modules/queue/application/services/alocacao_service.py`.
 
 ### 4.3 Tarefa do Worker (`resolver_ring_timeout_task`)
 
 ```python
-async def resolver_ring_timeout_task(
-    ctx: dict, organizacao_id: int, atendimento_id: UUID, medico_id: UUID
-) -> None:
-    """Verifica se o paciente atendeu a chamada em até 45s; caso contrário, registra no-show."""
-    session_factory = ctx["session_factory"]
-    valkey = ctx["valkey"]
-
-    async with session_factory() as session:
-        atendimento = await session.get(Atendimento, atendimento_id)
-        if not atendimento:
-            return
-
-        # Se ainda estiver no estado CHAMANDO_PACIENTE, houve no-show
-        if atendimento.status == "CHAMANDO_PACIENTE":
-            atendimento.registrar_no_show()
-            await session.commit()
-
-            # Libera locks imediatamente no Valkey para desobstruir o médico
-            async with valkey.pipeline(transaction=True) as pipe:
-                pipe.delete(f"lock:{organizacao_id}:medico:{medico_id}")
-                pipe.delete(f"lock:{organizacao_id}:atendimento:{atendimento_id}")
-                await pipe.execute()
+atendimento = await session.get(Atendimento, atendimento_id)
+if atendimento.status == "CHAMANDO_PACIENTE":
+    atendimento.registrar_no_show()
+    await session.commit()
 ```
+Ver worker completo em `src/worker/tasks/ring_timeout.py`.
 
 ### 4.4 Transição de Locks: Ring Timeout vs. Teleconsulta Ativa (RN02)
 Para assegurar a invariante de que um médico jamais possua duas consultas em andamento ao mesmo tempo:
