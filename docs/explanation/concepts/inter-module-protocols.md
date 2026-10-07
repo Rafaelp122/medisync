@@ -35,18 +35,18 @@ confirmado via busca de imports no código.
 | Port | Dono | Consumidor |
 | --- | --- | --- |
 | `src/modules/queue/application/ports/allocation_port.py` | queue | `src/modules/queue/application/services/alocacao_service.py`, `src/modules/queue/composition.py`, `src/modules/queue/infrastructure/lua_loader.py` |
-| `src/modules/queue/application/ports/lua_script_port.py` | queue | `src/modules/queue/application/ports/allocation_port.py`, `src/modules/queue/infrastructure/lua_loader.py` |
+| `src/modules/queue/application/ports/lua_script_port.py` | queue | `src/modules/queue/application/ports/allocation_port.py` |
 | `src/modules/queue/application/ports/notification_port.py` | queue | `src/modules/queue/application/services/alocacao_service.py`, `src/modules/queue/composition.py` |
 | `src/modules/queue/application/ports/paciente_ausente_notifier.py` | queue | `src/worker/tasks/ring_timeout.py` |
 | `src/modules/queue/application/ports/queue_overflow_notifier.py` | queue | `src/modules/queue/application/services/controle_admissao_service.py` |
 | `src/modules/billing/application/ports/eligibility_provider.py` | billing | `src/modules/billing/application/services/eligibility_service.py`, `src/worker/tasks/eligibility.py` |
 | `src/modules/billing/application/ports/eligibility_notifier.py` | billing | `src/modules/billing/application/services/eligibility_service.py`, `src/worker/tasks/eligibility.py` |
 | `src/modules/consultation/application/ports/atendimento_reader_port.py` | consultation | `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/application/services/evolucao_service.py`, `src/modules/consultation/application/policies/clinical_access_policy.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/atendimento_reader_sql.py` |
-| `src/modules/consultation/application/ports/signed_cache_port.py` | consultation | `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/services/document_validation_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/memory_signed_cache.py` |
+| `src/modules/consultation/application/ports/signed_cache_port.py` | consultation | `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/services/document_validation_service.py`, `src/modules/consultation/composition.py` |
 | `src/modules/consultation/application/ports/pdf_generator_port.py` | consultation | `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/pdf_generator.py` |
 | `src/modules/consultation/application/ports/document_directory_port.py` | consultation | `src/modules/consultation/application/services/document_validation_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/document_directory_sql.py` |
 | `src/modules/consultation/application/ports/icp_brasil_signer_port.py` | consultation | `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/pyhanko_signer.py`, `src/modules/consultation/presentation/routers/consultation_router.py` |
-| `src/modules/consultation/application/ports/livekit_media_port.py` | consultation | `src/modules/consultation/composition.py`, `src/modules/consultation/presentation/routers/livekit_router.py`, `src/modules/consultation/infrastructure/livekit_adapter.py` |
+| `src/modules/consultation/application/ports/livekit_media_port.py` | consultation | `src/modules/consultation/composition.py`, `src/modules/consultation/presentation/routers/livekit_router.py` |
 | `src/modules/consultation/application/ports/storage_port.py` | consultation | `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/application/services/document_validation_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/s3_storage.py` |
 | `src/modules/consultation/application/ports/validation_rate_limiter_port.py` | consultation | `src/modules/consultation/presentation/dependencies.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/valkey_validation_rate_limiter.py` |
 | `src/modules/triage/application/ports/emergency_notifier.py` | triage | `src/modules/triage/application/services/triage_service.py` |
@@ -136,6 +136,8 @@ flowchart LR
     pep_service --> pdf_generator_port
     pep_service --> storage_port
     evolucao_service --> atendimento_reader_port
+    eligibility_service --> eligibility_provider
+    eligibility_service --> eligibility_notifier
     auth_service --> auth_rate_limiter_port
     auth_service --> password_hasher_port
     auth_service --> token_service_port
