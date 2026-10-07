@@ -19,7 +19,6 @@ from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
 )
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
-    DoctorCertificateCredentials,
     ICPBrasilSignerPort,
 )
 from src.modules.consultation.application.ports.pdf_generator_port import (
@@ -54,30 +53,17 @@ class PEPService:
         pdf_generator: PDFGeneratorPort,
         signer: ICPBrasilSignerPort,
         storage: StoragePort,
-        documento_service: DocumentoService | None = None,
-        atendimento_reader: AtendimentoReaderPort | None = None,
-        evolucao_service: EvolucaoService | None = None,
+        documento_service: DocumentoService,
+        atendimento_reader: AtendimentoReaderPort,
+        evolucao_service: EvolucaoService,
     ) -> None:
         self._session = session
         self._pdf_generator = pdf_generator
         self._signer = signer
         self._storage = storage
         self._reader = atendimento_reader
-        self._documentos = (
-            documento_service
-            if documento_service is not None
-            else DocumentoService(
-                session=session,
-                pdf_generator=pdf_generator,
-                signer=signer,
-                storage=storage,
-            )
-        )
-        self._evolucao = (
-            evolucao_service
-            if evolucao_service is not None
-            else EvolucaoService(session=session, reader=atendimento_reader)
-        )
+        self._documentos = documento_service
+        self._evolucao = evolucao_service
 
     @property
     def storage(self) -> StoragePort:
@@ -95,28 +81,17 @@ class PEPService:
         return self._evolucao
 
     @property
-    def atendimento_reader(self) -> AtendimentoReaderPort | None:
-        """Return the injected attendance reader port, if any."""
+    def atendimento_reader(self) -> AtendimentoReaderPort:
+        """Return the injected attendance reader port."""
         return self._reader
 
     async def _is_terminal(self, atendimento_id: UUID) -> bool:
         """Return True when queue-owned attendance reached terminal status."""
-        if self._reader is None:
-            return False
         try:
             resumo = await self._reader.obter_resumo(atendimento_id)
         except Exception:
             return False
         return bool(resumo is not None and resumo.is_terminal)
-
-    def is_documento_assinado(self, doc: DocumentoClinico) -> bool:
-        """Deprecated: prefer DocumentoService.is_assinado (async, cache-aware).
-
-        Sync context cannot query SignedCachePort reliably, and key prefix
-        matches unsigned documents too. Always returns False; use the
-        async cache-aware check instead.
-        """
-        return False
 
     async def salvar_evolucao_soap(
         self, command: RegistrarEvolucaoSOAPCommand
@@ -262,16 +237,3 @@ class PEPService:
     async def obter_evolucao(self, atendimento_id: UUID) -> EvolucaoClinica:
         """Delegate SOAP evolution retrieval to EvolucaoService."""
         return await self._evolucao.obter_evolucao(atendimento_id)
-
-    async def compilar_documento_pdf(self, documento_id: UUID) -> bytes:
-        """Delegate PDF/A compilation to DocumentoService."""
-        return await self._documentos.compilar_pdf(documento_id)
-
-    async def assinar_documento_clinico(
-        self,
-        documento_id: UUID,
-        atendimento_id: UUID,
-        credenciais: DoctorCertificateCredentials,
-    ) -> tuple[DocumentoClinico, bytes]:
-        """Delegate ICP-Brasil PAdES signing to DocumentoService."""
-        return await self._documentos.assinar(documento_id, atendimento_id, credenciais)

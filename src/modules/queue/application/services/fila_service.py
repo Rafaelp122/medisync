@@ -1,7 +1,6 @@
 """Queue ingestion, 64-bit priority scoring, and acquisition service (RN01)."""
 
 import logging
-from datetime import datetime
 from uuid import UUID
 
 from redis.asyncio import Redis
@@ -27,25 +26,9 @@ from src.modules.queue.domain.exceptions import (
     AtendimentoNaoDisponivelError,
     MedicoOcupadoError,
 )
-from src.modules.queue.domain.models import PrioridadeClinica
-from src.modules.queue.domain.scoring import (
-    SCORE_PRIORITY_MULTIPLIER as _MULT,
-)
-from src.modules.queue.domain.scoring import (
-    calcular_score as _domain_score,
-)
+from src.modules.queue.domain.scoring import calcular_score
 
 logger = logging.getLogger("medisync.queue.fila")
-
-SCORE_PRIORITY_MULTIPLIER = _MULT
-
-
-def calcular_score_fila(
-    prioridade_clinica: int | PrioridadeClinica,
-    timestamp_epoch: int | float | datetime | None = None,
-) -> int:
-    """Backward-compat wrapper delegating to domain scoring single source."""
-    return _domain_score(prioridade_clinica, timestamp_epoch)
 
 
 class FilaService:
@@ -72,7 +55,7 @@ class FilaService:
     ) -> IngressarFilaResult:
         """Ingests an attendance into the organization's virtual queue."""
         k_fila = f"fila:{command.organizacao_id}:aptos"
-        score = calcular_score_fila(
+        score = calcular_score(
             command.prioridade_clinica,
             command.data_entrada_fila,
         )
@@ -168,7 +151,7 @@ class FilaService:
             except MedicoOcupadoError:
                 # Doctor is already locked with an active call -> fail immediately
                 logger.warning(
-                    "Doctor %s is busy, rejecting acquire_next_patient",
+                    "Doctor %s is busy, rejecting adquirir_proximo_paciente",
                     command.medico_id,
                 )
                 raise
@@ -190,9 +173,6 @@ class FilaService:
         )
         logger.error(msg)
         raise AtendimentoNaoDisponivelError(msg)
-
-    # English alias as defined in architecture specification
-    acquire_next_patient = adquirir_proximo_paciente
 
     async def remover_da_fila(
         self,

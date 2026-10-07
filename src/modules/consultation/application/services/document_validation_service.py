@@ -43,7 +43,7 @@ class DocumentValidationService:
         directory: DocumentDirectoryPort,
         storage: StoragePort,
         compilador_pdf: Callable[[UUID], Awaitable[bytes]],
-        cache: SignedCachePort | None = None,
+        cache: SignedCachePort,
     ) -> None:
         self._session = session
         self._directory = directory
@@ -61,8 +61,6 @@ class DocumentValidationService:
 
     async def _is_assinado(self, doc: DocumentoClinico) -> bool:
         """Return True only when SignedCachePort holds a mark for the doc."""
-        if self._cache is None:
-            return False
         return await self._cache.is_assinado(doc.id)
 
     @staticmethod

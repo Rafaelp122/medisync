@@ -216,7 +216,7 @@ async def test_assinar_documento_service_commit_visivel_outra_sessao() -> None:
         creds = DoctorCertificateCredentials(
             token="valid-token", provider="fake", certificate_alias="cert-tx"
         )
-        doc_signed, signed_bytes = await svc.assinar_documento_clinico(
+        doc_signed, signed_bytes = await svc.documento_service.assinar(
             doc_id, atend_id, creds
         )
         assert signed_bytes == b"%PDF-signed-bytes%"
@@ -280,7 +280,7 @@ async def test_assinar_documento_outro_atendimento_404_signer_nao_chamado() -> N
         svc2 = make_pep_service(s2, signer=signer_spy, storage=storage)
         creds = DoctorCertificateCredentials(token="tok", provider="fake")
         with pytest.raises(NotFoundError):
-            await svc2.assinar_documento_clinico(doc_id, atend_b, creds)
+            await svc2.documento_service.assinar(doc_id, atend_b, creds)
 
     signer_spy.assinar_pdf.assert_not_called()
     storage.salvar_documento.assert_not_called()

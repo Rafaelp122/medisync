@@ -9,7 +9,7 @@ from sqlalchemy import select, text
 from src.core.context import tenant_context
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
-from src.modules.queue.domain.scoring import calcular_score as calcular_score_fila
+from src.modules.queue.domain.scoring import calcular_score
 from src.worker.context import get_db_session_from_ctx, get_valkey_from_ctx
 from src.worker.tasks.base import monitored_task
 
@@ -106,7 +106,7 @@ async def reconciliar_fila_orphans_task(
 
                     # 4. Truly orphaned -> recalculate score and reinject into ZSET
                     ts_base = atend.data_entrada_fila or atend.criado_em
-                    score = calcular_score_fila(atend.prioridade_clinica, ts_base)
+                    score = calcular_score(atend.prioridade_clinica, ts_base)
 
                     await valkey.zadd(k_fila, {atend_id_str: score})  # pyright: ignore[reportUnknownMemberType]
                     total_reconciled += 1

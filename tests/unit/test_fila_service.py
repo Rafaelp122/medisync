@@ -16,46 +16,46 @@ from src.modules.queue.application.services.alocacao_service import (
 )
 from src.modules.queue.application.services.fila_service import (
     FilaService,
-    calcular_score_fila,
 )
 from src.modules.queue.domain.exceptions import (
     AtendimentoNaoDisponivelError,
     MedicoOcupadoError,
 )
 from src.modules.queue.domain.models import PrioridadeClinica, StatusAtendimento
+from src.modules.queue.domain.scoring import calcular_score
 
 
-def test_calcular_score_fila_formula() -> None:
+def test_calcular_score_formula() -> None:
     """Validate 64-bit score formula: (priority * 10^12) + timestamp."""
     epoch_fixed = 1_700_000_000
-    score_p1 = calcular_score_fila(PrioridadeClinica.EMERGENCIA, epoch_fixed)
+    score_p1 = calcular_score(PrioridadeClinica.EMERGENCIA, epoch_fixed)
     assert score_p1 == 1_001_700_000_000
 
-    score_p2 = calcular_score_fila(PrioridadeClinica.MUITO_URGENTE, epoch_fixed)
+    score_p2 = calcular_score(PrioridadeClinica.MUITO_URGENTE, epoch_fixed)
     assert score_p2 == 2_001_700_000_000
 
-    score_p4 = calcular_score_fila(PrioridadeClinica.POUCO_URGENTE, epoch_fixed)
+    score_p4 = calcular_score(PrioridadeClinica.POUCO_URGENTE, epoch_fixed)
     assert score_p4 == 4_001_700_000_000
 
-    score_p5 = calcular_score_fila(PrioridadeClinica.NAO_URGENTE, epoch_fixed)
+    score_p5 = calcular_score(PrioridadeClinica.NAO_URGENTE, epoch_fixed)
     assert score_p5 == 5_001_700_000_000
 
     # With datetime instance
     dt = datetime.fromtimestamp(epoch_fixed, tz=UTC)
-    assert calcular_score_fila(PrioridadeClinica.URGENTE, dt) == 3_001_700_000_000
+    assert calcular_score(PrioridadeClinica.URGENTE, dt) == 3_001_700_000_000
 
     # With default timestamp (current time)
-    score_default = calcular_score_fila(PrioridadeClinica.URGENTE)
+    score_default = calcular_score(PrioridadeClinica.URGENTE)
     assert 3_000_000_000_000 < score_default < 4_000_000_000_000
 
 
-def test_calcular_score_fila_invalid_priority() -> None:
+def test_calcular_score_invalid_priority() -> None:
     """Invalid priorities outside [1, 5] must raise ValidationError."""
     with pytest.raises(ValidationError):
-        calcular_score_fila(0)
+        calcular_score(0)
 
     with pytest.raises(ValidationError):
-        calcular_score_fila(6)
+        calcular_score(6)
 
 
 def test_prevalencia_clinica_invariante_rn01() -> None:
@@ -64,10 +64,10 @@ def test_prevalencia_clinica_invariante_rn01() -> None:
     ten_years_ago = now - timedelta(days=3650)
 
     # A level 2 patient who arrived right now
-    score_lvl2_now = calcular_score_fila(PrioridadeClinica.MUITO_URGENTE, now)
+    score_lvl2_now = calcular_score(PrioridadeClinica.MUITO_URGENTE, now)
 
     # A level 4 patient who waited for 10 years
-    score_lvl4_old = calcular_score_fila(PrioridadeClinica.POUCO_URGENTE, ten_years_ago)
+    score_lvl4_old = calcular_score(PrioridadeClinica.POUCO_URGENTE, ten_years_ago)
 
     # Level 2 must have a LOWER score than level 4 (ZSET sorts ascending)
     assert score_lvl2_now < score_lvl4_old

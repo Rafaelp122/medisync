@@ -32,14 +32,10 @@ def test_score_aceita_none_usando_now() -> None:
 def test_fila_service_e_modelo_usam_mesma_formula() -> None:
     from uuid import uuid4
 
-    from src.modules.queue.application.services.fila_service import (
-        calcular_score_fila as svc_score,
-    )
     from src.modules.queue.domain.models.atendimento import Atendimento
     from src.modules.queue.domain.scoring import calcular_score as dom_score
 
     ts = datetime(2026, 5, 1, 10, 0, 0, tzinfo=UTC)
-    assert svc_score(2, ts) == dom_score(2, ts)
 
     atend = Atendimento(
         organizacao_id=1,

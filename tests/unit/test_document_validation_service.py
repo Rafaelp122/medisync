@@ -121,7 +121,7 @@ def _service(
         directory=FakeDirectory(dados or _dados_padrao(), exc),
         storage=storage or FakeStorageAdapter(),
         compilador_pdf=compiler or _default_compiler,
-        cache=cache,
+        cache=cache if cache is not None else MemorySignedCache(),
     )
 
 

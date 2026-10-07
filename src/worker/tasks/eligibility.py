@@ -17,7 +17,7 @@ from src.modules.billing import (
 )
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
-from src.modules.queue.domain.scoring import calcular_score as calcular_score_fila
+from src.modules.queue.domain.scoring import calcular_score
 from src.worker.context import get_db_session_from_ctx, get_valkey_from_ctx
 from src.worker.tasks.base import monitored_task
 
@@ -110,7 +110,7 @@ async def validar_elegibilidade_task(
                     # Ingest into Valkey ZSET
                     valkey = get_valkey_from_ctx(ctx)
                     ts_base = atendimento.data_entrada_fila or atendimento.criado_em
-                    score = calcular_score_fila(atendimento.prioridade_clinica, ts_base)
+                    score = calcular_score(atendimento.prioridade_clinica, ts_base)
                     k_fila = f"fila:{organizacao_id}:aptos"
                     await valkey.zadd(  # pyright: ignore[reportUnknownMemberType]
                         k_fila, {atendimento_id: score}

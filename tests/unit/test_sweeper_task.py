@@ -8,9 +8,9 @@ from uuid import uuid4
 import pytest
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from src.modules.queue.application.services.fila_service import calcular_score_fila
 from src.modules.queue.domain.models import Atendimento, PrioridadeClinica
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
+from src.modules.queue.domain.scoring import calcular_score
 from src.worker.tasks.sweeper import reconciliar_fila_orphans_task
 
 
@@ -70,7 +70,7 @@ async def test_reconciliar_fila_orphans_restores_missing_attendance() -> None:
     assert result["reconciled_appointments"] == 1
     assert result["reconciled_ids"] == [str(atend_id)]
 
-    expected_score = calcular_score_fila(PrioridadeClinica.URGENTE, entrada)
+    expected_score = calcular_score(PrioridadeClinica.URGENTE, entrada)
     mock_valkey.zadd.assert_awaited_once_with(
         f"fila:{org_id}:aptos",
         {str(atend_id): expected_score},
