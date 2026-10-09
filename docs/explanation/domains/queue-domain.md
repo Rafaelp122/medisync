@@ -103,12 +103,17 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `src/modules/queue/domain/scoring.py`
 - `src/modules/queue/domain/models/atendimento.py`
 - `src/modules/queue/infrastructure/lua/alocar_chamada.lua`
+- `src/modules/queue/application/ports/queue_store_port.py` (QueueStorePort - interface profunda consolidando PostgreSQL + Valkey)
+- `src/modules/queue/application/services/fila_service.py` (Implementação de QueueStorePort, admissão em fila e reconciliação)
+- `src/modules/queue/application/services/admissao_service.py` (Acolhimento clínico integrado com Triagem persistida)
+- `src/modules/queue/presentation/routers/admissao_router.py` (POST /api/v1/fila/admissao)
 - `src/modules/queue/application/services/alocacao_service.py`
-- `src/modules/queue/application/services/fila_service.py`
 - `src/modules/queue/application/services/controle_admissao_service.py`
 - `src/modules/queue/application/ports/allocation_port.py`
 - `src/modules/queue/application/ports/queue_overflow_notifier.py`
 - `src/modules/billing/application/ports/eligibility_provider.py`
+- `tests/unit/test_queue_store.py`
+- `tests/unit/test_admissao_service.py`
 - `tests/unit/test_alocacao_service.py`
 - `tests/unit/test_atendimento_model.py`
 - `tests/unit/test_controle_admissao.py`
@@ -117,11 +122,13 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 Prova viva:
 
 ```bash
-ls tests/unit | rg -i "alocacao|atendimento|admissao|fila"
+ls tests/unit | rg -i "alocacao|atendimento|admissao|fila|queue"
+# test_admissao_service.py
 # test_alocacao_service.py
 # test_atendimento_model.py
 # test_controle_admissao.py
 # test_fila_service.py
+# test_queue_store.py
 ```
 
 ## 7. Verificação
