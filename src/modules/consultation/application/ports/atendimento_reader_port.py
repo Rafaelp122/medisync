@@ -15,6 +15,7 @@ class AtendimentoResumoDTO:
     status: str
     tcle_hash: str | None
     is_terminal: bool
+    paciente_id: UUID | None = None
 
 
 @runtime_checkable
@@ -24,3 +25,5 @@ class AtendimentoReaderPort(Protocol):
     async def obter_resumo(
         self, atendimento_id: UUID
     ) -> AtendimentoResumoDTO | None: ...
+
+    async def concluir_atendimento(self, atendimento_id: UUID) -> None: ...

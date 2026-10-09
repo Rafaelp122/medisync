@@ -131,7 +131,9 @@ def test_get_livekit_adapter_from_composition() -> None:
 
 
 def test_get_onboarding_and_dependente_services() -> None:
-    """Identity composition must provide stateless service instances."""
+    """Identity composition must provide service instances."""
+    from unittest.mock import AsyncMock
+
     from src.modules.identity.application.services.dependente_service import (
         DependenteService,
     )
@@ -143,5 +145,6 @@ def test_get_onboarding_and_dependente_services() -> None:
         get_onboarding_service,
     )
 
-    assert isinstance(get_onboarding_service(), OnboardingService)
-    assert isinstance(get_dependente_service(), DependenteService)
+    mock_session = AsyncMock()
+    assert isinstance(get_onboarding_service(session=mock_session), OnboardingService)
+    assert isinstance(get_dependente_service(session=mock_session), DependenteService)

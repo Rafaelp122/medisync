@@ -156,7 +156,7 @@ async def test_emitir_gera_chave_canonica_sem_legado() -> None:
     atend_id = uuid7()
     med_id = uuid7()
     added: list[Any] = []
-    session = FakeSession([_Result(None), _Result(None), _AddedResult(added)], added)
+    session = FakeSession([_Result(None), _AddedResult(added)], added)
     svc = _service(session)
 
     doc = await svc.emitir_documento(_emitir_command(atend_id, med_id))
@@ -176,7 +176,7 @@ async def test_emitir_preserva_chave_explicita() -> None:
     atend_id = uuid7()
     med_id = uuid7()
     added: list[Any] = []
-    session = FakeSession([_Result(None), _Result(None), _AddedResult(added)], added)
+    session = FakeSession([_Result(None), _AddedResult(added)], added)
     svc = _service(session)
     explicita = f"orgs/{_ORG_ID}/consultations/{atend_id}/documents/custom.pdf"
 
@@ -266,8 +266,8 @@ async def test_assinar_persiste_chave_canonica_e_marca_cache() -> None:
     signer: Any = AsyncMock()
     signer.assinar_pdf.return_value = b"%PDF-signed-bytes%"
     cache = MemorySignedCache()
-    # ownership load + status check + compilar reload.
-    session = FakeSession([_Result(doc), _Result(None), _Result(doc)])
+    # ownership load + compilar reload.
+    session = FakeSession([_Result(doc), _Result(doc)])
     svc = DocumentoService(
         session=cast("AsyncSession", session),
         pdf_generator=cast("Any", MagicMock()),

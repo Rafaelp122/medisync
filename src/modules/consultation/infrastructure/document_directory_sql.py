@@ -78,7 +78,9 @@ class SqlDocumentDirectory(DocumentDirectoryPort):
 
         pac_res = await self._session.execute(
             text(
-                "SELECT p.nome_completo, p.cpf FROM atendimentos a "
+                "SELECT p.nome_completo, p.cpf, p.data_nascimento, "
+                "p.logradouro, p.numero, p.bairro, p.cidade, p.estado "
+                "FROM atendimentos a "
                 "JOIN pacientes p ON a.paciente_id = p.id "
                 "WHERE a.id = :atend_id"
             ),
@@ -94,6 +96,24 @@ class SqlDocumentDirectory(DocumentDirectoryPort):
                 "Dados do paciente ausentes para o documento."
             )
 
+        data_n = pac_row.get("data_nascimento")
+        nasc_str: str | None = None
+        if data_n is not None:
+            nasc_str = (
+                data_n.strftime("%d/%m/%Y")  # pyright: ignore[reportAttributeAccessIssue]
+                if hasattr(data_n, "strftime")
+                else str(data_n)
+            )
+        end_parts = [
+            str(pac_row.get("logradouro") or "").strip(),
+            str(pac_row.get("numero") or "").strip(),
+            str(pac_row.get("bairro") or "").strip(),
+            str(pac_row.get("cidade") or "").strip(),
+            str(pac_row.get("estado") or "").strip(),
+        ]
+        valid_parts = [p for p in end_parts if p]
+        end_str = ", ".join(valid_parts) if valid_parts else None
+
         return DadosVerificacaoDirectory(
             organizacao_nome=org_nome,
             medico_nome=medico_nome,
@@ -101,4 +121,9 @@ class SqlDocumentDirectory(DocumentDirectoryPort):
             medico_crm_uf=medico_uf,
             paciente_nome=str(pac_row.get("nome_completo") or ""),
             paciente_cpf=str(pac_row.get("cpf") or ""),
+            organizacao_cnpj=str(org_row.get("cnpj"))
+            if org_row and org_row.get("cnpj")
+            else None,
+            paciente_data_nascimento=nasc_str,
+            paciente_endereco=end_str,
         )
