@@ -17,6 +17,9 @@ from src.core.valkey import get_valkey_client, get_valkey_pool
 from src.modules.queue.application.ports.allocation_port import AllocationPort
 from src.modules.queue.application.ports.notification_port import NotificationPort
 from src.modules.queue.application.ports.queue_store_port import QueueStorePort
+from src.modules.queue.application.services.admissao_service import (
+    AdmissaoAtendimentoService,
+)
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
@@ -98,3 +101,18 @@ def get_queue_store(valkey: ValkeyDep, session: DbSessionDep) -> QueueStorePort:
 
 QueueStoreDep = Annotated[QueueStorePort, Depends(get_queue_store)]
 
+
+def get_admissao_service(
+    session: DbSessionDep,
+    fila_service: FilaServiceDep,
+) -> AdmissaoAtendimentoService:
+    """Provide clinical admission and triage service."""
+    return AdmissaoAtendimentoService(
+        session=session,
+        fila_service=fila_service,
+    )
+
+
+AdmissaoServiceDep = Annotated[
+    AdmissaoAtendimentoService, Depends(get_admissao_service)
+]
