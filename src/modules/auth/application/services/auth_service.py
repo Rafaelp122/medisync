@@ -20,6 +20,9 @@ from src.modules.auth.application.ports.auth_rate_limiter_port import (
 from src.modules.auth.application.ports.password_hasher_port import (
     PasswordHasherPort,
 )
+from src.modules.auth.application.ports.token_revocation_port import (
+    TokenRevocationPort,
+)
 from src.modules.auth.application.ports.token_service_port import (
     TokenServicePort,
 )
@@ -31,7 +34,18 @@ from src.modules.auth.domain.exceptions import (
 )
 from src.modules.auth.domain.models import UsuarioCredencial
 
-_REVOKED_TOKENS_CACHE: set[str] = set()
+
+class _LocalMemoryRevocation:
+    """In-memory revocation store used as zero-dependency fallback."""
+
+    def __init__(self) -> None:
+        self._revoked: set[str] = set()
+
+    async def revogar(self, jti: str, exp_segundos: int = 86400 * 7) -> None:
+        self._revoked.add(jti)
+
+    async def is_revogado(self, jti: str) -> bool:
+        return jti in self._revoked
 
 
 class AuthService:
@@ -43,12 +57,14 @@ class AuthService:
         hasher: PasswordHasherPort,
         token_service: TokenServicePort,
         rate_limiter: AuthRateLimiterPort,
+        revocation: TokenRevocationPort | None = None,
     ) -> None:
         self._session = session
         settings = get_settings()
         self._hasher = hasher
         self._token_service = token_service
         self._rate_limiter = rate_limiter
+        self._revocation: TokenRevocationPort = revocation or _LocalMemoryRevocation()
 
         self._max_attempts = settings.AUTH_RATE_LIMIT_MAX_ATTEMPTS
         self._window_seconds = settings.AUTH_RATE_LIMIT_WINDOW_SECONDS
@@ -169,13 +185,13 @@ class AuthService:
         )
 
         # Check revocation
-        if payload.jti in _REVOKED_TOKENS_CACHE:
+        if await self._revocation.is_revogado(payload.jti):
             raise TokenRevogadoError(
                 "O token de atualização apresentado já foi utilizado ou revogado."
             )
 
         # Mark old token as revoked (one-time use rotation)
-        _REVOKED_TOKENS_CACHE.add(payload.jti)
+        await self._revocation.revogar(payload.jti)
 
         # Validate user account is still valid and active in database
         stmt = select(UsuarioCredencial).where(
@@ -200,11 +216,11 @@ class AuthService:
         """Validate access token via configured token service."""
         return self._token_service.validar_access_token(token)
 
-    def revogar_sessao(self, refresh_token: str) -> None:
+    async def revogar_sessao(self, refresh_token: str) -> None:
         """Revoke a refresh token on user logout."""
         with contextlib.suppress(Exception):
             payload = self._token_service.validar_refresh_token(refresh_token)
-            _REVOKED_TOKENS_CACHE.add(payload.jti)
+            await self._revocation.revogar(payload.jti)
 
     async def obter_usuario_por_id(
         self, usuario_id: UUID, organizacao_id: int

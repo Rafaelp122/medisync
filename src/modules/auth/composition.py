@@ -16,11 +16,17 @@ from src.modules.auth.application.ports.auth_rate_limiter_port import (
 from src.modules.auth.application.ports.password_hasher_port import (
     PasswordHasherPort,
 )
+from src.modules.auth.application.ports.token_revocation_port import (
+    TokenRevocationPort,
+)
 from src.modules.auth.application.ports.token_service_port import TokenServicePort
 from src.modules.auth.application.services.auth_service import AuthService
 from src.modules.auth.infrastructure.argon2_hasher import Argon2PasswordHasher
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
 from src.modules.auth.infrastructure.valkey_rate_limiter import ValkeyAuthRateLimiter
+from src.modules.auth.infrastructure.valkey_token_revocation import (
+    ValkeyTokenRevocation,
+)
 
 
 def get_password_hasher() -> PasswordHasherPort:
@@ -44,6 +50,11 @@ def get_rate_limiter() -> AuthRateLimiterPort:
     return ValkeyAuthRateLimiter()
 
 
+def get_token_revocation() -> TokenRevocationPort:
+    """Provide distributed Valkey token revocation adapter."""
+    return ValkeyTokenRevocation()
+
+
 def get_auth_service(session: DbSessionDep) -> AuthService:
     """Build AuthService with all mandatory ports wired (no infra defaults)."""
     return AuthService(
@@ -51,6 +62,7 @@ def get_auth_service(session: DbSessionDep) -> AuthService:
         hasher=get_password_hasher(),
         token_service=get_token_service(),
         rate_limiter=get_rate_limiter(),
+        revocation=get_token_revocation(),
     )
 
 

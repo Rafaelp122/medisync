@@ -6,6 +6,9 @@ from src.modules.auth.application.ports.auth_rate_limiter_port import (
 from src.modules.auth.application.ports.password_hasher_port import (
     PasswordHasherPort,
 )
+from src.modules.auth.application.ports.token_revocation_port import (
+    TokenRevocationPort,
+)
 from src.modules.auth.application.ports.token_service_port import (
     TokenServicePort,
 )
@@ -13,5 +16,6 @@ from src.modules.auth.application.ports.token_service_port import (
 __all__ = [
     "AuthRateLimiterPort",
     "PasswordHasherPort",
+    "TokenRevocationPort",
     "TokenServicePort",
 ]

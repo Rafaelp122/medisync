@@ -76,7 +76,7 @@ async def logout(
     service: AuthServiceDep,
 ) -> Response:
     """Revoga o refresh token fornecido impedindo renovações futuras."""
-    service.revogar_sessao(body.refresh_token)
+    await service.revogar_sessao(body.refresh_token)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
