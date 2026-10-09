@@ -66,19 +66,32 @@ def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
     signer: Any = overrides.get("signer", AsyncMock())
     storage: Any = overrides.get("storage", AsyncMock())
     cache: Any = overrides.get("cache", MemorySignedCache())
+    atendimento_reader: Any = overrides.get("atendimento_reader")
+    if atendimento_reader is None:
+        if isinstance(session, AsyncMock):
+            atendimento_reader = AsyncMock()
+            atendimento_reader.obter_resumo.return_value = None
+        else:
+            from src.modules.consultation.composition import (
+                QueueStoreAtendimentoReaderAdapter,
+            )
+            from src.modules.queue.composition import build_fila_service_for_session
+
+            queue_store: Any = build_fila_service_for_session(session=session)
+            atendimento_reader = QueueStoreAtendimentoReaderAdapter(queue_store)
+
     documento_service: Any = overrides.get("documento_service")
     if documento_service is None:
+        directory: Any = overrides.get("directory")
         documento_service = DocumentoService(
             session=session,
             pdf_generator=pdf_generator,
             signer=signer,
             storage=storage,
             cache=cache,
+            atendimento_reader=atendimento_reader,
+            directory=directory,
         )
-    atendimento_reader: Any = overrides.get("atendimento_reader")
-    if atendimento_reader is None:
-        atendimento_reader = AsyncMock()
-        atendimento_reader.obter_resumo.return_value = None
     evolucao_service: Any = overrides.get("evolucao_service")
     if evolucao_service is None:
         evolucao_service = EvolucaoService(session=session, reader=atendimento_reader)

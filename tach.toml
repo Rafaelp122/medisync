@@ -59,7 +59,16 @@ depends_on = ["src.core", "src.modules.consultation.application", "src.modules.c
 
 [[modules]]
 path = "src.modules.consultation.composition"
-depends_on = ["src.core", "src.modules.consultation.application", "src.modules.consultation.domain", "src.modules.consultation.infrastructure"]
+depends_on = [
+    "src.core",
+    "src.modules.consultation.application",
+    "src.modules.consultation.domain",
+    "src.modules.consultation.infrastructure",
+    "src.modules.identity.application",
+    "src.modules.identity.composition",
+    "src.modules.queue.application",
+    "src.modules.queue.composition",
+]
 
 [[modules]]
 path = "src.modules.consultation.presentation"
@@ -74,8 +83,17 @@ path = "src.modules.identity.application"
 depends_on = ["src.core", "src.modules.identity.domain"]
 
 [[modules]]
-path = "src.modules.identity.composition"
+path = "src.modules.identity.infrastructure"
 depends_on = ["src.core", "src.modules.identity.application", "src.modules.identity.domain"]
+
+[[modules]]
+path = "src.modules.identity.composition"
+depends_on = [
+    "src.core",
+    "src.modules.identity.application",
+    "src.modules.identity.domain",
+    "src.modules.identity.infrastructure",
+]
 
 [[modules]]
 path = "src.modules.identity.presentation"
@@ -87,7 +105,7 @@ depends_on = ["src.core"]
 
 [[modules]]
 path = "src.modules.queue.application"
-depends_on = ["src.core", "src.modules.queue.domain"]
+depends_on = ["src.core", "src.modules.queue.domain", "src.modules.triage.domain"]
 
 [[modules]]
 path = "src.modules.queue.infrastructure"
@@ -95,7 +113,15 @@ depends_on = ["src.core", "src.modules.queue.application", "src.modules.queue.do
 
 [[modules]]
 path = "src.modules.queue.composition"
-depends_on = ["src.core", "src.modules.queue.application", "src.modules.queue.domain", "src.modules.queue.infrastructure"]
+depends_on = [
+    "src.core",
+    "src.modules.queue.application",
+    "src.modules.queue.domain",
+    "src.modules.queue.infrastructure",
+    "src.modules.triage.domain",
+    "src.modules.identity.application",
+    "src.modules.identity.composition",
+]
 
 [[modules]]
 path = "src.modules.queue.presentation"
@@ -111,4 +137,15 @@ depends_on = ["src.core", "src.modules.triage.domain"]
 
 [[modules]]
 path = "src.worker"
-depends_on = ["src.core", "src.modules.queue.application", "src.modules.queue.domain", "src.modules.queue.infrastructure", "src.modules.billing.application", "src.modules.billing.domain", "src.modules.billing.infrastructure"]
+depends_on = [
+    "src.core",
+    "src.modules.queue.application",
+    "src.modules.queue.domain",
+    "src.modules.queue.infrastructure",
+    "src.modules.queue.composition",
+    "src.modules.billing.application",
+    "src.modules.billing.domain",
+    "src.modules.billing.infrastructure",
+    "src.modules.identity.application",
+    "src.modules.identity.composition",
+]

@@ -103,6 +103,7 @@ async def test_resolver_ring_timeout_promotes_lock_when_em_atendimento() -> None
 
     mock_atendimento = MagicMock(spec=Atendimento)
     mock_atendimento.id = atend_id
+    mock_atendimento.organizacao_id = org_id
     mock_atendimento.status = StatusAtendimento.EM_ATENDIMENTO.value
 
     mock_session = AsyncMock(spec=AsyncSession)
@@ -170,6 +171,7 @@ async def test_resolver_ring_timeout_terminal_state_releases_locks() -> None:
 
     mock_atendimento = MagicMock(spec=Atendimento)
     mock_atendimento.id = atend_id
+    mock_atendimento.organizacao_id = org_id
     mock_atendimento.status = StatusAtendimento.CANCELADO_PACIENTE.value
 
     mock_session = AsyncMock(spec=AsyncSession)

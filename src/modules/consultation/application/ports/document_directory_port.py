@@ -7,7 +7,10 @@ from uuid import UUID
 
 @dataclass(frozen=True)
 class DadosVerificacaoDirectory:
-    """Immutable directory snapshot for public document verification."""
+    """Immutable directory snapshot for public document verification and PDF.
+
+    Used across verification and PDF compilation without cross-module joins.
+    """
 
     organizacao_nome: str
     medico_nome: str
@@ -15,6 +18,9 @@ class DadosVerificacaoDirectory:
     medico_crm_uf: str
     paciente_nome: str
     paciente_cpf: str
+    organizacao_cnpj: str | None = None
+    paciente_data_nascimento: str | None = None
+    paciente_endereco: str | None = None
 
 
 @runtime_checkable

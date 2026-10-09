@@ -32,14 +32,20 @@ if TYPE_CHECKING:
 class DependenteService:
     """Application service governing patient dependent relationships."""
 
+    def __init__(self, session: "AsyncSession | None" = None) -> None:
+        self._session = session
+
     async def adicionar_dependente(
         self,
-        session: "AsyncSession",
         organizacao_id: int,
         titular_id: UUID,
         dados: CriarDependenteDTO,
+        session: "AsyncSession | None" = None,
     ) -> DependenteOutputDTO:
         """Register a dependent relationship with strict anti-reflexive validation."""
+        db = session or self._session
+        if db is None:
+            raise ValueError("AsyncSession não configurada no DependenteService.")
         if organizacao_id <= 0:
             raise TenantInvalidoError("Identificador da organização deve ser positivo.")
 
@@ -48,7 +54,7 @@ class DependenteService:
             Paciente.id == titular_id,
             Paciente.organizacao_id == organizacao_id,
         )
-        result_titular = await session.execute(stmt_titular)
+        result_titular = await db.execute(stmt_titular)
         titular = result_titular.scalars().first()
         if titular is None:
             raise PacienteNaoEncontradoError(
@@ -67,7 +73,7 @@ class DependenteService:
                 Paciente.id == dep_id,
                 Paciente.organizacao_id == organizacao_id,
             )
-            result_dep = await session.execute(stmt_dep)
+            result_dep = await db.execute(stmt_dep)
             dep_paciente = result_dep.scalars().first()
             if dep_paciente is None:
                 raise PacienteNaoEncontradoError(
@@ -102,7 +108,7 @@ class DependenteService:
                 Paciente.organizacao_id == organizacao_id,
                 or_(*conditions),
             )
-            res_exist = await session.execute(stmt_exist)
+            res_exist = await db.execute(stmt_exist)
             existing_dep = res_exist.scalars().first()
 
             if existing_dep is not None:
@@ -123,8 +129,8 @@ class DependenteService:
                     cns=clean_cns,
                     nome_completo=dados.nome_completo.strip(),
                 )
-                session.add(novo_dep)
-                await session.flush()
+                db.add(novo_dep)
+                await db.flush()
                 dep_id = novo_dep.id
 
             if dep_id == titular_id:
@@ -136,7 +142,7 @@ class DependenteService:
             Dependente.titular_id == titular_id,
             Dependente.dependente_id == dep_id,
         )
-        result_link = await session.execute(stmt_link)
+        result_link = await db.execute(stmt_link)
         if result_link.scalars().first() is not None:
             raise VinculoDependenteExistenteError()
 
@@ -147,9 +153,9 @@ class DependenteService:
             dependente_id=dep_id,
             grau_parentesco=dados.grau_parentesco,
         )
-        session.add(vinculo)
-        await session.commit()
-        await session.refresh(vinculo)
+        db.add(vinculo)
+        await db.commit()
+        await db.refresh(vinculo)
 
         return DependenteOutputDTO(
             id=vinculo.id,
@@ -162,11 +168,14 @@ class DependenteService:
 
     async def listar_dependentes(
         self,
-        session: "AsyncSession",
         organizacao_id: int,
         titular_id: UUID,
+        session: "AsyncSession | None" = None,
     ) -> list[DependenteDetalheDTO]:
         """Fetch all dependents linked to a titular patient."""
+        db = session or self._session
+        if db is None:
+            raise ValueError("AsyncSession não configurada no DependenteService.")
         if organizacao_id <= 0:
             raise TenantInvalidoError("Identificador da organização deve ser positivo.")
 
@@ -179,7 +188,7 @@ class DependenteService:
             )
             .order_by(Dependente.vinculado_em.desc())
         )
-        result = await session.execute(stmt)
+        result = await db.execute(stmt)
         rows = result.all()
 
         return [

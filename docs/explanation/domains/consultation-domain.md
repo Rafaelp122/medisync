@@ -6,7 +6,7 @@
 
 Consulta executa o ato médico dentro de atendimento EM_ATENDIMENTO. Duas peças: evolução SOAP alimenta PEP, documento clínico gera receita/atestado/encaminhamento assinado.
 
-Vocabulário ubíquo: `evolução` (SOAP), `documento clínico`, `item de prescrição`, `finalizado` (trava in-memory), `chave_s3` (canônica), `sha256_hash` (64 hex), `assinado_em`/`registrado_em` (UTC).
+Vocabulário ubíquo: `evolução` (SOAP), `documento clínico`, `item de prescrição`, `finalizado` (trava persistida no PostgreSQL via `finalizado_em`), `chave_s3` (canônica), `sha256_hash` (64 hex), `assinado_em`/`registrado_em` (UTC).
 
 Entrada via RF-07 (consulta, PEP e assinatura). Saída alimenta auditoria RN07 e validação pública de documentos via QR + hash.
 
@@ -14,7 +14,7 @@ Escopo termina no registro. Fila decide ordem, triagem decide prioridade, billin
 
 ## 2. Regras
 
-- **RN06 — Ato médico nunca interrompido por tempo.** `marcar_finalizado`/`validar_pode_excluir` travam registro, nunca derrubam chamada; backend só emite JWT via `src/modules/consultation/infrastructure/livekit_adapter.py`. [Fonte](../product-specification.md) (RN06)
+- **RN06 — Ato médico nunca interrompido por tempo.** `marcar_finalizado`/`validar_pode_excluir` travam registro, nunca derrubam chamada; backend emite JWT através de `TeleconsultaService` desacoplado do SFU. [Fonte](../product-specification.md) (RN06)
 - **RN07 — PEP append-only com UTC e prova criptográfica.** `EvolucaoClinica`/`DocumentoClinico` carimbam `registrado_em`/`assinado_em` em UTC, hash SHA-256 de 64 hex, assinatura PAdES; guarda canônica em `src/modules/consultation/domain/s3_keys.py`. [Fonte](../product-specification.md) (RN07)
 
 Guardiões: `__init__` rejeita `organizacao_id <= 0`, anamnese/conduta vazias, CID-10 fora do padrão, `chave_s3` vazia, hash fora de 64 hex (`ConsultaInvalidaError`).
@@ -25,12 +25,12 @@ Guardiões: `__init__` rejeita `organizacao_id <= 0`, anamnese/conduta vazias, C
 
 ## 3. Máquina de estados
 
-Dois agregados, mesma trava binária: rascunho editável vira finalizado imutável via `marcar_finalizado`. Nenhum caminho reverso existe no código.
+Dois agregados, mesma trava binária: rascunho editável vira finalizado imutável via `marcar_finalizado` (persistindo `finalizado_em TIMESTAMP WITH TIME ZONE`). Nenhum caminho reverso existe no código.
 
 ```mermaid
 stateDiagram-v2
     [*] --> RascunhoEvolucao: __init__ valida
-    RascunhoEvolucao --> FinalizadaEvolucao: marcar_finalizado
+    RascunhoEvolucao --> FinalizadaEvolucao: marcar_finalizado (grava finalizado_em)
     FinalizadaEvolucao --> [*]
     [*] --> RascunhoDocumento: __init__ valida hash + tipo
     RascunhoDocumento --> RascunhoDocumento: adicionar_item
@@ -38,7 +38,7 @@ stateDiagram-v2
     FinalizadoDocumento --> [*]
 ```
 
-`marcar_finalizado` só liga `_is_finalizado = True` em `src/modules/consultation/domain/models/evolucao_clinica.py` e `src/modules/consultation/domain/models/documento_clinico.py`. Serviço chama quando atendimento atinge status terminal.
+`marcar_finalizado` grava `finalizado_em = datetime.now(UTC)` e liga `_is_finalizado = True` em `src/modules/consultation/domain/models/evolucao_clinica.py` e `src/modules/consultation/domain/models/documento_clinico.py`. Serviço chama quando consulta é concluída e delega a transição do atendimento para `QueueStorePort.concluir_atendimento`.
 
 `adicionar_item` só antes de finalizar: serviço bloqueia emissão e mutação quando `is_finalizado` ou atendimento terminal; direto no agregado, itens vinculam `documento_id` após checar tenant e Portaria 344/98.
 
@@ -48,13 +48,13 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 
 ## 4. Relações
 
-- Lê atendimento sem importar queue. `src/modules/consultation/application/ports/atendimento_reader_port.py` devolve `AtendimentoResumoDTO` com `status` e `is_terminal`; consulta nunca toca em models de outro módulo.
+- Lê atendimento sem importar queue. `src/modules/consultation/application/ports/atendimento_reader_port.py` devolve `AtendimentoResumoDTO` com `status` e `is_terminal`; adaptado em `consultation.composition` via `QueueStoreAtendimentoReaderAdapter` sem queries SQL cruas.
 - Emite PDF via porta abstrata. `src/modules/consultation/application/ports/pdf_generator_port.py` recebe `DocumentoPDFPayload` e devolve bytes PDF/A com QR de verificação ITI.
 - Assina via porta abstrata. `src/modules/consultation/application/ports/icp_brasil_signer_port.py` aplica PAdES com `DoctorCertificateCredentials` (PSC OAuth2); infra PyHanko pluga sem tocar serviço.
 - Guarda bytes via porta abstrata. `src/modules/consultation/application/ports/storage_port.py` persiste em `chave_s3` canônica e gera URL pré-assinada de 300s para download.
 - Persiste em três tabelas (`evolucoes_clinicas`, `documentos_clinicos`, `documento_itens` com RLS por `organizacao_id`, `RESTRICT` nas FKs clínicas, `CASCADE` de documento para itens). [Modelo](../architecture/data-model.md)
-- Orquestra mídia sem transportar mídia. `src/modules/consultation/application/ports/livekit_media_port.py` define `generate_room_token` e ciclo de sala; SFU LiveKit carrega áudio/vídeo, Python só sinaliza.
-- Finalização centralizada no PEP. `src/modules/consultation/application/services/pep_service.py` marca evolução + documentos quando atendimento encerra; evolução e documento services repetem a guarda na borda.
+- Orquestra mídia sem transportar mídia. `TeleconsultaService` orquestra geração de JWT e ciclo de sala sobre `LiveKitMediaPort`; SFU LiveKit carrega áudio/vídeo, Python só sinaliza.
+- Finalização centralizada no PEP. `src/modules/consultation/application/services/pep_service.py` marca evolução + documentos de forma atômica e conclui o atendimento via `QueueStorePort`.
 
 ## 5. Peculiaridades
 

@@ -101,3 +101,35 @@ class IngressarFilaComBackpressureCommand:
     cota_diaria_maxima: int | None = 300
     total_admissoes_hoje: int = 0
     data_entrada_fila: datetime | None = None
+
+
+@dataclass(frozen=True)
+class AdmissaoAtendimentoCommand:
+    """Command payload for unified clinical intake and triage admission."""
+
+    organizacao_id: int
+    paciente_id: UUID
+    queixa_principal: str
+    sintomas: list[str]
+    escala_dor: int = 0
+    tcle_texto: str = ""
+    tcle_hash: str | None = None
+    medicos_ativos: int = 1
+    tempo_restante_segundos: float = 14400.0
+    tma_estimado_segundos: int = 600
+    alpha_margem: float = 1.25
+    cota_diaria_maxima: int | None = 300
+
+
+@dataclass(frozen=True)
+class AdmissaoAtendimentoResult:
+    """Immutable result of patient clinical admission and triage."""
+
+    atendimento_id: UUID
+    triagem_id: UUID
+    organizacao_id: int
+    paciente_id: UUID
+    status_atendimento: str
+    prioridade_clinica: int
+    alerta_samu_disparado: bool
+    instrucoes: str | None = None

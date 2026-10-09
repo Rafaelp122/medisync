@@ -9,7 +9,7 @@ import hashlib
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,6 +17,12 @@ from src.core.errors import NotFoundError
 from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
     EmitirDocumentoClinicoCommand,
+)
+from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoReaderPort,
+)
+from src.modules.consultation.application.ports.document_directory_port import (
+    DocumentDirectoryPort,
 )
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
@@ -61,12 +67,16 @@ class DocumentoService:
         signer: ICPBrasilSignerPort,
         storage: StoragePort,
         cache: SignedCachePort,
+        atendimento_reader: AtendimentoReaderPort | None = None,
+        directory: DocumentDirectoryPort | None = None,
     ) -> None:
         self._session = session
         self._pdf_generator = pdf_generator
         self._signer = signer
         self._storage = storage
         self._cache = cache
+        self._atendimento_reader = atendimento_reader
+        self._directory = directory
 
     @property
     def storage(self) -> StoragePort:
@@ -84,14 +94,13 @@ class DocumentoService:
 
     async def _verificar_atendimento_finalizado(self, atendimento_id: UUID) -> bool:
         """Check whether the underlying attendance reached terminal status in DB."""
-        try:
-            status_stmt = text("SELECT status FROM atendimentos WHERE id = :atend_id")
-            res = await self._session.execute(status_stmt, {"atend_id": atendimento_id})
-            val = res.scalar_one_or_none()
-            if val is not None:
-                return str(val).strip().upper() in _STATUS_TERMINAIS
-        except Exception:
-            return False
+        if self._atendimento_reader is not None:
+            try:
+                resumo = await self._atendimento_reader.obter_resumo(atendimento_id)
+                if resumo is not None:
+                    return bool(resumo.is_terminal)
+            except Exception:
+                return False
         return False
 
     async def emitir_documento(
@@ -210,96 +219,42 @@ class DocumentoService:
         org_end: str | None = None
         org_tel: str | None = None
 
-        with contextlib.suppress(Exception):
-            async with self._session.begin_nested():
-                org_res = await self._session.execute(
-                    text(
-                        "SELECT razao_social, nome_fantasia, cnpj "
-                        "FROM organizacoes WHERE id = :org_id"
-                    ),
-                    {"org_id": doc.organizacao_id},
-                )
-                org_row = org_res.mappings().first()
-                if org_row:
-                    org_nome = str(
-                        org_row.get("nome_fantasia")
-                        or org_row.get("razao_social")
-                        or org_nome
-                    )
-                    org_cnpj = str(org_row.get("cnpj")) if org_row.get("cnpj") else None
-
         medico_nome = "Médico Assistente"
         medico_crm = "00000"
         medico_crm_uf = "BR"
         medico_rqe: str | None = None
-
-        with contextlib.suppress(Exception):
-            async with self._session.begin_nested():
-                med_res = await self._session.execute(
-                    text(
-                        "SELECT nome_completo, crm, crm_uf "
-                        "FROM profissionais WHERE id = :med_id"
-                    ),
-                    {"med_id": doc.medico_id},
-                )
-                med_row = med_res.mappings().first()
-                if med_row:
-                    medico_nome = str(med_row.get("nome_completo") or medico_nome)
-                    medico_crm = str(med_row.get("crm") or medico_crm)
-                    medico_crm_uf = str(med_row.get("crm_uf") or medico_crm_uf)
 
         paciente_nome = "Paciente"
         paciente_cpf = "000.000.000-00"
         paciente_nasc: str | None = None
         paciente_end: str | None = None
 
-        with contextlib.suppress(Exception):
-            async with self._session.begin_nested():
-                pac_res = await self._session.execute(
-                    text(
-                        "SELECT p.nome_completo, p.cpf, p.data_nascimento, "
-                        "p.logradouro, p.numero, p.bairro, p.cidade, p.estado "
-                        "FROM atendimentos a "
-                        "JOIN pacientes p ON a.paciente_id = p.id "
-                        "WHERE a.id = :atend_id"
-                    ),
-                    {"atend_id": doc.atendimento_id},
+        if self._directory is not None:
+            with contextlib.suppress(Exception):
+                dir_data = await self._directory.obter_dados_verificacao(
+                    organizacao_id=doc.organizacao_id,
+                    medico_id=doc.medico_id,
+                    atendimento_id=doc.atendimento_id,
                 )
-                pac_row = pac_res.mappings().first()
-                if pac_row:
-                    paciente_nome = str(pac_row.get("nome_completo") or paciente_nome)
-                    paciente_cpf = str(pac_row.get("cpf") or paciente_cpf)
-                    data_n = pac_row.get("data_nascimento")
-                    if data_n is not None:
-                        paciente_nasc = (
-                            data_n.strftime("%d/%m/%Y")  # pyright: ignore[reportAttributeAccessIssue]
-                            if hasattr(data_n, "strftime")
-                            else str(data_n)
-                        )
-                    end_parts = [
-                        str(pac_row.get("logradouro") or "").strip(),
-                        str(pac_row.get("numero") or "").strip(),
-                        str(pac_row.get("bairro") or "").strip(),
-                        str(pac_row.get("cidade") or "").strip(),
-                        str(pac_row.get("estado") or "").strip(),
-                    ]
-                    valid_parts = [p for p in end_parts if p]
-                    if valid_parts:
-                        paciente_end = ", ".join(valid_parts)
+                org_nome = dir_data.organizacao_nome
+                org_cnpj = dir_data.organizacao_cnpj
+                medico_nome = dir_data.medico_nome
+                medico_crm = dir_data.medico_crm
+                medico_crm_uf = dir_data.medico_crm_uf
+                paciente_nome = dir_data.paciente_nome
+                paciente_cpf = dir_data.paciente_cpf
+                paciente_nasc = dir_data.paciente_data_nascimento
+                paciente_end = dir_data.paciente_endereco
 
         cid10: str | None = None
         with contextlib.suppress(Exception):
-            async with self._session.begin_nested():
-                ev_res = await self._session.execute(
-                    text(
-                        "SELECT cid10_principal FROM evolucoes_clinicas "
-                        "WHERE atendimento_id = :atend_id"
-                    ),
-                    {"atend_id": doc.atendimento_id},
-                )
-                cid10_val = ev_res.scalar_one_or_none()
-                if cid10_val:
-                    cid10 = str(cid10_val)
+            ev_stmt = select(EvolucaoClinica.cid10_principal).where(
+                EvolucaoClinica.atendimento_id == doc.atendimento_id
+            )
+            ev_res = await self._session.execute(ev_stmt)
+            cid10_val = ev_res.scalar_one_or_none()
+            if cid10_val:
+                cid10 = str(cid10_val)
 
         itens_pdf = [
             DocumentoItemPDFDTO(

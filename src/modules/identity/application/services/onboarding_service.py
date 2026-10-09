@@ -36,13 +36,19 @@ if TYPE_CHECKING:
 class OnboardingService:
     """Application service coordinating the two-phase onboarding workflow."""
 
+    def __init__(self, session: "AsyncSession | None" = None) -> None:
+        self._session = session
+
     async def realizar_fase_1(
         self,
-        session: "AsyncSession",
         organizacao_id: int,
         dados: Fase1InputDTO,
+        session: "AsyncSession | None" = None,
     ) -> Fase1OutputDTO:
         """Execute Phase 1 rapid intake in under 45 seconds (NEC-01)."""
+        db = session or self._session
+        if db is None:
+            raise ValueError("AsyncSession não configurada no OnboardingService.")
         if organizacao_id <= 0:
             raise TenantInvalidoError("Identificador da organização deve ser positivo.")
 
@@ -77,7 +83,7 @@ class OnboardingService:
             Paciente.organizacao_id == organizacao_id,
             or_(*conditions),
         )
-        result = await session.execute(stmt)
+        result = await db.execute(stmt)
         paciente = result.scalars().first()
 
         is_novo = False
@@ -92,7 +98,7 @@ class OnboardingService:
                 cns=clean_cns,
                 nome_completo=nome,
             )
-            session.add(paciente)
+            db.add(paciente)
             is_novo = True
         else:
             # Update contact info and name if empty or changed
@@ -100,8 +106,8 @@ class OnboardingService:
             if nome:
                 paciente.nome_completo = nome
 
-        await session.commit()
-        await session.refresh(paciente)
+        await db.commit()
+        await db.refresh(paciente)
 
         # 3. Generate provisional intake token
         settings = get_settings()
@@ -122,11 +128,14 @@ class OnboardingService:
 
     async def realizar_fase_2(
         self,
-        session: "AsyncSession",
         organizacao_id: int,
         dados: Fase2InputDTO,
+        session: "AsyncSession | None" = None,
     ) -> Fase2OutputDTO:
         """Execute Phase 2 clinical record enrichment (CFM 1.821/2007)."""
+        db = session or self._session
+        if db is None:
+            raise ValueError("AsyncSession não configurada no OnboardingService.")
         if organizacao_id <= 0:
             raise TenantInvalidoError("Identificador da organização deve ser positivo.")
 
@@ -162,7 +171,7 @@ class OnboardingService:
             Paciente.id == dados.paciente_id,
             Paciente.organizacao_id == organizacao_id,
         )
-        result = await session.execute(stmt)
+        result = await db.execute(stmt)
         paciente = result.scalars().first()
 
         if paciente is None:
@@ -184,8 +193,8 @@ class OnboardingService:
         clean_alergias = [a.strip() for a in dados.alergias if a.strip()]
         paciente.alergias = clean_alergias
 
-        await session.commit()
-        await session.refresh(paciente)
+        await db.commit()
+        await db.refresh(paciente)
 
         return Fase2OutputDTO(
             paciente_id=paciente.id,

@@ -2,11 +2,12 @@
 
 Single place in consultation module allowed to import infrastructure adapters.
 Routers and tests must resolve PEPService via get_pep_service/PEPServiceDep
-and LiveKit adapter via get_livekit_adapter/LiveKitAdapterDep.
+and LiveKit service via get_teleconsulta_service/TeleconsultaServiceDep.
 """
 
 from functools import lru_cache
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends
 
@@ -14,8 +15,10 @@ from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
+    AtendimentoResumoDTO,
 )
 from src.modules.consultation.application.ports.document_directory_port import (
+    DadosVerificacaoDirectory,
     DocumentDirectoryPort,
 )
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
@@ -44,6 +47,10 @@ from src.modules.consultation.application.services.evolucao_service import (
     EvolucaoService,
 )
 from src.modules.consultation.application.services.pep_service import PEPService
+from src.modules.consultation.application.services.teleconsulta_service import (
+    TeleconsultaService,
+)
+from src.modules.consultation.domain.exceptions import DocumentoIntegridadeError
 from src.modules.consultation.infrastructure.atendimento_reader_sql import (
     SqlAtendimentoReader,
 )
@@ -65,6 +72,90 @@ from src.modules.consultation.infrastructure.s3_storage import (
 from src.modules.consultation.infrastructure.valkey_validation_rate_limiter import (
     ValkeyValidationRateLimiter,
 )
+from src.modules.identity.application.ports.identity_reader_port import (
+    IdentityReaderPort,
+)
+from src.modules.identity.composition import get_identity_reader
+from src.modules.queue.application.ports.queue_store_port import QueueStorePort
+from src.modules.queue.composition import build_fila_service_for_session
+
+
+class QueueStoreAtendimentoReaderAdapter:
+    """Adapts QueueStorePort to consultation's AtendimentoReaderPort without raw SQL."""
+
+    def __init__(self, queue_store: QueueStorePort) -> None:
+        self._queue_store = queue_store
+
+    async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
+        snapshot = await self._queue_store.buscar_atendimento(atendimento_id)
+        if snapshot is None:
+            return None
+        return AtendimentoResumoDTO(
+            atendimento_id=snapshot.id,
+            organizacao_id=snapshot.organizacao_id,
+            medico_id=snapshot.medico_id,
+            status=snapshot.status,
+            tcle_hash=snapshot.tcle_hash,
+            is_terminal=snapshot.is_terminal,
+            paciente_id=snapshot.paciente_id,
+        )
+
+    async def concluir_atendimento(self, atendimento_id: UUID) -> None:
+        await self._queue_store.concluir_atendimento(atendimento_id)
+
+
+class IdentityDocumentDirectoryAdapter:
+    """Adapts IdentityReaderPort and QueueStorePort to DocumentDirectoryPort.
+
+    Uses chainable ORM queries without raw SQL.
+    """
+
+    def __init__(
+        self,
+        identity_reader: IdentityReaderPort,
+        queue_store: QueueStorePort,
+    ) -> None:
+        self._identity_reader = identity_reader
+        self._queue_store = queue_store
+
+    async def obter_dados_verificacao(
+        self,
+        organizacao_id: int,
+        medico_id: UUID,
+        atendimento_id: UUID,
+    ) -> DadosVerificacaoDirectory:
+        snapshot = await self._queue_store.buscar_atendimento(atendimento_id)
+        if snapshot is None:
+            raise DocumentoIntegridadeError("Atendimento ausente para o documento.")
+
+        try:
+            dto = await self._identity_reader.obter_dados_diretorio(
+                organizacao_id=organizacao_id,
+                medico_id=medico_id,
+                paciente_id=snapshot.paciente_id,
+            )
+        except Exception as exc:
+            raise DocumentoIntegridadeError(
+                "Dados de diretório ausentes ou incompletos."
+            ) from exc
+
+        nasc_str = (
+            dto.paciente_data_nascimento.strftime("%d/%m/%Y")
+            if dto.paciente_data_nascimento
+            else None
+        )
+
+        return DadosVerificacaoDirectory(
+            organizacao_nome=dto.organizacao_nome,
+            medico_nome=dto.medico_nome,
+            medico_crm=dto.medico_crm or "00000",
+            medico_crm_uf=dto.medico_crm_uf or "BR",
+            paciente_nome=dto.paciente_nome,
+            paciente_cpf=dto.paciente_cpf or "000.000.000-00",
+            organizacao_cnpj=dto.organizacao_cnpj,
+            paciente_data_nascimento=nasc_str,
+            paciente_endereco=dto.paciente_endereco,
+        )
 
 
 @lru_cache(maxsize=1)
@@ -101,12 +192,23 @@ def get_signed_cache() -> SignedCachePort:
     return MemorySignedCache()
 
 
-# Multi-worker production wiring (requires a shared Valkey client):
-# def get_signed_cache_valkey(valkey: Redis) -> SignedCachePort:
-#     from src.modules.consultation.infrastructure.valkey_signed_cache import (
-#         ValkeySignedCache,
-#     )
-#     return ValkeySignedCache(valkey)
+def get_atendimento_reader(session: DbSessionDep) -> AtendimentoReaderPort:
+    """Provide attendance reader adapting QueueStorePort with ORM models."""
+    try:
+        queue_store: QueueStorePort = build_fila_service_for_session(session=session)
+        return QueueStoreAtendimentoReaderAdapter(queue_store)
+    except Exception:
+        return SqlAtendimentoReader(session)
+
+
+def get_document_directory(session: DbSessionDep) -> DocumentDirectoryPort:
+    """Provide directory adapter using identity and queue ORM ports."""
+    try:
+        identity_reader: IdentityReaderPort = get_identity_reader(session)
+        queue_store: QueueStorePort = build_fila_service_for_session(session=session)
+        return IdentityDocumentDirectoryAdapter(identity_reader, queue_store)
+    except Exception:
+        return SqlDocumentDirectory(session)
 
 
 def get_documento_service(session: DbSessionDep) -> DocumentoService:
@@ -117,12 +219,9 @@ def get_documento_service(session: DbSessionDep) -> DocumentoService:
         signer=get_signer(),
         storage=get_storage(),
         cache=get_signed_cache(),
+        atendimento_reader=get_atendimento_reader(session),
+        directory=get_document_directory(session),
     )
-
-
-def get_atendimento_reader(session: DbSessionDep) -> AtendimentoReaderPort:
-    """Provide SQL reader concentrating all queue-owned atendimentos reads."""
-    return SqlAtendimentoReader(session)
 
 
 def get_evolucao_service(
@@ -156,11 +255,6 @@ def get_pep_service(session: DbSessionDep) -> PEPService:
 
 
 PEPServiceDep = Annotated[PEPService, Depends(get_pep_service)]
-
-
-def get_document_directory(session: DbSessionDep) -> DocumentDirectoryPort:
-    """Provide SQL directory adapter isolated in infra (no identity imports)."""
-    return SqlDocumentDirectory(session)
 
 
 def get_validation_rate_limiter() -> ValidationRateLimiterPort:
@@ -204,3 +298,19 @@ def get_livekit_adapter() -> LiveKitMediaPort:
 
 
 LiveKitAdapterDep = Annotated[LiveKitMediaPort, Depends(get_livekit_adapter)]
+
+
+def get_teleconsulta_service(
+    adapter: Annotated[LiveKitMediaPort, Depends(get_livekit_adapter)],
+) -> TeleconsultaService:
+    """Build TeleconsultaService with media port adapter."""
+    server_url = getattr(adapter, "server_url", "http://localhost:7880")
+    return TeleconsultaService(
+        media_port=adapter,
+        server_url=server_url,
+    )
+
+
+TeleconsultaServiceDep = Annotated[
+    TeleconsultaService, Depends(get_teleconsulta_service)
+]

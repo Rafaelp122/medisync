@@ -97,3 +97,24 @@ Adotamos a **Opção 3: Hexagonal Pragmático com Modelos Ricos no SQLAlchemy 2.
   * Sem `HTTPException` — só `presentation/dependencies.py` pode levantar HTTP (ex.: `exigir_rate_limit` → 429).
   * Sem instanciação `*Service(` — services chegam via `*Dep` da composition (`AuthServiceDep`, `PEPServiceDep`, …).
 * **Prefixo de rotas**: HTTP sob `/api/v1` (`src/main.py` monta `APIRouter(prefix="/api/v1")`); WebSockets (`/ws/...`) fora do prefixo.
+
+---
+
+## 8. Adendo — Aprofundamento de Fila, Triagem Persistida e Erradicação de Bypasses Raw SQL (2026-10-08)
+
+* **Deep QueueStore (`QueueStorePort`)**:
+  * Encapsula a persistência e transições de estado do PostgreSQL (`Atendimento`) com a manipulação atômica de chaves e locks no Valkey (`fila:{org}:aptos`, `lock:...`) sob uma única interface profunda em `FilaService`.
+  * Workers assíncronos (`eligibility`, `ring_timeout`, `sweeper`) tornam-se adaptadores de despacho finos sem conhecimento de chaves brutas de Redis nem queries manuais.
+* **Acolhimento Clínico Unificado & Triagem Persistida (`AdmissaoAtendimentoService`)**:
+  * O módulo de triagem foi aprofundado e unificado na admissão clínica (`POST /api/v1/fila/admissao`).
+  * Orquestra a classificação clínica estruturada (Manchester / ACR), salvaguarda SAMU Nível 1 com encaminhamento emergencial, backpressure estocástico e persistência atômica do `Atendimento` e da `Triagem` na tabela `triagens`.
+* **Identity Directory Reader (`IdentityReaderPort`)**:
+  * Consultas de diretório para emissão e verificação pública de documentos clínicos utilizam métodos encadeáveis do ORM (`IdentityReaderSql`).
+  * Adaptadas em `consultation.composition` via `IdentityDocumentDirectoryAdapter`, eliminando qualquer query SQL em texto cru (`text(...)`) que contornava as fronteiras do Tach.
+* **Imutabilidade Deontológica PEP e Finalização Atômica**:
+  * Criada a coluna persistente `finalizado_em` na entidade `EvolucaoClinica` (migração 0004), assegurando imutabilidade jurídica após a finalização da consulta sem updates manuais em `atendimentos`.
+  * Transição de encerramento de chamada no atendimento delegada para `QueueStorePort.concluir_atendimento`.
+* **Router de Teleconsulta Fino (`TeleconsultaService`)**:
+  * Emissão de tokens JWT com Video Grants do LiveKit SFU encapsulada em `TeleconsultaService`, eliminando injeção direta de adaptadores de infraestrutura no router de apresentação.
+* **Revogação Distribuída de Tokens JWT (`TokenRevocationPort`)**:
+  * Substituição do cache em memória por `ValkeyTokenRevocation`, garantindo invalidação atômica e distribuída de refresh tokens entre múltiplos workers e instâncias.

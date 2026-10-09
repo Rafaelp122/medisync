@@ -62,6 +62,10 @@ class EvolucaoClinica(Base):
         default=lambda: datetime.now(UTC),
         nullable=False,
     )
+    finalizado_em: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     def __init__(
         self,
@@ -74,6 +78,7 @@ class EvolucaoClinica(Base):
         exame_fisico_virtual: str | None = None,
         cid10_principal: str | None = None,
         registrado_em: datetime | None = None,
+        finalizado_em: datetime | None = None,
         id: UUID | None = None,
     ) -> None:
         if organizacao_id <= 0:
@@ -118,16 +123,18 @@ class EvolucaoClinica(Base):
             cid10_principal=clean_cid10,
             conduta=conduta.strip(),
             registrado_em=registrado_em or datetime.now(UTC),
+            finalizado_em=finalizado_em,
         )
-        self._is_finalizado: bool = False
+        self._is_finalizado: bool = finalizado_em is not None
 
     @property
     def is_finalizado(self) -> bool:
         """Indicate whether the clinical consultation was marked as finalized."""
-        return getattr(self, "_is_finalizado", False)
+        return self.finalizado_em is not None or getattr(self, "_is_finalizado", False)
 
     def marcar_finalizado(self) -> None:
         """Lock the clinical record preventing further edits or deletion."""
+        self.finalizado_em = datetime.now(UTC)
         self._is_finalizado = True
 
     def validar_pode_excluir(self, status_atendimento: str | None = None) -> None:

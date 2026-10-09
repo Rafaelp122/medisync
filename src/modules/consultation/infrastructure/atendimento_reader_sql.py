@@ -21,7 +21,7 @@ class SqlAtendimentoReader:
     async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
         res = await self._session.execute(
             text(
-                "SELECT id, organizacao_id, medico_id, status, tcle_hash "
+                "SELECT id, organizacao_id, paciente_id, medico_id, status, tcle_hash "
                 "FROM atendimentos WHERE id = :id"
             ),
             {"id": atendimento_id},
@@ -31,6 +31,7 @@ class SqlAtendimentoReader:
             return None
         status = str(row["status"]).strip().upper()
         raw_med = row["medico_id"]
+        raw_pac = row.get("paciente_id")
         return AtendimentoResumoDTO(
             atendimento_id=row["id"],
             organizacao_id=int(row["organizacao_id"]),
@@ -40,4 +41,17 @@ class SqlAtendimentoReader:
             status=status,
             tcle_hash=row["tcle_hash"],
             is_terminal=status in _TERMINAIS,
+            paciente_id=raw_pac
+            if isinstance(raw_pac, UUID) or raw_pac is None
+            else UUID(str(raw_pac)),
+        )
+
+    async def concluir_atendimento(self, atendimento_id: UUID) -> None:
+        await self._session.execute(
+            text(
+                "UPDATE atendimentos SET status = 'CONCLUIDO', "
+                "chamada_finalizada_em = NOW(), atualizado_em = NOW() "
+                "WHERE id = :id"
+            ),
+            {"id": atendimento_id},
         )

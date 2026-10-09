@@ -4,7 +4,7 @@ import contextlib
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -143,23 +143,8 @@ class PEPService:
         for doc in documentos:
             doc.marcar_finalizado()
 
-        # NOTE (Task 7 follow-up): atendimentos.status is queue-owned (ADR-001)
-        # and this UPDATE should move behind a queue status-transition port.
-        # Kept because EvolucaoClinica.is_finalizado is in-memory only (no DB
-        # column): CONCLUIDO is today the sole persistent finalization marker
-        # enforcing cross-session immutability. Removing it breaks
-        # test_finalizar_consulta_service_commit_visivel_outra_sessao and the
-        # post-finalize 409 guards. Do not delete without a persistent marker.
         with contextlib.suppress(Exception):
-            update_stmt = text(
-                "UPDATE atendimentos SET status = 'CONCLUIDO', "
-                "chamada_finalizada_em = :now, atualizado_em = :now "
-                "WHERE id = :atend_id"
-            )
-            await self._session.execute(
-                update_stmt,
-                {"atend_id": command.atendimento_id, "now": datetime.now(UTC)},
-            )
+            await self._reader.concluir_atendimento(command.atendimento_id)
 
         await self._session.flush()
         await self._session.commit()

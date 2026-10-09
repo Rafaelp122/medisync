@@ -2,11 +2,10 @@
 
 from fastapi import APIRouter, status
 
-from src.modules.consultation.application.ports.livekit_media_port import (
-    build_participant_identity,
-    build_room_name,
+from src.modules.consultation.application.services.teleconsulta_service import (
+    EmitirLiveKitTokenCommand,
 )
-from src.modules.consultation.composition import LiveKitAdapterDep
+from src.modules.consultation.composition import TeleconsultaServiceDep
 from src.modules.consultation.presentation.dependencies import AtendimentoIdPath
 from src.modules.consultation.presentation.schemas import (
     LiveKitTokenRequest,
@@ -25,32 +24,23 @@ livekit_router = APIRouter(prefix="/consultations", tags=["teleconsulta-webrtc"]
 async def generate_teleconsulta_room_token(
     atendimento_id: AtendimentoIdPath,
     request: LiveKitTokenRequest,
-    livekit_adapter: LiveKitAdapterDep,
+    service: TeleconsultaServiceDep,
 ) -> LiveKitTokenResponse:
     """Gera token efêmero com Video Grants para médico ou paciente entrar na sala."""
-    room_name = build_room_name(
+    cmd = EmitirLiveKitTokenCommand(
         organizacao_id=request.organizacao_id,
         atendimento_id=atendimento_id,
-    )
-    participant_identity = build_participant_identity(
-        role=request.role,
         participant_id=request.participant_id,
-    )
-
-    token = livekit_adapter.generate_room_token(
-        room_name=room_name,
-        participant_identity=participant_identity,
+        role=request.role,
         is_publisher=request.is_publisher,
         participant_name=request.participant_name,
         ttl_seconds=request.ttl_seconds,
     )
-
-    server_url = getattr(livekit_adapter, "server_url", "http://localhost:7880")
-
+    result = service.emitir_token_sala(cmd)
     return LiveKitTokenResponse(
-        token=token,
-        room_name=room_name,
-        participant_identity=participant_identity,
-        server_url=server_url,
-        expires_in=request.ttl_seconds,
+        token=result.token,
+        room_name=result.room_name,
+        participant_identity=result.participant_identity,
+        server_url=result.server_url,
+        expires_in=result.expires_in,
     )
