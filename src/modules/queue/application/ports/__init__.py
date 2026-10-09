@@ -22,10 +22,17 @@ from src.modules.queue.application.ports.queue_overflow_notifier import (
     QueueOverflowEvent,
     QueueOverflowNotifierPort,
 )
+from src.modules.queue.application.ports.queue_store_port import (
+    AdmissaoAptoResult,
+    AtendimentoSnapshotDTO,
+    QueueStorePort,
+)
 
 __all__ = [
+    "AdmissaoAptoResult",
     "AllocationPort",
     "AlocacaoCodigo",
+    "AtendimentoSnapshotDTO",
     "ConsoleNotificationAdapter",
     "FakeNotificationAdapter",
     "LoggingNotificationAdapter",
@@ -38,6 +45,7 @@ __all__ = [
     "PacienteAusenteNotifierPort",
     "QueueOverflowEvent",
     "QueueOverflowNotifierPort",
+    "QueueStorePort",
     "RateLimitResult",
     "RateLimitedNotificationAdapter",
 ]

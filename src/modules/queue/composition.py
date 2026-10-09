@@ -13,9 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.core.notifications import LoggingNotificationAdapter
-from src.core.valkey import get_valkey_client
+from src.core.valkey import get_valkey_client, get_valkey_pool
 from src.modules.queue.application.ports.allocation_port import AllocationPort
 from src.modules.queue.application.ports.notification_port import NotificationPort
+from src.modules.queue.application.ports.queue_store_port import QueueStorePort
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
@@ -68,14 +69,32 @@ def get_controle_admissao(valkey: ValkeyDep) -> ControleAdmissaoService:
     return ControleAdmissaoService(valkey=valkey)
 
 
-def get_fila_service(valkey: ValkeyDep, session: DbSessionDep) -> FilaService:
-    """Build queue service with allocation and admission control wired."""
+def build_fila_service_for_session(
+    session: AsyncSession,
+    valkey: Redis | None = None,
+) -> FilaService:
+    """Build queue service outside request scope (tests/worker tooling)."""
+    client = valkey if valkey is not None else Redis(connection_pool=get_valkey_pool())
     return FilaService(
-        valkey=valkey,
+        valkey=client,
         db_session=session,
-        alocacao_service=get_alocacao_service(valkey, session),
-        controle_admissao=get_controle_admissao(valkey),
+        alocacao_service=build_alocacao_service_for_session(client, session),
+        controle_admissao=ControleAdmissaoService(valkey=client),
     )
 
 
+def get_fila_service(valkey: ValkeyDep, session: DbSessionDep) -> FilaService:
+    """Build queue service with allocation and admission control wired."""
+    return build_fila_service_for_session(session=session, valkey=valkey)
+
+
 FilaServiceDep = Annotated[FilaService, Depends(get_fila_service)]
+
+
+def get_queue_store(valkey: ValkeyDep, session: DbSessionDep) -> QueueStorePort:
+    """Provide queue store satisfying QueueStorePort."""
+    return get_fila_service(valkey=valkey, session=session)
+
+
+QueueStoreDep = Annotated[QueueStorePort, Depends(get_queue_store)]
+

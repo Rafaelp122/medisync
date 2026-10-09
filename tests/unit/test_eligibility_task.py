@@ -174,6 +174,7 @@ async def test_validar_elegibilidade_already_promoted() -> None:
 
     mock_atend = MagicMock(spec=Atendimento)
     mock_atend.id = atend_id
+    mock_atend.organizacao_id = org_id
     mock_atend.status = StatusAtendimento.APTO_PARA_CHAMADA.value
 
     mock_session = AsyncMock(spec=AsyncSession)

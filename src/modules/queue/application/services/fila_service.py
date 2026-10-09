@@ -1,11 +1,14 @@
 """Queue ingestion, 64-bit priority scoring, and acquisition service (RN01)."""
 
 import logging
+from datetime import datetime
 from uuid import UUID
 
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.errors import NotFoundError
 from src.modules.queue.application.dtos import (
     AdquirirProximoPacienteCommand,
     AlocacaoChamadaResult,
@@ -14,6 +17,15 @@ from src.modules.queue.application.dtos import (
     IngressarFilaComBackpressureCommand,
     IngressarFilaCommand,
     IngressarFilaResult,
+)
+from src.modules.queue.application.ports.paciente_ausente_notifier import (
+    LoggingPacienteAusenteNotifier,
+    PacienteAusenteEvent,
+    PacienteAusenteNotifierPort,
+)
+from src.modules.queue.application.ports.queue_store_port import (
+    AdmissaoAptoResult,
+    AtendimentoSnapshotDTO,
 )
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
@@ -25,6 +37,11 @@ from src.modules.queue.domain.exceptions import (
     AdmissaoFilaSuspensaError,
     AtendimentoNaoDisponivelError,
     MedicoOcupadoError,
+)
+from src.modules.queue.domain.models import Atendimento
+from src.modules.queue.domain.models.atendimento import (
+    TERMINAL_STATUSES,
+    StatusAtendimento,
 )
 from src.modules.queue.domain.scoring import calcular_score
 
@@ -48,6 +65,11 @@ class FilaService:
         self._controle_admissao = controle_admissao or ControleAdmissaoService(
             valkey=valkey
         )
+
+    @property
+    def controle_admissao(self) -> ControleAdmissaoService:
+        """Provide admission control service."""
+        return self._controle_admissao
 
     async def ingressar_fila(
         self,
@@ -219,3 +241,220 @@ class FilaService:
             else:
                 result.append(str(elem))
         return result
+
+    async def admitir_atendimento_apto(
+        self,
+        organizacao_id: int,
+        atendimento_id: UUID,
+    ) -> AdmissaoAptoResult:
+        """Promote attendance to APTO_PARA_CHAMADA in DB and ingest into queue."""
+        atendimento = await self._db_session.get(Atendimento, atendimento_id)
+        if atendimento is None or atendimento.organizacao_id != organizacao_id:
+            raise NotFoundError(
+                f"Atendimento '{atendimento_id}' não encontrado na "
+                f"organização {organizacao_id}."
+            )
+
+        if (
+            atendimento.status
+            == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
+        ):
+            atendimento.promover_para_apto()
+            await self._db_session.commit()
+            await self._db_session.refresh(atendimento)
+
+            ts_base = atendimento.data_entrada_fila or atendimento.criado_em
+            score = calcular_score(atendimento.prioridade_clinica, ts_base)
+            k_fila = f"fila:{organizacao_id}:aptos"
+            await self._valkey.zadd(k_fila, {str(atendimento_id): score})  # pyright: ignore[reportUnknownMemberType]
+            logger.info(
+                "Attendance %s promoted to APTO and ingested into %s with score=%d",
+                atendimento_id,
+                k_fila,
+                score,
+            )
+            return AdmissaoAptoResult(promovido=True, status="aprovado", score=score)
+
+        ts_base = atendimento.data_entrada_fila or atendimento.criado_em
+        score = calcular_score(atendimento.prioridade_clinica, ts_base)
+        return AdmissaoAptoResult(
+            promovido=False, status=str(atendimento.status), score=score
+        )
+
+    async def resolver_ring_timeout(
+        self,
+        organizacao_id: int,
+        atendimento_id: UUID,
+        medico_id: UUID,
+        notifier: PacienteAusenteNotifierPort | None = None,
+    ) -> str:
+        """Deterministic 45s ring timeout resolution (RN02)."""
+        atend_id_str = str(atendimento_id)
+        med_id_str = str(medico_id)
+        k_medico_ring = f"lock:{organizacao_id}:medico:{med_id_str}"
+        k_atend_ring = f"lock:{organizacao_id}:atendimento:{atend_id_str}"
+        k_medico_consulta = f"lock:{organizacao_id}:consulta_ativa:medico:{med_id_str}"
+
+        atendimento = await self._db_session.get(Atendimento, atendimento_id)
+        if atendimento is None or atendimento.organizacao_id != organizacao_id:
+            logger.warning(
+                "Ring timeout task: attendance %s not found in org=%d",
+                atendimento_id,
+                organizacao_id,
+            )
+            return "not_found"
+
+        current_status = atendimento.status
+
+        if current_status == StatusAtendimento.CHAMANDO_PACIENTE.value:
+            atendimento.registrar_ausencia_paciente()
+            await self._db_session.commit()
+
+            async with self._valkey.pipeline(transaction=True) as pipe:
+                pipe.delete(k_medico_ring)
+                pipe.delete(k_atend_ring)
+                await pipe.execute()
+
+            dispatch_notifier = notifier or LoggingPacienteAusenteNotifier()
+            event = PacienteAusenteEvent(
+                atendimento_id=atendimento.id,
+                organizacao_id=organizacao_id,
+                medico_id=medico_id,
+                paciente_id=atendimento.paciente_id,
+                tempo_toque_segundos=45,
+            )
+            await dispatch_notifier.emitir_paciente_ausente(event)
+            logger.info(
+                "Patient absent (no-show) recorded for attendance %s (medico=%s)",
+                atendimento_id,
+                medico_id,
+            )
+            return "no_show_recorded"
+
+        if current_status == StatusAtendimento.EM_ATENDIMENTO.value:
+            async with self._valkey.pipeline(transaction=True) as pipe:
+                pipe.delete(k_atend_ring)
+                pipe.delete(k_medico_ring)
+                pipe.set(k_medico_consulta, atend_id_str, ex=7200)
+                await pipe.execute()
+            logger.info(
+                "Call answered for attendance %s; promoted active lock",
+                atendimento_id,
+            )
+            return "active_consultation_preserved"
+
+        # Any terminal state or cancelled -> clean up locks
+        async with self._valkey.pipeline(transaction=True) as pipe:
+            pipe.delete(k_medico_ring)
+            pipe.delete(k_atend_ring)
+            await pipe.execute()
+        return "already_finalized"
+
+    async def concluir_atendimento(
+        self,
+        atendimento_id: UUID,
+    ) -> None:
+        """Transition attendance in EM_ATENDIMENTO to CONCLUIDO and persist."""
+        atendimento = await self._db_session.get(Atendimento, atendimento_id)
+        if atendimento is None:
+            raise NotFoundError(f"Atendimento '{atendimento_id}' não encontrado.")
+
+        if atendimento.status != StatusAtendimento.CONCLUIDO.value:
+            atendimento.concluir_atendimento()
+            await self._db_session.commit()
+
+    async def reconciliar_fila_orfaos(
+        self,
+        organizacao_id: int,
+        cutoff_em: datetime,
+    ) -> tuple[int, list[str]]:
+        """Find orphan APTO attendances missing in Valkey and reinject them into ZSET.
+
+        Returns (scanned_count, reconciled_ids).
+        """
+        k_fila = f"fila:{organizacao_id}:aptos"
+        stmt = (
+            select(Atendimento)
+            .where(
+                Atendimento.organizacao_id == organizacao_id,
+                Atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA.value,
+                Atendimento.atualizado_em <= cutoff_em,
+            )
+            .order_by(Atendimento.criado_em.asc())
+        )
+        res = await self._db_session.execute(stmt)
+        candidates = res.scalars().all()
+
+        total_scanned = len(candidates)
+        reconciled_ids: list[str] = []
+        for atend in candidates:
+            atend_id_str = str(atend.id)
+
+            # 1. Check if already present in Valkey ZSET
+            existing_score = await self._valkey.zscore(  # pyright: ignore[reportUnknownMemberType]
+                k_fila, atend_id_str
+            )
+            if existing_score is not None:
+                continue
+
+            # 2. Check if active ring lock exists
+            k_atend_ring = f"lock:{organizacao_id}:atendimento:{atend_id_str}"
+            has_ring_lock = bool(
+                await self._valkey.exists(k_atend_ring)  # pyright: ignore[reportUnknownMemberType]
+            )
+            if has_ring_lock:
+                continue
+
+            # 3. Check if active consultation lock exists for assigned doctor
+            if atend.medico_id is not None:
+                med_id_str = str(atend.medico_id)
+                k_medico_ring = f"lock:{organizacao_id}:medico:{med_id_str}"
+                k_medico_active = (
+                    f"lock:{organizacao_id}:consulta_ativa:medico:{med_id_str}"
+                )
+                med_ring_val = await self._valkey.get(k_medico_ring)  # pyright: ignore[reportUnknownMemberType]
+                med_active_val = await self._valkey.get(k_medico_active)  # pyright: ignore[reportUnknownMemberType]
+                if (
+                    med_ring_val == atend_id_str.encode()
+                    or med_ring_val == atend_id_str
+                    or med_active_val == atend_id_str.encode()
+                    or med_active_val == atend_id_str
+                ):
+                    continue
+
+            # 4. Truly orphaned -> recalculate score and reinject into ZSET
+            ts_base = atend.data_entrada_fila or atend.criado_em
+            score = calcular_score(atend.prioridade_clinica, ts_base)
+            await self._valkey.zadd(k_fila, {atend_id_str: score})  # pyright: ignore[reportUnknownMemberType]
+            reconciled_ids.append(atend_id_str)
+            logger.warning(
+                "Sweeper restored orphan attendance %s to %s with score=%d",
+                atend_id_str,
+                k_fila,
+                score,
+            )
+
+        return total_scanned, reconciled_ids
+
+    async def buscar_atendimento(
+        self,
+        atendimento_id: UUID,
+    ) -> AtendimentoSnapshotDTO | None:
+        """Fetch attendance snapshot by ID using chainable ORM select."""
+        stmt = select(Atendimento).where(Atendimento.id == atendimento_id)
+        res = await self._db_session.execute(stmt)
+        atend = res.scalar_one_or_none()
+        if atend is None:
+            return None
+        return AtendimentoSnapshotDTO(
+            id=atend.id,
+            organizacao_id=atend.organizacao_id,
+            paciente_id=atend.paciente_id,
+            medico_id=atend.medico_id,
+            status=atend.status,
+            prioridade_clinica=int(atend.prioridade_clinica),
+            tcle_hash=atend.tcle_hash,
+            data_entrada_fila=atend.data_entrada_fila,
+            criado_em=atend.criado_em,
+            is_terminal=atend.status in TERMINAL_STATUSES,
+        )

@@ -214,6 +214,7 @@ async def test_reconciliar_fila_orphans_multi_tenant_discovery() -> None:
     # First call: SELECT id FROM organizacoes WHERE ativo = true
     org_result = MagicMock()
     org_result.fetchall.return_value = [(10,), (20,)]
+    org_result.scalars.return_value.all.return_value = [10, 20]
 
     # Subsequent calls: candidates per org
     empty_result = MagicMock()
