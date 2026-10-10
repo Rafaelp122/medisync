@@ -46,7 +46,7 @@ async def seed_clinical_scenario(
     medico_crm_uf: str | None = "SP",
     status_atendimento: str | StatusAtendimento = StatusAtendimento.EM_ATENDIMENTO,
     prioridade_clinica: int | PrioridadeClinica = PrioridadeClinica.NAO_URGENTE,
-    tcle_hash: str | None = None,
+    tcle_hash: str | None = "a" * 64,
 ) -> ClinicalScenario:
     """Seed a coherent clinical graph (Org -> Paciente -> Medico -> Atend)."""
     org = make_organizacao(

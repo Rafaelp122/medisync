@@ -27,12 +27,34 @@ DocumentoIdPath = Annotated[
 ]
 
 
-async def require_clinical_access(
+async def require_clinical_read_access(
     atendimento_id: AtendimentoIdPath,
     current_user: MedicoUserDep,
     session: DbSessionDep,
 ) -> AuthenticatedUser:
-    """Enforce Tier 3 Clinical ABAC/ReBAC context for the requested attendance.
+    """Enforce Tier 3 Clinical ABAC/ReBAC context for reading records.
+
+    Validates:
+    1. Caller holds Role.MEDICO (Tier 1 RBAC).
+    2. Patient has valid signed digital TCLE.
+    3. Caller is the physician assigned to this attendance.
+    4. Attendance status allows reading (active or CONCLUIDO).
+    """
+    await ClinicalAccessPolicy.validar_acesso_clinico(
+        atendimento_id=atendimento_id,
+        medico_id=current_user.usuario_id,
+        reader=get_atendimento_reader(session),
+        is_mutation=False,
+    )
+    return current_user
+
+
+async def require_clinical_mutation_access(
+    atendimento_id: AtendimentoIdPath,
+    current_user: MedicoUserDep,
+    session: DbSessionDep,
+) -> AuthenticatedUser:
+    """Enforce Tier 3 Clinical ABAC/ReBAC context for mutating records.
 
     Validates:
     1. Caller holds Role.MEDICO (Tier 1 RBAC).
@@ -44,11 +66,20 @@ async def require_clinical_access(
         atendimento_id=atendimento_id,
         medico_id=current_user.usuario_id,
         reader=get_atendimento_reader(session),
+        is_mutation=True,
     )
     return current_user
 
 
-ClinicalAccessDep = Annotated[AuthenticatedUser, Depends(require_clinical_access)]
+require_clinical_access = require_clinical_read_access
+
+ClinicalAccessReadDep = Annotated[
+    AuthenticatedUser, Depends(require_clinical_read_access)
+]
+ClinicalAccessMutationDep = Annotated[
+    AuthenticatedUser, Depends(require_clinical_mutation_access)
+]
+ClinicalAccessDep = ClinicalAccessReadDep
 
 
 async def exigir_rate_limit(

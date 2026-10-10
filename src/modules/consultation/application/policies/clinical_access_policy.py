@@ -13,7 +13,8 @@ from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
 )
 
-_ACTIVE_STATUSES = frozenset({"EM_ATENDIMENTO", "CHAMANDO_PACIENTE"})
+_READ_ALLOWED_STATUSES = frozenset({"EM_ATENDIMENTO", "CHAMANDO_PACIENTE", "CONCLUIDO"})
+_MUTATION_ALLOWED_STATUSES = frozenset({"EM_ATENDIMENTO", "CHAMANDO_PACIENTE"})
 
 
 class ClinicalAccessPolicy:
@@ -24,12 +25,14 @@ class ClinicalAccessPolicy:
         atendimento_id: UUID,
         medico_id: UUID,
         reader: AtendimentoReaderPort,
+        *,
+        is_mutation: bool = False,
     ) -> None:
         """Evaluate Tier 3 ABAC/ReBAC conditions for a physician accessing records.
 
         Raises:
             NotFoundError: If attendance does not exist.
-            ForbiddenError: If TCLE is missing, status is not active,
+            ForbiddenError: If TCLE is missing, status is not allowed for the operation,
                 or physician does not match.
         """
         resumo = await reader.obter_resumo(atendimento_id)
@@ -53,10 +56,19 @@ class ClinicalAccessPolicy:
                 "responsável por este atendimento clínico (CFM nº 2.314/2022)."
             )
 
-        # 3. Active Encounter Lifecycle (EM_ATENDIMENTO or CHAMANDO_PACIENTE)
+        # 3. Encounter Lifecycle (active vs concluded reading)
         status = resumo.status
-        if status not in _ACTIVE_STATUSES:
+        allowed_statuses = (
+            _MUTATION_ALLOWED_STATUSES if is_mutation else _READ_ALLOWED_STATUSES
+        )
+        if status not in allowed_statuses:
+            if is_mutation and status == "CONCLUIDO":
+                raise ForbiddenError(
+                    "Acesso negado: não é permitido alterar dados clínicos "
+                    "em atendimento já concluído (Resolução CFM nº 2.314/2022)."
+                )
+            operacao = "alterado" if is_mutation else "visualizado"
             raise ForbiddenError(
-                f"Acesso negado: prontuário só pode ser visualizado ou alterado "
+                f"Acesso negado: prontuário só pode ser {operacao} "
                 f"durante atendimento ativo. Status atual do atendimento: '{status}'."
             )

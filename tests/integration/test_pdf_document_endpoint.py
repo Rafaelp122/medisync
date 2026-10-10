@@ -6,8 +6,10 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.core.authz.roles import Role
 
 from tests.factories.scenarios import seed_clinical_scenario
+from tests.helpers import auth_headers
 
 pytestmark = pytest.mark.usefixtures("clean_db")
 
@@ -25,13 +27,15 @@ async def test_obter_documento_pdf_endpoint(
         medico_cpf="66666666601",
     )
     async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
+    async_client.headers.update(
+        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
+    )
     client = async_client
 
     # 1. Emitir receita simples
     emit_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={
-            "medico_id": str(cenario.medico.id),
             "tipo_documento": "RECEITA_SIMPLES",
             "itens": [
                 {

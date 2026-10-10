@@ -12,7 +12,6 @@ class RegistrarSOAPRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    medico_id: UUID = Field(description="Identificador único do médico assistente")
     anamnese: str = Field(
         description="Subjetivo (S): Queixa, anamnese e história clínica"
     )
@@ -85,7 +84,6 @@ class EmitirDocumentoRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    medico_id: UUID = Field(description="Identificador único do médico")
     tipo_documento: str = Field(
         description="Tipo de documento clínico (RECEITA_SIMPLES, etc.)"
     )
@@ -166,7 +164,6 @@ class FinalizarConsultaRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    medico_id: UUID = Field(description="Identificador do médico assistente")
     organizacao_id: int | None = Field(
         default=None, description="Identificador da organização"
     )

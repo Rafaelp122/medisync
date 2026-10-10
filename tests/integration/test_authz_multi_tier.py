@@ -162,11 +162,11 @@ async def test_authz_clinical_abac_physician_mismatch_blocked(
 
 
 @pytest.mark.asyncio
-async def test_authz_clinical_abac_inactive_encounter_blocked(
+async def test_authz_clinical_abac_concluded_encounter_read_granted(
     db_session: AsyncSession,
     async_client: AsyncClient,
 ) -> None:
-    """Validate Tier 3 Clinical ABAC blocks access if encounter is already CONCLUIDO."""
+    """Validate Tier 3 Clinical ABAC allows reading record if encounter is CONCLUIDO."""
     scenario = await seed_clinical_scenario(
         db_session,
         org_cnpj="77111222000197",
@@ -177,6 +177,52 @@ async def test_authz_clinical_abac_inactive_encounter_blocked(
         medico_crm_uf="SP",
         status_atendimento="CONCLUIDO",
         tcle_hash="e" * 64,
+    )
+
+    # 1. Read is granted for attending physician (CFM 1.821/2007)
+    resp = await async_client.get(
+        f"/api/v1/consultations/{scenario.atendimento.id}/prontuario",
+        headers={
+            "X-Tenant-ID": str(scenario.organizacao.id),
+            **auth_headers(Role.MEDICO, scenario.organizacao.id, scenario.medico.id),
+        },
+    )
+    assert resp.status_code == 200
+    data = cast("dict[str, object]", resp.json())
+    assert data["atendimento_id"] == str(scenario.atendimento.id)
+    assert data["is_finalizado"] is True
+
+    # 2. Mutation on CONCLUIDO is blocked with 403 Forbidden
+    resp_mut = await async_client.post(
+        f"/api/v1/consultations/{scenario.atendimento.id}/soap",
+        json={"anamnese": "tentativa", "conduta": "tentativa"},
+        headers={
+            "X-Tenant-ID": str(scenario.organizacao.id),
+            **auth_headers(Role.MEDICO, scenario.organizacao.id, scenario.medico.id),
+        },
+    )
+    assert resp_mut.status_code == 403
+    err = cast("dict[str, object]", resp_mut.json())
+    assert err["title"] == "Forbidden"
+    assert "atendimento já concluído" in str(err["detail"])
+
+
+@pytest.mark.asyncio
+async def test_authz_clinical_abac_cancelled_encounter_read_blocked(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+) -> None:
+    """Validate Tier 3 Clinical ABAC blocks reading cancelled encounters with 403."""
+    scenario = await seed_clinical_scenario(
+        db_session,
+        org_cnpj="77111222000195",
+        paciente_cpf="11122233388",
+        medico_cpf="22233344489",
+        medico_email="dr.cancelado@hospital.com",
+        medico_crm="33446",
+        medico_crm_uf="SP",
+        status_atendimento="CANCELADO_PACIENTE",
+        tcle_hash="c" * 64,
     )
 
     resp = await async_client.get(
