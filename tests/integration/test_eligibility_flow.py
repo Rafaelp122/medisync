@@ -7,9 +7,8 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy import text
 from src.core.context import tenant_context
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.core.valkey import close_valkey_pool, get_valkey_client
 from src.modules.billing import (
     EligibilityProviderPort,
@@ -29,27 +28,13 @@ _VALID_TCLE_HASH = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e
 
 
 @pytest.fixture(autouse=True)
-async def clean_database_and_valkey() -> AsyncGenerator[None]:
+async def clean_database_and_valkey() -> AsyncGenerator[None, None]:
     """Ensure clean PostgreSQL tables and Valkey keys for each test."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(
-            text(
-                "TRUNCATE TABLE atendimentos, dependentes, pacientes, "
-                "profissionais, organizacoes CASCADE;"
-            )
-        )
+    from tests.helpers import clean_database_and_valkey as _clean
 
+    await _clean()
     yield
-
-    async for client in get_valkey_client():
-        keys = await client.keys(f"lock:{_TEST_ORG_ID}:*")  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys(f"fila:{_TEST_ORG_ID}:*"))  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys("arq:*"))  # pyright: ignore[reportUnknownMemberType]
-        if keys:
-            await client.delete(*keys)
-
-    await close_valkey_pool()
+    await _clean()
 
 
 @pytest.mark.asyncio

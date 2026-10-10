@@ -43,36 +43,12 @@ def _run_alembic_downgrade_base() -> None:
 
 @pytest.fixture(autouse=True)
 async def ensure_clean_migration_state() -> AsyncGenerator[None, None]:
-    """Reset public schema completely and run upgrade head before each test."""
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                """
-                DROP SCHEMA public CASCADE;
-                CREATE SCHEMA public;
-                GRANT ALL ON SCHEMA public TO medisync;
-                GRANT ALL ON SCHEMA public TO public;
-                CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-                CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-                """
-            )
-        )
-    await asyncio.to_thread(_run_alembic_upgrade_head)
+    """Ensure clean tables before and after each test."""
+    from tests.helpers import clean_database_tables
+
+    await clean_database_tables()
     yield
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                """
-                DROP SCHEMA public CASCADE;
-                CREATE SCHEMA public;
-                GRANT ALL ON SCHEMA public TO medisync;
-                GRANT ALL ON SCHEMA public TO public;
-                CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-                CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-                """
-            )
-        )
-    await asyncio.to_thread(_run_alembic_upgrade_head)
+    await clean_database_tables()
 
 
 @pytest.mark.asyncio

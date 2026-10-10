@@ -24,20 +24,28 @@ typecheck:
 tach:
     uv run tach check
 
-# Executa suíte de testes com cobertura
-test:
-    uv run pytest --cov=src --cov-report=term-missing
+# Executa testes rápidos de feedback em paralelo (100% em memória, zero Docker/IO)
+test-fast:
+    uv run pytest tests/unit tests/architecture -n auto --no-cov
 
-# Executa testes em paralelo com todos os cores da CPU
+# Executa testes unitários e de arquitetura com medição de cobertura
+test-unit:
+    uv run pytest tests/unit tests/architecture --cov=src
+
+# Executa testes de integração sobre serviços reais (Postgres, Valkey, MinIO, LiveKit)
+test-integration:
+    uv run pytest tests/integration
+
+# Executa suíte completa com cobertura consolidada
+test:
+    uv run pytest tests/unit tests/architecture tests/integration --cov=src --cov-report=term-missing
+
+# Executa todos os testes em paralelo com todos os cores da CPU
 test-parallel:
     uv run pytest -n auto
 
-# Executa testes ultrarrápidos em paralelo sem medição de cobertura
-test-fast:
-    uv run pytest -n auto --no-cov
-
-# Portão de qualidade completo (executado antes de commits ou PRs)
-check: fmt lint typecheck tach test
+# Portão de qualidade completo com Fail-Fast estrito (integração por último)
+check: fmt lint typecheck tach test-unit test-integration
 
 # Inicia o background worker assíncrono ARQ sobre Valkey
 worker:

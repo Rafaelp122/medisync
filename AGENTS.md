@@ -8,13 +8,15 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
 
 * **Gerenciador de Pacotes:** `uv`. Nunca use `pip install` global.
 * **Automação:** Sempre utilize os comandos do `justfile`:
-  * `just check` — Executa o portão de qualidade completo (fmt, lint, typecheck, tach, test).
+  * `just check` — Executa o portão de qualidade completo (fmt, lint, typecheck, tach, test-unit, test-integration).
   * `just fmt` — Formata o código com `ruff`.
   * `just lint` — Executa lint com autofix seguro (`ruff check . --fix`).
   * `just typecheck` — Executa checagem estrita de tipos com `basedpyright`.
   * `just tach` — Valida as fronteiras modulares com `tach check`.
-  * `just test` — Executa testes com medição de cobertura (`pytest`).
-  * `just test-fast` — Executa testes rápidos em paralelo (`pytest -n auto --no-cov`).
+  * `just test-fast` — Executa testes rápidos em paralelo (100% em memória, zero Docker: `pytest tests/unit tests/architecture -n auto --no-cov`).
+  * `just test-unit` — Executa testes unitários com cobertura (`pytest tests/unit tests/architecture --cov=src`).
+  * `just test-integration` — Executa testes de integração sobre infraestrutura real (`pytest tests/integration`).
+  * `just test` — Executa a suíte de testes completa com cobertura consolidada.
 
 ---
 

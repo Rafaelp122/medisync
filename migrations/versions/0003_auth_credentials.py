@@ -109,10 +109,12 @@ def upgrade() -> None:
         """
         DO $$
         BEGIN
-            IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'medisync_app') THEN
-                GRANT SELECT, INSERT, UPDATE, DELETE
-                    ON usuarios_credenciais TO medisync_app;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'medisync_app') THEN
+                CREATE ROLE medisync_app NOBYPASSRLS;
             END IF;
+            GRANT USAGE ON SCHEMA public TO medisync_app;
+            GRANT SELECT, INSERT, UPDATE, DELETE
+                ON usuarios_credenciais TO medisync_app;
         END
         $$;
         """

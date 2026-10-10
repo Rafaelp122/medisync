@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from redis.asyncio import ConnectionPool, Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
-from src.core.config import Settings
+from src.core.config import Settings, get_settings
 from src.worker.context import (
     get_db_engine_from_ctx,
     get_db_session_from_ctx,
@@ -26,9 +26,10 @@ from src.worker.tasks import monitored_task, on_job_failure
 
 def test_create_redis_settings() -> None:
     """RedisSettings should inherit host, port and pool limits from Settings."""
+    settings = get_settings()
     redis_settings = create_redis_settings()
-    assert redis_settings.host == "localhost"
-    assert redis_settings.port == 6379
+    assert redis_settings.host == settings.VALKEY_HOST
+    assert redis_settings.port == settings.VALKEY_PORT
     assert redis_settings.conn_timeout == 5
     assert redis_settings.max_connections == 50
 

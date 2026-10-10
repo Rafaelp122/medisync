@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.errors import ValidationError
 from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoCommand,
@@ -20,16 +19,6 @@ from src.modules.queue.application.services.controle_admissao_service import (
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.domain.exceptions import AdmissaoFilaSuspensaError
 from src.modules.triage.domain.exceptions import EmergenciaCriticaSamuError
-
-
-@pytest.fixture
-def mock_session() -> AsyncMock:
-    session = AsyncMock(spec=AsyncSession)
-    session.add = MagicMock()
-    session.flush = AsyncMock()
-    session.commit = AsyncMock()
-    session.refresh = AsyncMock()
-    return session
 
 
 @pytest.fixture
@@ -59,12 +48,12 @@ def mock_controle_admissao() -> MagicMock:
 
 @pytest.fixture
 def admissao_service(
-    mock_session: AsyncMock,
+    mock_db_session: AsyncMock,
     mock_fila_service: MagicMock,
     mock_controle_admissao: MagicMock,
 ) -> AdmissaoAtendimentoService:
     return AdmissaoAtendimentoService(
-        session=mock_session,
+        session=mock_db_session,
         fila_service=mock_fila_service,
         controle_admissao=mock_controle_admissao,
     )
@@ -73,7 +62,7 @@ def admissao_service(
 @pytest.mark.asyncio
 async def test_admitir_paciente_success(
     admissao_service: AdmissaoAtendimentoService,
-    mock_session: AsyncMock,
+    mock_db_session: AsyncMock,
 ) -> None:
     pac_id = uuid4()
     cmd = AdmissaoAtendimentoCommand(
@@ -91,8 +80,8 @@ async def test_admitir_paciente_success(
     assert result.paciente_id == pac_id
     assert result.prioridade_clinica in (3, 4)
     assert result.alerta_samu_disparado is False
-    assert mock_session.add.call_count == 2
-    mock_session.commit.assert_awaited_once()
+    assert mock_db_session.add.call_count == 2
+    mock_db_session.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -13,6 +13,8 @@ from src.core.audit.models import (
 from src.core.errors import DomainError, ValidationError
 from src.core.uuid7 import uuid7
 
+from tests.factories.audit import make_audit_event
+
 _SAMPLE_TCLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 
@@ -33,7 +35,7 @@ def test_create_audit_event_profissional_actor_success() -> None:
     med_id = uuid7()
     event_id = uuid7()
 
-    event = AuditEvent(
+    event = make_audit_event(
         organizacao_id=1,
         atendimento_id=atend_id,
         ator_tipo=AtorTipo.PROFISSIONAL,
@@ -66,7 +68,7 @@ def test_create_audit_event_profissional_actor_success() -> None:
 def test_create_audit_event_sistema_actor_without_ator_id() -> None:
     atend_id = uuid7()
 
-    event = AuditEvent(
+    event = make_audit_event(
         organizacao_id=1,
         atendimento_id=atend_id,
         ator_tipo=AtorTipo.SISTEMA,
@@ -178,9 +180,8 @@ def test_audit_event_immutability_hooks_raise_error() -> None:
         impedir_update_audit_event,
     )
 
-    event = AuditEvent(
+    event = make_audit_event(
         organizacao_id=1,
-        atendimento_id=uuid7(),
         ator_tipo=AtorTipo.SISTEMA,
         ator_papel=AtorPapel.SISTEMA,
         tipo_evento="TEST_IMMUTABLE",

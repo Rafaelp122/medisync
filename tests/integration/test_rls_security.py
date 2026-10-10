@@ -3,16 +3,16 @@
 Adheres to ADR-003 and ADR-007.
 """
 
-import asyncio
-from collections.abc import AsyncGenerator
 from datetime import date
 from typing import TYPE_CHECKING
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from uuid import UUID
 from src.core.audit.models import AtorPapel, AtorTipo, AuditEvent
 from src.core.context import tenant_context
 from src.core.database import async_session_factory, engine
@@ -25,15 +25,16 @@ from src.modules.consultation.domain.models import (
 )
 from src.modules.identity.domain.models import (
     Dependente,
-    Organizacao,
     Paciente,
     Profissional,
 )
 from src.modules.queue.domain.models import Atendimento
 from src.modules.triage.domain.models import Triagem
 
-if TYPE_CHECKING:
-    from uuid import UUID
+from tests.factories.identity import make_organizacao
+from tests.factories.scenarios import seed_multi_tenant_orgs
+
+pytestmark = pytest.mark.usefixtures("clean_db")
 
 _MULTI_TENANT_TABLES = (
     "profissionais",
@@ -48,45 +49,6 @@ _MULTI_TENANT_TABLES = (
 )
 
 _SAMPLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
-
-def _run_alembic_upgrade_head() -> None:
-    alembic_cfg = Config("alembic.ini")
-    command.upgrade(alembic_cfg, "head")
-
-
-@pytest.fixture(autouse=True)
-async def setup_rls_test_environment() -> AsyncGenerator[None, None]:
-    """Ensure clean public schema and full migration up to head before each test."""
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                """
-                DROP SCHEMA public CASCADE;
-                CREATE SCHEMA public;
-                GRANT ALL ON SCHEMA public TO medisync;
-                GRANT ALL ON SCHEMA public TO public;
-                CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-                CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-                """
-            )
-        )
-    await asyncio.to_thread(_run_alembic_upgrade_head)
-    yield
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                """
-                DROP SCHEMA public CASCADE;
-                CREATE SCHEMA public;
-                GRANT ALL ON SCHEMA public TO medisync;
-                GRANT ALL ON SCHEMA public TO public;
-                CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-                CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-                """
-            )
-        )
-    await asyncio.to_thread(_run_alembic_upgrade_head)
 
 
 @pytest.mark.asyncio
@@ -133,24 +95,18 @@ async def test_rls_flags_and_policies_on_all_tables() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tenant_isolation_across_all_nine_tables() -> None:
+async def test_tenant_isolation_across_all_nine_tables(
+    db_session: AsyncSession,
+) -> None:
     """Verify strict tenant isolation across all 9 multi-tenant domain tables."""
-    # 1. Setup base organizations without tenant context (admin / superuser)
-    async with async_session_factory() as session:
-        org1 = Organizacao(
-            id=1001,
-            cnpj="10010001000101",
-            razao_social="Prefeitura Municipal Alfa",
-            nome_fantasia="Saúde Alfa",
-        )
-        org2 = Organizacao(
-            id=1002,
-            cnpj="10020002000202",
-            razao_social="Prefeitura Municipal Beta",
-            nome_fantasia="Saúde Beta",
-        )
-        session.add_all([org1, org2])
-        await session.commit()
+    # 1. Setup base organizations using canonical scenario factory
+    org1, org2 = await seed_multi_tenant_orgs(
+        db_session,
+        cnpj_a="10010001000101",
+        cnpj_b="10020002000202",
+    )
+    tenant_1_id = org1.id
+    tenant_2_id = org2.id
 
     # 2. Insert complete aggregate records for Tenant 1
     prof1_id: UUID = uuid7()
@@ -159,11 +115,11 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
     atend1_id: UUID = uuid7()
     doc1_id: UUID = uuid7()
 
-    with tenant_context(1001):
+    with tenant_context(tenant_1_id):
         async with async_session_factory() as session:
             prof1 = Profissional(
                 id=prof1_id,
-                organizacao_id=1001,
+                organizacao_id=tenant_1_id,
                 cpf="11111111111",
                 nome_completo="Dr. Medico Alfa",
                 email="medico@alfa.gov.br",
@@ -173,7 +129,7 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
             )
             pac1 = Paciente(
                 id=pac1_id,
-                organizacao_id=1001,
+                organizacao_id=tenant_1_id,
                 cpf="11111111112",
                 data_nascimento=date(1990, 1, 1),
                 telefone="11911111111",
@@ -181,7 +137,7 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
             )
             dep_pac1 = Paciente(
                 id=dep1_id,
-                organizacao_id=1001,
+                organizacao_id=tenant_1_id,
                 cpf="11111111113",
                 data_nascimento=date(2015, 5, 20),
                 telefone="11911111111",
@@ -191,27 +147,27 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
             await session.commit()
 
             dep1 = Dependente(
-                organizacao_id=1001,
+                organizacao_id=tenant_1_id,
                 titular_id=pac1_id,
                 dependente_id=dep1_id,
                 grau_parentesco="FILHO",
             )
             atend1 = Atendimento(
                 id=atend1_id,
-                organizacao_id=1001,
+                organizacao_id=tenant_1_id,
                 paciente_id=pac1_id,
             )
             session.add_all([dep1, atend1])
             await session.commit()
 
             triagem1 = Triagem(
-                organizacao_id=1001,
+                organizacao_id=tenant_1_id,
                 atendimento_id=atend1_id,
                 queixa_principal="Cefaleia moderada",
                 prioridade_calculada=3,
             )
             evolucao1 = EvolucaoClinica(
-                organizacao_id=1001,
+                organizacao_id=tenant_1_id,
                 atendimento_id=atend1_id,
                 medico_id=prof1_id,
                 anamnese="Quadro estavel",
@@ -219,7 +175,7 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
             )
             doc1 = DocumentoClinico(
                 id=doc1_id,
-                organizacao_id=1001,
+                organizacao_id=tenant_1_id,
                 atendimento_id=atend1_id,
                 medico_id=prof1_id,
                 tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
@@ -230,14 +186,14 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
             await session.commit()
 
             item1 = DocumentoItem(
-                organizacao_id=1001,
+                organizacao_id=tenant_1_id,
                 documento_id=doc1_id,
                 medicamento="Dipirona 500mg",
                 dosagem="1 cp",
                 posologia="6/6h se dor",
             )
             audit1 = AuditEvent(
-                organizacao_id=1001,
+                organizacao_id=tenant_1_id,
                 atendimento_id=atend1_id,
                 ator_tipo=AtorTipo.PROFISSIONAL,
                 ator_id=prof1_id,
@@ -254,11 +210,11 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
     atend2_id: UUID = uuid7()
     doc2_id: UUID = uuid7()
 
-    with tenant_context(1002):
+    with tenant_context(tenant_2_id):
         async with async_session_factory() as session:
             prof2 = Profissional(
                 id=prof2_id,
-                organizacao_id=1002,
+                organizacao_id=tenant_2_id,
                 cpf="22222222221",
                 nome_completo="Dra. Medica Beta",
                 email="medica@beta.gov.br",
@@ -268,7 +224,7 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
             )
             pac2 = Paciente(
                 id=pac2_id,
-                organizacao_id=1002,
+                organizacao_id=tenant_2_id,
                 cpf="22222222222",
                 data_nascimento=date(1992, 2, 2),
                 telefone="21922222222",
@@ -276,7 +232,7 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
             )
             dep_pac2 = Paciente(
                 id=dep2_id,
-                organizacao_id=1002,
+                organizacao_id=tenant_2_id,
                 cpf="22222222223",
                 data_nascimento=date(2018, 8, 15),
                 telefone="21922222222",
@@ -286,27 +242,27 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
             await session.commit()
 
             dep2 = Dependente(
-                organizacao_id=1002,
+                organizacao_id=tenant_2_id,
                 titular_id=pac2_id,
                 dependente_id=dep2_id,
                 grau_parentesco="FILHO",
             )
             atend2 = Atendimento(
                 id=atend2_id,
-                organizacao_id=1002,
+                organizacao_id=tenant_2_id,
                 paciente_id=pac2_id,
             )
             session.add_all([dep2, atend2])
             await session.commit()
 
             triagem2 = Triagem(
-                organizacao_id=1002,
+                organizacao_id=tenant_2_id,
                 atendimento_id=atend2_id,
                 queixa_principal="Febre baixa",
                 prioridade_calculada=4,
             )
             evolucao2 = EvolucaoClinica(
-                organizacao_id=1002,
+                organizacao_id=tenant_2_id,
                 atendimento_id=atend2_id,
                 medico_id=prof2_id,
                 anamnese="Quadro gripal",
@@ -314,7 +270,7 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
             )
             doc2 = DocumentoClinico(
                 id=doc2_id,
-                organizacao_id=1002,
+                organizacao_id=tenant_2_id,
                 atendimento_id=atend2_id,
                 medico_id=prof2_id,
                 tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
@@ -325,14 +281,14 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
             await session.commit()
 
             item2 = DocumentoItem(
-                organizacao_id=1002,
+                organizacao_id=tenant_2_id,
                 documento_id=doc2_id,
                 medicamento="Paracetamol 750mg",
                 dosagem="1 cp",
                 posologia="8/8h",
             )
             audit2 = AuditEvent(
-                organizacao_id=1002,
+                organizacao_id=tenant_2_id,
                 atendimento_id=atend2_id,
                 ator_tipo=AtorTipo.PROFISSIONAL,
                 ator_id=prof2_id,
@@ -343,115 +299,106 @@ async def test_tenant_isolation_across_all_nine_tables() -> None:
             await session.commit()
 
     # 4. Verify queries under Tenant 1 return ONLY Tenant 1 data
-    with tenant_context(1001):
+    with tenant_context(tenant_1_id):
         async with async_session_factory() as session:
             profs = (await session.execute(select(Profissional))).scalars().all()
             assert len(profs) == 1
-            assert profs[0].organizacao_id == 1001
+            assert profs[0].organizacao_id == tenant_1_id
             assert profs[0].id == prof1_id
 
             pacs = (await session.execute(select(Paciente))).scalars().all()
             assert len(pacs) == 2
-            assert all(p.organizacao_id == 1001 for p in pacs)
+            assert all(p.organizacao_id == tenant_1_id for p in pacs)
 
             deps = (await session.execute(select(Dependente))).scalars().all()
             assert len(deps) == 1
-            assert deps[0].organizacao_id == 1001
+            assert deps[0].organizacao_id == tenant_1_id
 
             atends = (await session.execute(select(Atendimento))).scalars().all()
             assert len(atends) == 1
-            assert atends[0].organizacao_id == 1001
+            assert atends[0].organizacao_id == tenant_1_id
             assert atends[0].id == atend1_id
 
             triagens = (await session.execute(select(Triagem))).scalars().all()
             assert len(triagens) == 1
-            assert triagens[0].organizacao_id == 1001
+            assert triagens[0].organizacao_id == tenant_1_id
 
             evolucoes = (await session.execute(select(EvolucaoClinica))).scalars().all()
             assert len(evolucoes) == 1
-            assert evolucoes[0].organizacao_id == 1001
+            assert evolucoes[0].organizacao_id == tenant_1_id
 
             docs = (await session.execute(select(DocumentoClinico))).scalars().all()
             assert len(docs) == 1
-            assert docs[0].organizacao_id == 1001
+            assert docs[0].organizacao_id == tenant_1_id
             assert docs[0].id == doc1_id
 
             items = (await session.execute(select(DocumentoItem))).scalars().all()
             assert len(items) == 1
-            assert items[0].organizacao_id == 1001
+            assert items[0].organizacao_id == tenant_1_id
 
             audits = (await session.execute(select(AuditEvent))).scalars().all()
             assert len(audits) == 1
-            assert audits[0].organizacao_id == 1001
+            assert audits[0].organizacao_id == tenant_1_id
 
     # 5. Verify queries under Tenant 2 return ONLY Tenant 2 data
-    with tenant_context(1002):
+    with tenant_context(tenant_2_id):
         async with async_session_factory() as session:
             profs = (await session.execute(select(Profissional))).scalars().all()
             assert len(profs) == 1
-            assert profs[0].organizacao_id == 1002
+            assert profs[0].organizacao_id == tenant_2_id
             assert profs[0].id == prof2_id
 
             pacs = (await session.execute(select(Paciente))).scalars().all()
             assert len(pacs) == 2
-            assert all(p.organizacao_id == 1002 for p in pacs)
+            assert all(p.organizacao_id == tenant_2_id for p in pacs)
 
             deps = (await session.execute(select(Dependente))).scalars().all()
             assert len(deps) == 1
-            assert deps[0].organizacao_id == 1002
+            assert deps[0].organizacao_id == tenant_2_id
 
             atends = (await session.execute(select(Atendimento))).scalars().all()
             assert len(atends) == 1
-            assert atends[0].organizacao_id == 1002
+            assert atends[0].organizacao_id == tenant_2_id
             assert atends[0].id == atend2_id
 
             triagens = (await session.execute(select(Triagem))).scalars().all()
             assert len(triagens) == 1
-            assert triagens[0].organizacao_id == 1002
+            assert triagens[0].organizacao_id == tenant_2_id
 
             evolucoes = (await session.execute(select(EvolucaoClinica))).scalars().all()
             assert len(evolucoes) == 1
-            assert evolucoes[0].organizacao_id == 1002
+            assert evolucoes[0].organizacao_id == tenant_2_id
 
             docs = (await session.execute(select(DocumentoClinico))).scalars().all()
             assert len(docs) == 1
-            assert docs[0].organizacao_id == 1002
+            assert docs[0].organizacao_id == tenant_2_id
             assert docs[0].id == doc2_id
 
             items = (await session.execute(select(DocumentoItem))).scalars().all()
             assert len(items) == 1
-            assert items[0].organizacao_id == 1002
+            assert items[0].organizacao_id == tenant_2_id
 
             audits = (await session.execute(select(AuditEvent))).scalars().all()
             assert len(audits) == 1
-            assert audits[0].organizacao_id == 1002
+            assert audits[0].organizacao_id == tenant_2_id
 
 
 @pytest.mark.asyncio
-async def test_rls_with_check_blocks_cross_tenant_insert() -> None:
+async def test_rls_with_check_blocks_cross_tenant_insert(
+    db_session: AsyncSession,
+) -> None:
     """Verify that WITH CHECK policy blocks inserting a record for another tenant."""
-    # Setup base organizations
-    async with async_session_factory() as session:
-        org1 = Organizacao(
-            id=2001,
-            cnpj="20010001000101",
-            razao_social="Org 2001",
-            nome_fantasia="O1",
-        )
-        org2 = Organizacao(
-            id=2002,
-            cnpj="20020002000202",
-            razao_social="Org 2002",
-            nome_fantasia="O2",
-        )
-        session.add_all([org1, org2])
-        await session.commit()
+    org1, org2 = await seed_multi_tenant_orgs(
+        db_session,
+        cnpj_a="20010001000101",
+        cnpj_b="20020002000202",
+    )
 
-    with tenant_context(2001):
+    with tenant_context(org1.id):
         async with async_session_factory() as session:
-            # Attempt to insert a Paciente belonging to org 2002 while under tenant 2001
+            # Attempt to insert a Paciente belonging to org2 while under tenant org1
             paciente_mismatch = Paciente(
-                organizacao_id=2002,
+                organizacao_id=org2.id,
                 cpf="99988877766",
                 data_nascimento=date(1980, 10, 10),
                 telefone="11999887766",
@@ -465,22 +412,21 @@ async def test_rls_with_check_blocks_cross_tenant_insert() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fail_safe_deny_without_tenant() -> None:
+async def test_fail_safe_deny_without_tenant(db_session: AsyncSession) -> None:
     """Verify that queries executed as medisync_app without tenant return 0 rows."""
-    async with async_session_factory() as session:
-        org = Organizacao(
-            id=3001,
-            cnpj="30010001000101",
-            razao_social="Org 3001",
-            nome_fantasia="O3",
-        )
-        session.add(org)
-        await session.commit()
+    org = make_organizacao(
+        cnpj="30010001000101",
+        razao_social="Org 3001",
+        nome_fantasia="O3",
+    )
+    db_session.add(org)
+    await db_session.commit()
+    await db_session.refresh(org)
 
-    with tenant_context(3001):
+    with tenant_context(org.id):
         async with async_session_factory() as session:
             pac = Paciente(
-                organizacao_id=3001,
+                organizacao_id=org.id,
                 cpf="33333333333",
                 data_nascimento=date(1995, 3, 3),
                 telefone="11933333333",

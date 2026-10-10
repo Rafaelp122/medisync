@@ -9,7 +9,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from src.core.audit.models import AtorPapel, AtorTipo, AuditEvent
 from src.core.audit.service import AuditService
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.modules.queue.domain.models import Atendimento
 
 from tests.factories.audit import make_audit_event
@@ -25,33 +25,11 @@ _SAMPLE_TCLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b785
 
 @pytest.fixture(autouse=True)
 async def setup_audit_tables() -> AsyncGenerator[None, None]:
-    """Create all domain tables, indexes, and ADR-007 immutable trigger."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # ADR-007: Trigger restritiva para garantir imutabilidade física no PostgreSQL
-        await conn.execute(
-            text(
-                """
-                CREATE OR REPLACE FUNCTION trg_prevent_audit_mutation()
-                RETURNS TRIGGER AS $$
-                BEGIN
-                    RAISE EXCEPTION 'A tabela audit_events é estritamente append-only '
-                        '(CFM 2.314/2022 e LGPD Art. 11). Operações de UPDATE ou '
-                        'DELETE são terminantemente proibidas.'
-                        USING ERRCODE = 'restrict_violation';
-                END;
-                $$ LANGUAGE plpgsql;
-
-                DROP TRIGGER IF EXISTS trg_audit_events_immutable ON audit_events;
-                CREATE TRIGGER trg_audit_events_immutable
-                BEFORE UPDATE OR DELETE ON audit_events
-                FOR EACH ROW EXECUTE FUNCTION trg_prevent_audit_mutation();
-                """
-            )
-        )
-    yield
+    """Ensure clean tables before and after audit tests."""
     from tests.helpers import clean_database_tables
 
+    await clean_database_tables()
+    yield
     await clean_database_tables()
 
 

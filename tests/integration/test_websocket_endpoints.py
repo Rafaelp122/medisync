@@ -3,22 +3,13 @@
 import asyncio
 import json
 import time
-from collections.abc import AsyncGenerator
 from uuid import uuid4
 
-import pytest
 from fastapi.testclient import TestClient
 from redis.asyncio import Redis
 from src.core.realtime import channel_doctor_calls, channel_queue_patient
-from src.core.valkey import close_valkey_pool, get_valkey_pool
+from src.core.valkey import get_valkey_pool
 from src.main import create_app
-
-
-@pytest.fixture(autouse=True)
-async def cleanup_valkey() -> AsyncGenerator[None]:
-    """Ensure Valkey connection pool is cleaned up after each test."""
-    yield
-    await close_valkey_pool()
 
 
 def test_ws_queue_patient_receives_updates_sub_500ms() -> None:

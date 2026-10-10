@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import queue as queue_module
 from collections.abc import AsyncGenerator
 from uuid import uuid4
 
@@ -11,56 +10,13 @@ from src.core.realtime import channel_doctor_calls, channel_queue_patient
 from src.core.valkey import get_valkey_client
 from src.main import create_app
 
-
-class FakePubSub:
-    """Thread-safe in-memory Pub/Sub double for forward_pubsub_to_websocket."""
-
-    def __init__(self, queues: dict[str, queue_module.Queue[str]]) -> None:
-        self._queues = queues
-        self._channel: str | None = None
-
-    async def subscribe(self, channel: str) -> None:
-        self._channel = channel
-        if channel not in self._queues:
-            self._queues[channel] = queue_module.Queue()
-
-    async def listen(self) -> AsyncGenerator[dict[str, object], None]:
-        assert self._channel is not None
-        q = self._queues[self._channel]
-        while True:
-            try:
-                data = q.get_nowait()
-            except queue_module.Empty:
-                await asyncio.sleep(0.01)
-                continue
-            yield {"type": "message", "data": data}
-
-    async def unsubscribe(self, channel: str) -> None:
-        return None
-
-    async def aclose(self) -> None:
-        return None
-
-
-class FakeValkey:
-    """Minimal Valkey double supporting publish/pubsub for WS tests."""
-
-    def __init__(self) -> None:
-        self._queues: dict[str, queue_module.Queue[str]] = {}
-
-    def pubsub(self) -> FakePubSub:
-        return FakePubSub(self._queues)
-
-    async def publish(self, channel: str, message: str) -> int:
-        if channel not in self._queues:
-            self._queues[channel] = queue_module.Queue()
-        self._queues[channel].put(message)
-        return 1
+from tests.doubles import FakePubSub, FakeValkey
 
 
 def test_ws_queue_patient_initial_and_forward_with_fake_valkey() -> None:
     """Verify ws_queue sends CONNECTED with atendimento_id and forwards publish."""
     fake = FakeValkey()
+    assert isinstance(fake.pubsub(), FakePubSub)
 
     async def override_valkey() -> AsyncGenerator[FakeValkey, None]:
         yield fake

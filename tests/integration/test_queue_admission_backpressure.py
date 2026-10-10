@@ -1,18 +1,16 @@
 """Integration tests for stochastic queue admission control and backpressure (RN05)."""
 
-from collections.abc import AsyncGenerator
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import text
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.core.uuid7 import uuid7
 
 if TYPE_CHECKING:
     from uuid import UUID
 
-from src.core.valkey import close_valkey_pool, get_valkey_client
+from src.core.valkey import get_valkey_client
 from src.modules.queue.application.dtos import (
     AdquirirProximoPacienteCommand,
     IngressarFilaComBackpressureCommand,
@@ -54,29 +52,7 @@ class SpyNotifier:
         self.events.append(event)
 
 
-@pytest.fixture(autouse=True)
-async def clean_database_and_valkey() -> AsyncGenerator[None]:
-    """Ensure clean PostgreSQL tables and Valkey keys for each test."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(
-            text(
-                "TRUNCATE TABLE atendimentos, dependentes, pacientes, "
-                "profissionais, organizacoes CASCADE;"
-            )
-        )
-
-    yield
-
-    async for client in get_valkey_client():
-        keys = await client.keys("fila:*")  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys("lock:*"))  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys("plantao:*"))  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys("cota:*"))  # pyright: ignore[reportUnknownMemberType]
-        if keys:
-            await client.delete(*keys)
-
-    await close_valkey_pool()
+pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 
 
 @pytest.mark.asyncio

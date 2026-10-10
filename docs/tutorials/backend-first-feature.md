@@ -97,6 +97,8 @@ Expected: fmt + lint + typecheck + tach + test verdes.
 ## Ver também
 
 - [Create module endpoint](../how-to/backend/create-module-endpoint.md)
+- [Write tests](../how-to/backend/write-tests.md)
+- [Testing Strategy](../explanation/architecture/testing-strategy.md)
 - [ADR-001 Hexagonal pragmático](../adrs/ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md)
 - [ADR-008 DTOs sem mapper hell](../adrs/ADR-008-Padronizacao-de-DTOs-e-Eliminacao-de-Mapper-Hell-na-Apresentacao.md)
 - [Onboarding quickstart](onboarding-quickstart.md)
