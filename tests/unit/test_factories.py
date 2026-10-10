@@ -1,5 +1,11 @@
+from typing import TYPE_CHECKING, cast
+
+import pytest
 from src.modules.queue.domain.models import Atendimento, StatusAtendimento
 from src.modules.triage.domain.models import Triagem
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.factories.identity import (
     make_dependente,
@@ -92,3 +98,74 @@ def test_make_audit_event_factory_defaults() -> None:
     assert evt.ator_papel == AtorPapel.MEDICO
     assert evt.ator_id is not None
     assert evt.tipo_evento == "STATUS_ATENDIMENTO_ATUALIZADO"
+
+
+def test_make_auth_factories_defaults() -> None:
+    from src.core.authz.roles import Role
+    from src.modules.auth.application.dtos import CadastrarCredencialCommand
+    from src.modules.auth.domain.models import UsuarioCredencial
+
+    from tests.factories.auth import (
+        DEFAULT_TEST_HASH,
+        make_cadastrar_credencial_command,
+        make_usuario_credencial,
+    )
+
+    cred = make_usuario_credencial(organizacao_id=1)
+    assert isinstance(cred, UsuarioCredencial)
+    assert cred.id is not None
+    assert cred.organizacao_id == 1
+    assert cred.usuario_id is not None
+    assert cred.identificador == "dr.plantonista@medisync.local"
+    assert cred.senha_hash == DEFAULT_TEST_HASH
+    assert cred.papel == Role.MEDICO
+    assert cred.ativo is True
+
+    cmd = make_cadastrar_credencial_command(organizacao_id=1)
+    assert isinstance(cmd, CadastrarCredencialCommand)
+    assert cmd.organizacao_id == 1
+    assert cmd.usuario_id is not None
+    assert cmd.identificador == "dr.plantonista@medisync.local"
+    assert cmd.senha_pura == "SenhaForte123!@#"
+    assert cmd.papel == Role.MEDICO
+
+
+def test_clinical_scenario_dataclass() -> None:
+    from tests.factories.scenarios import ClinicalScenario
+
+    org = make_organizacao(id=10)
+    pac = make_paciente(organizacao_id=org.id)
+    med = make_profissional(organizacao_id=org.id)
+    atend = make_atendimento(
+        organizacao_id=org.id, paciente_id=pac.id, medico_id=med.id
+    )
+
+    scenario = ClinicalScenario(
+        organizacao=org,
+        paciente=pac,
+        medico=med,
+        atendimento=atend,
+    )
+    assert scenario.organizacao == org
+    assert scenario.paciente == pac
+    assert scenario.medico == med
+    assert scenario.atendimento == atend
+
+
+@pytest.mark.asyncio
+async def test_seed_clinical_scenario_with_fake_session() -> None:
+    from tests.doubles import FakeAsyncSession
+    from tests.factories.scenarios import ClinicalScenario, seed_clinical_scenario
+
+    fake_session = FakeAsyncSession()
+    scenario = await seed_clinical_scenario(
+        cast("AsyncSession", fake_session),
+        org_id=42,
+    )
+    assert isinstance(scenario, ClinicalScenario)
+    assert scenario.organizacao.id == 42
+    assert scenario.paciente.organizacao_id == 42
+    assert scenario.medico.organizacao_id == 42
+    assert scenario.atendimento.organizacao_id == 42
+    assert fake_session.commits == 3
+    assert len(fake_session.added) == 4

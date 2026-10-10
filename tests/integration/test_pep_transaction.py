@@ -1,11 +1,10 @@
 """Integration tests for PEP transaction ownership (service commits once)."""
 
-from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock
-from uuid import UUID
 
 import pytest
 from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import async_session_factory
 from src.core.errors import NotFoundError
 from src.modules.consultation.application.dtos import (
@@ -19,68 +18,29 @@ from src.modules.consultation.application.ports.icp_brasil_signer_port import (
 )
 from src.modules.consultation.domain.models import DocumentoClinico, EvolucaoClinica
 
-from tests.factories.identity import (
-    make_organizacao,
-    make_paciente,
-    make_profissional,
-)
 from tests.factories.queue import make_atendimento
-from tests.helpers import clean_database_tables, make_pep_service
+from tests.factories.scenarios import seed_clinical_scenario
+from tests.helpers import make_pep_service
 
-
-@pytest.fixture(autouse=True)
-async def setup_pep_tx_db() -> AsyncGenerator[None, None]:
-    """Clean tables before/after each test."""
-    await clean_database_tables()
-    yield
-    await clean_database_tables()
-    await clean_database_tables()
-
-
-async def _setup_base(
-    cnpj: str, cpf_pac: str, cpf_med: str, email: str
-) -> tuple[
-    int,
-    UUID,
-    UUID,
-    UUID,
-]:
-    """Create org, patient, doctor and attendance, returning ids."""
-    async with async_session_factory() as session:
-        org = make_organizacao(cnpj=cnpj)
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-        paciente = make_paciente(org.id, cpf=cpf_pac)
-        medico = make_profissional(
-            org.id,
-            cpf=cpf_med,
-            email=email,
-            papel="MEDICO",
-            crm="54321",
-            crm_uf="SP",
-        )
-        session.add_all([paciente, medico])
-        await session.commit()
-        await session.refresh(paciente)
-        await session.refresh(medico)
-        atendimento = make_atendimento(
-            organizacao_id=org.id,
-            paciente_id=paciente.id,
-            status="EM_ATENDIMENTO",
-        )
-        session.add(atendimento)
-        await session.commit()
-        await session.refresh(atendimento)
-        return org.id, paciente.id, medico.id, atendimento.id
+pytestmark = pytest.mark.usefixtures("clean_db")
 
 
 @pytest.mark.asyncio
-async def test_salvar_evolucao_soap_service_commit_visivel_outra_sessao() -> None:
+async def test_salvar_evolucao_soap_service_commit_visivel_outra_sessao(
+    db_session: AsyncSession,
+) -> None:
     """Service commit persists SOAP without router commit (separate session)."""
-    org_id, _, medico_id, atend_id = await _setup_base(
-        "11111111000111", "11111111111", "22222222211", "tx-soap@medisync.local"
+    cenario = await seed_clinical_scenario(
+        db_session,
+        org_cnpj="11111111000111",
+        paciente_cpf="11111111111",
+        medico_cpf="22222222211",
+        medico_email="tx-soap@medisync.local",
     )
+    atend_id = cenario.atendimento.id
+    org_id = cenario.organizacao.id
+    medico_id = cenario.medico.id
+
     async with async_session_factory() as s1:
         svc = make_pep_service(s1)
         cmd = RegistrarEvolucaoSOAPCommand(
@@ -106,11 +66,21 @@ async def test_salvar_evolucao_soap_service_commit_visivel_outra_sessao() -> Non
 
 
 @pytest.mark.asyncio
-async def test_emitir_documento_service_commit_visivel_outra_sessao() -> None:
+async def test_emitir_documento_service_commit_visivel_outra_sessao(
+    db_session: AsyncSession,
+) -> None:
     """Service commit persists document+items without router commit."""
-    org_id, _, medico_id, atend_id = await _setup_base(
-        "22222222000111", "33333333311", "44444444411", "tx-doc@medisync.local"
+    cenario = await seed_clinical_scenario(
+        db_session,
+        org_cnpj="22222222000111",
+        paciente_cpf="33333333311",
+        medico_cpf="44444444411",
+        medico_email="tx-doc@medisync.local",
     )
+    atend_id = cenario.atendimento.id
+    org_id = cenario.organizacao.id
+    medico_id = cenario.medico.id
+
     async with async_session_factory() as s1:
         svc = make_pep_service(s1)
         cmd = EmitirDocumentoClinicoCommand(
@@ -142,11 +112,21 @@ async def test_emitir_documento_service_commit_visivel_outra_sessao() -> None:
 
 
 @pytest.mark.asyncio
-async def test_finalizar_consulta_service_commit_visivel_outra_sessao() -> None:
+async def test_finalizar_consulta_service_commit_visivel_outra_sessao(
+    db_session: AsyncSession,
+) -> None:
     """Service commit persists finalization (atendimento CONCLUIDO)."""
-    org_id, _, medico_id, atend_id = await _setup_base(
-        "33333333000111", "55555555511", "66666666611", "tx-fin@medisync.local"
+    cenario = await seed_clinical_scenario(
+        db_session,
+        org_cnpj="33333333000111",
+        paciente_cpf="55555555511",
+        medico_cpf="66666666611",
+        medico_email="tx-fin@medisync.local",
     )
+    atend_id = cenario.atendimento.id
+    org_id = cenario.organizacao.id
+    medico_id = cenario.medico.id
+
     async with async_session_factory() as s1:
         svc = make_pep_service(s1)
         await svc.salvar_evolucao_soap(
@@ -180,18 +160,27 @@ async def test_finalizar_consulta_service_commit_visivel_outra_sessao() -> None:
 
 
 @pytest.mark.asyncio
-async def test_assinar_documento_service_commit_visivel_outra_sessao() -> None:
+async def test_assinar_documento_service_commit_visivel_outra_sessao(
+    db_session: AsyncSession,
+) -> None:
     """Service commit persists signature without router commit."""
-    org_id, _, medico_id, atend_id = await _setup_base(
-        "44444444000111", "77777777711", "88888888811", "tx-sign@medisync.local"
+    cenario = await seed_clinical_scenario(
+        db_session,
+        org_cnpj="44444444000111",
+        paciente_cpf="77777777711",
+        medico_cpf="88888888811",
+        medico_email="tx-sign@medisync.local",
     )
+    atend_id = cenario.atendimento.id
+    org_id = cenario.organizacao.id
+    medico_id = cenario.medico.id
+
     signer = AsyncMock()
     signer.assinar_pdf.return_value = b"%PDF-signed-bytes%"
     storage = AsyncMock()
     storage.obter_documento.return_value = b"%PDF-fake%"
     storage.salvar_documento.return_value = None
 
-    doc_id: UUID
     async with async_session_factory() as s1:
         svc = make_pep_service(s1, signer=signer, storage=storage)
         doc = await svc.emitir_documento(
@@ -234,21 +223,30 @@ async def test_assinar_documento_service_commit_visivel_outra_sessao() -> None:
 
 
 @pytest.mark.asyncio
-async def test_assinar_documento_outro_atendimento_404_signer_nao_chamado() -> None:
+async def test_assinar_documento_outro_atendimento_404_signer_nao_chamado(
+    db_session: AsyncSession,
+) -> None:
     """Ownership before PSC: wrong atendimento -> 404 and signer spy not called."""
-    org_id, _, medico_id, atend_a = await _setup_base(
-        "55555555000111", "99999999911", "00011122211", "tx-own@medisync.local"
+    cenario = await seed_clinical_scenario(
+        db_session,
+        org_cnpj="55555555000111",
+        paciente_cpf="99999999911",
+        medico_cpf="00011122211",
+        medico_email="tx-own@medisync.local",
     )
-    async with async_session_factory() as s_setup:
-        atendimento_b = make_atendimento(
-            organizacao_id=org_id,
-            paciente_id=(await _get_any_patient_id(org_id)),
-            status="EM_ATENDIMENTO",
-        )
-        s_setup.add(atendimento_b)
-        await s_setup.commit()
-        await s_setup.refresh(atendimento_b)
-        atend_b = atendimento_b.id
+    atend_a = cenario.atendimento.id
+    org_id = cenario.organizacao.id
+    medico_id = cenario.medico.id
+
+    atendimento_b = make_atendimento(
+        organizacao_id=org_id,
+        paciente_id=cenario.paciente.id,
+        status="EM_ATENDIMENTO",
+    )
+    db_session.add(atendimento_b)
+    await db_session.commit()
+    await db_session.refresh(atendimento_b)
+    atend_b = atendimento_b.id
 
     signer_spy = AsyncMock()
     signer_spy.assinar_pdf.return_value = b"%PDF-should-not-happen%"
@@ -292,16 +290,3 @@ async def test_assinar_documento_outro_atendimento_404_signer_nao_chamado() -> N
         persisted = res.scalar_one_or_none()
         assert persisted is not None
         assert persisted.sha256_hash == original_hash
-
-
-async def _get_any_patient_id(org_id: int) -> UUID:
-    """Return any patient id for org (used to create second attendance)."""
-    from src.modules.identity.domain.models import Paciente
-
-    async with async_session_factory() as session:
-        res = await session.execute(
-            select(Paciente.id).where(Paciente.organizacao_id == org_id).limit(1)
-        )
-        pid = res.scalar_one()
-        assert isinstance(pid, UUID)
-        return pid

@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.uuid7 import uuid7
 from src.modules.queue.application.dtos import AlocarChamadaCommand
 from src.modules.queue.application.ports.allocation_port import (
@@ -30,11 +29,6 @@ def mock_valkey() -> AsyncMock:
 
 
 @pytest.fixture
-def mock_session() -> AsyncMock:
-    return AsyncMock(spec=AsyncSession)
-
-
-@pytest.fixture
 def mock_lua_manager() -> AsyncMock:
     return AsyncMock(spec=AllocationPort)
 
@@ -42,12 +36,12 @@ def mock_lua_manager() -> AsyncMock:
 @pytest.fixture
 def service(
     mock_valkey: AsyncMock,
-    mock_session: AsyncMock,
+    mock_db_session: AsyncMock,
     mock_lua_manager: AsyncMock,
 ) -> AlocacaoChamadaService:
     return AlocacaoChamadaService(
         valkey=mock_valkey,
-        db_session=mock_session,
+        db_session=mock_db_session,
         lua_manager=mock_lua_manager,
     )
 
@@ -92,7 +86,7 @@ async def test_alocar_chamada_atendimento_indisponivel_retorna_409(
 async def test_alocar_chamada_sucesso(
     service: AlocacaoChamadaService,
     mock_valkey: AsyncMock,
-    mock_session: AsyncMock,
+    mock_db_session: AsyncMock,
     mock_lua_manager: AsyncMock,
 ) -> None:
     """Verify code 1 transitions attendance to CHAMANDO_PACIENTE and commits."""
@@ -105,7 +99,7 @@ async def test_alocar_chamada_sucesso(
     mock_atendimento.status = StatusAtendimento.CHAMANDO_PACIENTE.value
     mock_atendimento.chamada_iniciada_em = datetime.now(UTC)
 
-    mock_session.get.return_value = mock_atendimento
+    mock_db_session.get.return_value = mock_atendimento
 
     cmd = AlocarChamadaCommand(
         organizacao_id=1,
@@ -122,20 +116,20 @@ async def test_alocar_chamada_sucesso(
     assert result.ttl_segundos == 45
 
     mock_atendimento.iniciar_chamada.assert_called_once_with(med_id)
-    mock_session.commit.assert_called_once()
-    mock_session.refresh.assert_called_once_with(mock_atendimento)
+    mock_db_session.commit.assert_called_once()
+    mock_db_session.refresh.assert_called_once_with(mock_atendimento)
 
 
 @pytest.mark.asyncio
 async def test_alocar_chamada_rollback_quando_atendimento_inexistente_no_banco(
     service: AlocacaoChamadaService,
     mock_valkey: AsyncMock,
-    mock_session: AsyncMock,
+    mock_db_session: AsyncMock,
     mock_lua_manager: AsyncMock,
 ) -> None:
     """Verify locks are released if attendance is not found in DB."""
     mock_lua_manager.alocar_chamada.return_value = AlocacaoCodigo.SUCESSO
-    mock_session.get.return_value = None
+    mock_db_session.get.return_value = None
 
     atend_id = uuid7()
     med_id = uuid4()
@@ -160,7 +154,7 @@ async def test_alocar_chamada_rollback_quando_atendimento_inexistente_no_banco(
 async def test_alocar_chamada_rollback_quando_transicao_invalida(
     service: AlocacaoChamadaService,
     mock_valkey: AsyncMock,
-    mock_session: AsyncMock,
+    mock_db_session: AsyncMock,
     mock_lua_manager: AsyncMock,
 ) -> None:
     """Verify locks are released if DB entity transition raises error."""
@@ -172,7 +166,7 @@ async def test_alocar_chamada_rollback_quando_transicao_invalida(
     mock_atendimento.iniciar_chamada.side_effect = TransicaoEstadoInvalidaError(
         "Invalid transition"
     )
-    mock_session.get.return_value = mock_atendimento
+    mock_db_session.get.return_value = mock_atendimento
 
     cmd = AlocarChamadaCommand(
         organizacao_id=1,

@@ -6,7 +6,8 @@
 
 - [Setup local](dev-environment/setup-local.md) — deps, `.env`, serviços.
 - [Create Module Endpoint](backend/create-module-endpoint.md) — receitas API/workers/filas.
-- [Run Tests](backend/run-tests.md) — erros comuns e diagnóstico.
+- [Write Tests](backend/write-tests.md) — como escrever testes unitários e de integração no Padrão Ouro.
+- [Run Tests](backend/run-tests.md) — comandos, pirâmide e diagnóstico.
 
 ## Verificação
 

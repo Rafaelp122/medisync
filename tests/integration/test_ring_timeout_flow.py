@@ -1,15 +1,12 @@
 """Integration tests for deterministic 45s ring timeout end-to-end flow (RN02)."""
 
-from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 
 import pytest
 from arq.connections import create_pool
 from arq.worker import create_worker
-from sqlalchemy import text
 from src.core.context import tenant_context
-from src.core.database import Base, async_session_factory, engine
-from src.core.valkey import close_valkey_pool, get_valkey_client
+from src.core.database import async_session_factory
 from src.modules.queue.application.dtos import AlocarChamadaCommand
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
@@ -19,59 +16,29 @@ from src.modules.queue.domain.models.atendimento import StatusAtendimento
 from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 from src.worker.settings import WorkerSettings
 
-from tests.factories.identity import (
-    make_organizacao,
-    make_paciente,
-    make_profissional,
-)
-from tests.factories.queue import make_atendimento
+from tests.factories.scenarios import seed_clinical_scenario
 
 _TEST_ORG_ID = 777
 
-
-@pytest.fixture(autouse=True)
-async def clean_database_and_valkey() -> AsyncGenerator[None]:
-    """Ensure clean PostgreSQL tables and Valkey keys for each test."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(
-            text(
-                "TRUNCATE TABLE atendimentos, dependentes, pacientes, "
-                "profissionais, organizacoes CASCADE;"
-            )
-        )
-
-    yield
-
-    async for client in get_valkey_client():
-        keys = await client.keys(f"lock:{_TEST_ORG_ID}:*")  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys(f"fila:{_TEST_ORG_ID}:*"))  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys("arq:*"))  # pyright: ignore[reportUnknownMemberType]
-        if keys:
-            await client.delete(*keys)
-
-    await close_valkey_pool()
+pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 
 
 @pytest.mark.asyncio
 async def test_end_to_end_ring_timeout_releases_locks_and_marks_no_show() -> None:
     """Worker resolves no-show, marks attendance absent and frees doctor immediately."""
-    org = make_organizacao(id=_TEST_ORG_ID)
-    doctor = make_profissional(organizacao_id=org.id)
-    patient = make_paciente(organizacao_id=org.id)
-
-    atendimento = make_atendimento(
-        organizacao_id=org.id,
-        paciente_id=patient.id,
-        medico_id=doctor.id,
-        status=StatusAtendimento.CHAMANDO_PACIENTE.value,
-        chamada_iniciada_em=datetime.now(UTC),
-    )
-
-    with tenant_context(org.id):
+    with tenant_context(_TEST_ORG_ID):
         async with async_session_factory() as session:
-            session.add_all([org, doctor, patient, atendimento])
+            cenario = await seed_clinical_scenario(
+                session,
+                org_id=_TEST_ORG_ID,
+                status_atendimento=StatusAtendimento.CHAMANDO_PACIENTE,
+            )
+            cenario.atendimento.chamada_iniciada_em = datetime.now(UTC)
+            session.add(cenario.atendimento)
             await session.commit()
+            org = cenario.organizacao
+            doctor = cenario.medico
+            atendimento = cenario.atendimento
 
     pool = await create_pool(WorkerSettings.redis_settings)
     try:
@@ -119,22 +86,19 @@ async def test_end_to_end_ring_timeout_releases_locks_and_marks_no_show() -> Non
 @pytest.mark.asyncio
 async def test_end_to_end_answered_call_promotes_active_consultation_lock() -> None:
     """When patient answers in time, worker preserves call and promotes lock."""
-    org = make_organizacao(id=_TEST_ORG_ID)
-    doctor = make_profissional(organizacao_id=org.id)
-    patient = make_paciente(organizacao_id=org.id)
-
-    atendimento = make_atendimento(
-        organizacao_id=org.id,
-        paciente_id=patient.id,
-        medico_id=doctor.id,
-        status=StatusAtendimento.EM_ATENDIMENTO.value,
-        chamada_iniciada_em=datetime.now(UTC),
-    )
-
-    with tenant_context(org.id):
+    with tenant_context(_TEST_ORG_ID):
         async with async_session_factory() as session:
-            session.add_all([org, doctor, patient, atendimento])
+            cenario = await seed_clinical_scenario(
+                session,
+                org_id=_TEST_ORG_ID,
+                status_atendimento=StatusAtendimento.EM_ATENDIMENTO,
+            )
+            cenario.atendimento.chamada_iniciada_em = datetime.now(UTC)
+            session.add(cenario.atendimento)
             await session.commit()
+            org = cenario.organizacao
+            doctor = cenario.medico
+            atendimento = cenario.atendimento
 
     pool = await create_pool(WorkerSettings.redis_settings)
     try:
@@ -184,21 +148,20 @@ async def test_end_to_end_answered_call_promotes_active_consultation_lock() -> N
 @pytest.mark.asyncio
 async def test_alocar_chamada_schedules_arq_job_in_valkey() -> None:
     """alocar_chamada service schedules deferred job with deduplicated ID in Valkey."""
-    org = make_organizacao(id=_TEST_ORG_ID)
-    doctor = make_profissional(organizacao_id=org.id)
-    patient = make_paciente(organizacao_id=org.id)
-
-    atendimento = make_atendimento(
-        organizacao_id=org.id,
-        paciente_id=patient.id,
-        status=StatusAtendimento.APTO_PARA_CHAMADA.value,
-        data_entrada_fila=datetime.now(UTC),
-    )
-
-    with tenant_context(org.id):
+    with tenant_context(_TEST_ORG_ID):
         async with async_session_factory() as session:
-            session.add_all([org, doctor, patient, atendimento])
+            cenario = await seed_clinical_scenario(
+                session,
+                org_id=_TEST_ORG_ID,
+                status_atendimento=StatusAtendimento.APTO_PARA_CHAMADA,
+            )
+            cenario.atendimento.medico_id = None
+            cenario.atendimento.data_entrada_fila = datetime.now(UTC)
+            session.add(cenario.atendimento)
             await session.commit()
+            org = cenario.organizacao
+            doctor = cenario.medico
+            atendimento = cenario.atendimento
 
     pool = await create_pool(WorkerSettings.redis_settings)
     try:

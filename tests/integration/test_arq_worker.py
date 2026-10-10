@@ -11,6 +11,8 @@ from src.worker.health import check_worker_heartbeat
 from src.worker.settings import WorkerSettings
 from src.worker.tasks import monitored_task
 
+pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
+
 
 @pytest.mark.asyncio
 async def test_arq_worker_executes_ping_task_with_shared_pools() -> None:
@@ -110,7 +112,8 @@ async def test_arq_worker_unhandled_failure_logging() -> None:
         await pool.aclose()
 
 
-def test_worker_graceful_shutdown_timeout_configured() -> None:
+@pytest.mark.asyncio
+async def test_worker_graceful_shutdown_timeout_configured() -> None:
     """Worker must be configured with a 10s graceful completion wait for signals."""
     worker = create_worker(
         WorkerSettings,  # pyright: ignore[reportArgumentType]

@@ -3,7 +3,7 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -27,6 +27,11 @@ from src.modules.consultation.infrastructure.memory_signed_cache import (
     MemorySignedCache,
 )
 from src.modules.consultation.infrastructure.s3_storage import FakeStorageAdapter
+
+from tests.doubles import FakeAsyncSession, FakeResult
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @dataclass
@@ -55,22 +60,6 @@ class FakeDoc:
     def __post_init__(self) -> None:
         if self.itens is None:
             self.itens = [FakeDocItem()]
-
-
-class FakeResult:
-    def __init__(self, doc: FakeDoc | None) -> None:
-        self._doc = doc
-
-    def scalar_one_or_none(self) -> FakeDoc | None:
-        return self._doc
-
-
-class FakeSession:
-    def __init__(self, doc: FakeDoc | None) -> None:
-        self._doc = doc
-
-    async def execute(self, *args: Any, **kwargs: Any) -> FakeResult:
-        return FakeResult(self._doc)
 
 
 class FakeDirectory(DocumentDirectoryPort):
@@ -117,7 +106,7 @@ def _service(
         return b"%PDF-fake-bytes"
 
     return DocumentValidationService(
-        session=FakeSession(doc),  # type: ignore[arg-type]
+        session=cast("AsyncSession", FakeAsyncSession([FakeResult(doc)])),
         directory=FakeDirectory(dados or _dados_padrao(), exc),
         storage=storage or FakeStorageAdapter(),
         compilador_pdf=compiler or _default_compiler,

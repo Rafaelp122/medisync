@@ -1,26 +1,13 @@
 """Integration tests for Valkey Lua script manager and ADR-002 allocation."""
 
 import asyncio
-from collections.abc import AsyncGenerator
 
 import pytest
 from redis.asyncio import Redis
-from src.core.valkey import close_valkey_pool, get_valkey_client
+from src.core.valkey import get_valkey_client
 from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 
-
-@pytest.fixture(autouse=True)
-async def cleanup_valkey() -> AsyncGenerator[None]:
-    """Ensure cleanup of test keys and pools."""
-    yield
-    async for client in get_valkey_client():
-        # Clean up test keys
-        keys = await client.keys("test_org:*")  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys("lock:999:*"))  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys("fila:999:*"))  # pyright: ignore[reportUnknownMemberType]
-        if keys:
-            await client.delete(*keys)
-    await close_valkey_pool()
+pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 
 
 @pytest.mark.asyncio

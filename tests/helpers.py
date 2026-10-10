@@ -38,6 +38,38 @@ async def clean_database_tables() -> None:
         await conn.execute(CLEAN_TABLES_SQL)
 
 
+DEFAULT_VALKEY_TEST_PATTERNS: tuple[str, ...] = (
+    "fila:*",
+    "lock:*",
+    "plantao:*",
+    "cota:*",
+    "arq:*",
+    "test_org:*",
+    "auth:ratelimit:*",
+)
+
+
+async def clean_valkey_keys(*patterns: str) -> None:
+    """Clean test keys from Valkey based on patterns or default test namespaces."""
+    from src.core.valkey import get_valkey_client
+
+    pats = patterns or DEFAULT_VALKEY_TEST_PATTERNS
+    async for client in get_valkey_client():
+        all_keys: list[str] = []
+        for pat in pats:
+            matched: list[str] = await client.keys(pat)  # pyright: ignore[reportUnknownMemberType]
+            if matched:
+                all_keys.extend(matched)
+        if all_keys:
+            await client.delete(*all_keys)
+
+
+async def clean_database_and_valkey(*valkey_patterns: str) -> None:
+    """Safely truncate domain database tables and clean Valkey test keys."""
+    await clean_database_tables()
+    await clean_valkey_keys(*valkey_patterns)
+
+
 def auth_headers(papel: str, org_id: int, usuario_id: UUID) -> dict[str, str]:
     """Emit real JWT access token header for tests (single decode central)."""
     service = JWTTokenService(secret_key=get_settings().JWT_SECRET_KEY)

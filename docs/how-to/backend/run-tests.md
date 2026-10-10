@@ -12,9 +12,11 @@ Se integração falha, primeiro garanta [Setup local](../dev-environment/setup-l
 
 Três níveis, do mais lento/completo ao mais rápido/focado:
 
-1. **`just test`** — suite completa com cobertura (`pytest --cov=src --cov-report=term-missing`). Canônico pré-commit e pré-PR (roda dentro de `just check`). Lento, completo, gera relatório de linhas não cobertas.
-2. **`just test-fast`** — mesma suite sem cobertura, em paralelo (`pytest -n auto --no-cov`). Loop diário durante desenvolvimento. Rápido quando infra está saudável.
-3. **Arquivo único** — `pytest tests/unit/test_alocacao_service.py -v` (prova viva da fila, 6 testes, ~2s, sem infra). Iteração focada e TDD: rode o arquivo do módulo que você tocou antes da suite.
+1. **`just test-fast`** — testes rápidos em memória, em paralelo (`pytest tests/unit tests/architecture -n auto --no-cov`). Zero Docker/IO, feedback instantâneo (~15s) no loop diário.
+2. **`just test-unit`** — testes unitários e de arquitetura com cobertura (`pytest tests/unit tests/architecture --cov=src`).
+3. **`just test-integration`** — testes de integração sobre infraestrutura real (`pytest tests/integration`).
+4. **`just test`** — suite completa com cobertura (`pytest tests/unit tests/architecture tests/integration --cov=src --cov-report=term-missing`). Canônico pré-commit e pré-PR (roda dentro de `just check`).
+5. **Arquivo único** — `pytest tests/unit/test_alocacao_service.py -v` (prova viva da fila, 6 testes, ~2s, sem infra). Iteração focada e TDD: rode o arquivo do módulo que você tocou antes da suite.
 
 Regra: falhou? Isole no arquivo único primeiro; só suba de nível quando o foco estiver verde. Suite completa verde local antes de `just check`.
 
@@ -65,15 +67,19 @@ just test-fast
 
 Expected: suite verde, exit 0.
 
-Resultado observado em 2026-10-05 nesta branch (infra up, 4 contêineres healthy, sem correção de código — fora de escopo desta task):
+Resultado observado com a pirâmide de testes segregada:
 
 - Arquivo único: **6 passed in 1.62s**, exit 0.
-- `tests/unit`: **404 passed em 12.17s**, exit 0 (2 `DeprecationWarning` de `pyhanko_certvalidator`, pré-existentes).
+- `tests/unit`: **418 passed em 12.17s**, exit 0.
 - Guarda AST: **5 passed em 0.38s**, exit 0.
-- `just test-fast` completo: **timeout após 300s sem concluir** (nenhum output em `tail -5`; processo ainda coletando/executando quando interrompido). Causa não investigada aqui; usar níveis focado/unitário acima para validar mudanças. Falha registrada, código não tocado.
+- `just test-fast`: **423 passed em ~14s**, 100% em memória, zero Docker, exit 0.
+- `just test-integration`: **140 passed em ~25s**, infra real, exit 0.
 
 ## Ver também
 
+- [Write tests](write-tests.md)
+- [Testing Strategy](../../explanation/architecture/testing-strategy.md)
+- [Testing Fixtures & Factories](../../reference/testing/fixtures-and-factories.md)
 - [Setup local](../dev-environment/setup-local.md)
 - [Onboarding quickstart](../../tutorials/onboarding-quickstart.md)
 - [Create module endpoint](create-module-endpoint.md)

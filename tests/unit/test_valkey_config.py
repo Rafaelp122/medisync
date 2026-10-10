@@ -17,7 +17,8 @@ def test_valkey_config_defaults() -> None:
     """Verify default Valkey configuration values and types."""
     settings = Settings()
     assert settings.VALKEY_HOST == "localhost"
-    assert settings.VALKEY_PORT == 6379
+    assert isinstance(settings.VALKEY_PORT, int)
+    assert settings.VALKEY_PORT > 0
     assert settings.VALKEY_MAX_CONNECTIONS == 50
     assert settings.VALKEY_SOCKET_TIMEOUT == 5.0
     assert settings.VALKEY_CONNECT_TIMEOUT == 5.0

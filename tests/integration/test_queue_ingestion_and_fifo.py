@@ -1,14 +1,12 @@
 """Integration tests for queue ingestion, 64-bit scoring, and UUIDv7 FIFO."""
 
 import asyncio
-from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import text
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.core.uuid7 import uuid7
-from src.core.valkey import close_valkey_pool, get_valkey_client
+from src.core.valkey import get_valkey_client
 from src.modules.queue.application.dtos import (
     AdquirirProximoPacienteCommand,
     AlocarChamadaCommand,
@@ -38,27 +36,7 @@ from tests.factories.queue import make_atendimento
 SAMPLE_TCLE_HASH = "a" * 64
 
 
-@pytest.fixture(autouse=True)
-async def clean_database_and_valkey() -> AsyncGenerator[None]:
-    """Ensure clean PostgreSQL tables and Valkey keys for each test."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(
-            text(
-                "TRUNCATE TABLE atendimentos, dependentes, pacientes, "
-                "profissionais, organizacoes CASCADE;"
-            )
-        )
-
-    yield
-
-    async for client in get_valkey_client():
-        keys = await client.keys("fila:*")  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys("lock:*"))  # pyright: ignore[reportUnknownMemberType]
-        if keys:
-            await client.delete(*keys)
-
-    await close_valkey_pool()
+pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 
 
 @pytest.mark.asyncio

@@ -2,15 +2,13 @@
 
 import asyncio
 import time
-from collections.abc import AsyncGenerator
 from uuid import uuid4
 
 import pytest
 from redis.asyncio import Redis
-from sqlalchemy import text
-from src.core.database import Base, async_session_factory, engine
+from src.core.database import async_session_factory
 from src.core.uuid7 import uuid7
-from src.core.valkey import close_valkey_pool, get_valkey_client
+from src.core.valkey import get_valkey_client
 from src.modules.queue.application.dtos import AlocarChamadaCommand
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
@@ -19,38 +17,9 @@ from src.modules.queue.domain.exceptions import MedicoOcupadoError
 from src.modules.queue.domain.models import Atendimento, StatusAtendimento
 from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 
-from tests.factories.identity import (
-    make_organizacao,
-    make_paciente,
-    make_profissional,
-)
-from tests.factories.queue import make_atendimento
+from tests.factories.scenarios import seed_clinical_scenario
 
-
-@pytest.fixture(autouse=True)
-async def clean_database_and_valkey() -> AsyncGenerator[None]:
-    """Ensure clean PostgreSQL tables and Valkey keys for each test."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(
-            text(
-                "TRUNCATE TABLE atendimentos, dependentes, pacientes, "
-                "profissionais, organizacoes CASCADE;"
-            )
-        )
-
-    yield
-
-    async for client in get_valkey_client():
-        keys = await client.keys("test_org:*")  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys("lock:999:*"))  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys("fila:999:*"))  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys("lock:888:*"))  # pyright: ignore[reportUnknownMemberType]
-        keys.extend(await client.keys("fila:888:*"))  # pyright: ignore[reportUnknownMemberType]
-        if keys:
-            await client.delete(*keys)
-
-    await close_valkey_pool()
+pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 
 
 @pytest.mark.asyncio
@@ -207,29 +176,24 @@ async def test_alocar_chamada_sub_10ms_latency_benchmark() -> None:
 async def test_end_to_end_alocacao_service_with_postgres() -> None:
     """Verify end-to-end atomic allocation with PostgreSQL and Valkey consistency."""
     async with async_session_factory() as session:
-        # 1. Setup DB records
-        org = make_organizacao(cnpj="88776655000144", razao_social="UBS Concurrency")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="33344455566")
-        medico = make_profissional(
-            org.id,
-            cpf="77788899900",
-            email="dra.alocacao@ubs.gov.br",
-            papel="MEDICO",
-        )
-        session.add_all([paciente, medico])
-        await session.commit()
-        await session.refresh(paciente)
-        await session.refresh(medico)
-
+        # 1. Setup DB records via seed_clinical_scenario
         SAMPLE_TCLE_HASH = (
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         )
-        atendimento = make_atendimento(org.id, paciente.id, tcle_hash=SAMPLE_TCLE_HASH)
-        atendimento.promover_para_apto()
+        cenario = await seed_clinical_scenario(
+            session,
+            org_cnpj="88776655000144",
+            org_razao_social="UBS Concurrency",
+            paciente_cpf="33344455566",
+            medico_cpf="77788899900",
+            medico_email="dra.alocacao@ubs.gov.br",
+            status_atendimento=StatusAtendimento.APTO_PARA_CHAMADA,
+            tcle_hash=SAMPLE_TCLE_HASH,
+        )
+        org = cenario.organizacao
+        medico = cenario.medico
+        atendimento = cenario.atendimento
+        atendimento.medico_id = None
         session.add(atendimento)
         await session.commit()
         await session.refresh(atendimento)

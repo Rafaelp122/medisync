@@ -1,7 +1,5 @@
 """Unit tests for DocumentoService (canonical keys, SignedCachePort, no fallback)."""
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
@@ -38,70 +36,10 @@ from src.modules.consultation.infrastructure.s3_storage import FakeStorageAdapte
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.doubles import FakeAddedResult, FakeAsyncSession, FakeResult
+
 _ORG_ID = 7
 _SHA_FIXO = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
-
-class _NoneMappings:
-    def first(self) -> None:
-        return None
-
-
-class _Result:
-    """Scripted session result supporting scalar and mappings access."""
-
-    def __init__(self, value: Any) -> None:
-        self._value = value
-
-    def scalar_one_or_none(self) -> Any:
-        return self._value
-
-    def scalar_one(self) -> Any:
-        assert self._value is not None
-        return self._value
-
-    def mappings(self) -> _NoneMappings:
-        return _NoneMappings()
-
-
-class _AddedResult:
-    """Reload-after-commit result returning the first added entity."""
-
-    def __init__(self, added: list[Any]) -> None:
-        self._added = added
-
-    def scalar_one_or_none(self) -> Any:
-        return self._added[0]
-
-    def scalar_one(self) -> Any:
-        return self._added[0]
-
-
-class FakeSession:
-    """Scripted async session with ordered execute results."""
-
-    def __init__(self, results: list[Any], added: list[Any] | None = None) -> None:
-        self._results = list(results)
-        self.added: list[Any] = added if added is not None else []
-        self.commits = 0
-        self.executes = 0
-
-    async def execute(self, *args: Any, **kwargs: Any) -> Any:
-        self.executes += 1
-        return self._results.pop(0)
-
-    def add(self, obj: Any) -> None:
-        self.added.append(obj)
-
-    async def flush(self) -> None:
-        return None
-
-    async def commit(self) -> None:
-        self.commits += 1
-
-    @asynccontextmanager
-    async def begin_nested(self) -> AsyncGenerator["FakeSession"]:
-        yield self
 
 
 def _emitir_command(
@@ -137,7 +75,7 @@ def _make_doc(atendimento_id: UUID, medico_id: UUID, doc_id: UUID) -> DocumentoC
 
 
 def _service(
-    session: FakeSession,
+    session: FakeAsyncSession,
     storage: Any | None = None,
     cache: MemorySignedCache | None = None,
 ) -> DocumentoService:
@@ -156,7 +94,7 @@ async def test_emitir_gera_chave_canonica_sem_legado() -> None:
     atend_id = uuid7()
     med_id = uuid7()
     added: list[Any] = []
-    session = FakeSession([_Result(None), _AddedResult(added)], added)
+    session = FakeAsyncSession([FakeResult(None), FakeAddedResult(added)], added)
     svc = _service(session)
 
     doc = await svc.emitir_documento(_emitir_command(atend_id, med_id))
@@ -176,7 +114,7 @@ async def test_emitir_preserva_chave_explicita() -> None:
     atend_id = uuid7()
     med_id = uuid7()
     added: list[Any] = []
-    session = FakeSession([_Result(None), _AddedResult(added)], added)
+    session = FakeAsyncSession([FakeResult(None), FakeAddedResult(added)], added)
     svc = _service(session)
     explicita = f"orgs/{_ORG_ID}/consultations/{atend_id}/documents/custom.pdf"
 
@@ -188,7 +126,7 @@ async def test_emitir_preserva_chave_explicita() -> None:
 @pytest.mark.asyncio
 async def test_emitir_tipo_proibido_portaria_344() -> None:
     """Yellow/blue pad types must fail before any persistence."""
-    session = FakeSession([])
+    session = FakeAsyncSession([])
     svc = _service(session)
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=uuid7(),
@@ -214,7 +152,7 @@ async def test_compilar_storage_hit_nao_recompila() -> None:
     await storage.salvar_documento(doc.chave_s3, b"%PDF-armazenado%")
     pdf_generator: Any = MagicMock()
     pdf_generator.gerar_pdf.side_effect = AssertionError("não deve recompilar")
-    session = FakeSession([_Result(doc)])
+    session = FakeAsyncSession([FakeResult(doc)])
     svc = DocumentoService(
         session=cast("AsyncSession", session),
         pdf_generator=pdf_generator,
@@ -238,8 +176,14 @@ async def test_compilar_storage_miss_compila_4_blocos() -> None:
     pdf_generator: Any = MagicMock()
     pdf_generator.gerar_pdf.return_value = b"%PDF-compilado%"
     # doc load + org + medico + paciente + cid10 (all empty -> defaults).
-    session = FakeSession(
-        [_Result(doc), _Result(None), _Result(None), _Result(None), _Result(None)]
+    session = FakeAsyncSession(
+        [
+            FakeResult(doc),
+            FakeResult(None),
+            FakeResult(None),
+            FakeResult(None),
+            FakeResult(None),
+        ]
     )
     svc = DocumentoService(
         session=cast("AsyncSession", session),
@@ -267,7 +211,7 @@ async def test_assinar_persiste_chave_canonica_e_marca_cache() -> None:
     signer.assinar_pdf.return_value = b"%PDF-signed-bytes%"
     cache = MemorySignedCache()
     # ownership load + compilar reload.
-    session = FakeSession([_Result(doc), _Result(doc)])
+    session = FakeAsyncSession([FakeResult(doc), FakeResult(doc)])
     svc = DocumentoService(
         session=cast("AsyncSession", session),
         pdf_generator=cast("Any", MagicMock()),
@@ -304,7 +248,7 @@ async def test_is_assinado_chave_legada_sem_cache() -> None:
         sha256_hash=_SHA_FIXO,
         id=uuid7(),
     )
-    svc = _service(FakeSession([]), cache=MemorySignedCache())
+    svc = _service(FakeAsyncSession([]), cache=MemorySignedCache())
     assert await svc.is_assinado(doc) is False
 
 
@@ -345,7 +289,7 @@ async def test_validacao_usa_cache_port_para_status_assinado() -> None:
         return b"%PDF-fake%"
 
     svc = DocumentValidationService(
-        session=cast("AsyncSession", FakeSession([_Result(doc)])),
+        session=cast("AsyncSession", FakeAsyncSession([FakeResult(doc)])),
         directory=_StubDirectory(),
         storage=FakeStorageAdapter(),
         compilador_pdf=_compiler,
@@ -356,7 +300,7 @@ async def test_validacao_usa_cache_port_para_status_assinado() -> None:
 
     await cache.marcar_assinado(doc.id)
     svc2 = DocumentValidationService(
-        session=cast("AsyncSession", FakeSession([_Result(doc)])),
+        session=cast("AsyncSession", FakeAsyncSession([FakeResult(doc)])),
         directory=_StubDirectory(),
         storage=FakeStorageAdapter(),
         compilador_pdf=_compiler,

@@ -11,5 +11,6 @@ Entendimento conceitual do MediSync — porquê e como sistema funciona. Complem
 - [Concurrency & Queues](architecture/concurrency-and-queues.md)
 - [Compliance & Telemedicine](architecture/compliance-and-telemedicine.md)
 - [Security & Authorization](architecture/security-and-authorization.md)
+- [Testing Strategy](architecture/testing-strategy.md)
 - [Concepts](concepts/index.md) — fase 2
 - [Domains](domains/index.md) — fase 2
