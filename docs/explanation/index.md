@@ -12,5 +12,6 @@ Entendimento conceitual do MediSync — porquê e como sistema funciona. Complem
 - [Compliance & Telemedicine](architecture/compliance-and-telemedicine.md)
 - [Security & Authorization](architecture/security-and-authorization.md)
 - [Testing Strategy](architecture/testing-strategy.md)
+- [CI/CD Strategy & Container Architecture](architecture/ci-cd-and-containers.md)
 - [Concepts](concepts/index.md) — fase 2
 - [Domains](domains/index.md) — fase 2

@@ -91,3 +91,12 @@ migration-history:
 # Valida links src/docs referenciados nos .md e proíbe cola >5 linhas
 docs-check:
     uv run python scripts/docs_check.py
+
+# Compila a imagem Docker de produção
+docker-build:
+    docker build -t medisync:latest --target production .
+
+# Compila a imagem Docker de desenvolvimento
+docker-build-dev:
+    docker build -t medisync:dev --target development .
+

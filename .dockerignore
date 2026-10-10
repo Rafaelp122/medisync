@@ -1,0 +1,35 @@
+# Version control
+.git/
+.gitignore
+
+# Virtual environment and python bytecode
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.coverage
+htmlcov/
+
+# Tooling and caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tach/
+
+# Secrets and local environments
+.env
+.env.*
+!.env.example
+
+# Development tools and notes
+.agents/
+.worktrees/
+scratch/
+docs/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
