@@ -48,6 +48,7 @@ class Fase2InputDTO(BaseModel):
     cidade: str
     estado: str
     alergias: list[str] = Field(default_factory=list)
+    token: str | None = None
 
 
 class Fase2OutputDTO(BaseModel):
