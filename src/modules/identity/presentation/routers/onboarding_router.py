@@ -4,6 +4,7 @@ from fastapi import APIRouter, status
 
 from src.core.dependencies import TenantDep
 from src.modules.identity.composition import OnboardingServiceDep
+from src.modules.identity.presentation.dependencies import ValidarIntakeFase2Dep
 from src.modules.identity.presentation.schemas import (
     Fase1Request,
     Fase1Response,
@@ -51,6 +52,7 @@ async def enrichment_fase_2(
     body: Fase2Request,
     tenant_id: TenantDep,
     service: OnboardingServiceDep,
+    _auth: ValidarIntakeFase2Dep,
 ) -> Fase2Response:
     """Execute Phase 2 regulatory enrichment."""
     result = await service.realizar_fase_2(tenant_id, body)

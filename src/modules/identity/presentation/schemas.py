@@ -127,6 +127,15 @@ class Fase2Request(Fase2InputDTO):
         description="Lista de alergias medicamentosas declaradas",
         examples=[["Dipirona", "Penicilina"]],
     )
+    token: str | None = Field(
+        default=None,
+        description=(
+            "Token provisório de acolhimento (intake_token) gerado na Fase 1. "
+            "Alternativamente, pode ser enviado via cabeçalho "
+            "Authorization: Bearer <token>."
+        ),
+        examples=["eyJhbGciOi..."],
+    )
 
 
 class Fase2Response(Fase2OutputDTO):

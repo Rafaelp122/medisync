@@ -82,6 +82,21 @@ def test_fase_2_request_valid() -> None:
     assert req.nome_mae == "Maria Aparecida da Silva"
     assert req.sexo_biologico == "F"
     assert req.alergias == ["Dipirona"]
+    assert req.token is None
+
+    req_with_token = Fase2Request(
+        paciente_id=paciente_id,
+        nome_mae="Maria Aparecida da Silva",
+        sexo_biologico="F",
+        cep="01310-100",
+        logradouro="Avenida Paulista",
+        numero="1000",
+        bairro="Bela Vista",
+        cidade="São Paulo",
+        estado="SP",
+        token="token.hmac123",
+    )
+    assert req_with_token.token == "token.hmac123"
 
 
 def test_fase_2_request_invalid_sexo() -> None:

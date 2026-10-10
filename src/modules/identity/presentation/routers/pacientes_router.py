@@ -7,6 +7,7 @@ from fastapi import APIRouter, Path, status
 
 from src.core.dependencies import TenantDep
 from src.modules.identity.composition import DependenteServiceDep
+from src.modules.identity.presentation.dependencies import TitularPosseDep
 from src.modules.identity.presentation.schemas import (
     CriarDependenteRequest,
     DependenteDetalheResponse,
@@ -34,6 +35,7 @@ async def cadastrar_dependente(
     body: CriarDependenteRequest,
     tenant_id: TenantDep,
     service: DependenteServiceDep,
+    _posse: TitularPosseDep,
 ) -> DependenteResponse:
     """Register or link a dependent to a titular patient."""
     result = await service.adicionar_dependente(
@@ -58,6 +60,7 @@ async def listar_dependentes(
     id: Annotated[UUID, Path(description="ID do paciente titular")],
     tenant_id: TenantDep,
     service: DependenteServiceDep,
+    _posse: TitularPosseDep,
 ) -> list[DependenteDetalheResponse]:
     """List all dependents linked to the titular patient."""
     results = await service.listar_dependentes(

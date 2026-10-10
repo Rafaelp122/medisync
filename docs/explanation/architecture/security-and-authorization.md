@@ -145,3 +145,4 @@ A arquitetura descrita é implementada e auditada através das seguintes issues 
 * **[Issue #36](https://github.com/Rafaelp122/medisync/issues/36)**: `feat(authz): implement OWASP multi-tier authorization guards (RBAC, API policies and clinical ABAC/ReBAC context)` (Camadas 1 e 3 - RBAC e ABAC Clínico).
 * **[Issue #39](https://github.com/Rafaelp122/medisync/issues/39)**: `fix(security): blindar mutações clínicas do PEP e leitura na ClinicalAccessPolicy` (Blindagem de Mutações e Acesso Histórico ao PEP).
 * **[Issue #12](https://github.com/Rafaelp122/medisync/issues/12)**: `feat(identity): implement progressive 2-phase onboarding API and dependent management` (Cadastro Progressivo do Paciente).
+* **[Issue #40](https://github.com/Rafaelp122/medisync/issues/40)**: `fix(identity): implementar prova de posse via intake token no onboarding Fase 2 e dependentes` (Blindagem contra IDOR no Onboarding e Dependentes).
