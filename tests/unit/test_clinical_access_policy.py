@@ -81,31 +81,73 @@ async def test_clinical_access_physician_mismatch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_clinical_access_inactive_encounter() -> None:
-    """Verify ForbiddenError when attendance is not in active consultation status."""
+@pytest.mark.parametrize("status", ["CANCELADO_PACIENTE", "PACIENTE_AUSENTE"])
+async def test_clinical_access_cancelled_or_absent_encounter_blocked(
+    status: str,
+) -> None:
+    """Verify ForbiddenError when attendance is cancelled or patient absent."""
     atend_id = uuid4()
     medico_id = uuid4()
-    reader = _make_reader(atend_id=atend_id, medico_id=medico_id, status="CONCLUIDO")
+    reader = _make_reader(atend_id=atend_id, medico_id=medico_id, status=status)
 
     with pytest.raises(ForbiddenError, match="atendimento ativo"):
         await ClinicalAccessPolicy.validar_acesso_clinico(
             atendimento_id=atend_id,
             medico_id=medico_id,
             reader=reader,
+            is_mutation=False,
         )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", ["EM_ATENDIMENTO", "CHAMANDO_PACIENTE"])
-async def test_clinical_access_granted_when_all_conditions_met(status: str) -> None:
-    """Verify access granted when TCLE is signed and physician matches."""
+async def test_clinical_access_mutation_on_concluido_encounter_blocked() -> None:
+    """Verify ForbiddenError on clinical mutation on CONCLUIDO encounter."""
+    atend_id = uuid4()
+    medico_id = uuid4()
+    reader = _make_reader(atend_id=atend_id, medico_id=medico_id, status="CONCLUIDO")
+
+    with pytest.raises(ForbiddenError, match="atendimento já concluído"):
+        await ClinicalAccessPolicy.validar_acesso_clinico(
+            atendimento_id=atend_id,
+            medico_id=medico_id,
+            reader=reader,
+            is_mutation=True,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["EM_ATENDIMENTO", "CHAMANDO_PACIENTE", "CONCLUIDO"])
+async def test_clinical_access_read_granted_for_active_and_concluded(
+    status: str,
+) -> None:
+    """Verify read access granted when TCLE is signed and physician matches."""
     atend_id = uuid4()
     medico_id = uuid4()
     reader = _make_reader(atend_id=atend_id, medico_id=medico_id, status=status)
 
-    # Should complete without raising any exception
+    # Should complete without raising any exception for reads
     await ClinicalAccessPolicy.validar_acesso_clinico(
         atendimento_id=atend_id,
         medico_id=medico_id,
         reader=reader,
+        is_mutation=False,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["EM_ATENDIMENTO", "CHAMANDO_PACIENTE"])
+async def test_clinical_access_mutation_granted_for_active_statuses(
+    status: str,
+) -> None:
+    """Verify mutation access granted for active encounter statuses."""
+    atend_id = uuid4()
+    medico_id = uuid4()
+    reader = _make_reader(atend_id=atend_id, medico_id=medico_id, status=status)
+
+    # Should complete without raising any exception for mutations
+    await ClinicalAccessPolicy.validar_acesso_clinico(
+        atendimento_id=atend_id,
+        medico_id=medico_id,
+        reader=reader,
+        is_mutation=True,
     )

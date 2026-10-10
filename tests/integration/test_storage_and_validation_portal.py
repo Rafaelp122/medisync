@@ -6,9 +6,11 @@ from uuid import UUID, uuid4
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.core.authz.roles import Role
 from src.modules.consultation.domain.models import DocumentoClinico
 
 from tests.factories.scenarios import seed_clinical_scenario
+from tests.helpers import auth_headers
 
 pytestmark = pytest.mark.usefixtures("clean_db")
 
@@ -33,13 +35,15 @@ async def test_storage_presigned_url_and_validation_portal_full_flow(
         medico_crm_uf="SP",
     )
     async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
+    async_client.headers.update(
+        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
+    )
     client = async_client
 
     # 1. Emitir receita médica
     emit_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={
-            "medico_id": str(cenario.medico.id),
             "tipo_documento": "RECEITA_SIMPLES",
             "itens": [
                 {
@@ -134,13 +138,15 @@ async def test_validation_portal_documento_nao_assinado(
         medico_crm_uf="MG",
     )
     async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
+    async_client.headers.update(
+        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
+    )
     client = async_client
 
     # Emitir atestado médico
     emit_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={
-            "medico_id": str(cenario.medico.id),
             "tipo_documento": "ATESTADO_MEDICO",
             "itens": [
                 {

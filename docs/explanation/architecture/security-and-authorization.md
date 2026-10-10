@@ -112,7 +112,9 @@ sequenceDiagram
 * **Por que não fica na Identidade:** A regra depende do estado transacional da fila e do atendimento, que residem nos módulos `queue` e `consultation`.
 * **Regras de Avaliação:**
   1. O paciente concedeu aceite explícito ao TCLE digital (`tcle_hash IS NOT NULL`)?
-  2. O atendimento está no estado `EM_ATENDIMENTO` ou `CHAMANDO_PACIENTE`?
+  2. O ciclo de vida do atendimento permite a operação solicitada:
+     - **Leitura do Prontuário (`is_mutation=False`):** `EM_ATENDIMENTO`, `CHAMANDO_PACIENTE` ou `CONCLUIDO` (Resolução CFM nº 1.821/2007 — Guarda de Prontuário e Acesso Histórico pelo Médico Assistente).
+     - **Mutações Clínicas (`is_mutation=True`):** estritamente `EM_ATENDIMENTO` ou `CHAMANDO_PACIENTE` (Resolução CFM nº 2.314/2022). Tentativas de mutação em atendimento `CONCLUIDO` são bloqueadas com erro 403 Forbidden.
   3. O médico autenticado é exatamente o `medico_id` atribuído ao atendimento?
   *Se qualquer condição for falsa, o acesso aos dados sensíveis do prontuário é bloqueado com erro 403.*
 
@@ -141,4 +143,5 @@ A arquitetura descrita é implementada e auditada através das seguintes issues 
 * **[Issue #11](https://github.com/Rafaelp122/medisync/issues/11)**: `feat(security): implement PostgreSQL Row-Level Security (RLS) policies` (Camada 2 - Tenant Isolation).
 * **[Issue #35](https://github.com/Rafaelp122/medisync/issues/35)**: `feat(auth): implement OWASP authentication service, Argon2id verification, rate limiting and JWT session management` (Autenticação Desacoplada).
 * **[Issue #36](https://github.com/Rafaelp122/medisync/issues/36)**: `feat(authz): implement OWASP multi-tier authorization guards (RBAC, API policies and clinical ABAC/ReBAC context)` (Camadas 1 e 3 - RBAC e ABAC Clínico).
+* **[Issue #39](https://github.com/Rafaelp122/medisync/issues/39)**: `fix(security): blindar mutações clínicas do PEP e leitura na ClinicalAccessPolicy` (Blindagem de Mutações e Acesso Histórico ao PEP).
 * **[Issue #12](https://github.com/Rafaelp122/medisync/issues/12)**: `feat(identity): implement progressive 2-phase onboarding API and dependent management` (Cadastro Progressivo do Paciente).

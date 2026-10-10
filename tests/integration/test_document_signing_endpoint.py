@@ -9,8 +9,10 @@ from httpx import AsyncClient
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.sign.validation import async_validate_pdf_signature
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.core.authz.roles import Role
 
 from tests.factories.scenarios import seed_clinical_scenario
+from tests.helpers import auth_headers
 
 pytestmark = pytest.mark.usefixtures("clean_db")
 
@@ -28,13 +30,15 @@ async def test_assinar_documento_clinico_pades_flow(
         medico_cpf="88888888801",
     )
     async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
+    async_client.headers.update(
+        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
+    )
     client = async_client
 
     # 1. Emitir receita simples
     emit_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={
-            "medico_id": str(cenario.medico.id),
             "tipo_documento": "RECEITA_SIMPLES",
             "itens": [
                 {
@@ -96,7 +100,7 @@ async def test_assinar_documento_consultation_finalizada_bloqueado(
     db_session: AsyncSession,
     async_client: AsyncClient,
 ) -> None:
-    """Validate signing is rejected with 409 Conflict if consultation finalized."""
+    """Validate signing is rejected with 403 Forbidden if consultation finalized."""
     cenario = await seed_clinical_scenario(
         db_session,
         org_cnpj="55555555000104",
@@ -104,13 +108,15 @@ async def test_assinar_documento_consultation_finalizada_bloqueado(
         medico_cpf="88888888802",
     )
     async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
+    async_client.headers.update(
+        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
+    )
     client = async_client
 
     # Emitir documento
     emit_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={
-            "medico_id": str(cenario.medico.id),
             "tipo_documento": "RECEITA_SIMPLES",
             "itens": [
                 {
@@ -129,7 +135,6 @@ async def test_assinar_documento_consultation_finalizada_bloqueado(
     soap_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/soap",
         json={
-            "medico_id": str(cenario.medico.id),
             "anamnese": "Paciente refere cefaleia de leve intensidade.",
             "conduta": "Prescrito sintomático e repouso.",
         },
@@ -139,11 +144,11 @@ async def test_assinar_documento_consultation_finalizada_bloqueado(
     # Finalizar consulta
     fin_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/finalize",
-        json={"medico_id": str(cenario.medico.id)},
+        json={},
     )
     assert fin_resp.status_code == 200
 
-    # Tentar assinar documento após finalização -> 409 Conflict
+    # Tentar assinar documento após finalização -> 403 Forbidden
     sign_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents/{doc_id}/sign",
         json={
@@ -151,9 +156,9 @@ async def test_assinar_documento_consultation_finalizada_bloqueado(
             "provider": "fake",
         },
     )
-    assert sign_resp.status_code == 409
+    assert sign_resp.status_code == 403
     err_body = sign_resp.json()
-    assert "já finalizada" in err_body["detail"]
+    assert "atendimento já concluído" in err_body["detail"]
 
 
 @pytest.mark.asyncio
@@ -169,6 +174,9 @@ async def test_assinar_documento_erros_validacao_e_nao_encontrado(
         medico_cpf="88888888803",
     )
     async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
+    async_client.headers.update(
+        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
+    )
     client = async_client
 
     # 1. Documento não encontrado -> 404
@@ -183,7 +191,6 @@ async def test_assinar_documento_erros_validacao_e_nao_encontrado(
     emit_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={
-            "medico_id": str(cenario.medico.id),
             "tipo_documento": "RECEITA_SIMPLES",
             "itens": [
                 {

@@ -24,6 +24,7 @@ from src.modules.consultation.composition import (
 from src.modules.consultation.presentation.dependencies import (
     AtendimentoIdPath,
     ClinicalAccessDep,
+    ClinicalAccessMutationDep,
     DocumentoIdPath,
 )
 from src.modules.consultation.presentation.schemas import (
@@ -63,6 +64,7 @@ def _require_matching_tenant(provided: int | None, tenant_id: int) -> int:
 async def salvar_evolucao_soap(
     atendimento_id: AtendimentoIdPath,
     request: RegistrarSOAPRequest,
+    current_user: ClinicalAccessMutationDep,
     service: PEPServiceDep,
     tenant_id: TenantDep,
 ) -> EvolucaoSOAPResponse:
@@ -71,7 +73,7 @@ async def salvar_evolucao_soap(
     command = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
         organizacao_id=org_id,
-        medico_id=request.medico_id,
+        medico_id=current_user.usuario_id,
         anamnese=request.anamnese,
         conduta=request.conduta,
         exame_fisico_virtual=request.exame_fisico_virtual,
@@ -146,6 +148,7 @@ async def validar_prescricao_medicamento(
 async def emitir_documento_clinico(
     atendimento_id: AtendimentoIdPath,
     request: EmitirDocumentoRequest,
+    current_user: ClinicalAccessMutationDep,
     service: PEPServiceDep,
     tenant_id: TenantDep,
 ) -> DocumentoClinicoResponse:
@@ -166,7 +169,7 @@ async def emitir_documento_clinico(
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
         organizacao_id=org_id,
-        medico_id=request.medico_id,
+        medico_id=current_user.usuario_id,
         tipo_documento=request.tipo_documento,
         itens=itens_dto,
         chave_s3=request.chave_s3 or "",
@@ -187,6 +190,7 @@ async def emitir_documento_clinico(
 async def finalizar_consulta(
     atendimento_id: AtendimentoIdPath,
     request: FinalizarConsultaRequest,
+    current_user: ClinicalAccessMutationDep,
     service: PEPServiceDep,
     tenant_id: TenantDep,
 ) -> FinalizarConsultaResponse:
@@ -195,7 +199,7 @@ async def finalizar_consulta(
     cmd = FinalizarConsultaCommand(
         atendimento_id=atendimento_id,
         organizacao_id=org_id,
-        medico_id=request.medico_id,
+        medico_id=current_user.usuario_id,
     )
     evolucao = await service.finalizar_consulta(cmd)
 
@@ -281,6 +285,7 @@ async def assinar_documento(
     atendimento_id: AtendimentoIdPath,
     documento_id: DocumentoIdPath,
     payload: AssinarDocumentoRequest,
+    _user: ClinicalAccessMutationDep,
     service: DocumentoServiceDep,
 ) -> AssinarDocumentoResponse:
     """Executa a assinatura digital PAdES em nuvem via PSC (CFM 2.314/2022)."""
