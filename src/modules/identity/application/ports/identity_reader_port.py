@@ -25,6 +25,17 @@ class IdentityDirectoryDTO:
     paciente_nome_social: str | None = None
 
 
+@dataclass(frozen=True)
+class PacienteAuthLookupDTO:
+    """Patient authentication lookup data."""
+
+    id: UUID
+    organizacao_id: int
+    telefone: str
+    cpf: str | None
+    nome_completo: str
+
+
 @runtime_checkable
 class IdentityReaderPort(Protocol):
     """Protocol for reading identity entities using chainable ORM queries."""
@@ -44,4 +55,13 @@ class IdentityReaderPort(Protocol):
 
     async def listar_organizacoes_ativas(self) -> list[int]:
         """List primary keys of all active organizations."""
+        ...
+
+    async def buscar_paciente_por_telefone(
+        self,
+        organizacao_id: int,
+        telefone: str,
+        cpf: str | None = None,
+    ) -> PacienteAuthLookupDTO | None:
+        """Look up patient authentication record by organization and phone."""
         ...

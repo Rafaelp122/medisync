@@ -73,3 +73,47 @@ async def test_identity_reader_medico_nao_encontrado_raises() -> None:
 
     with pytest.raises(NotFoundError, match="Profissional médico"):
         await reader.obter_dados_diretorio(1, uuid4(), uuid4())
+
+
+async def test_identity_reader_buscar_paciente_por_telefone_encontrado() -> None:
+    session = AsyncMock()
+    pac_id = uuid4()
+    mock_pac = MagicMock()
+    mock_pac.id = pac_id
+    mock_pac.organizacao_id = 1
+    mock_pac.telefone = "11987654321"
+    mock_pac.cpf = "11144477735"
+    mock_pac.nome_completo = "Carlos Teste"
+
+    mock_res = MagicMock()
+    mock_res.scalars.return_value.first.return_value = mock_pac
+    session.execute.return_value = mock_res
+
+    reader = SqlIdentityReader(session)
+    dto = await reader.buscar_paciente_por_telefone(
+        organizacao_id=1,
+        telefone="11987654321",
+        cpf="11144477735",
+    )
+
+    assert dto is not None
+    assert dto.id == pac_id
+    assert dto.organizacao_id == 1
+    assert dto.telefone == "11987654321"
+    assert dto.cpf == "11144477735"
+    assert dto.nome_completo == "Carlos Teste"
+
+
+async def test_identity_reader_buscar_paciente_por_telefone_nao_encontrado() -> None:
+    session = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.scalars.return_value.first.return_value = None
+    session.execute.return_value = mock_res
+
+    reader = SqlIdentityReader(session)
+    dto = await reader.buscar_paciente_por_telefone(
+        organizacao_id=1,
+        telefone="11999999999",
+    )
+
+    assert dto is None

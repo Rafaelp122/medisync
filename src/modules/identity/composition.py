@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import Depends
 from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
@@ -43,9 +44,16 @@ def get_dependente_service(session: DbSessionDep) -> DependenteService:
 DependenteServiceDep = Annotated[DependenteService, Depends(get_dependente_service)]
 
 
+def build_identity_reader_sql_for_session(
+    session: AsyncSession,
+) -> IdentityReaderPort:
+    """Build identity reader outside request scope (tests/worker tooling)."""
+    return SqlIdentityReader(session=session)
+
+
 def get_identity_reader(session: DbSessionDep) -> IdentityReaderPort:
     """Provide chainable ORM identity reader port implementation."""
-    return SqlIdentityReader(session=session)
+    return build_identity_reader_sql_for_session(session=session)
 
 
 IdentityReaderDep = Annotated[IdentityReaderPort, Depends(get_identity_reader)]

@@ -119,7 +119,10 @@ def create_app() -> FastAPI:
             valkey=valkey_telemetry,
         )
 
-    from src.modules.auth.presentation.routers import auth_router
+    from src.modules.auth.presentation.routers import (
+        auth_router,
+        patient_auth_router,
+    )
     from src.modules.consultation.presentation.routers import (
         consultation_router,
         doctor_ws_router,
@@ -129,7 +132,6 @@ def create_app() -> FastAPI:
     from src.modules.identity.presentation.routers import (
         onboarding_router,
         pacientes_router,
-        patient_auth_router,
     )
     from src.modules.queue.presentation.routers import (
         admissao_router,
