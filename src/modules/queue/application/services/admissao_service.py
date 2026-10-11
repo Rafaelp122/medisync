@@ -3,12 +3,15 @@
 import logging
 from typing import TYPE_CHECKING
 
+from arq.connections import ArqRedis
+
 from src.core.errors import ValidationError
 from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoCommand,
     AdmissaoAtendimentoResult,
     AvaliarAdmissaoCommand,
 )
+from src.modules.queue.application.ports.triage_port import TriagePort
 from src.modules.queue.application.services.controle_admissao_service import (
     ControleAdmissaoService,
 )
@@ -16,12 +19,6 @@ from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.domain.exceptions import AdmissaoFilaSuspensaError
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
-from src.modules.triage.domain.classification import (
-    calcular_hash_tcle,
-    classificar_risco_clinico,
-)
-from src.modules.triage.domain.exceptions import EmergenciaCriticaSamuError
-from src.modules.triage.domain.models.triagem import Triagem
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,11 +33,15 @@ class AdmissaoAtendimentoService:
         self,
         session: "AsyncSession",
         fila_service: FilaService,
+        triage_port: TriagePort,
         controle_admissao: ControleAdmissaoService | None = None,
+        arq_pool: ArqRedis | None = None,
     ) -> None:
         self._session = session
         self._fila_service = fila_service
+        self._triage_port = triage_port
         self._controle_admissao = controle_admissao or fila_service.controle_admissao
+        self._arq_pool = arq_pool
 
     async def admitir_paciente(
         self,
@@ -52,34 +53,19 @@ class AdmissaoAtendimentoService:
         if command.organizacao_id <= 0:
             raise ValidationError("organizacao_id deve ser positivo.")
 
-        # 1. Resolve TCLE hash (RN07, LGPD Art. 11)
-        tcle_hash_final = command.tcle_hash
-        if not tcle_hash_final:
-            if command.tcle_texto:
-                tcle_hash_final = calcular_hash_tcle(command.tcle_texto)
-            else:
-                raise ValidationError("Consentimento TCLE obrigatório (texto ou hash).")
-
-        # 2. Risk classification via Manchester / ACR Protocol (RN01)
-        prioridade = classificar_risco_clinico(
+        # 1. Clinical risk assessment and SAMU 192 safeguard
+        # via TriagePort (RN01, RN04, RN07)
+        triage_eval = await self._triage_port.avaliar_risco(
+            organizacao_id=command.organizacao_id,
             queixa_principal=command.queixa_principal,
             sintomas=command.sintomas,
             escala_dor=command.escala_dor,
+            tcle_texto=command.tcle_texto,
+            tcle_hash=command.tcle_hash,
+            raise_on_emergency=raise_on_emergency,
         )
 
-        # 3. Emergency Safeguard (RN04)
-        if prioridade == 1 and raise_on_emergency:
-            logger.critical(
-                "Critical emergency (Nível 1) in org %d for patient %s",
-                command.organizacao_id,
-                command.paciente_id,
-            )
-            raise EmergenciaCriticaSamuError(
-                "Emergência médica crítica detectada (Nível 1). "
-                "Ingresso no PA Virtual bloqueado. Acione imediatamente o SAMU 192."
-            )
-
-        # 4. Stochastic backpressure evaluation (RN05)
+        # 2. Stochastic backpressure evaluation (RN05)
         pacientes_aguardando = await self._fila_service.obter_tamanho_fila(
             command.organizacao_id
         )
@@ -101,45 +87,63 @@ class AdmissaoAtendimentoService:
                 motivo=motivo,
             )
 
-        # 5. Atomic persistence of Atendimento + Triagem
+        # 3. Atomic persistence of Atendimento + Triagem aggregate
         atendimento = Atendimento(
             organizacao_id=command.organizacao_id,
             paciente_id=command.paciente_id,
-            prioridade_clinica=prioridade,
-            tcle_hash=tcle_hash_final,
+            prioridade_clinica=triage_eval.prioridade_clinica,
+            tcle_hash=triage_eval.tcle_hash,
             status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
         )
         self._session.add(atendimento)
         await self._session.flush()
 
-        triagem = Triagem(
+        triagem_id = await self._triage_port.registrar_triagem(
             organizacao_id=command.organizacao_id,
             atendimento_id=atendimento.id,
             queixa_principal=command.queixa_principal,
-            prioridade_calculada=prioridade,
-            sintomas_alerta=command.sintomas,
-            alerta_samu_disparado=(prioridade == 1),
+            sintomas=command.sintomas,
+            prioridade_calculada=triage_eval.prioridade_clinica,
+            alerta_samu_disparado=triage_eval.alerta_samu_disparado,
         )
-        self._session.add(triagem)
+
         await self._session.commit()
         await self._session.refresh(atendimento)
-        await self._session.refresh(triagem)
+
+        # 4. Schedule asynchronous eligibility verification in ARQ worker
+        # (NC-BIL-01, RF-02)
+        if self._arq_pool is not None:
+            await self._arq_pool.enqueue_job(
+                "validar_elegibilidade_task",
+                organizacao_id=command.organizacao_id,
+                atendimento_id=str(atendimento.id),
+                paciente_id=str(command.paciente_id),
+                cpf=command.cpf,
+                cns=command.cns,
+                operadora_id=command.operadora_id,
+                numero_carteirinha=command.numero_carteirinha,
+                _job_id=f"elegibilidade:{atendimento.id}",
+            )
+            logger.info(
+                "Enqueued validar_elegibilidade_task for attendance %s in ARQ pool",
+                atendimento.id,
+            )
 
         logger.info(
             "Patient %s admitted to attendance %s with triage %s (priority=%d)",
             command.paciente_id,
             atendimento.id,
-            triagem.id,
-            prioridade,
+            triagem_id,
+            triage_eval.prioridade_clinica,
         )
 
         return AdmissaoAtendimentoResult(
             atendimento_id=atendimento.id,
-            triagem_id=triagem.id,
+            triagem_id=triagem_id,
             organizacao_id=command.organizacao_id,
             paciente_id=command.paciente_id,
             status_atendimento=atendimento.status,
-            prioridade_clinica=prioridade,
-            alerta_samu_disparado=(prioridade == 1),
-            instrucoes=None,
+            prioridade_clinica=triage_eval.prioridade_clinica,
+            alerta_samu_disparado=triage_eval.alerta_samu_disparado,
+            instrucoes=triage_eval.instrucao_redirecionamento,
         )

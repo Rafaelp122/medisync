@@ -69,10 +69,13 @@ stateDiagram-v2
 - `src/modules/triage/application/ports/emergency_notifier.py`
 - `src/modules/triage/application/services/triage_service.py`
 - `src/modules/triage/application/dtos.py`
-- `src/modules/queue/application/services/admissao_service.py` (Admissão e Triagem integradas em transação única)
+- `src/modules/triage/infrastructure/adapters/samu_emergency_notifier_adapter.py`
+- `src/modules/triage/composition.py`
+- `src/modules/queue/application/services/admissao_service.py` (Admissão e Triagem desacopladas via TriagePort)
 - `src/modules/queue/presentation/routers/admissao_router.py` (POST /api/v1/fila/admissao)
 - `tests/unit/test_triage_model.py`
 - `tests/unit/test_admissao_service.py`
+- `tests/integration/test_admissao_integrada_flow.py`
 
 Prova viva:
 

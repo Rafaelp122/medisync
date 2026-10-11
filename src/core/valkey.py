@@ -5,6 +5,7 @@ import contextlib
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from arq.connections import ArqRedis, RedisSettings, create_pool
 from redis.asyncio import ConnectionPool, Redis
 from redis.asyncio.retry import Retry
 from redis.backoff import ExponentialBackoff
@@ -13,6 +14,8 @@ from src.core.config import get_settings
 
 _valkey_pool: ConnectionPool | None = None
 _valkey_pool_loop: asyncio.AbstractEventLoop | None = None
+_arq_pool: ArqRedis | None = None
+_arq_pool_loop: asyncio.AbstractEventLoop | None = None
 
 
 def get_valkey_pool() -> ConnectionPool:
@@ -60,6 +63,58 @@ async def close_valkey_pool() -> None:
             await _valkey_pool.disconnect()
         _valkey_pool = None
         _valkey_pool_loop = None
+
+
+def create_arq_redis_settings() -> RedisSettings:
+    """Create RedisSettings matching application Valkey configuration for ARQ."""
+    settings = get_settings()
+    return RedisSettings(
+        host=settings.VALKEY_HOST,
+        port=settings.VALKEY_PORT,
+        conn_timeout=int(settings.VALKEY_CONNECT_TIMEOUT),
+        max_connections=settings.VALKEY_MAX_CONNECTIONS,
+    )
+
+
+async def get_arq_pool() -> ArqRedis:
+    """Retrieve or create singleton ArqRedis connection pool for the active loop."""
+    global _arq_pool, _arq_pool_loop
+
+    current_loop: asyncio.AbstractEventLoop | None = None
+    with contextlib.suppress(RuntimeError):
+        current_loop = asyncio.get_running_loop()
+
+    if (
+        _arq_pool is not None
+        and current_loop is not None
+        and _arq_pool_loop is not current_loop
+    ):
+        with contextlib.suppress(Exception):
+            await _arq_pool.aclose()
+        _arq_pool = None
+        _arq_pool_loop = None
+
+    if _arq_pool is None:
+        _arq_pool = await create_pool(create_arq_redis_settings())
+        _arq_pool_loop = current_loop
+
+    return _arq_pool
+
+
+async def close_arq_pool() -> None:
+    """Gracefully close the ArqRedis connection pool."""
+    global _arq_pool, _arq_pool_loop
+    if _arq_pool is not None:
+        with contextlib.suppress(Exception):
+            await _arq_pool.aclose()
+        _arq_pool = None
+        _arq_pool_loop = None
+
+
+async def get_arq_pool_client() -> AsyncGenerator[ArqRedis, None]:
+    """FastAPI dependency yielding the singleton ArqRedis client pool."""
+    pool = await get_arq_pool()
+    yield pool
 
 
 async def get_valkey_client() -> AsyncGenerator[Redis, None]:

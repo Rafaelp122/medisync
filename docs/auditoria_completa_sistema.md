@@ -97,11 +97,11 @@ O [Context Map](file:///home/rafael/projetos/medisync/docs/explanation/domains/c
 ## 5. Mapeamento Consolidado de Não-Conformidades
 
 ### Críticas (Ação Imediata)
-1. **NC-ARQ-01:** Queue importa e persiste o Aggregate `Triagem` em `admissao_service.py:19-24`.
-2. **NC-MED-01:** Orfandade de `EmergencyNotifierPort` e `TriageService` no fluxo real de admissão (SAMU 192 nunca notificado em produção).
+1. **NC-ARQ-01 [SANEADO]:** Queue desacoplado de Triagem via `TriagePort` e bypass revogado no `tach.toml`.
+2. **NC-MED-01 [SANEADO]:** Salvaguarda SAMU 192 conectada com `SamuEmergencyNotifierAdapter` e `src/modules/triage/composition.py`.
 
 ### Altas (Prioridade no Próximo Sprint)
-3. **NC-BIL-01:** Admissão na fila não enfileira `validar_elegibilidade_task` no pool ARQ (paciente congela em triagem).
+3. **NC-BIL-01 [SANEADO]:** Admissão na fila enfileira `validar_elegibilidade_task` no pool ARQ com transição atômica.
 4. **NC-REG-01:** Ausência do campo mandatório `nome_social` em `Paciente` e schemas (CFM 1.821/2007 e LGPD).
 5. **NC-QUE-01:** Bypass da Cota Diária Máxima (RN05) com `total_admissoes_hoje=0` hardcoded na admissão.
 
@@ -152,7 +152,7 @@ O [Context Map](file:///home/rafael/projetos/medisync/docs/explanation/domains/c
 
 | Issue | Tipo | Módulo | Descrição / Escopo |
 |---|---|---|---|
-| [#52](https://github.com/Rafaelp122/medisync/issues/52) | `bug` / `critical` | `queue`, `triage`, `worker` | **NC-ARQ-01, NC-BIL-01, NC-MED-01:** Sanear acoplamento `queue -> triage`, conectar worker ARQ e ativar salvaguarda SAMU 192. |
+| [#52](https://github.com/Rafaelp122/medisync/issues/52) | `bug` / `critical` | `queue`, `triage`, `worker` | **NC-ARQ-01, NC-BIL-01, NC-MED-01 [SANEADO]:** Sanear acoplamento `queue -> triage`, conectar worker ARQ e ativar salvaguarda SAMU 192. |
 | [#53](https://github.com/Rafaelp122/medisync/issues/53) | `feat` | `queue`, `identidade` | **NC-QUE-01, NC-QUE-02, NC-MED-02, NC-REG-01:** Routers REST da fila, cálculo de cota diária no Valkey, botão de piora e `nome_social` (CFM). |
 | [#54](https://github.com/Rafaelp122/medisync/issues/54) | `feat` | `telemetry`, `core` | **RF-10, RF-09:** Módulo desacoplado de telemetria operacional (Read Model/CQRS) e parametrização do plantão. |
 | [#39](https://github.com/Rafaelp122/medisync/issues/39) | `type:security` | `core`, `auditoria` | Hardening de integridade criptográfica da trilha de auditoria. |

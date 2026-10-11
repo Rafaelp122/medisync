@@ -18,7 +18,11 @@ from src.modules.queue.application.services.controle_admissao_service import (
 )
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.domain.exceptions import AdmissaoFilaSuspensaError
+from src.modules.triage.application.services.triage_service import TriageService
 from src.modules.triage.domain.exceptions import EmergenciaCriticaSamuError
+from src.modules.triage.infrastructure.adapters.samu_emergency_notifier_adapter import (
+    SamuEmergencyNotifierAdapter,
+)
 
 
 @pytest.fixture
@@ -47,15 +51,42 @@ def mock_controle_admissao() -> MagicMock:
 
 
 @pytest.fixture
+def mock_emergency_notifier() -> SamuEmergencyNotifierAdapter:
+    return SamuEmergencyNotifierAdapter()
+
+
+@pytest.fixture
+def mock_arq_pool() -> AsyncMock:
+    pool = AsyncMock()
+    pool.enqueue_job = AsyncMock(return_value=MagicMock(job_id="test_job_123"))
+    return pool
+
+
+@pytest.fixture
+def triage_service(
+    mock_db_session: AsyncMock,
+    mock_emergency_notifier: SamuEmergencyNotifierAdapter,
+) -> TriageService:
+    return TriageService(
+        session=mock_db_session,
+        emergency_notifier=mock_emergency_notifier,
+    )
+
+
+@pytest.fixture
 def admissao_service(
     mock_db_session: AsyncMock,
     mock_fila_service: MagicMock,
     mock_controle_admissao: MagicMock,
+    triage_service: TriageService,
+    mock_arq_pool: AsyncMock,
 ) -> AdmissaoAtendimentoService:
     return AdmissaoAtendimentoService(
         session=mock_db_session,
         fila_service=mock_fila_service,
         controle_admissao=mock_controle_admissao,
+        triage_port=triage_service,
+        arq_pool=mock_arq_pool,
     )
 
 
@@ -63,6 +94,7 @@ def admissao_service(
 async def test_admitir_paciente_success(
     admissao_service: AdmissaoAtendimentoService,
     mock_db_session: AsyncMock,
+    mock_arq_pool: AsyncMock,
 ) -> None:
     pac_id = uuid4()
     cmd = AdmissaoAtendimentoCommand(
@@ -82,11 +114,13 @@ async def test_admitir_paciente_success(
     assert result.alerta_samu_disparado is False
     assert mock_db_session.add.call_count == 2
     mock_db_session.commit.assert_awaited_once()
+    mock_arq_pool.enqueue_job.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_admitir_paciente_emergencia_critica_raises(
     admissao_service: AdmissaoAtendimentoService,
+    mock_emergency_notifier: SamuEmergencyNotifierAdapter,
 ) -> None:
     cmd = AdmissaoAtendimentoCommand(
         organizacao_id=1,
@@ -99,6 +133,43 @@ async def test_admitir_paciente_emergencia_critica_raises(
 
     with pytest.raises(EmergenciaCriticaSamuError):
         await admissao_service.admitir_paciente(cmd)
+
+    assert len(mock_emergency_notifier.sent_alerts) == 1
+    assert mock_emergency_notifier.sent_alerts[0].organizacao_id == 1
+    assert "inconsciencia" in mock_emergency_notifier.sent_alerts[0].sintomas_alerta
+
+
+@pytest.mark.asyncio
+async def test_admitir_paciente_enqueues_validar_elegibilidade_task(
+    admissao_service: AdmissaoAtendimentoService,
+    mock_arq_pool: AsyncMock,
+) -> None:
+    pac_id = uuid4()
+    cmd = AdmissaoAtendimentoCommand(
+        organizacao_id=1,
+        paciente_id=pac_id,
+        queixa_principal="Febre e tosse",
+        sintomas=["tosse"],
+        escala_dor=2,
+        tcle_texto="Termo concordado",
+        cpf="12345678901",
+        cns="123456789012345",
+        operadora_id="UNIMED",
+        numero_carteirinha="998877",
+    )
+
+    result = await admissao_service.admitir_paciente(cmd)
+    mock_arq_pool.enqueue_job.assert_awaited_once_with(
+        "validar_elegibilidade_task",
+        organizacao_id=1,
+        atendimento_id=str(result.atendimento_id),
+        paciente_id=str(pac_id),
+        cpf="12345678901",
+        cns="123456789012345",
+        operadora_id="UNIMED",
+        numero_carteirinha="998877",
+        _job_id=f"elegibilidade:{result.atendimento_id}",
+    )
 
 
 @pytest.mark.asyncio

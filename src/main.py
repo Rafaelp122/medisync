@@ -18,6 +18,7 @@ from src.core.middleware import setup_middlewares
 from src.core.schemas import HealthCheckResponse, ValkeyHealth
 from src.core.valkey import (
     check_valkey_health,
+    close_arq_pool,
     close_valkey_pool,
     get_valkey_pool,
 )
@@ -50,7 +51,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await engine.dispose()
     logger.info("Database engine connection pool disposed successfully.")
     await close_valkey_pool()
-    logger.info("Valkey connection pool closed successfully.")
+    await close_arq_pool()
+    logger.info("Valkey and ARQ connection pools closed successfully.")
 
 
 def create_app() -> FastAPI:
