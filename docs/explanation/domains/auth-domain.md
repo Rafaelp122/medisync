@@ -6,7 +6,7 @@
 
 - **Hash Seguro**: Argon2id via `PasswordHasherPort`.
 - **JWT de Curto Prazo e Rotação**: Access token efêmero e refresh token com rotação de uso único.
-- **Revogação Distribuída**: Invalidação imediata de tokens no logout ou após rotação via `TokenRevocationPort` / `ValkeyTokenRevocation` (`token:revoked:{jti}` com TTL de expiração).
+- **Revogação Distribuída**: Invalidação imediata de tokens no logout ou após rotação via `TokenRevocationPort` / `ValkeyTokenRevocation` (`auth:revoked:{jti}` com TTL de expiração).
 
 ## 2. Onde no código
 

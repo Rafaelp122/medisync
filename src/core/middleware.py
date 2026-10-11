@@ -60,6 +60,23 @@ def extract_tenant_from_host(host_val: str | None) -> int | None:
     return None
 
 
+def extract_tenant_from_auth_header(header_val: str | None) -> int | None:
+    """Extract integer tenant ID from JWT Bearer token claims if present and valid."""
+    if not header_val:
+        return None
+    parts = header_val.strip().split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    raw_token = parts[1]
+    try:
+        from src.core.authz.token import decode_access_token
+
+        user = decode_access_token(raw_token)
+        return user.organizacao_id
+    except Exception:
+        return None
+
+
 class RequestIDMiddleware(BaseHTTPMiddleware):
     """Binds a valid UUIDv7 X-Request-ID to contextvars and response."""
 
@@ -98,7 +115,13 @@ class TenantResolutionMiddleware(BaseHTTPMiddleware):
         # 1. Prefer explicit X-Tenant-ID header
         tenant_id = extract_tenant_from_header(request.headers.get(TENANT_ID_HEADER))
 
-        # 2. Fallback to subdomain extraction
+        # 2. Fallback to Authorization: Bearer <token> claims
+        if tenant_id is None:
+            tenant_id = extract_tenant_from_auth_header(
+                request.headers.get("Authorization")
+            )
+
+        # 3. Fallback to subdomain extraction
         if tenant_id is None:
             tenant_id = extract_tenant_from_host(request.headers.get("host"))
 

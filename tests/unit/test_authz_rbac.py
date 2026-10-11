@@ -18,7 +18,7 @@ from src.core.context import set_current_tenant_id
 from src.core.errors import ForbiddenError, UnauthorizedError
 
 
-def _create_token(
+def create_test_token(
     usuario_id: UUID,
     organizacao_id: int,
     papel: str,
@@ -40,6 +40,9 @@ def _create_token(
         "type": token_type,
     }
     return jwt.encode(payload, secret_key, algorithm="HS256")
+
+
+_create_token = create_test_token
 
 
 def test_role_and_permission_matrix() -> None:
@@ -192,7 +195,8 @@ def test_require_permission_guard() -> None:
     assert "billing:consolidate" in str(exc_info.value)
 
 
-def test_get_current_user_tenant_mismatch() -> None:
+@pytest.mark.asyncio
+async def test_get_current_user_tenant_mismatch() -> None:
     """Verify get_current_user enforces tenant isolation against active tenant."""
     settings = get_settings()
     token = _create_token(
@@ -206,14 +210,39 @@ def test_get_current_user_tenant_mismatch() -> None:
     set_current_tenant_id(20)
     try:
         with pytest.raises(ForbiddenError, match="organização 10"):
-            get_current_user(f"Bearer {token}")
+            await get_current_user(f"Bearer {token}")
     finally:
         set_current_tenant_id(None)
 
 
-def test_get_current_user_missing_header() -> None:
+@pytest.mark.asyncio
+async def test_get_current_user_missing_header() -> None:
     """Verify get_current_user raises 401 when Authorization header is absent."""
     with pytest.raises(UnauthorizedError, match="não fornecida"):
-        get_current_user(None)
+        await get_current_user(None)
     with pytest.raises(UnauthorizedError, match="inválido"):
-        get_current_user("Basic dXNlcjpwYXNz")
+        await get_current_user("Basic dXNlcjpwYXNz")
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_revoked_token_raises_401() -> None:
+    """Verify get_current_user raises TokenRevogadoError (401)
+    when token is revoked in Valkey.
+    """
+    from unittest.mock import patch
+
+    from src.core.errors import TokenRevogadoError
+
+    settings = get_settings()
+    token = _create_token(
+        usuario_id=uuid4(),
+        organizacao_id=10,
+        papel=Role.MEDICO,
+        secret_key=settings.JWT_SECRET_KEY,
+    )
+
+    with patch("src.core.authz.dependencies.is_token_revoked", return_value=True):
+        with pytest.raises(TokenRevogadoError) as exc_info:
+            await get_current_user(f"Bearer {token}")
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.code == "TOKEN_REVOGADO"
