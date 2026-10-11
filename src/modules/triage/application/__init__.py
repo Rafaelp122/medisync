@@ -1,6 +1,9 @@
 """Application layer for triage module."""
 
-from src.modules.triage.application.dtos import ResultadoTriagemDTO
+from src.modules.triage.application.dtos import (
+    ResultadoTriagemDTO,
+    TriageRiskEvaluationDTO,
+)
 from src.modules.triage.application.ports import (
     EmergencyAlertDTO,
     EmergencyNotifierPort,
@@ -11,5 +14,6 @@ __all__ = [
     "EmergencyAlertDTO",
     "EmergencyNotifierPort",
     "ResultadoTriagemDTO",
+    "TriageRiskEvaluationDTO",
     "TriageService",
 ]

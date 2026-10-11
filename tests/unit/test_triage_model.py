@@ -5,6 +5,10 @@ from uuid import UUID
 import pytest
 from src.core.errors import DomainError, ValidationError
 from src.core.uuid7 import uuid7
+from src.modules.triage.application.dtos import (
+    ResultadoTriagemDTO,
+    TriageRiskEvaluationDTO,
+)
 from src.modules.triage.application.ports import EmergencyAlertDTO
 from src.modules.triage.application.services import TriageService
 from src.modules.triage.domain.classification import (
@@ -298,3 +302,134 @@ async def test_triage_service_emergency_samu_blocks_admission() -> None:
     assert res.alerta_samu_disparado is True
     assert res.instrucao_redirecionamento is not None
     assert len(notifier.notificacoes) == 2
+
+
+@pytest.mark.asyncio
+async def test_triage_service_avaliar_risco_success() -> None:
+    notifier = MockEmergencyNotifier()
+    service = TriageService(emergency_notifier=notifier)
+
+    # 1. Com texto do termo (calcula SHA-256)
+    res_texto = await service.avaliar_risco(
+        organizacao_id=1,
+        queixa_principal="Cefaleia moderada",
+        sintomas=["cefaleia_intensa"],
+        escala_dor=6,
+        tcle_texto="Termo de consentimento digital",
+    )
+    assert isinstance(res_texto, TriageRiskEvaluationDTO)
+    assert res_texto.prioridade_clinica == 2
+    assert len(res_texto.tcle_hash) == 64
+    assert res_texto.tcle_hash == calcular_hash_tcle("Termo de consentimento digital")
+    assert res_texto.alerta_samu_disparado is False
+    assert res_texto.instrucao_redirecionamento is None
+    assert res_texto.is_emergencia_critica is False
+    assert len(notifier.notificacoes) == 0
+
+    # 2. Com hash pré-calculado
+    hash_pre = "a" * 64
+    res_hash = await service.avaliar_risco(
+        organizacao_id=1,
+        queixa_principal="Dor de garganta leve",
+        sintomas=[],
+        escala_dor=2,
+        tcle_hash=hash_pre,
+    )
+    assert res_hash.prioridade_clinica == 4
+    assert res_hash.tcle_hash == hash_pre
+    assert res_hash.alerta_samu_disparado is False
+    assert res_hash.is_emergencia_critica is False
+
+
+@pytest.mark.asyncio
+async def test_triage_service_avaliar_risco_validacao_tcle() -> None:
+    service = TriageService()
+
+    with pytest.raises(ValidationError, match="Consentimento TCLE obrigatório"):
+        await service.avaliar_risco(
+            organizacao_id=1,
+            queixa_principal="Febre",
+            sintomas=[],
+            tcle_texto="",
+            tcle_hash=None,
+        )
+
+    with pytest.raises(ValidationError, match="Consentimento TCLE obrigatório"):
+        await service.avaliar_risco(
+            organizacao_id=1,
+            queixa_principal="Febre",
+            sintomas=[],
+            tcle_texto="   ",
+            tcle_hash="",
+        )
+
+
+@pytest.mark.asyncio
+async def test_triage_service_avaliar_risco_emergencia_samu() -> None:
+    notifier = MockEmergencyNotifier()
+    service = TriageService(emergency_notifier=notifier)
+    atendimento_id = uuid7()
+
+    # raise_on_emergency=True (padrão)
+    with pytest.raises(EmergenciaCriticaSamuError):
+        await service.avaliar_risco(
+            organizacao_id=1,
+            queixa_principal="Parada respiratória em curso",
+            sintomas=["parada_cardiorrespiratoria"],
+            tcle_texto="TCLE Aceito",
+            raise_on_emergency=True,
+            atendimento_id=atendimento_id,
+        )
+    assert len(notifier.notificacoes) == 1
+    assert notifier.notificacoes[0].atendimento_id == atendimento_id
+
+    # raise_on_emergency=False
+    res = await service.avaliar_risco(
+        organizacao_id=1,
+        queixa_principal="Parada respiratória em curso",
+        sintomas=["parada_cardiorrespiratoria"],
+        tcle_texto="TCLE Aceito",
+        raise_on_emergency=False,
+        atendimento_id=atendimento_id,
+    )
+    assert res.prioridade_clinica == 1
+    assert res.alerta_samu_disparado is True
+    assert res.is_emergencia_critica is True
+    assert res.instrucao_redirecionamento is not None
+    assert len(notifier.notificacoes) == 2
+
+
+def test_resultado_triagem_dto_alignment_with_risk_evaluation() -> None:
+    # 1. Verifica herança e polimorfismo
+    eval_dto = TriageRiskEvaluationDTO(
+        prioridade_clinica=1,
+        tcle_hash="abc",
+        alerta_samu_disparado=True,
+        instrucao_redirecionamento="LIGUE 192",
+    )
+    res_dto = ResultadoTriagemDTO.from_evaluation(eval_dto)
+
+    assert isinstance(res_dto, TriageRiskEvaluationDTO)
+    assert res_dto.prioridade_clinica == 1
+    assert res_dto.tcle_hash == "abc"
+    assert res_dto.alerta_samu_disparado is True
+    assert res_dto.admissao_bloqueada is True
+    assert res_dto.is_emergencia_critica is True
+
+    # 2. Caso não emergencial
+    eval_regular = TriageRiskEvaluationDTO(
+        prioridade_clinica=4,
+        tcle_hash="def",
+        alerta_samu_disparado=False,
+    )
+    res_regular = ResultadoTriagemDTO.from_evaluation(eval_regular)
+    assert res_regular.admissao_bloqueada is False
+    assert res_regular.is_emergencia_critica is False
+
+    # 3. Post-init auto bloqueia se prioridade 1 mesmo quando admissao_bloqueada=False
+    res_manual = ResultadoTriagemDTO(
+        prioridade_clinica=1,
+        tcle_hash="ghi",
+        admissao_bloqueada=False,
+    )
+    assert res_manual.admissao_bloqueada is True
