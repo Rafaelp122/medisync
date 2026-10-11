@@ -201,7 +201,7 @@ class ControleAdmissaoService:
     ) -> int:
         """Increments and returns total admissions for today in Valkey."""
         today = datetime.now(UTC).strftime("%Y-%m-%d")
-        k = f"cota:{organizacao_id}:{today}"
+        k = f"queue:admissoes:{organizacao_id}:{today}"
         val = await self._valkey.incr(k)  # pyright: ignore[reportUnknownMemberType]
         await self._valkey.expire(k, 86400 * 2)  # pyright: ignore[reportUnknownMemberType]
         return int(val)
@@ -212,6 +212,6 @@ class ControleAdmissaoService:
     ) -> int:
         """Returns total admissions for today from Valkey."""
         today = datetime.now(UTC).strftime("%Y-%m-%d")
-        k = f"cota:{organizacao_id}:{today}"
+        k = f"queue:admissoes:{organizacao_id}:{today}"
         val = await self._valkey.get(k)  # pyright: ignore[reportUnknownMemberType]
         return int(val) if val is not None else 0

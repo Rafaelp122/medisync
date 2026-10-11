@@ -48,6 +48,12 @@ class Fase1Request(Fase1InputDTO):
         description="Hash SHA-256 do aceite digital do TCLE",
         examples=["e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"],
     )
+    nome_social: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Nome social do paciente (CFM 1.821/2007 e SUS)",
+        examples=["Carla Silva"],
+    )
     cpf: str | None = Field(
         default=None,
         max_length=14,
@@ -80,6 +86,12 @@ class Fase2Request(Fase2InputDTO):
     model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
 
     paciente_id: UUID = Field(description="ID do paciente obtido na Fase 1")
+    nome_social: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Nome social do paciente (CFM 1.821/2007 e SUS)",
+        examples=["Carla Silva"],
+    )
     nome_mae: str = Field(
         min_length=3,
         max_length=255,
@@ -149,6 +161,7 @@ class Fase2Response(BaseModel):
 
     paciente_id: UUID
     nome_completo: str | None
+    nome_social: str | None = None
     nome_mae: str
     sexo_biologico: str
     cep: str

@@ -81,7 +81,12 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - Publica ausência via `paciente_ausente_notifier`. Timeout vira evento de domínio, não só mudança de coluna; painel e métricas reagem sem polling.
 - Orquestra concorrência conforme desenho de filas e locks. [Concorrência](../architecture/concurrency-and-queues.md)
 - Worker de elegibilidade roda fora do request. `src/worker/tasks/eligibility.py` consome `EligibilityProviderPort` em background e devolve resultado; fila nunca bloqueia HTTP esperando convênio.
-- `FilaService` compõe admissão + alocação. `ingressar_fila` calcula score e insere no ZSET; `adquirir_proximo` puxa cabeça e delega lock ao `AlocacaoChamadaService`; backpressure avaliado antes de inserir.
+- `FilaService` compõe admissão + alocação. `ingressar_fila` calcula score e insere no ZSET; `adquirir_proximo` puxa cabeça e delega lock ao `AlocacaoChamadaService`; backpressure avaliado antes de inserir com leitura e incremento da cota diária atômica no Valkey (`queue:admissoes:{org}:{today}`, TTL 48h).
+- Routers REST finos expõem as operações centrais da fila clínica em conformidade com ADR-001/ADR-008:
+  - `POST /api/v1/fila/chamar-proximo`: Médico adquire atomicamente o próximo paciente via script Lua com retry automático e double-lock (RF-03).
+  - `GET /api/v1/fila/posicao/{atendimento_id}`: Consulta posição 1-based no ZSET e tempo estimado via TMA com guarda Anti-IDOR.
+  - `POST /api/v1/fila/cancelar/{atendimento_id}`: Cancelamento voluntário com remoção atômica da fila e transição no banco (RN06).
+  - `POST /api/v1/fila/piora`: Salvaguarda clínica para relato de piora de sintomas, reavaliando risco via `TriagePort`, recalculando score na fila ou disparando alerta SAMU 192 (RF-06).
 - Transmite posição e avanço em tempo real via WebSocket (`/ws/queue/{atendimento_id}`). O handshake exige autenticação via `?token=` (HMAC ou JWT) com checagem de posse ReBAC em sessão de banco efêmera (código WS 4401/4403 pré-accept) para evitar esgotamento de conexões durante o streaming via Valkey Pub/Sub (Issue #42).
 
 ## 5. Peculiaridades
@@ -105,12 +110,14 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `src/modules/queue/domain/models/atendimento.py`
 - `src/modules/queue/infrastructure/lua/alocar_chamada.lua`
 - `src/modules/queue/application/ports/queue_store_port.py` (QueueStorePort - interface profunda consolidando PostgreSQL + Valkey)
-- `src/modules/queue/application/services/fila_service.py` (Implementação de QueueStorePort, admissão em fila e reconciliação)
-- `src/modules/queue/application/services/admissao_service.py` (Acolhimento clínico desacoplado via TriagePort e enfileiramento ARQ)
+- `src/modules/queue/application/services/fila_service.py` (Implementação de QueueStorePort, admissão, cancelamento, piora e reconciliação)
+- `src/modules/queue/application/services/admissao_service.py` (Acolhimento clínico desacoplado via TriagePort e cota Valkey)
 - `src/modules/queue/application/ports/triage_port.py` (TriagePort e TriageEvaluationDTO para isolamento de Bounded Context)
 - `src/modules/queue/presentation/routers/admissao_router.py` (POST /api/v1/fila/admissao)
+- `src/modules/queue/presentation/routers/alocacao_router.py` (POST /api/v1/fila/chamar-proximo)
+- `src/modules/queue/presentation/routers/fila_router.py` (GET /api/v1/fila/posicao/{id}, POST /api/v1/fila/cancelar/{id}, POST /api/v1/fila/piora)
 - `src/modules/queue/presentation/routers/queue_ws_router.py` (WebSocket de avanço da fila do paciente: /ws/queue/{atendimento_id})
-- `src/modules/queue/presentation/dependencies.py` (Guards de autenticação e posse do paciente via QueueWsAuthDep)
+- `src/modules/queue/presentation/dependencies.py` (Guards de autenticação, posse Anti-IDOR e autorização de médico plantonista)
 - `src/modules/queue/application/services/alocacao_service.py`
 - `src/modules/queue/application/services/controle_admissao_service.py`
 - `src/modules/queue/application/ports/allocation_port.py`
@@ -122,6 +129,10 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `tests/unit/test_atendimento_model.py`
 - `tests/unit/test_controle_admissao.py`
 - `tests/unit/test_fila_service.py`
+- `tests/unit/test_queue_cota_diaria.py`
+- `tests/unit/test_fila_service_operacoes.py`
+- `tests/unit/test_alocacao_router.py`
+- `tests/unit/test_fila_router.py`
 - `tests/integration/test_admissao_integrada_flow.py`
 
 Prova viva:

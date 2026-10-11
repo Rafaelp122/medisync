@@ -209,3 +209,16 @@ def test_dependente_creation_succeeds():
     assert dep.titular_id == titular_id
     assert dep.dependente_id == dep_id
     assert dep.grau_parentesco == "FILHO"
+
+
+def test_paciente_com_nome_social_succeeds():
+    paciente = Paciente(
+        organizacao_id=1,
+        cpf="12345678901",
+        data_nascimento=date(1990, 5, 20),
+        nome_completo="Carlos Silva",
+        nome_social="Carla Silva",
+        telefone="11999998888",
+    )
+    assert paciente.nome_social == "Carla Silva"
+    assert paciente.nome_completo == "Carlos Silva"

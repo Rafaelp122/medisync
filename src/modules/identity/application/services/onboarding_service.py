@@ -88,6 +88,7 @@ class OnboardingService:
 
         is_novo = False
         nome = dados.nome_completo.strip()
+        nome_social = dados.nome_social.strip() if dados.nome_social else None
         if paciente is None:
             # Create new patient
             paciente = Paciente(
@@ -97,6 +98,7 @@ class OnboardingService:
                 cpf=clean_cpf,
                 cns=clean_cns,
                 nome_completo=nome,
+                nome_social=nome_social,
             )
             db.add(paciente)
             is_novo = True
@@ -105,6 +107,8 @@ class OnboardingService:
             paciente.telefone = clean_telefone
             if nome:
                 paciente.nome_completo = nome
+            if nome_social:
+                paciente.nome_social = nome_social
 
         await db.commit()
         await db.refresh(paciente)
@@ -180,6 +184,8 @@ class OnboardingService:
             )
 
         # 3. Enrich patient fields
+        if dados.nome_social:
+            paciente.nome_social = dados.nome_social.strip()
         paciente.nome_mae = clean_nome_mae
         paciente.sexo_biologico = sexo
         paciente.cep = clean_cep
@@ -199,6 +205,7 @@ class OnboardingService:
         return Fase2OutputDTO(
             paciente_id=paciente.id,
             nome_completo=paciente.nome_completo,
+            nome_social=paciente.nome_social,
             nome_mae=clean_nome_mae,
             sexo_biologico=sexo,
             cep=clean_cep,

@@ -90,11 +90,11 @@ Os requisitos funcionais descrevem o comportamento observável da solução a pa
 
 ### RF-02: Validação Concorrente de Elegibilidade e Enriquecimento Cadastral (Cadastro Progressivo - Fase 2)
 * **Atores**: Sistema (Worker de Segundo Plano) e Paciente.
-* **Comportamento**: Em paralelo à permanência do paciente na fila, workers em background consultam a operadora de saúde para autorização de cobertura ou executam instrução nula (*no-op*) caso a instância esteja operando em perfil público SUS. Simultaneamente, a interface convida o paciente a completar os dados mandatórios do CFM (nome da mãe, sexo biológico, endereço completo com CEP e alergias medicamentosas). Confirmadas a elegibilidade e o preenchimento, o atendimento transiciona para `APTO_PARA_CHAMADA`.
+* **Comportamento**: Em paralelo à permanência do paciente na fila, workers em background consultam a operadora de saúde para autorização de cobertura ou executam instrução nula (*no-op*) caso a instância esteja operando em perfil público SUS. Simultaneamente, a interface convida o paciente a completar os dados mandatórios do CFM (nome da mãe, sexo biológico, endereço completo com CEP, alergias medicamentosas e **nome social** conforme Resolução CFM 1.821/2007). Confirmadas a elegibilidade e o preenchimento, o atendimento transiciona para `APTO_PARA_CHAMADA`.
 
 ### RF-03: Realização de Chamada, Habilitação de Atendimento e Tratamento de No-Show
 * **Atores**: Médico Plantonista e Paciente.
-* **Comportamento**: Ao clicar em *"Chamar Próximo"*, o sistema aloca o paciente no estado `APTO_PARA_CHAMADA` de maior prioridade clínica. A interface do paciente emite aviso sonoro e visual em tela cheia com contagem regressiva de 45 segundos. Caso o paciente atenda, a sala de videoconferência e o prontuário são abertos simultaneamente. Caso expire o tempo limite sem atendimento, o status muda deterministicamente para `PACIENTE_AUSENTE` e o médico é liberado imediatamente.
+* **Comportamento**: Ao clicar em *"Chamar Próximo"* (`POST /api/v1/fila/chamar-proximo`), o sistema aloca o paciente no estado `APTO_PARA_CHAMADA` de maior prioridade clínica via script Lua atômico. A interface do paciente acompanha sua posição e estimativa (`GET /api/v1/fila/posicao/{id}`) ou permite desistência voluntária (`POST /api/v1/fila/cancelar/{id}`, RN06). Durante a chamada, emite aviso sonoro e visual em tela cheia com contagem regressiva de 45 segundos. Caso o paciente atenda, a sala de videoconferência e o prontuário são abertos simultaneamente. Caso expire o tempo limite sem atendimento, o status muda deterministicamente para `PACIENTE_AUSENTE` e o médico é liberado imediatamente.
 
 ### RF-04: Gerenciamento da Fila Dinâmica e Controle de Admissão (Backpressure)
 * **Ator**: Sistema.
@@ -106,7 +106,7 @@ Os requisitos funcionais descrevem o comportamento observável da solução a pa
 
 ### RF-06: Monitoramento de Deterioração Clínica na Fila (Escape SAMU 192)
 * **Atores**: Paciente e Gestor Operacional.
-* **Comportamento**: A interface de espera exibe em destaque a opção *"Sentiu piora nos sintomas?"*. Se acionada, uma checagem rápida de novos sinais de risco é exibida. Identificada emergência crítica, a teleconsulta é bloqueada, a orientação para ligação imediata ao SAMU 192 é apresentada e um alerta prioritário é emitido no painel da unidade.
+* **Comportamento**: A interface de espera exibe em destaque a opção *"Sentiu piora nos sintomas?"*, conectada a `POST /api/v1/fila/piora`. Se acionada, uma reavaliação clínica rápida de novos sinais de risco é executada. Identificada emergência crítica (Nível 1 Vermelho), a teleconsulta é bloqueada, a orientação para ligação imediata ao SAMU 192 é apresentada e um alerta prioritário é emitido no painel da unidade. Caso não seja emergência máxima, a prioridade clínica é atualizada e o score na fila é recalculado imediatamente.
 
 ### RF-07: Condução da Teleconsulta, Registro PEP e Assinatura Digital ICP-Brasil
 * **Ator**: Médico Plantonista.

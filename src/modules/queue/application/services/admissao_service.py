@@ -69,12 +69,15 @@ class AdmissaoAtendimentoService:
         pacientes_aguardando = await self._fila_service.obter_tamanho_fila(
             command.organizacao_id
         )
+        total_admissoes_hoje = await self._controle_admissao.obter_admissoes_hoje(
+            command.organizacao_id
+        )
         avaliacao_cmd = AvaliarAdmissaoCommand(
             organizacao_id=command.organizacao_id,
             medicos_ativos=command.medicos_ativos,
             tempo_restante_segundos=command.tempo_restante_segundos,
             pacientes_aguardando=pacientes_aguardando,
-            total_admissoes_hoje=0,
+            total_admissoes_hoje=total_admissoes_hoje,
             tma_estimado_segundos=command.tma_estimado_segundos,
             alpha_margem=command.alpha_margem,
             cota_diaria_maxima=command.cota_diaria_maxima,
@@ -109,6 +112,9 @@ class AdmissaoAtendimentoService:
 
         await self._session.commit()
         await self._session.refresh(atendimento)
+
+        # Increment daily admission quota atomically in Valkey (RN05 / NC-QUE-01)
+        await self._controle_admissao.incrementar_admissoes_hoje(command.organizacao_id)
 
         # 4. Schedule asynchronous eligibility verification in ARQ worker
         # (NC-BIL-01, RF-02)

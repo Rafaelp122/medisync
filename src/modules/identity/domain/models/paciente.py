@@ -59,6 +59,7 @@ class Paciente(Base):
     cns: Mapped[str | None] = mapped_column(String(15), nullable=True)
     data_nascimento: Mapped[date] = mapped_column(Date, nullable=False)
     nome_completo: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    nome_social: Mapped[str | None] = mapped_column(String(255), nullable=True)
     nome_mae: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sexo_biologico: Mapped[str | None] = mapped_column(String(1), nullable=True)
     telefone: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -83,6 +84,7 @@ class Paciente(Base):
         cpf: str | None = None,
         cns: str | None = None,
         nome_completo: str | None = None,
+        nome_social: str | None = None,
         nome_mae: str | None = None,
         sexo_biologico: str | None = None,
         cep: str | None = None,
@@ -117,7 +119,8 @@ class Paciente(Base):
             cns=clean_cns,
             data_nascimento=data_nascimento,
             telefone=clean_digits(telefone),
-            nome_completo=nome_completo,
+            nome_completo=nome_completo.strip() if nome_completo else None,
+            nome_social=nome_social.strip() if nome_social else None,
             nome_mae=nome_mae,
             sexo_biologico=sexo_biologico.upper() if sexo_biologico else None,
             cep=clean_digits(cep) if cep else None,

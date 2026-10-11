@@ -76,6 +76,7 @@ class SqlIdentityReader(IdentityReaderPort):
             paciente_cpf=pac.cpf,
             paciente_data_nascimento=pac.data_nascimento,
             paciente_endereco=endereco_fmt,
+            paciente_nome_social=pac.nome_social,
         )
 
     async def obter_modo_sus(self, organizacao_id: int) -> bool:

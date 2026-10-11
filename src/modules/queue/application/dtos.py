@@ -137,3 +137,47 @@ class AdmissaoAtendimentoResult:
     prioridade_clinica: int
     alerta_samu_disparado: bool
     instrucoes: str | None = None
+
+
+@dataclass(frozen=True)
+class PosicaoFilaResult:
+    """Immutable projection of patient position and wait estimate in queue."""
+
+    atendimento_id: UUID
+    status: str
+    posicao: int | None
+    total_aguardando: int
+    tempo_estimado_segundos: int | None
+
+
+@dataclass(frozen=True)
+class CancelarAtendimentoResult:
+    """Immutable result of patient voluntary cancellation."""
+
+    atendimento_id: UUID
+    status: str
+    cancelado_em: datetime
+    motivo: str | None = None
+
+
+@dataclass(frozen=True)
+class PioraClinicaCommand:
+    """Command to reassess deteriorating clinical symptoms in queue (RF-06)."""
+
+    organizacao_id: int
+    atendimento_id: UUID
+    novos_sintomas: list[str]
+    escala_dor: int = 0
+    queixa_adicional: str = ""
+
+
+@dataclass(frozen=True)
+class PioraClinicaResult:
+    """Immutable result of clinical deterioration evaluation."""
+
+    atendimento_id: UUID
+    prioridade_clinica: int
+    alerta_samu_disparado: bool
+    redirecionado_emergencia: bool
+    nova_posicao: int | None
+    instrucoes: str | None = None

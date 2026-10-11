@@ -22,6 +22,7 @@ class IdentityDirectoryDTO:
     paciente_cpf: str | None
     paciente_data_nascimento: date | None
     paciente_endereco: str | None
+    paciente_nome_social: str | None = None
 
 
 @runtime_checkable

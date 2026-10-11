@@ -102,12 +102,12 @@ O [Context Map](file:///home/rafael/projetos/medisync/docs/explanation/domains/c
 
 ### Altas (Prioridade no Próximo Sprint)
 3. **NC-BIL-01 [SANEADO]:** Admissão na fila enfileira `validar_elegibilidade_task` no pool ARQ com transição atômica.
-4. **NC-REG-01:** Ausência do campo mandatório `nome_social` em `Paciente` e schemas (CFM 1.821/2007 e LGPD).
-5. **NC-QUE-01:** Bypass da Cota Diária Máxima (RN05) com `total_admissoes_hoje=0` hardcoded na admissão.
+4. **NC-REG-01 [SANEADO]:** Suporte ao campo mandatório `nome_social` em `Paciente`, tabela `pacientes`, onboarding e schemas (CFM 1.821/2007 e LGPD).
+5. **NC-QUE-01 [SANEADO]:** Cota Diária Máxima (RN05) integrada atomicamente via chave Valkey `queue:admissoes:{org}:{today}` com backpressure e incremento pós-admissão.
 
 ### Médias
-6. **NC-QUE-02:** Falta de routers REST para "Chamar Próximo" (RF-03), consulta de posição e cancelamento pelo paciente.
-7. **NC-MED-02:** Inexistência do caso de uso de Salvaguarda de Piora Clínica na Fila (RF-06).
+6. **NC-QUE-02 [SANEADO]:** Routers REST finos expostos para "Chamar Próximo" (`POST /fila/chamar-proximo`, RF-03), consulta de posição (`GET /fila/posicao/{id}`) e cancelamento (`POST /fila/cancelar/{id}`, RN06).
+7. **NC-MED-02 [SANEADO]:** Salvaguarda de Piora Clínica na Fila (`POST /fila/piora`, RF-06) com reavaliação pelo motor de triagem e escape SAMU 192.
 8. **NC-BIL-02:** Inexistência do fechamento contábil e liquidação pós-consulta (RF-08).
 9. **NC-CON-01:** Instanciação de `MemorySignedCache` no composition root de Consultation em vez de `ValkeySignedCache`.
 10. **NC-CON-02:** Supressão silenciosa com `contextlib.suppress(Exception)` ao concluir atendimento em `pep_service.py`.
@@ -123,7 +123,7 @@ O [Context Map](file:///home/rafael/projetos/medisync/docs/explanation/domains/c
 * `uv run ruff check .`: **0 erros** (todos os checks passando).
 * `uv run python scripts/docs_check.py`: **0 erros** (documentação íntegra).
 * `uv run pytest tests/architecture`: **5/5 testes passando** (routers finos).
-* `uv run pytest tests/unit`: **418/418 testes passando em 8.58s**.
+* `uv run pytest tests/unit`: **495/495 testes passando**.
 
 ---
 
@@ -134,11 +134,11 @@ O [Context Map](file:///home/rafael/projetos/medisync/docs/explanation/domains/c
 2. **Conexão com Worker ARQ de Elegibilidade:** Injetar o cliente ARQ no serviço de admissão e despachar a tarefa assíncrona após o commit do atendimento.
 3. **Ativação da Salvaguarda SAMU 192:** Implementar adaptador concreto para `EmergencyNotifierPort` e conectá-lo na admissão para emergências Nível 1.
 
-### Sprint 2: Requisitos e Conformidade Regulatória
-4. **Campo `nome_social`:** Adicionar migration com `nome_social` na tabela `pacientes`, atualizando o modelo e os schemas da Fase 2.
-5. **Cota Diária RN05:** Corrigir a leitura da cota diária no Valkey e o incremento pós-admissão.
-6. **Routers REST de Fila:** Expor `POST /fila/chamar-proximo`, `GET /fila/posicao/{id}` e `POST /fila/cancelar/{id}`.
-7. **Botão de Piora na Fila (RF-06):** Criar serviço e rota para reavaliação de sintomas em fila com recálculo de score ou escape SAMU.
+### Sprint 2: Requisitos e Conformidade Regulatória [CONCLUÍDO]
+4. **Campo `nome_social` [CONCLUÍDO]:** Adicionar migration com `nome_social` na tabela `pacientes`, atualizando o modelo e os schemas da Fase 2.
+5. **Cota Diária RN05 [CONCLUÍDO]:** Corrigir a leitura da cota diária no Valkey e o incremento pós-admissão.
+6. **Routers REST de Fila [CONCLUÍDO]:** Expor `POST /fila/chamar-proximo`, `GET /fila/posicao/{id}` e `POST /fila/cancelar/{id}`.
+7. **Botão de Piora na Fila (RF-06) [CONCLUÍDO]:** Criar serviço e rota para reavaliação de sintomas em fila com recálculo de score ou escape SAMU.
 
 ### Sprint 3: Resiliência e Infraestrutura
 8. **Composition Root em Billing:** Criar `billing/composition.py` e remover o bypass no `tach.toml`.
@@ -153,7 +153,7 @@ O [Context Map](file:///home/rafael/projetos/medisync/docs/explanation/domains/c
 | Issue | Tipo | Módulo | Descrição / Escopo |
 |---|---|---|---|
 | [#52](https://github.com/Rafaelp122/medisync/issues/52) | `bug` / `critical` | `queue`, `triage`, `worker` | **NC-ARQ-01, NC-BIL-01, NC-MED-01 [SANEADO]:** Sanear acoplamento `queue -> triage`, conectar worker ARQ e ativar salvaguarda SAMU 192. |
-| [#53](https://github.com/Rafaelp122/medisync/issues/53) | `feat` | `queue`, `identidade` | **NC-QUE-01, NC-QUE-02, NC-MED-02, NC-REG-01:** Routers REST da fila, cálculo de cota diária no Valkey, botão de piora e `nome_social` (CFM). |
+| [#53](https://github.com/Rafaelp122/medisync/issues/53) | `feat` | `queue`, `identidade` | **NC-QUE-01, NC-QUE-02, NC-MED-02, NC-REG-01 [SANEADO]:** Routers REST da fila, cálculo de cota diária no Valkey, botão de piora e `nome_social` (CFM). |
 | [#54](https://github.com/Rafaelp122/medisync/issues/54) | `feat` | `telemetry`, `core` | **RF-10, RF-09:** Módulo desacoplado de telemetria operacional (Read Model/CQRS) e parametrização do plantão. |
 | [#39](https://github.com/Rafaelp122/medisync/issues/39) | `type:security` | `core`, `auditoria` | Hardening de integridade criptográfica da trilha de auditoria. |
 | [#40](https://github.com/Rafaelp122/medisync/issues/40) | `type:security` | `identidade` | Hardening de permissões de papéis e access control. |
