@@ -109,6 +109,11 @@ def test_get_pep_service_wires_real_adapters(
     assert isinstance(service._signer, PyHankoSigner)  # pyright: ignore[reportPrivateUsage]
     assert isinstance(service._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
 
+    built = composition.build_pep_service_for_session(cast("AsyncSession", session))
+    assert isinstance(built._pdf_generator, ReportLabPDFGenerator)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(built._signer, PyHankoSigner)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(built._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
+
 
 def test_get_alocacao_service_injects_lua_port() -> None:
     """Queue composition must inject a LuaScriptPort-compliant manager."""

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.consultation.application.dtos import RegistrarEvolucaoSOAPCommand
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
+    is_atendimento_terminal,
 )
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
@@ -34,13 +35,7 @@ class EvolucaoService:
 
     async def _is_terminal(self, atendimento_id: UUID) -> bool:
         """Return True when queue-owned attendance reached terminal status."""
-        if self._reader is None:
-            return False
-        try:
-            resumo = await self._reader.obter_resumo(atendimento_id)
-        except Exception:
-            return False
-        return bool(resumo is not None and resumo.is_terminal)
+        return await is_atendimento_terminal(self._reader, atendimento_id)
 
     async def salvar_evolucao_soap(
         self, command: RegistrarEvolucaoSOAPCommand

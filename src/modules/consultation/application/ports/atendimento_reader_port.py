@@ -27,3 +27,17 @@ class AtendimentoReaderPort(Protocol):
     ) -> AtendimentoResumoDTO | None: ...
 
     async def concluir_atendimento(self, atendimento_id: UUID) -> None: ...
+
+
+async def is_atendimento_terminal(
+    reader: AtendimentoReaderPort | None,
+    atendimento_id: UUID,
+) -> bool:
+    """Return True when queue-owned attendance reached terminal status."""
+    if reader is None:
+        return False
+    try:
+        resumo = await reader.obter_resumo(atendimento_id)
+    except Exception:
+        return False
+    return bool(resumo is not None and resumo.is_terminal)
