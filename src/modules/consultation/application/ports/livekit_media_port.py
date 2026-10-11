@@ -4,8 +4,8 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 
-def build_room_name(organizacao_id: UUID, atendimento_id: UUID) -> str:
-    """Build the canonical LiveKit room name using UUIDv7 identifiers.
+def build_room_name(organizacao_id: int | UUID, atendimento_id: UUID) -> str:
+    """Build the canonical LiveKit room name.
 
     Convention: org_{organizacao_id}_atend_{atendimento_id}
     """

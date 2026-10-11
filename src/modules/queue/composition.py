@@ -4,7 +4,9 @@ Single place in queue module allowed to import infrastructure adapters.
 Services and tests must resolve allocation via get_alocacao_service.
 """
 
+from collections.abc import Awaitable, Callable
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends
 from redis.asyncio import Redis
@@ -115,4 +117,36 @@ def get_admissao_service(
 
 AdmissaoServiceDep = Annotated[
     AdmissaoAtendimentoService, Depends(get_admissao_service)
+]
+
+
+async def default_verificar_posse_paciente_fila(
+    atendimento_id: UUID,
+    paciente_id: UUID,
+) -> bool:
+    """Verifica se o atendimento pertence ao paciente com sessão efêmera (Issue #42).
+
+    Abre uma sessão isolada pontual que é fechada imediatamente, evitando
+    reter conexões do pool de banco durante a vida do streaming WebSocket.
+    """
+    from src.core.database import async_session_factory
+
+    async with async_session_factory() as session:
+        queue_store = build_fila_service_for_session(session=session)
+        snapshot = await queue_store.buscar_atendimento(atendimento_id)
+        if snapshot is None:
+            return False
+        return snapshot.paciente_id == paciente_id
+
+
+PatientQueueOwnershipChecker = Callable[[UUID, UUID], Awaitable[bool]]
+
+
+def get_patient_queue_ownership_checker() -> PatientQueueOwnershipChecker:
+    """Provide the default ownership checker for patient queue WebSockets."""
+    return default_verificar_posse_paciente_fila
+
+
+PatientQueueOwnershipCheckerDep = Annotated[
+    PatientQueueOwnershipChecker, Depends(get_patient_queue_ownership_checker)
 ]

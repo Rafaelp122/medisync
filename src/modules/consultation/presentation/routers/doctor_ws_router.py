@@ -8,6 +8,7 @@ from redis.asyncio import Redis
 
 from src.core.realtime import channel_doctor_calls, stream_channel
 from src.core.valkey import get_valkey_client
+from src.modules.consultation.presentation.dependencies import DoctorWsAuthDep
 
 doctor_ws_router = APIRouter(tags=["doctor-realtime"])
 
@@ -19,9 +20,9 @@ async def ws_doctor_calls(
     websocket: WebSocket,
     medico_id: UUID,
     valkey: ValkeyDep,
+    _auth: DoctorWsAuthDep,
 ) -> None:
     """Stream real-time incoming call modal triggers to connected doctor client."""
-    # Auth WS (issue #42) entrará como dependência antes do accept().
     await stream_channel(
         websocket,
         valkey,
