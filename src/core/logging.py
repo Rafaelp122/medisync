@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from src.core.context import get_current_request_id, get_current_tenant_id
+from src.core.telemetry import get_current_trace_context
 
 
 class JSONFormatter(logging.Formatter):
@@ -27,6 +28,13 @@ class JSONFormatter(logging.Formatter):
         tenant_id = get_current_tenant_id()
         if tenant_id is not None:
             log_entry["tenant_id"] = tenant_id
+
+        # Include OpenTelemetry trace context if active
+        trace_id, span_id = get_current_trace_context()
+        if trace_id is not None:
+            log_entry["trace_id"] = trace_id
+        if span_id is not None:
+            log_entry["span_id"] = span_id
 
         # Merge extra attributes if passed
         raw_extra: object = getattr(record, "extra_fields", None)
