@@ -151,3 +151,51 @@ def test_criar_dependente_request_valid() -> None:
     )
     assert req_new.nome_completo == "Ana Silva"
     assert req_new.dependente_id is None
+
+
+def test_fase_1_request_com_nome_social() -> None:
+    req = Fase1Request(
+        nome_completo="Carlos Drumond",
+        nome_social="Carlinhos Drumond",
+        data_nascimento=date(1990, 1, 1),
+        telefone="11987654321",
+        queixa_principal="Febre e tosse",
+        tcle_hash=SAMPLE_TCLE_HASH,
+        cpf="11144477735",
+    )
+    assert req.nome_social == "Carlinhos Drumond"
+
+
+def test_fase_2_request_e_response_com_nome_social() -> None:
+    paciente_id = uuid7()
+    req = Fase2Request(
+        paciente_id=paciente_id,
+        nome_social="Carla Silva",
+        nome_mae="Maria Silva",
+        sexo_biologico="F",
+        cep="01310-100",
+        logradouro="Av Paulista",
+        numero="1000",
+        bairro="Bela Vista",
+        cidade="São Paulo",
+        estado="SP",
+    )
+    assert req.nome_social == "Carla Silva"
+
+    resp = Fase2Response(
+        paciente_id=paciente_id,
+        nome_completo="Carlos Silva",
+        nome_social="Carla Silva",
+        nome_mae="Maria Silva",
+        sexo_biologico="F",
+        cep="01310100",
+        logradouro="Av Paulista",
+        numero="1000",
+        bairro="Bela Vista",
+        cidade="São Paulo",
+        estado="SP",
+        alergias=[],
+        status="DADOS_COMPLETOS",
+    )
+    assert resp.nome_social == "Carla Silva"
+

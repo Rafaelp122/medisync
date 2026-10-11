@@ -17,6 +17,7 @@ class Fase1InputDTO(BaseModel):
     telefone: str
     queixa_principal: str
     tcle_hash: str
+    nome_social: str | None = None
     cpf: str | None = None
     cns: str | None = None
 
@@ -47,6 +48,7 @@ class Fase2InputDTO(BaseModel):
     bairro: str
     cidade: str
     estado: str
+    nome_social: str | None = None
     alergias: list[str] = Field(default_factory=list)
     token: str | None = None
 
@@ -58,6 +60,7 @@ class Fase2OutputDTO(BaseModel):
 
     paciente_id: UUID
     nome_completo: str | None
+    nome_social: str | None = None
     nome_mae: str
     sexo_biologico: str
     cep: str
