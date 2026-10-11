@@ -94,3 +94,56 @@ async def test_forward_pubsub_to_websocket_lifecycle_and_cleanup() -> None:
     # 3. Clean cleanup on disconnect
     mock_pubsub.unsubscribe.assert_called_once_with(channel)
     mock_pubsub.aclose.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_forward_pubsub_to_websocket_heartbeat(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that forward_pubsub_to_websocket sends periodic heartbeat pings."""
+    mock_valkey = MagicMock()
+    mock_pubsub = MagicMock()
+    mock_valkey.pubsub.return_value = mock_pubsub
+    mock_pubsub.subscribe = AsyncMock()
+    mock_pubsub.unsubscribe = AsyncMock()
+    mock_pubsub.aclose = AsyncMock()
+
+    async def mock_listen() -> AsyncGenerator[dict[str, str], None]:
+        await asyncio.sleep(10)
+        yield {"type": "message", "data": "{}"}
+
+    mock_pubsub.listen = mock_listen
+
+    mock_ws = AsyncMock()
+    heartbeat_triggered = asyncio.Event()
+
+    async def tracking_send_json(payload: dict[str, str]) -> None:
+        if payload.get("type") == "ping":
+            heartbeat_triggered.set()
+
+    mock_ws.send_json = AsyncMock(side_effect=tracking_send_json)
+    mock_ws.send_text = AsyncMock()
+
+    async def mock_receive() -> dict[str, str]:
+        await heartbeat_triggered.wait()
+        raise WebSocketDisconnect()
+
+    mock_ws.receive = mock_receive
+
+    real_sleep = asyncio.sleep
+
+    async def fast_sleep(delay: float) -> None:
+        if delay == 25:
+            await real_sleep(0.01)
+        else:
+            await real_sleep(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", fast_sleep)
+
+    await forward_pubsub_to_websocket(
+        valkey=mock_valkey,
+        channel="medisync:pubsub:queue:test",
+        websocket=mock_ws,
+    )
+
+    assert heartbeat_triggered.is_set()

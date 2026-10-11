@@ -1,6 +1,8 @@
 """FastAPI router for progressive 2-phase patient onboarding."""
 
-from fastapi import APIRouter, status
+from typing import Annotated
+
+from fastapi import APIRouter, Body, status
 
 from src.core.dependencies import TenantDep
 from src.modules.identity.composition import OnboardingServiceDep
@@ -20,7 +22,6 @@ onboarding_router = APIRouter(
 
 @onboarding_router.post(
     "/fase-1",
-    response_model=Fase1Response,
     status_code=status.HTTP_201_CREATED,
     summary="Acolhimento clínico inicial (Fase 1)",
     description=(
@@ -29,7 +30,7 @@ onboarding_router = APIRouter(
     ),
 )
 async def intake_fase_1(
-    body: Fase1Request,
+    body: Annotated[Fase1Request, Body()],
     tenant_id: TenantDep,
     service: OnboardingServiceDep,
 ) -> Fase1Response:
@@ -40,7 +41,6 @@ async def intake_fase_1(
 
 @onboarding_router.post(
     "/fase-2",
-    response_model=Fase2Response,
     status_code=status.HTTP_200_OK,
     summary="Enriquecimento regulatório de prontuário (Fase 2)",
     description=(
@@ -49,7 +49,7 @@ async def intake_fase_1(
     ),
 )
 async def enrichment_fase_2(
-    body: Fase2Request,
+    body: Annotated[Fase2Request, Body()],
     tenant_id: TenantDep,
     service: OnboardingServiceDep,
     _auth: ValidarIntakeFase2Dep,

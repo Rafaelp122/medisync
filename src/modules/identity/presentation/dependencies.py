@@ -3,8 +3,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Header, Path
+from fastapi import Path, Security
+from fastapi.security import HTTPAuthorizationCredentials
 
+from src.core.authz import http_bearer_scheme
 from src.core.authz.roles import Role
 from src.core.authz.token import decode_access_token
 from src.core.config import get_settings
@@ -17,7 +19,10 @@ from src.modules.identity.presentation.schemas import Fase2Request
 async def validar_intake_fase2(
     body: Fase2Request,
     tenant_id: TenantDep,
-    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(http_bearer_scheme),
+    ] = None,
 ) -> None:
     """Validate intake token possession during Phase 2 regulatory enrichment.
 
@@ -28,16 +33,8 @@ async def validar_intake_fase2(
         UnauthorizedError: If token is missing, expired, or malformed (401).
         ForbiddenError: If token belongs to another patient or organization (403).
     """
-    token: str | None = None
-    if authorization:
-        parts = authorization.strip().split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            raise UnauthorizedError(
-                "Formato do cabeçalho Authorization inválido. "
-                "Esperado 'Bearer <token>'."
-            )
-        token = parts[1]
-    elif body.token:
+    token: str | None = credentials.credentials if credentials else None
+    if not token and body.token:
         token = body.token.strip()
 
     if not token:
@@ -70,7 +67,10 @@ async def validar_intake_fase2(
 async def validar_posse_titular(
     id: Annotated[UUID, Path(description="ID do paciente titular")],
     tenant_id: TenantDep,
-    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(http_bearer_scheme),
+    ] = None,
 ) -> None:
     """Validate proof-of-possession for titular dependent management endpoints.
 
@@ -83,19 +83,13 @@ async def validar_posse_titular(
         ForbiddenError: If caller lacks possession of the titular record
             or belongs to another organization (403).
     """
-    if not authorization:
+    if not credentials:
         raise UnauthorizedError(
             "Credencial de acesso não fornecida. Envie o token no cabeçalho "
             "Authorization: Bearer <token>."
         )
 
-    parts = authorization.strip().split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise UnauthorizedError(
-            "Formato do cabeçalho Authorization inválido. Esperado 'Bearer <token>'."
-        )
-
-    raw_token = parts[1]
+    raw_token = credentials.credentials
     token_parts = raw_token.split(".")
 
     if len(token_parts) == 2:
@@ -147,5 +141,5 @@ async def validar_posse_titular(
         raise UnauthorizedError("Token fornecido em formato inválido.")
 
 
-ValidarIntakeFase2Dep = Annotated[None, Depends(validar_intake_fase2)]
-TitularPosseDep = Annotated[None, Depends(validar_posse_titular)]
+ValidarIntakeFase2Dep = Annotated[None, Security(validar_intake_fase2)]
+TitularPosseDep = Annotated[None, Security(validar_posse_titular)]

@@ -16,11 +16,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # --- Core Application ---
     APP_NAME: str = "MediSync Express"
     ENVIRONMENT: Literal["development", "staging", "production", "test"] = "development"
     DEBUG: bool = False
     SECRET_KEY: str = "dev-insecure-secret-key-change-in-production-min-32-chars"
+    CORS_ORIGINS: list[str] = []
 
     # --- Authentication & Session Security (OWASP & CFM 2.314/2022) ---
     JWT_SECRET_KEY: str = (

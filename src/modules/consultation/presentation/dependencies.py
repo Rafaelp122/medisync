@@ -5,16 +5,20 @@ from uuid import UUID
 
 from fastapi import (
     Depends,
-    Header,
     HTTPException,
     Path,
     Query,
+    Security,
     WebSocket,
     WebSocketException,
     status,
 )
 
-from src.core.authz.dependencies import require_role
+from src.core.authz.dependencies import (
+    HTTPAuthorizationCredentials,
+    http_bearer_scheme,
+    require_role,
+)
 from src.core.authz.models import AuthenticatedUser
 from src.core.authz.revocation import is_token_revoked
 from src.core.authz.roles import Role
@@ -40,7 +44,9 @@ from src.modules.consultation.application.ports.validation_rate_limiter_port imp
 from src.modules.consultation.composition import get_atendimento_reader
 from src.modules.consultation.presentation.schemas import LiveKitTokenRequest
 
-MedicoUserDep = Annotated[AuthenticatedUser, Depends(require_role(Role.MEDICO))]
+MedicoUserDep = Annotated[
+    AuthenticatedUser, Security(require_role(Role.MEDICO), scopes=["medico"])
+]
 
 AtendimentoIdPath = Annotated[
     UUID, Path(description="Identificador único do atendimento")
@@ -97,10 +103,12 @@ async def require_clinical_mutation_access(
 require_clinical_access = require_clinical_read_access
 
 ClinicalAccessReadDep = Annotated[
-    AuthenticatedUser, Depends(require_clinical_read_access)
+    AuthenticatedUser,
+    Security(require_clinical_read_access, scopes=["clinical:read"]),
 ]
 ClinicalAccessMutationDep = Annotated[
-    AuthenticatedUser, Depends(require_clinical_mutation_access)
+    AuthenticatedUser,
+    Security(require_clinical_mutation_access, scopes=["clinical:write"]),
 ]
 ClinicalAccessDep = ClinicalAccessReadDep
 
@@ -131,7 +139,10 @@ async def validar_acesso_livekit(
     atendimento_id: AtendimentoIdPath,
     request: LiveKitTokenRequest,
     reader: Annotated[AtendimentoReaderPort, Depends(get_atendimento_reader)],
-    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(http_bearer_scheme),
+    ] = None,
 ) -> None:
     """Valida acesso para emissão de token LiveKit WebRTC (Issue #42).
 
@@ -141,19 +152,13 @@ async def validar_acesso_livekit(
     - Se papel 'paciente': exige token de acolhimento (HMAC) ou JWT.
     - Rejeita atendimentos terminais e divergência de organização com 403.
     """
-    if not authorization:
+    if credentials is None:
         raise UnauthorizedError(
             "Credencial de autenticação não fornecida. "
             "Envie o token no cabeçalho Authorization: Bearer <token>."
         )
 
-    parts = authorization.strip().split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise UnauthorizedError(
-            "Formato do cabeçalho Authorization inválido. Esperado 'Bearer <token>'."
-        )
-
-    raw_token = parts[1]
+    raw_token = credentials.credentials
 
     # 1. Autenticação e extração de identidade do chamador (401 se credencial inválida)
     if request.role not in ("medico", "paciente"):
@@ -275,7 +280,9 @@ async def validar_acesso_livekit(
         )
 
 
-LiveKitAccessDep = Annotated[None, Depends(validar_acesso_livekit)]
+LiveKitAccessDep = Annotated[
+    None, Security(validar_acesso_livekit, scopes=["livekit:access"])
+]
 
 
 async def validar_ws_doctor_token(

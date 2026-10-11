@@ -1,8 +1,9 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Request, Response, status
+from fastapi import APIRouter, Body, Request, Response, Security, status
+from fastapi.security import HTTPAuthorizationCredentials
 
-from src.core.authz import CurrentUserDep
+from src.core.authz import CurrentUserDep, http_bearer_scheme
 from src.core.dependencies import OptionalTenantDep
 from src.core.errors import NotFoundError
 from src.modules.auth.application.dtos import LoginCommand
@@ -20,13 +21,12 @@ auth_router = APIRouter(prefix="/auth", tags=["Authentication & Sessions (OWASP)
 
 @auth_router.post(
     "/login",
-    response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
     summary="Autenticação com Argon2id e emissão de JWT (Anti-Brute Force)",
 )
 async def login(
     request: Request,
-    body: LoginRequest,
+    body: Annotated[LoginRequest, Body()],
     service: AuthServiceDep,
     context_tenant_id: OptionalTenantDep,
 ) -> TokenResponse:
@@ -53,12 +53,11 @@ async def login(
 
 @auth_router.post(
     "/refresh",
-    response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
     summary="Rotação de refresh token com detecção de reuso",
 )
 async def refresh_token(
-    body: RefreshTokenRequest,
+    body: Annotated[RefreshTokenRequest, Body()],
     service: AuthServiceDep,
 ) -> TokenResponse:
     """Rotaciona o refresh token: invalida o token apresentado e emite um novo par."""
@@ -72,26 +71,24 @@ async def refresh_token(
     summary="Revogação de sessão e logout de usuário",
 )
 async def logout(
-    body: RefreshTokenRequest,
+    body: Annotated[RefreshTokenRequest, Body()],
     service: AuthServiceDep,
-    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(http_bearer_scheme),
+    ] = None,
 ) -> Response:
     """Revoga o refresh token fornecido (e access token opcional).
 
     Impede renovações e acessos subsequentes em toda a malha distribuída.
     """
-    access_token: str | None = None
-    if authorization:
-        parts = authorization.strip().split()
-        if len(parts) == 2 and parts[0].lower() == "bearer":
-            access_token = parts[1]
+    access_token = credentials.credentials if credentials else None
     await service.revogar_sessao(body.refresh_token, access_token=access_token)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @auth_router.get(
     "/me",
-    response_model=UsuarioPerfilResponse,
     status_code=status.HTTP_200_OK,
     summary="Perfil do usuário autenticado a partir do Bearer JWT",
 )

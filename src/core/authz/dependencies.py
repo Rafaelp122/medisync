@@ -6,7 +6,8 @@ Conforms to OWASP Authorization Cheat Sheet (Least Privilege & Deny by Default).
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Depends, Header
+from fastapi import Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.core.authz.models import AuthenticatedUser
 from src.core.authz.revocation import is_token_revoked
@@ -15,9 +16,17 @@ from src.core.authz.token import decode_access_token
 from src.core.context import get_current_tenant_id, set_current_tenant_id
 from src.core.errors import ForbiddenError, TokenRevogadoError, UnauthorizedError
 
+http_bearer_scheme = HTTPBearer(
+    auto_error=False,
+    description="Token de autenticação JWT Bearer",
+)
+
 
 async def get_current_user(
-    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(http_bearer_scheme),
+    ] = None,
 ) -> AuthenticatedUser:
     """Extract, decode, and validate the Bearer token from Authorization header.
 
@@ -28,19 +37,13 @@ async def get_current_user(
         TokenRevogadoError: If token JTI is listed in Valkey revocation store.
         ForbiddenError: If user tenant mismatches the requested tenant context.
     """
-    if not authorization:
+    if credentials is None:
         raise UnauthorizedError(
             "Credencial de autenticação não fornecida. "
             "Envie o token no cabeçalho Authorization: Bearer <token>."
         )
 
-    parts = authorization.strip().split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise UnauthorizedError(
-            "Formato do cabeçalho Authorization inválido. Esperado 'Bearer <token>'."
-        )
-
-    raw_token = parts[1]
+    raw_token = credentials.credentials
     user = decode_access_token(raw_token)
 
     # Validate against Valkey token revocation / blacklist in real time
@@ -60,7 +63,7 @@ async def get_current_user(
     return user
 
 
-CurrentUserDep = Annotated[AuthenticatedUser, Depends(get_current_user)]
+CurrentUserDep = Annotated[AuthenticatedUser, Security(get_current_user)]
 
 
 def require_authenticated_user(current_user: CurrentUserDep) -> AuthenticatedUser:
@@ -72,7 +75,10 @@ def require_role(*roles: str) -> Callable[[AuthenticatedUser], AuthenticatedUser
     """Dependency factory restricting endpoint to users possessing one of the roles."""
 
     def role_checker(
-        current_user: CurrentUserDep,
+        current_user: Annotated[
+            AuthenticatedUser,
+            Security(get_current_user, scopes=list(roles)),
+        ],
     ) -> AuthenticatedUser:
         if not current_user.has_role(*roles):
             allowed_roles = ", ".join(roles)
@@ -96,7 +102,10 @@ def require_permission(
     """Dependency factory requiring user role to possess all specified permissions."""
 
     def permission_checker(
-        current_user: CurrentUserDep,
+        current_user: Annotated[
+            AuthenticatedUser,
+            Security(get_current_user, scopes=list(permissions)),
+        ],
     ) -> AuthenticatedUser:
         missing = [p for p in permissions if not current_user.has_permission(p)]
         if missing:

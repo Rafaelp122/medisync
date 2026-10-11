@@ -3,13 +3,11 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Body, Query, Response, status
 
 from src.core.dependencies import TenantDep
 from src.core.errors import ForbiddenError
 from src.modules.consultation.application.dtos import (
-    CriarItemPrescricaoDTO,
-    DocumentoAssinadoResult,
     EmitirDocumentoClinicoCommand,
     FinalizarConsultaCommand,
     RegistrarEvolucaoSOAPCommand,
@@ -25,6 +23,7 @@ from src.modules.consultation.presentation.dependencies import (
     AtendimentoIdPath,
     ClinicalAccessDep,
     ClinicalAccessMutationDep,
+    ClinicalAccessReadDep,
     DocumentoIdPath,
 )
 from src.modules.consultation.presentation.schemas import (
@@ -57,13 +56,12 @@ def _require_matching_tenant(provided: int | None, tenant_id: int) -> int:
 
 @consultation_router.post(
     "/{atendimento_id}/soap",
-    response_model=EvolucaoSOAPResponse,
     status_code=status.HTTP_200_OK,
     summary="Registra ou atualiza evolução clínica SOAP no prontuário eletrônico (PEP)",
 )
 async def salvar_evolucao_soap(
     atendimento_id: AtendimentoIdPath,
-    request: RegistrarSOAPRequest,
+    request: Annotated[RegistrarSOAPRequest, Body()],
     current_user: ClinicalAccessMutationDep,
     service: PEPServiceDep,
     tenant_id: TenantDep,
@@ -86,12 +84,12 @@ async def salvar_evolucao_soap(
 
 @consultation_router.get(
     "/{atendimento_id}/soap",
-    response_model=EvolucaoSOAPResponse,
     status_code=status.HTTP_200_OK,
     summary="Obtém a evolução clínica SOAP registrada para o atendimento",
 )
 async def obter_evolucao_soap(
     atendimento_id: AtendimentoIdPath,
+    _user: ClinicalAccessReadDep,
     service: PEPServiceDep,
 ) -> EvolucaoSOAPResponse:
     """Retorna as notas SOAP atuais do atendimento."""
@@ -101,7 +99,6 @@ async def obter_evolucao_soap(
 
 @consultation_router.get(
     "/{atendimento_id}/prontuario",
-    response_model=ProntuarioResponse,
     status_code=status.HTTP_200_OK,
     summary="Acesso ao prontuário médico protegido por RBAC e ABAC clínico",
 )
@@ -121,13 +118,13 @@ async def obter_prontuario_protegido(
 
 @consultation_router.post(
     "/{atendimento_id}/prescriptions/validate",
-    response_model=ValidarPrescricaoResponse,
     status_code=status.HTTP_200_OK,
     summary="Valida substância medicamentosa contra Portaria SVS/MS nº 344/98",
 )
 async def validar_prescricao_medicamento(
     atendimento_id: AtendimentoIdPath,
-    request: ValidarPrescricaoRequest,
+    request: Annotated[ValidarPrescricaoRequest, Body()],
+    _user: ClinicalAccessMutationDep,
     service: PEPServiceDep,
 ) -> ValidarPrescricaoResponse:
     """Verifica se o medicamento exige talonário físico (Listas A/B)."""
@@ -141,13 +138,12 @@ async def validar_prescricao_medicamento(
 
 @consultation_router.post(
     "/{atendimento_id}/documents",
-    response_model=DocumentoClinicoResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Emite documento clínico eletrônico com itens de prescrição",
 )
 async def emitir_documento_clinico(
     atendimento_id: AtendimentoIdPath,
-    request: EmitirDocumentoRequest,
+    request: Annotated[EmitirDocumentoRequest, Body()],
     current_user: ClinicalAccessMutationDep,
     service: PEPServiceDep,
     tenant_id: TenantDep,
@@ -155,23 +151,12 @@ async def emitir_documento_clinico(
     """Emite receita ou atestado aplicando salvaguardas da Portaria 344/98."""
     org_id = _require_matching_tenant(request.organizacao_id, tenant_id)
 
-    itens_dto = [
-        CriarItemPrescricaoDTO(
-            medicamento=it.medicamento,
-            dosagem=it.dosagem,
-            posologia=it.posologia,
-            duracao=it.duracao,
-            controle_especial=it.controle_especial,
-        )
-        for it in request.itens
-    ]
-
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
         organizacao_id=org_id,
         medico_id=current_user.usuario_id,
         tipo_documento=request.tipo_documento,
-        itens=itens_dto,
+        itens=request.itens,
         chave_s3=request.chave_s3 or "",
         sha256_hash=request.sha256_hash or "",
     )
@@ -183,13 +168,12 @@ async def emitir_documento_clinico(
 
 @consultation_router.post(
     "/{atendimento_id}/finalize",
-    response_model=FinalizarConsultaResponse,
     status_code=status.HTTP_200_OK,
     summary="Conclui atendimento e bloqueia registros clínicos (Imutabilidade)",
 )
 async def finalizar_consulta(
     atendimento_id: AtendimentoIdPath,
-    request: FinalizarConsultaRequest,
+    request: Annotated[FinalizarConsultaRequest, Body()],
     current_user: ClinicalAccessMutationDep,
     service: PEPServiceDep,
     tenant_id: TenantDep,
@@ -215,12 +199,12 @@ async def finalizar_consulta(
 
 @consultation_router.get(
     "/{atendimento_id}/tma-status",
-    response_model=TMAStatusResponse,
     status_code=status.HTTP_200_OK,
     summary="Consulta telemetria discreta de TMA sem desconexão forçada (RN06)",
 )
 async def obter_tma_status(
     atendimento_id: AtendimentoIdPath,
+    _user: ClinicalAccessReadDep,
     service: PEPServiceDep,
     iniciado_em: Annotated[
         datetime | None,
@@ -260,6 +244,7 @@ async def obter_tma_status(
 async def obter_documento_pdf(
     atendimento_id: AtendimentoIdPath,
     documento_id: DocumentoIdPath,
+    _user: ClinicalAccessReadDep,
     service: DocumentoServiceDep,
 ) -> Response:
     """Retorna o documento clínico compilado em PDF/A com QR Code de verificação."""
@@ -277,14 +262,13 @@ async def obter_documento_pdf(
 
 @consultation_router.post(
     "/{atendimento_id}/documents/{documento_id}/sign",
-    response_model=AssinarDocumentoResponse,
     status_code=status.HTTP_200_OK,
     summary="Aplica assinatura digital PAdES ICP-Brasil no documento clínico via PSC",
 )
 async def assinar_documento(
     atendimento_id: AtendimentoIdPath,
     documento_id: DocumentoIdPath,
-    payload: AssinarDocumentoRequest,
+    payload: Annotated[AssinarDocumentoRequest, Body()],
     _user: ClinicalAccessMutationDep,
     service: DocumentoServiceDep,
 ) -> AssinarDocumentoResponse:
@@ -294,17 +278,9 @@ async def assinar_documento(
         provider=payload.provider,
         certificate_alias=payload.certificate_alias,
     )
-    doc, signed_bytes = await service.assinar(
+    result = await service.assinar(
         documento_id=documento_id,
         atendimento_id=atendimento_id,
         credenciais=creds,
-    )
-
-    result = DocumentoAssinadoResult(
-        documento_id=doc.id,
-        tipo_documento=str(doc.tipo_documento),
-        sha256_hash=doc.sha256_hash,
-        assinado_em=doc.assinado_em,
-        tamanho_bytes=len(signed_bytes),
     )
     return AssinarDocumentoResponse.model_validate(result)

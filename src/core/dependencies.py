@@ -3,14 +3,17 @@
 from typing import Annotated
 
 from fastapi import Depends
+from redis.asyncio import Redis
 
 from src.core.context import get_current_tenant_id
 from src.core.errors import TenantInvalidoError
+from src.core.valkey import get_valkey_client
 
 __all__ = [
     "OptionalTenantDep",
     "TenantDep",
     "TenantInvalidoError",
+    "ValkeyDep",
     "get_optional_tenant_id",
     "get_required_tenant_id",
 ]
@@ -34,3 +37,4 @@ async def get_optional_tenant_id() -> int | None:
 
 TenantDep = Annotated[int, Depends(get_required_tenant_id)]
 OptionalTenantDep = Annotated[int | None, Depends(get_optional_tenant_id)]
+ValkeyDep = Annotated[Redis, Depends(get_valkey_client)]

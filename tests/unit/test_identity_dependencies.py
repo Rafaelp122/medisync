@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 import jwt
 import pytest
+from fastapi.security import HTTPAuthorizationCredentials
 from src.core.authz.roles import Role
 from src.core.config import get_settings
 from src.core.errors import ForbiddenError, UnauthorizedError
@@ -65,7 +66,7 @@ async def test_validar_intake_fase2_via_header_success() -> None:
     await validar_intake_fase2(
         body=body,
         tenant_id=org_id,
-        authorization=f"Bearer {token}",
+        credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials=token),
     )
 
 
@@ -81,7 +82,7 @@ async def test_validar_intake_fase2_via_body_success() -> None:
     await validar_intake_fase2(
         body=body,
         tenant_id=org_id,
-        authorization=None,
+        credentials=None,
     )
 
 
@@ -91,16 +92,7 @@ async def test_validar_intake_fase2_missing_token_raises_401() -> None:
     body = _make_fase2_request(paciente_id, token=None)
 
     with pytest.raises(UnauthorizedError, match="Token de acolhimento não fornecido"):
-        await validar_intake_fase2(body=body, tenant_id=1, authorization=None)
-
-
-@pytest.mark.asyncio
-async def test_validar_intake_fase2_malformed_header_raises_401() -> None:
-    paciente_id = uuid7()
-    body = _make_fase2_request(paciente_id)
-
-    with pytest.raises(UnauthorizedError, match="Formato do cabeçalho"):
-        await validar_intake_fase2(body=body, tenant_id=1, authorization="Basic abc123")
+        await validar_intake_fase2(body=body, tenant_id=1, credentials=None)
 
 
 @pytest.mark.asyncio
@@ -117,7 +109,9 @@ async def test_validar_intake_fase2_expired_token_raises_401() -> None:
         await validar_intake_fase2(
             body=body,
             tenant_id=org_id,
-            authorization=f"Bearer {expired_token}",
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=expired_token
+            ),
         )
 
 
@@ -134,7 +128,9 @@ async def test_validar_intake_fase2_mismatched_paciente_raises_403() -> None:
         await validar_intake_fase2(
             body=body_b,
             tenant_id=org_id,
-            authorization=f"Bearer {token_a}",
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=token_a
+            ),
         )
 
 
@@ -149,7 +145,9 @@ async def test_validar_intake_fase2_mismatched_tenant_raises_403() -> None:
         await validar_intake_fase2(
             body=body,
             tenant_id=2,
-            authorization=f"Bearer {token}",
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=token
+            ),
         )
 
 
@@ -157,7 +155,7 @@ async def test_validar_intake_fase2_mismatched_tenant_raises_403() -> None:
 async def test_validar_posse_titular_missing_header_raises_401() -> None:
     titular_id = uuid7()
     with pytest.raises(UnauthorizedError, match="não fornecida"):
-        await validar_posse_titular(id=titular_id, tenant_id=1, authorization=None)
+        await validar_posse_titular(id=titular_id, tenant_id=1, credentials=None)
 
 
 @pytest.mark.asyncio
@@ -170,7 +168,7 @@ async def test_validar_posse_titular_intake_token_success() -> None:
     await validar_posse_titular(
         id=titular_id,
         tenant_id=org_id,
-        authorization=f"Bearer {token}",
+        credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials=token),
     )
 
 
@@ -186,7 +184,9 @@ async def test_validar_posse_titular_intake_token_other_patient_raises_403() -> 
         await validar_posse_titular(
             id=titular_id,
             tenant_id=org_id,
-            authorization=f"Bearer {token}",
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=token
+            ),
         )
 
 
@@ -200,7 +200,9 @@ async def test_validar_posse_titular_intake_token_other_org_raises_403() -> None
         await validar_posse_titular(
             id=titular_id,
             tenant_id=2,
-            authorization=f"Bearer {token}",
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=token
+            ),
         )
 
 
@@ -213,7 +215,11 @@ async def test_validar_posse_titular_corporate_jwt_success() -> None:
     # ADMIN_GLOBAL
     admin_jwt = _make_jwt(uuid4(), org_id, Role.ADMIN_GLOBAL, settings.JWT_SECRET_KEY)
     await validar_posse_titular(
-        id=titular_id, tenant_id=org_id, authorization=f"Bearer {admin_jwt}"
+        id=titular_id,
+        tenant_id=org_id,
+        credentials=HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=admin_jwt
+        ),
     )
 
     # GESTOR_UNIDADE
@@ -221,7 +227,11 @@ async def test_validar_posse_titular_corporate_jwt_success() -> None:
         uuid4(), org_id, Role.GESTOR_UNIDADE, settings.JWT_SECRET_KEY
     )
     await validar_posse_titular(
-        id=titular_id, tenant_id=org_id, authorization=f"Bearer {gestor_jwt}"
+        id=titular_id,
+        tenant_id=org_id,
+        credentials=HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=gestor_jwt
+        ),
     )
 
 
@@ -233,7 +243,11 @@ async def test_validar_posse_titular_patient_jwt_success() -> None:
     patient_jwt = _make_jwt(titular_id, org_id, Role.PACIENTE, settings.JWT_SECRET_KEY)
 
     await validar_posse_titular(
-        id=titular_id, tenant_id=org_id, authorization=f"Bearer {patient_jwt}"
+        id=titular_id,
+        tenant_id=org_id,
+        credentials=HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=patient_jwt
+        ),
     )
 
 
@@ -249,7 +263,11 @@ async def test_validar_posse_titular_patient_jwt_other_patient_raises_403() -> N
 
     with pytest.raises(ForbiddenError, match="não é o titular informado"):
         await validar_posse_titular(
-            id=titular_id, tenant_id=org_id, authorization=f"Bearer {patient_jwt}"
+            id=titular_id,
+            tenant_id=org_id,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=patient_jwt
+            ),
         )
 
 
@@ -262,5 +280,9 @@ async def test_validar_posse_titular_unauthorized_role_raises_403() -> None:
 
     with pytest.raises(ForbiddenError, match="não possui permissão"):
         await validar_posse_titular(
-            id=titular_id, tenant_id=org_id, authorization=f"Bearer {medico_jwt}"
+            id=titular_id,
+            tenant_id=org_id,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=medico_jwt
+            ),
         )

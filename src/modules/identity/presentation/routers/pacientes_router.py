@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path, status
+from fastapi import APIRouter, Body, Path, status
 
 from src.core.dependencies import TenantDep
 from src.modules.identity.composition import DependenteServiceDep
@@ -14,6 +14,8 @@ from src.modules.identity.presentation.schemas import (
     DependenteResponse,
 )
 
+TitularIdPath = Annotated[UUID, Path(description="ID do paciente titular")]
+
 pacientes_router = APIRouter(
     prefix="/pacientes",
     tags=["Pacientes"],
@@ -22,7 +24,6 @@ pacientes_router = APIRouter(
 
 @pacientes_router.post(
     "/{id}/dependentes",
-    response_model=DependenteResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Cadastrar ou vincular dependente",
     description=(
@@ -31,8 +32,8 @@ pacientes_router = APIRouter(
     ),
 )
 async def cadastrar_dependente(
-    id: Annotated[UUID, Path(description="ID do paciente titular")],
-    body: CriarDependenteRequest,
+    id: TitularIdPath,
+    body: Annotated[CriarDependenteRequest, Body()],
     tenant_id: TenantDep,
     service: DependenteServiceDep,
     _posse: TitularPosseDep,
@@ -48,7 +49,6 @@ async def cadastrar_dependente(
 
 @pacientes_router.get(
     "/{id}/dependentes",
-    response_model=list[DependenteDetalheResponse],
     status_code=status.HTTP_200_OK,
     summary="Listar dependentes do titular",
     description=(
@@ -57,7 +57,7 @@ async def cadastrar_dependente(
     ),
 )
 async def listar_dependentes(
-    id: Annotated[UUID, Path(description="ID do paciente titular")],
+    id: TitularIdPath,
     tenant_id: TenantDep,
     service: DependenteServiceDep,
     _posse: TitularPosseDep,

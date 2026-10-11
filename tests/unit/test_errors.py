@@ -1,3 +1,6 @@
+from typing import TYPE_CHECKING
+
+import pytest
 from src.core.errors import (
     BadRequestError,
     ConflictError,
@@ -8,6 +11,9 @@ from src.core.errors import (
     UnauthorizedError,
     ValidationError,
 )
+
+if TYPE_CHECKING:
+    from starlette.types import Scope
 
 
 def test_problem_details_model():
@@ -62,3 +68,51 @@ def test_domain_error_custom_attributes():
     assert err.title == "I'm a teapot"
     assert err.error_type == "https://errors.medisync.com/teapot"
     assert err.code == "TEAPOT_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_http_exception_handler_uses_http_status_phrase_and_name() -> None:
+    import json
+
+    from src.core.errors import http_exception_handler
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+    from starlette.requests import Request
+
+    scope: Scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/test-endpoint",
+        "headers": [],
+    }
+    req = Request(scope)
+    exc = StarletteHTTPException(status_code=404, detail="Resource not found")
+    resp = await http_exception_handler(req, exc)
+    assert resp.status_code == 404
+    data = json.loads(bytes(resp.body).decode("utf-8"))
+    assert data["status"] == 404
+    assert data["title"] == "Not Found"
+    assert data["code"] == "NOT_FOUND"
+    assert data["detail"] == "Resource not found"
+
+
+@pytest.mark.asyncio
+async def test_http_exception_handler_rate_limit_429() -> None:
+    import json
+
+    from src.core.errors import http_exception_handler
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+    from starlette.requests import Request
+
+    scope: Scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/auth",
+        "headers": [],
+    }
+    req = Request(scope)
+    exc = StarletteHTTPException(status_code=429, detail="Too many attempts")
+    resp = await http_exception_handler(req, exc)
+    assert resp.status_code == 429
+    data = json.loads(bytes(resp.body).decode("utf-8"))
+    assert data["title"] == "Too Many Requests"
+    assert data["code"] == "TOO_MANY_REQUESTS"

@@ -107,12 +107,19 @@ async def forward_pubsub_to_websocket(
                 if msg.get("type") == "websocket.disconnect":
                     break
 
+    async def _heartbeat_worker() -> None:
+        with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect):
+            while True:
+                await asyncio.sleep(25)
+                await websocket.send_json({"type": "ping"})
+
     listener_task = asyncio.create_task(_pubsub_listener())
     reader_task = asyncio.create_task(_client_reader())
+    heartbeat_task = asyncio.create_task(_heartbeat_worker())
 
     try:
         _done, pending = await asyncio.wait(
-            [listener_task, reader_task],
+            [listener_task, reader_task, heartbeat_task],
             return_when=asyncio.FIRST_COMPLETED,
         )
         for task in pending:

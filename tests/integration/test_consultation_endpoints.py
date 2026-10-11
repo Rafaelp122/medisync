@@ -150,6 +150,14 @@ async def test_consultation_soap_full_lifecycle_and_safeguards(
     data_doc = cast("dict[str, object]", res_doc_valido.json())
     assert data_doc["tipo_documento"] == "RECEITA_SIMPLES"
     assert len(cast("list[object]", data_doc["itens"])) == 1
+    doc_id = str(data_doc["id"])
+
+    # 9b. Download PDF of issued document with attending physician authentication
+    res_pdf = await client.get(
+        f"/api/v1/consultations/{cenario.atendimento.id}/documents/{doc_id}/pdf",
+    )
+    assert res_pdf.status_code == 200
+    assert res_pdf.headers["content-type"] == "application/pdf"
 
     # 10. Query TMA Status (RN06)
     res_tma = await client.get(
@@ -253,6 +261,35 @@ async def test_consultation_mutation_endpoints_unauthenticated_blocked(
     assert resp_sign.status_code == 401
     assert "não fornecida" in str(resp_sign.json()["detail"])
 
+    # 5. GET /soap without token -> 401
+    resp_get_soap = await client.get(
+        f"/api/v1/consultations/{atend_id}/soap",
+    )
+    assert resp_get_soap.status_code == 401
+    assert "não fornecida" in str(resp_get_soap.json()["detail"])
+
+    # 6. GET /documents/{doc_id}/pdf without token -> 401
+    resp_pdf = await client.get(
+        f"/api/v1/consultations/{atend_id}/documents/{uuid4()}/pdf",
+    )
+    assert resp_pdf.status_code == 401
+    assert "não fornecida" in str(resp_pdf.json()["detail"])
+
+    # 7. GET /tma-status without token -> 401
+    resp_tma = await client.get(
+        f"/api/v1/consultations/{atend_id}/tma-status",
+    )
+    assert resp_tma.status_code == 401
+    assert "não fornecida" in str(resp_tma.json()["detail"])
+
+    # 8. POST /prescriptions/validate without token -> 401
+    resp_val_presc = await client.post(
+        f"/api/v1/consultations/{atend_id}/prescriptions/validate",
+        json={"medicamento": "Dipirona 500mg"},
+    )
+    assert resp_val_presc.status_code == 401
+    assert "não fornecida" in str(resp_val_presc.json()["detail"])
+
 
 @pytest.mark.usefixtures("clean_db")
 @pytest.mark.asyncio
@@ -314,3 +351,11 @@ async def test_consultation_mutation_endpoints_unassigned_physician_blocked(
     )
     assert resp_sign.status_code == 403
     assert "não é o profissional assistente" in str(resp_sign.json()["detail"])
+
+    # 5. Intruding doctor attempting POST /prescriptions/validate -> 403
+    resp_val = await client.post(
+        f"/api/v1/consultations/{atend_id}/prescriptions/validate",
+        json={"medicamento": "Dipirona 500mg"},
+    )
+    assert resp_val.status_code == 403
+    assert "não é o profissional assistente" in str(resp_val.json()["detail"])

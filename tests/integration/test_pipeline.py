@@ -181,7 +181,8 @@ async def test_http_404_returns_rfc7807(app_with_routes: FastAPI) -> None:
         assert "x-request-id" in res.headers
         body = res.json()
         assert body["status"] == 404
-        assert body["title"] == "HTTP Error"
+        assert body["title"] == "Not Found"
+        assert body["code"] == "NOT_FOUND"
 
 
 @pytest.mark.asyncio

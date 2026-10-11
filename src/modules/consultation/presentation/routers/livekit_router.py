@@ -1,8 +1,10 @@
 """FastAPI router for LiveKit WebRTC SFU room token issuance."""
 
-from fastapi import APIRouter, status
+from typing import Annotated
 
-from src.modules.consultation.application.services.teleconsulta_service import (
+from fastapi import APIRouter, Body, status
+
+from src.modules.consultation.application.dtos import (
     EmitirLiveKitTokenCommand,
 )
 from src.modules.consultation.composition import TeleconsultaServiceDep
@@ -20,13 +22,12 @@ livekit_router = APIRouter(prefix="/consultations", tags=["teleconsulta-webrtc"]
 
 @livekit_router.post(
     "/{atendimento_id}/livekit/token",
-    response_model=LiveKitTokenResponse,
     status_code=status.HTTP_200_OK,
     summary="Emite token JWT assinado para sala de teleconsulta no LiveKit SFU",
 )
 async def generate_teleconsulta_room_token(
     atendimento_id: AtendimentoIdPath,
-    request: LiveKitTokenRequest,
+    request: Annotated[LiveKitTokenRequest, Body()],
     service: TeleconsultaServiceDep,
     _access: LiveKitAccessDep,
 ) -> LiveKitTokenResponse:
@@ -41,10 +42,4 @@ async def generate_teleconsulta_room_token(
         ttl_seconds=request.ttl_seconds,
     )
     result = service.emitir_token_sala(cmd)
-    return LiveKitTokenResponse(
-        token=result.token,
-        room_name=result.room_name,
-        participant_identity=result.participant_identity,
-        server_url=result.server_url,
-        expires_in=result.expires_in,
-    )
+    return LiveKitTokenResponse.model_validate(result)

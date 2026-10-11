@@ -3,6 +3,7 @@
 from src.core.authz.dependencies import (
     CurrentUserDep,
     get_current_user,
+    http_bearer_scheme,
     require_authenticated_user,
     require_permission,
     require_role,
@@ -21,6 +22,7 @@ __all__ = [
     "Role",
     "decode_access_token",
     "get_current_user",
+    "http_bearer_scheme",
     "is_token_revoked",
     "require_authenticated_user",
     "require_permission",

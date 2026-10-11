@@ -1,38 +1,14 @@
 """Application service for teleconsultation video rooms and LiveKit token issuance."""
 
-from dataclasses import dataclass
-from typing import Literal
-from uuid import UUID
-
+from src.modules.consultation.application.dtos import (
+    EmitirLiveKitTokenCommand,
+    LiveKitTokenResult,
+)
 from src.modules.consultation.application.ports.livekit_media_port import (
     LiveKitMediaPort,
     build_participant_identity,
     build_room_name,
 )
-
-
-@dataclass(frozen=True)
-class EmitirLiveKitTokenCommand:
-    """Command payload for room token generation."""
-
-    organizacao_id: int
-    atendimento_id: UUID
-    participant_id: UUID
-    role: Literal["medico", "paciente"]
-    is_publisher: bool = True
-    participant_name: str | None = None
-    ttl_seconds: int = 3600
-
-
-@dataclass(frozen=True)
-class LiveKitTokenResult:
-    """Result containing the signed LiveKit room token and metadata."""
-
-    token: str
-    room_name: str
-    participant_identity: str
-    server_url: str
-    expires_in: int
 
 
 class TeleconsultaService:
