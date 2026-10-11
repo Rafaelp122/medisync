@@ -11,10 +11,8 @@ from src.core.security import create_intake_token
 from src.main import create_app
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
 from src.modules.queue.application.dtos import AdmissaoAtendimentoResult
-from src.modules.queue.application.services.admissao_service import (
-    AdmissaoAtendimentoService,
-)
-from src.modules.queue.composition import get_admissao_service
+from src.modules.queue.application.services.fila_service import FilaService
+from src.modules.queue.composition import get_fila_service
 
 
 def _make_intake_token(paciente_id: UUID, org_id: int) -> str:
@@ -38,7 +36,7 @@ async def test_admissao_sucesso_com_token_intake() -> None:
     triagem_id = uuid4()
     org_id = 42
 
-    mock_service = MagicMock(spec=AdmissaoAtendimentoService)
+    mock_service = MagicMock(spec=FilaService)
     mock_service.admitir_paciente = AsyncMock(
         return_value=AdmissaoAtendimentoResult(
             atendimento_id=atendimento_id,
@@ -52,7 +50,7 @@ async def test_admissao_sucesso_com_token_intake() -> None:
         )
     )
 
-    app.dependency_overrides[get_admissao_service] = lambda: mock_service
+    app.dependency_overrides[get_fila_service] = lambda: mock_service
 
     try:
         token = _make_intake_token(paciente_id, org_id)
@@ -92,7 +90,7 @@ async def test_admissao_sucesso_com_token_jwt_paciente() -> None:
     paciente_id = uuid4()
     org_id = 10
 
-    mock_service = MagicMock(spec=AdmissaoAtendimentoService)
+    mock_service = MagicMock(spec=FilaService)
     mock_service.admitir_paciente = AsyncMock(
         return_value=AdmissaoAtendimentoResult(
             atendimento_id=uuid4(),
@@ -105,7 +103,7 @@ async def test_admissao_sucesso_com_token_jwt_paciente() -> None:
             instrucoes=None,
         )
     )
-    app.dependency_overrides[get_admissao_service] = lambda: mock_service
+    app.dependency_overrides[get_fila_service] = lambda: mock_service
 
     try:
         token = _make_jwt_token(paciente_id, org_id, papel="PACIENTE")

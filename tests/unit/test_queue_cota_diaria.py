@@ -33,10 +33,21 @@ def mock_db_session() -> AsyncMock:
 
 
 @pytest.fixture
-def mock_fila_service() -> MagicMock:
-    fila = MagicMock(spec=FilaService)
-    fila.obter_tamanho_fila = AsyncMock(return_value=1)
-    return fila
+def mock_fila_service(
+    mock_db_session: AsyncMock,
+    mock_controle_admissao: MagicMock,
+    triage_service: TriageService,
+) -> FilaService:
+    valkey = AsyncMock()
+    valkey.zcard = AsyncMock(return_value=1)
+    alocacao = MagicMock()
+    return FilaService(
+        valkey=valkey,
+        db_session=mock_db_session,
+        alocacao_service=alocacao,
+        controle_admissao=mock_controle_admissao,
+        triage_port=triage_service,
+    )
 
 
 @pytest.fixture
