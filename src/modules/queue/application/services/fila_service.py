@@ -1,7 +1,7 @@
 """Queue ingestion, 64-bit priority scoring, and acquisition service (RN01)."""
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from redis.asyncio import Redis
@@ -14,9 +14,13 @@ from src.modules.queue.application.dtos import (
     AlocacaoChamadaResult,
     AlocarChamadaCommand,
     AvaliarAdmissaoCommand,
+    CancelarAtendimentoResult,
     IngressarFilaComBackpressureCommand,
     IngressarFilaCommand,
     IngressarFilaResult,
+    PioraClinicaCommand,
+    PioraClinicaResult,
+    PosicaoFilaResult,
 )
 from src.modules.queue.application.ports.paciente_ausente_notifier import (
     LoggingPacienteAusenteNotifier,
@@ -27,6 +31,7 @@ from src.modules.queue.application.ports.queue_store_port import (
     AdmissaoAptoResult,
     AtendimentoSnapshotDTO,
 )
+from src.modules.queue.application.ports.triage_port import TriagePort
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
@@ -37,6 +42,7 @@ from src.modules.queue.domain.exceptions import (
     AdmissaoFilaSuspensaError,
     AtendimentoNaoDisponivelError,
     MedicoOcupadoError,
+    TransicaoEstadoInvalidaError,
 )
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import (
@@ -57,6 +63,7 @@ class FilaService:
         db_session: AsyncSession,
         alocacao_service: AlocacaoChamadaService,
         controle_admissao: ControleAdmissaoService | None = None,
+        triage_port: TriagePort | None = None,
     ) -> None:
         self._valkey = valkey
         self._db_session = db_session
@@ -65,6 +72,7 @@ class FilaService:
         self._controle_admissao = controle_admissao or ControleAdmissaoService(
             valkey=valkey
         )
+        self._triage_port = triage_port
 
     @property
     def controle_admissao(self) -> ControleAdmissaoService:
@@ -457,4 +465,201 @@ class FilaService:
             data_entrada_fila=atend.data_entrada_fila,
             criado_em=atend.criado_em,
             is_terminal=atend.status in TERMINAL_STATUSES,
+        )
+
+    async def obter_posicao_e_estimativa(
+        self,
+        organizacao_id: int,
+        atendimento_id: UUID,
+    ) -> PosicaoFilaResult:
+        """Returns real-time queue position and estimated wait time in seconds."""
+        atendimento = await self._db_session.get(Atendimento, atendimento_id)
+        if atendimento is None or atendimento.organizacao_id != organizacao_id:
+            raise NotFoundError(
+                f"Atendimento '{atendimento_id}' não encontrado na "
+                f"organização {organizacao_id}."
+            )
+
+        total_aguardando = await self.obter_tamanho_fila(organizacao_id)
+        status_atual = str(atendimento.status)
+
+        if atendimento.is_finalizado:
+            return PosicaoFilaResult(
+                atendimento_id=atendimento_id,
+                status=status_atual,
+                posicao=None,
+                total_aguardando=total_aguardando,
+                tempo_estimado_segundos=None,
+            )
+
+        if status_atual in (
+            StatusAtendimento.CHAMANDO_PACIENTE.value,
+            StatusAtendimento.EM_ATENDIMENTO.value,
+        ):
+            return PosicaoFilaResult(
+                atendimento_id=atendimento_id,
+                status=status_atual,
+                posicao=0,
+                total_aguardando=total_aguardando,
+                tempo_estimado_segundos=0,
+            )
+
+        posicao = await self.obter_posicao_fila(organizacao_id, atendimento_id)
+        medicos_ativos = await self._controle_admissao.obter_medicos_ativos_count(
+            organizacao_id
+        )
+        medicos_div = max(medicos_ativos, 1)
+
+        tempo_estimado: int | None = None
+        if posicao is not None:
+            # TMA estimado padrão = 600 segundos (10 minutos)
+            tempo_estimado = int((posicao * 600) / medicos_div)
+
+        return PosicaoFilaResult(
+            atendimento_id=atendimento_id,
+            status=status_atual,
+            posicao=posicao,
+            total_aguardando=total_aguardando,
+            tempo_estimado_segundos=tempo_estimado,
+        )
+
+    async def cancelar_atendimento_paciente(
+        self,
+        organizacao_id: int,
+        atendimento_id: UUID,
+        motivo: str | None = None,
+    ) -> CancelarAtendimentoResult:
+        """Cancels an attendance voluntary by the patient (RN06)."""
+        atendimento = await self._db_session.get(Atendimento, atendimento_id)
+        if atendimento is None or atendimento.organizacao_id != organizacao_id:
+            raise NotFoundError(
+                f"Atendimento '{atendimento_id}' não encontrado na "
+                f"organização {organizacao_id}."
+            )
+
+        atendimento.cancelar_pelo_paciente(motivo)
+        await self.remover_da_fila(organizacao_id, atendimento_id)
+        if atendimento.medico_id:
+            await self._alocacao_service.liberar_locks(
+                organizacao_id=organizacao_id,
+                medico_id=atendimento.medico_id,
+                atendimento_id=atendimento_id,
+            )
+
+        await self._db_session.commit()
+        await self._db_session.refresh(atendimento)
+
+        now = atendimento.atualizado_em or datetime.now(UTC)
+        logger.info(
+            "Attendance %s cancelled by patient in org %d (motivo=%s)",
+            atendimento_id,
+            organizacao_id,
+            motivo,
+        )
+        return CancelarAtendimentoResult(
+            atendimento_id=atendimento_id,
+            status=str(atendimento.status),
+            cancelado_em=now,
+            motivo=motivo,
+        )
+
+    async def processar_piora_clinica(
+        self,
+        command: PioraClinicaCommand,
+    ) -> PioraClinicaResult:
+        """Re-evaluates symptoms upon patient clinical deterioration report (RF-06)."""
+        if self._triage_port is None:
+            raise RuntimeError("TriagePort não configurado no FilaService.")
+
+        atendimento = await self._db_session.get(Atendimento, command.atendimento_id)
+        if atendimento is None or atendimento.organizacao_id != command.organizacao_id:
+            raise NotFoundError(
+                f"Atendimento '{command.atendimento_id}' não encontrado na "
+                f"organização {command.organizacao_id}."
+            )
+
+        if (
+            atendimento.is_finalizado
+            or atendimento.status == StatusAtendimento.EM_ATENDIMENTO.value
+        ):
+            raise TransicaoEstadoInvalidaError(
+                f"Não é possível acionar piora clínica para atendimento "
+                f"no estado '{atendimento.status}'."
+            )
+
+        triage_eval = await self._triage_port.avaliar_risco(
+            organizacao_id=command.organizacao_id,
+            queixa_principal=command.queixa_adicional
+            or "Piora de sintomas na fila virtual",
+            sintomas=command.novos_sintomas,
+            escala_dor=command.escala_dor,
+            tcle_hash=atendimento.tcle_hash,
+            raise_on_emergency=False,
+            atendimento_id=atendimento.id,
+        )
+
+        if triage_eval.alerta_samu_disparado or triage_eval.prioridade_clinica == 1:
+            # Escape emergencial SAMU 192 (RF-06 / RN04)
+            atendimento.cancelar_pelo_paciente("ENCAMINHADO_SAMU_PIORA_CLINICA")
+            await self.remover_da_fila(command.organizacao_id, command.atendimento_id)
+            if atendimento.medico_id:
+                await self._alocacao_service.liberar_locks(
+                    organizacao_id=command.organizacao_id,
+                    medico_id=atendimento.medico_id,
+                    atendimento_id=command.atendimento_id,
+                )
+            await self._db_session.commit()
+            await self._db_session.refresh(atendimento)
+
+            instrucoes = (
+                triage_eval.instrucao_redirecionamento
+                or "Sinais de gravidade identificados. Ligue 192 imediatamente "
+                "ou procure a emergência mais próxima."
+            )
+            logger.warning(
+                "Patient %s reported severe deterioration in attendance %s. Dispatched SAMU escape.",
+                atendimento.paciente_id,
+                atendimento.id,
+            )
+            return PioraClinicaResult(
+                atendimento_id=command.atendimento_id,
+                prioridade_clinica=1,
+                alerta_samu_disparado=True,
+                redirecionado_emergencia=True,
+                nova_posicao=None,
+                instrucoes=instrucoes,
+            )
+
+        # Reclassificação de prioridade (se mais urgente, valor numérico menor)
+        nova_prioridade = triage_eval.prioridade_clinica
+        if nova_prioridade < atendimento.prioridade_clinica:
+            atendimento.atualizar_prioridade(nova_prioridade)
+
+        # Recalcula score no Sorted Set (ZSET) se estiver em fila
+        nova_pos: int | None = None
+        if atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA.value:
+            ts_base = atendimento.data_entrada_fila or atendimento.criado_em
+            score = calcular_score(nova_prioridade, ts_base)
+            k_fila = f"fila:{command.organizacao_id}:aptos"
+            await self._valkey.zadd(k_fila, {str(command.atendimento_id): score})  # pyright: ignore[reportUnknownMemberType]
+            nova_pos = await self.obter_posicao_fila(
+                command.organizacao_id, command.atendimento_id
+            )
+
+        await self._db_session.commit()
+        await self._db_session.refresh(atendimento)
+
+        logger.info(
+            "Attendance %s reclassified to priority %d (new position=%s)",
+            atendimento.id,
+            nova_prioridade,
+            nova_pos,
+        )
+        return PioraClinicaResult(
+            atendimento_id=command.atendimento_id,
+            prioridade_clinica=nova_prioridade,
+            alerta_samu_disparado=False,
+            redirecionado_emergencia=False,
+            nova_posicao=nova_pos,
+            instrucoes="Prioridade recalculada com sucesso na fila de espera.",
         )
