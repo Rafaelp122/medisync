@@ -30,10 +30,12 @@ erDiagram
     ORGANIZACOES ||--o{ PACIENTES : cadastra
     ORGANIZACOES ||--o{ ATENDIMENTOS : gerencia
     ORGANIZACOES ||--o{ AUDIT_EVENTS : audita
+    ORGANIZACOES ||--o{ USUARIOS_CREDENCIAIS : "autentica"
 
     PACIENTES ||--o{ DEPENDENTES : "possui titular"
     PACIENTES ||--o{ ATENDIMENTOS : "solicita"
 
+    PROFISSIONAIS ||--o| USUARIOS_CREDENCIAIS : "possui credencial"
     PROFISSIONAIS ||--o{ ATENDIMENTOS : "medico atende"
     PROFISSIONAIS ||--o{ EVOLUCOES_CLINICAS : "medico redige"
     PROFISSIONAIS ||--o{ DOCUMENTOS_CLINICOS : "medico assina"
@@ -62,7 +64,6 @@ erDiagram
         varchar cpf
         varchar nome_completo
         varchar email
-        varchar senha_hash
         varchar papel
         varchar crm
         char_2 crm_uf
@@ -135,6 +136,7 @@ erDiagram
         varchar cid10_principal
         text conduta
         timestamptz registrado_em
+        timestamptz finalizado_em
     }
 
     DOCUMENTOS_CLINICOS {
@@ -173,6 +175,20 @@ erDiagram
         jsonb payload
         inet ip_origem
         timestamptz registrado_em
+    }
+
+    USUARIOS_CREDENCIAIS {
+        uuid id PK
+        bigint organizacao_id FK
+        uuid usuario_id
+        varchar identificador UK
+        varchar senha_hash
+        varchar papel
+        boolean ativo
+        integer falhas_login_consecutivas
+        timestamptz bloqueado_ate
+        timestamptz criado_em
+        timestamptz atualizado_em
     }
 ```
 
@@ -226,7 +242,6 @@ CREATE TABLE profissionais (
     cpf VARCHAR(14) NOT NULL,
     nome_completo VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL,
-    senha_hash VARCHAR(255) NOT NULL,
     papel VARCHAR(32) NOT NULL, -- 'ADMIN_GLOBAL', 'GESTOR_UNIDADE', 'MEDICO', 'FATURAMENTO'
     crm VARCHAR(20),
     crm_uf CHAR(2),
@@ -292,10 +307,10 @@ CREATE TABLE atendimentos (
         'TRIADO_AGUARDANDO_ELEGIBILIDADE',
         'APTO_PARA_CHAMADA',
         'CHAMANDO_PACIENTE',
-        'EM_ANDAMENTO',
+        'EM_ATENDIMENTO',
         'PACIENTE_AUSENTE',
         'CONCLUIDO',
-        'CANCELADO'
+        'CANCELADO_PACIENTE'
     ))
 );
 CREATE INDEX idx_atendimentos_org_status ON atendimentos(organizacao_id, status);
@@ -324,7 +339,8 @@ CREATE TABLE evolucoes_clinicas (
     exame_fisico_virtual TEXT,
     cid10_principal VARCHAR(10),
     conduta TEXT NOT NULL,
-    registrado_em TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC')
+    registrado_em TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+    finalizado_em TIMESTAMP WITH TIME ZONE
 );
 CREATE INDEX idx_evolucoes_atendimento ON evolucoes_clinicas(atendimento_id);
 CREATE INDEX idx_evolucoes_org ON evolucoes_clinicas(organizacao_id);
@@ -375,6 +391,24 @@ CREATE TABLE audit_events (
 );
 CREATE INDEX idx_audit_atendimento ON audit_events(atendimento_id, registrado_em);
 CREATE INDEX idx_audit_ator ON audit_events(organizacao_id, ator_tipo, ator_id);
+
+-- 12. Tabela de Credenciais de Autenticação (Argon2id e Lockout OWASP)
+CREATE TABLE usuarios_credenciais (
+    id UUID PRIMARY KEY DEFAULT gen_uuidv7(),
+    organizacao_id BIGINT NOT NULL REFERENCES organizacoes(id) ON DELETE RESTRICT,
+    usuario_id UUID NOT NULL,
+    identificador VARCHAR(255) NOT NULL,
+    senha_hash VARCHAR(255) NOT NULL,
+    papel VARCHAR(32) NOT NULL,
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+    falhas_login_consecutivas INTEGER NOT NULL DEFAULT 0,
+    bloqueado_ate TIMESTAMP WITH TIME ZONE,
+    criado_em TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+    atualizado_em TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+    CONSTRAINT uq_usuarios_credenciais_org_identificador UNIQUE (organizacao_id, identificador)
+);
+CREATE INDEX idx_usuarios_credenciais_org_papel ON usuarios_credenciais(organizacao_id, papel);
+CREATE INDEX idx_usuarios_credenciais_usuario_id ON usuarios_credenciais(usuario_id);
 ```
 
 ---
@@ -413,6 +447,9 @@ ALTER TABLE documento_itens FORCE ROW LEVEL SECURITY;
 ALTER TABLE audit_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_events FORCE ROW LEVEL SECURITY;
 
+ALTER TABLE usuarios_credenciais ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usuarios_credenciais FORCE ROW LEVEL SECURITY;
+
 -- 2. Políticas universais de tenant (evita silent deny em tabelas filhas)
 CREATE POLICY tenant_isolation_profissionais ON profissionais
     USING (organizacao_id = NULLIF(current_setting('app.current_tenant_id', true), '')::bigint)
@@ -449,6 +486,13 @@ CREATE POLICY tenant_isolation_documento_itens ON documento_itens
 CREATE POLICY tenant_isolation_audit ON audit_events
     USING (organizacao_id = NULLIF(current_setting('app.current_tenant_id', true), '')::bigint)
     WITH CHECK (organizacao_id = NULLIF(current_setting('app.current_tenant_id', true), '')::bigint);
+
+CREATE POLICY tenant_isolation_usuarios_credenciais ON usuarios_credenciais
+    USING (organizacao_id = NULLIF(current_setting('app.current_tenant_id', true), '')::bigint)
+    WITH CHECK (organizacao_id = NULLIF(current_setting('app.current_tenant_id', true), '')::bigint);
+
+-- Concessão de permissões operacionais para a aplicação
+GRANT SELECT, INSERT, UPDATE, DELETE ON usuarios_credenciais TO medisync_app;
 ```
 
 ### 4.2 Blindagem Anti-Adulteração via DCL e Trigger ([ADR-007](../adrs/ADR-007-Auditoria-Imutavel-Append-Only.md))

@@ -1,7 +1,7 @@
 """Macro RBAC roles, permissions, and permission matrix for MediSync Express.
 
 Conforms to OWASP Authorization Cheat Sheet and Architecture Specification
-(docs/03-architecture/security-and-authorization.md - Section 4).
+(docs/explanation/architecture/security-and-authorization.md - Section 4).
 """
 
 from enum import StrEnum

@@ -124,7 +124,7 @@ Ver worker completo em `src/worker/tasks/ring_timeout.py`.
 ### 4.4 Transição de Locks: Ring Timeout vs. Teleconsulta Ativa (RN02)
 Para assegurar a invariante de que um médico jamais possua duas consultas em andamento ao mesmo tempo:
 1. **Fase de Toque (Ring - 45s)**: Protegida por `lock:{org}:medico:{medico_id}` com TTL de 45 segundos.
-2. **Fase de Teleconsulta (`EM_ANDAMENTO`)**: Quando o paciente atende a chamada e a videoconferência WebRTC é iniciada, o endpoint de atendimento renova e promove o lock do médico para `lock:{org}:consulta_ativa:medico:{medico_id}` com TTL seguro de contingência (ex.: 2 horas) e mecanismo de heartbeat da sessão de telemedicina.
+2. **Fase de Teleconsulta (`EM_ATENDIMENTO`)**: Quando o paciente atende a chamada e a videoconferência WebRTC é iniciada, o endpoint de atendimento renova e promove o lock do médico para `lock:{org}:consulta_ativa:medico:{medico_id}` com TTL seguro de contingência (ex.: 2 horas) e mecanismo de heartbeat da sessão de telemedicina.
 3. **Conclusão Clínica**: O lock é removido explicitamente no momento em que o médico finaliza o atendimento (`CONCLUIDO`) e assina o prontuário.
 
 ---

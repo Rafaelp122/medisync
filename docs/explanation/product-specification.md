@@ -45,7 +45,7 @@ As regras de negócio abaixo constituem as condições de integridade formal e i
 * **Invariante de Prevalência Clínica**: Um paciente com grau de risco mais urgente (ex.: Nível 2) jamais poderá ser ultrapassado na fila de convocação por um paciente de risco inferior (ex.: Nível 3 ou 4), independentemente do tempo de espera acumulado pelo paciente menos urgente.
 
 ### RN02 — Bloqueio Estrito de Sobreposição e Prevenção de Deadlock (Ring Timeout)
-* **Invariante do Profissional**: Um médico plantonista só pode possuir exatamente 1 (uma) teleconsulta com status `EM_ANDAMENTO` por vez.
+* **Invariante do Profissional**: Um médico plantonista só pode possuir exatamente 1 (uma) teleconsulta com status `EM_ATENDIMENTO` por vez.
 * **Invariante do Paciente**: Um paciente jamais pode estar vinculado a mais de 1 (um) médico simultaneamente.
 * **Invariante de Resolução de Chamada (Ring Timeout / No-Show)**: Ao disparar a chamada de um paciente, o sistema concede uma janela de tolerância de exatamente **45 segundos**. Caso o paciente não estabeleça a conexão de áudio/vídeo nesse período:
   1. O atendimento transiciona deterministicamente para o status `PACIENTE_AUSENTE`;
@@ -53,8 +53,8 @@ As regras de negócio abaixo constituem as condições de integridade formal e i
 
 ### RN03 — Transição de Elegibilidade, Transparência de Fila e Chamada Segura
 * **Ciclo de Estados Contratual**: O atendimento percorre estritamente a seguinte máquina de estados:
-  $$\text{TRIADO\_AGUARDANDO\_ELEGIBILIDADE} \longrightarrow \text{APTO\_PARA\_CHAMADA} \longrightarrow \text{CHAMANDO\_PACIENTE} \longrightarrow \text{EM\_ANDAMENTO}$$
-* **Invariante de Início Clínico**: Nenhuma consulta médica pode transicionar para o status `EM_ANDAMENTO` sem que o atendimento tenha alcançado previamente o status `APTO_PARA_CHAMADA`.
+  $$\text{TRIADO\_AGUARDANDO\_ELEGIBILIDADE} \longrightarrow \text{APTO\_PARA\_CHAMADA} \longrightarrow \text{CHAMANDO\_PACIENTE} \longrightarrow \text{EM\_ATENDIMENTO}$$
+* **Invariante de Início Clínico**: Nenhuma consulta médica pode transicionar para o status `EM_ATENDIMENTO` sem que o atendimento tenha alcançado previamente o status `APTO_PARA_CHAMADA`.
 * **Regra de Desvio Temporário**: Caso o médico solicite o próximo paciente e o primeiro colocado na fila clínica ainda se encontre no estado `TRIADO_AGUARDANDO_ELEGIBILIDADE`, o sistema convoca o próximo paciente que já esteja validado (`APTO_PARA_CHAMADA`). O painel médico deve sinalizar com clareza a existência de paciente de maior prioridade em fase de validação.
 
 ### RN04 — Redirecionamento Mandatório e Salvaguarda de Deterioração Clínica (SAMU 192)
