@@ -18,12 +18,16 @@ from src.modules.consultation.infrastructure.livekit_adapter import (
 
 def test_build_room_name_canonical_format() -> None:
     """Validate canonical room name formatting org_{org_id}_atend_{atend_id}."""
-    org_id = UUID("01924b12-9c10-7000-8000-000000000001")
+    org_id = 42
     atend_id = UUID("01924b12-9c10-7000-8000-000000000002")
 
     room_name = build_room_name(organizacao_id=org_id, atendimento_id=atend_id)
+    assert room_name == "org_42_atend_01924b12-9c10-7000-8000-000000000002"
+
+    org_uuid = UUID("01924b12-9c10-7000-8000-000000000001")
+    room_name_uuid = build_room_name(organizacao_id=org_uuid, atendimento_id=atend_id)
     assert (
-        room_name == "org_01924b12-9c10-7000-8000-000000000001"
+        room_name_uuid == "org_01924b12-9c10-7000-8000-000000000001"
         "_atend_01924b12-9c10-7000-8000-000000000002"
     )
 

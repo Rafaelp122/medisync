@@ -82,6 +82,7 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - Orquestra concorrência conforme desenho de filas e locks. [Concorrência](../architecture/concurrency-and-queues.md)
 - Worker de elegibilidade roda fora do request. `src/worker/tasks/eligibility.py` consome `EligibilityProviderPort` em background e devolve resultado; fila nunca bloqueia HTTP esperando convênio.
 - `FilaService` compõe admissão + alocação. `ingressar_fila` calcula score e insere no ZSET; `adquirir_proximo` puxa cabeça e delega lock ao `AlocacaoChamadaService`; backpressure avaliado antes de inserir.
+- Transmite posição e avanço em tempo real via WebSocket (`/ws/queue/{atendimento_id}`). O handshake exige autenticação via `?token=` (HMAC ou JWT) com checagem de posse ReBAC em sessão de banco efêmera (código WS 4401/4403 pré-accept) para evitar esgotamento de conexões durante o streaming via Valkey Pub/Sub (Issue #42).
 
 ## 5. Peculiaridades
 
@@ -107,6 +108,8 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `src/modules/queue/application/services/fila_service.py` (Implementação de QueueStorePort, admissão em fila e reconciliação)
 - `src/modules/queue/application/services/admissao_service.py` (Acolhimento clínico integrado com Triagem persistida)
 - `src/modules/queue/presentation/routers/admissao_router.py` (POST /api/v1/fila/admissao)
+- `src/modules/queue/presentation/routers/queue_ws_router.py` (WebSocket de avanço da fila do paciente: /ws/queue/{atendimento_id})
+- `src/modules/queue/presentation/dependencies.py` (Guards de autenticação e posse do paciente via QueueWsAuthDep)
 - `src/modules/queue/application/services/alocacao_service.py`
 - `src/modules/queue/application/services/controle_admissao_service.py`
 - `src/modules/queue/application/ports/allocation_port.py`

@@ -120,7 +120,62 @@ sequenceDiagram
 
 ---
 
-## 4. Matriz de Acesso e Papéis Corporativos (RBAC)
+## 4. Segurança em Comunicação em Tempo Real, WebSockets e LiveKit
+
+O MediSync Express utiliza WebSockets e WebRTC para sinalização e streaming contínuo (posição da fila, notificações ao médico de plantão e teleconsulta via LiveKit SFU). Por manterem conexões assíncronas persistentes, esses canais exigem salvaguardas específicas contra ataques de exaustão e violação de sigilo:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Cliente as Cliente (Médico / Paciente)
+    participant FastAPI as FastAPI DI Engine
+    participant Guard as Guard WsAuthDep
+    participant DB as PostgreSQL (Sessão Efêmera)
+    participant Endpoint as Router WS / Valkey PubSub
+
+    Cliente->>FastAPI: Handshake WS: /ws/.../?token=<credencial>
+    Note over FastAPI: FastAPI intercepta antes de websocket.accept()
+    FastAPI->>Guard: Executa Guard de Segurança
+    Guard->>Guard: Valida formato, expiração e revogação no Valkey (4401)
+    Guard->>DB: Abre sessão efêmera pontual para checar ReBAC/Posse
+    DB-->>Guard: Confirma posse / alocação
+    Note over DB: Sessão fechada imediatamente (Zero Starvation)
+    alt Falha de Autenticação ou Autorização
+        Guard-->>FastAPI: Levanta WebSocketException(code=4401 ou 4403)
+        FastAPI-->>Cliente: Fecha conexão imediatamente (sem accept)
+        Note over Endpoint: Endpoint NUNCA é executado!
+    else Sucesso
+        Guard-->>FastAPI: Retorna None
+        FastAPI->>Endpoint: Executa endpoint WS
+        Endpoint->>Cliente: websocket.accept() e streaming via Valkey
+    end
+```
+
+### 4.1 Handshake Seguro e Encerramento Prematuro (RFC 6455)
+* **Credenciais na Query String:** Como clientes WebSocket nativos em navegadores web não permitem injetar cabeçalhos HTTP customizados (`Authorization: Bearer`), a credencial é transmitida no parâmetro de URL `?token=<jwt|hmac>`.
+* **Códigos de Fechamento Customizados:** Em conformidade com as faixas de aplicação da RFC 6455, conexões não autorizadas são encerradas com:
+  - **`4401` (Unauthorized):** Token ausente, expirado, inválido ou revogado no Valkey.
+  - **`4403` (Forbidden):** Papel incorreto, médico não alocado ou paciente sem titularidade sobre o atendimento.
+* **Rejeição Pré-Accept:** O fechamento ocorre **antes** de chamar `websocket.accept()`. Isso economiza alocação de buffers no servidor e impede que clientes não autenticados consumam recursos do runtime.
+
+### 4.2 Guards de Efeito Colateral no FastAPI (`_auth: *WsAuthDep`)
+* **Por que declarar na assinatura:** No framework FastAPI/Starlette, o decorator `@router.websocket(...)` **não possui** o parâmetro `dependencies=[...]` existente em rotas HTTP normais.
+* **Mecanismo de Execução Automática:** A dependência é tipada como `Annotated[None, Depends(validar_ws_*_token)]` e declarada com prefixo sublinhado (`_auth: QueueWsAuthDep` ou `_auth: DoctorWsAuthDep`).
+* **Garantia de Execução:** O motor de injeção de dependências do FastAPI inspeciona a assinatura e **obrigatoriamente executa a dependência antes** de invocar o corpo do endpoint. Se a validação lançar `WebSocketException`, o endpoint nunca é chamado. O prefixo `_` apenas sinaliza ao linter que o valor de retorno (`None`) não precisa ser lido dentro do router.
+
+### 4.3 Prevenção de Esgotamento do Pool de Banco de Dados (Anti-Starvation)
+* **O Risco:** Endpoints de WebSocket mantêm streams abertos por longos períodos (minutos a horas). Injetar `session: DbSessionDep` diretamente no router prenderia uma conexão do pool do PostgreSQL por toda a duração da conexão do cliente, esgotando rapidamente o pool da aplicação.
+* **A Solução:** As verificações de posse e autorização utilizam sessões efêmeras pontuais (ex.: `default_verificar_posse_paciente_fila` via `async_session_factory`), abrindo e liberando a conexão com o banco de dados em milissegundos durante o handshake. O streaming contínuo subseqüente consome exclusivamente recursos do Valkey Pub/Sub.
+
+### 4.4 Blindagem na Emissão de Tokens LiveKit SFU (WebRTC)
+No endpoint `POST /consultations/{atendimento_id}/livekit/token`:
+* **Anti-Enumeração:** A validação de token (401 RFC 7807) é executada **antes** de qualquer consulta ao banco de dados, impedindo que atacantes sem credenciais válidas descubram IDs de atendimentos ou pacientes.
+* **Micro-Autorização ReBAC:** O token LiveKit só é emitido se o médico autenticado for o médico alocado no atendimento ativo (ou paciente titular), se o `participant_id` coincidir com a identidade do chamador e se o atendimento não estiver em status terminal.
+* **Isolamento Multitenant:** Validação estrita da correspondência entre a `organizacao_id` (inteiro) do token, da URL e do atendimento.
+
+---
+
+## 5. Matriz de Acesso e Papéis Corporativos (RBAC)
 
 | Recurso / Ação | ADMIN_GLOBAL | GESTOR_UNIDADE | MEDICO | FATURAMENTO | PACIENTE (Token) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -131,12 +186,13 @@ sequenceDiagram
 | **Visualizar / Editar Prontuário Ativo** | Não | Não | Sim (se alocado) | Não | Não |
 | **Assinar Receitas e Atestados (ICP)** | Não | Não | Sim (se alocado) | Não | Não |
 | **Consolidar Lotes de Faturamento** | Sim | Sim | Não | Sim | Não |
-| **Acompanhar Posição na Fila / TME** | Não | Não | Não | Não | Sim (seu id) |
+| **Acompanhar Posição na Fila / TME (WS)** | Não | Não | Não | Não | Sim (seu id) |
+| **Notificações de Chamada Médica (WS)** | Não | Não | Sim (seu id) | Não | Não |
 | **Visualizar Documentos Próprios** | Não | Não | Não | Não | Sim (seu id) |
 
 ---
 
-## 5. Rastreabilidade de Implementação
+## 6. Rastreabilidade de Implementação
 
 A arquitetura descrita é implementada e auditada através das seguintes issues do repositório:
 
@@ -146,3 +202,4 @@ A arquitetura descrita é implementada e auditada através das seguintes issues 
 * **[Issue #39](https://github.com/Rafaelp122/medisync/issues/39)**: `fix(security): blindar mutações clínicas do PEP e leitura na ClinicalAccessPolicy` (Blindagem de Mutações e Acesso Histórico ao PEP).
 * **[Issue #12](https://github.com/Rafaelp122/medisync/issues/12)**: `feat(identity): implement progressive 2-phase onboarding API and dependent management` (Cadastro Progressivo do Paciente).
 * **[Issue #40](https://github.com/Rafaelp122/medisync/issues/40)**: `fix(identity): implementar prova de posse via intake token no onboarding Fase 2 e dependentes` (Blindagem contra IDOR no Onboarding e Dependentes).
+* **[Issue #42](https://github.com/Rafaelp122/medisync/issues/42)**: `feat(security): blindar emissão de tokens LiveKit e autenticar WebSockets com códigos 4401/4403 e guards ReBAC` (Segurança em WebSockets e LiveKit SFU).

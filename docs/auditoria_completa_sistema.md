@@ -74,7 +74,7 @@ O [Context Map](file:///home/rafael/projetos/medisync/docs/explanation/domains/c
 
 ### 4.3 Módulo CONSULTATION (`src/modules/consultation`) — Nota: 9.54/10
 * **Pontos Fortes:** Soberania absoluta do ato médico sem corte temporal (RN06); LiveKit SFU desacoplado de mídia (ADR-005); assinatura digital ICP-Brasil PAdES com PyHanko (ADR-006); PDF/A-1b com QR Code; salvaguardas da Portaria SVS/MS 344/98 e RDC ANVISA 20/2011; "lê sem possuir" via `AtendimentoReaderPort`.
-* **Gaps:** `MemorySignedCache` instanciado no composition root em vez do distribuído `ValkeySignedCache`; supressão silenciosa com `contextlib.suppress(Exception)` ao concluir atendimento; falta de autenticação de token no WebSocket `/ws/doctor/{medico_id}`.
+* **Gaps:** `MemorySignedCache` instanciado no composition root em vez do distribuído `ValkeySignedCache`; supressão silenciosa com `contextlib.suppress(Exception)` ao concluir atendimento; ~~falta de autenticação de token no WebSocket `/ws/doctor/{medico_id}`~~ (resolvido na Issue #42).
 
 ### 4.4 Módulo BILLING (`src/modules/billing`) — Nota: 8.43/10
 * **Pontos Fortes:** Dualidade operacional perfeita (SUS no-op instantâneo `SUS-ISENTO` vs Privado com timeout de 15s); fluxo financeiro não obstrutivo (RN-NEG-01); worker ARQ em background; isolamento total sem imports de outros domínios.

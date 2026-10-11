@@ -229,7 +229,7 @@ class LiveKitTokenRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    organizacao_id: UUID = Field(
+    organizacao_id: int = Field(
         description="Identificador único da organização de saúde"
     )
     participant_id: UUID = Field(

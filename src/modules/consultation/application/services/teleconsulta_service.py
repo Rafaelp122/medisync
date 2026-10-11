@@ -15,7 +15,7 @@ from src.modules.consultation.application.ports.livekit_media_port import (
 class EmitirLiveKitTokenCommand:
     """Command payload for room token generation."""
 
-    organizacao_id: UUID
+    organizacao_id: int
     atendimento_id: UUID
     participant_id: UUID
     role: Literal["medico", "paciente"]

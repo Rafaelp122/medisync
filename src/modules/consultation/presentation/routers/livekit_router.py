@@ -6,7 +6,10 @@ from src.modules.consultation.application.services.teleconsulta_service import (
     EmitirLiveKitTokenCommand,
 )
 from src.modules.consultation.composition import TeleconsultaServiceDep
-from src.modules.consultation.presentation.dependencies import AtendimentoIdPath
+from src.modules.consultation.presentation.dependencies import (
+    AtendimentoIdPath,
+    LiveKitAccessDep,
+)
 from src.modules.consultation.presentation.schemas import (
     LiveKitTokenRequest,
     LiveKitTokenResponse,
@@ -25,6 +28,7 @@ async def generate_teleconsulta_room_token(
     atendimento_id: AtendimentoIdPath,
     request: LiveKitTokenRequest,
     service: TeleconsultaServiceDep,
+    _access: LiveKitAccessDep,
 ) -> LiveKitTokenResponse:
     """Gera token efêmero com Video Grants para médico ou paciente entrar na sala."""
     cmd = EmitirLiveKitTokenCommand(

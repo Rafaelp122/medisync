@@ -17,7 +17,7 @@ class LiveKitTokenRequestDTO:
     """Request DTO to generate a LiveKit room access token."""
 
     atendimento_id: UUID
-    organizacao_id: UUID
+    organizacao_id: int
     participant_id: UUID
     role: Literal["medico", "paciente"]
     participant_name: str | None = None
