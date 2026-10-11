@@ -46,6 +46,8 @@ DEFAULT_VALKEY_TEST_PATTERNS: tuple[str, ...] = (
     "arq:*",
     "test_org:*",
     "auth:ratelimit:*",
+    "otp:*",
+    "ratelimit:otp:*",
 )
 
 

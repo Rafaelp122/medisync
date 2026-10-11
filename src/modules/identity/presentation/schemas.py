@@ -14,6 +14,10 @@ from src.modules.identity.application.dtos import (
     Fase1OutputDTO,
     Fase2InputDTO,
     Fase2OutputDTO,
+    SolicitarOtpInputDTO,
+    SolicitarOtpOutputDTO,
+    VerificarOtpInputDTO,
+    VerificarOtpOutputDTO,
 )
 
 
@@ -198,5 +202,55 @@ class DependenteResponse(DependenteOutputDTO):
 
 class DependenteDetalheResponse(DependenteDetalheDTO):
     """Full detail of a dependent including clinical demographics."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SolicitarOtpRequest(SolicitarOtpInputDTO):
+    """Payload to request an OTP code via SMS."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
+
+    telefone: str = Field(
+        min_length=10,
+        max_length=20,
+        description="Telefone de contato com DDD",
+        examples=["11987654321"],
+    )
+    cpf: str | None = Field(
+        default=None,
+        max_length=14,
+        description="CPF do paciente (opcional, para desambiguação)",
+        examples=["11144477735"],
+    )
+
+
+class SolicitarOtpResponse(SolicitarOtpOutputDTO):
+    """Response returned upon OTP request dispatch."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class VerificarOtpRequest(VerificarOtpInputDTO):
+    """Payload to verify OTP code and obtain patient access token."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
+
+    telefone: str = Field(
+        min_length=10,
+        max_length=20,
+        description="Telefone de contato com DDD",
+        examples=["11987654321"],
+    )
+    codigo: str = Field(
+        min_length=6,
+        max_length=6,
+        description="Código OTP de 6 dígitos numéricos",
+        examples=["123456"],
+    )
+
+
+class VerificarOtpResponse(VerificarOtpOutputDTO):
+    """Response containing issued patient Bearer JWT token."""
 
     model_config = ConfigDict(from_attributes=True)

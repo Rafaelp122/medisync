@@ -86,6 +86,7 @@ Os requisitos funcionais descrevem o comportamento observável da solução a pa
 ### RF-01: Acolhimento, Triagem Estruturada e TCLE Digital (Cadastro Progressivo - Fase 1)
 * **Ator**: Paciente ou Responsável Familiar.
 * **Comportamento**: O usuário declara se o atendimento é próprio ou para dependente legal, preenche identificadores iniciais (CPF, data de nascimento e telefone com validação de uso temporário), queixa principal, tempo de evolução, escala de dor e sinais de alerta pré-definidos. Antes da submissão, concede aceite explícito ao TCLE e à política de privacidade. O sistema avalia a prioridade preliminar, gera o hash do termo aceito e insere o atendimento na fila com status `TRIADO_AGUARDANDO_ELEGIBILIDADE`.
+* **Reconexão e Autenticação Passwordless (Issue #44)**: Pacientes que retornam à unidade ou necessitam reconectar sua sessão em novos dispositivos autenticam-se via comprovação de posse do número de telefone com código OTP de 6 dígitos (`POST /api/v1/auth/patient/otp/request` e `/verify`), emitindo token de acesso com papel `PACIENTE` sem exigência de senhas alfanuméricas na urgência.
 
 ### RF-02: Validação Concorrente de Elegibilidade e Enriquecimento Cadastral (Cadastro Progressivo - Fase 2)
 * **Atores**: Sistema (Worker de Segundo Plano) e Paciente.
