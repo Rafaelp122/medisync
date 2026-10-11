@@ -121,6 +121,8 @@ def create_app() -> FastAPI:
     )
     from src.modules.queue.presentation.routers import (
         admissao_router,
+        alocacao_router,
+        fila_router,
         queue_ws_router,
     )
 
@@ -130,6 +132,8 @@ def create_app() -> FastAPI:
     api_v1.include_router(onboarding_router)
     api_v1.include_router(pacientes_router)
     api_v1.include_router(admissao_router)
+    api_v1.include_router(alocacao_router)
+    api_v1.include_router(fila_router)
     api_v1.include_router(livekit_router)
     api_v1.include_router(consultation_router)
     api_v1.include_router(validation_router)
