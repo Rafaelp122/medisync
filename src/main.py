@@ -16,6 +16,7 @@ from src.core.errors import register_exception_handlers
 from src.core.logging import setup_logging
 from src.core.middleware import setup_middlewares
 from src.core.schemas import HealthCheckResponse, ValkeyHealth
+from src.core.telemetry import setup_telemetry
 from src.core.valkey import (
     check_valkey_health,
     close_arq_pool,
@@ -59,6 +60,7 @@ def create_app() -> FastAPI:
     """Application factory for MediSync Express API."""
     settings = get_settings()
     setup_logging(level="DEBUG" if settings.DEBUG else "INFO")
+    tracer_provider = setup_telemetry()
 
     app = FastAPI(
         title=settings.APP_NAME,
@@ -67,6 +69,16 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.DEBUG else None,
         openapi_url="/openapi.json" if settings.DEBUG else None,
         lifespan=lifespan,
+        telemetry={
+            "tracing": True,
+            "metrics": True,
+            "logs": True,
+            "operation_spans": True,
+            "tracer_provider": tracer_provider,
+            "exclude": lambda scope: (
+                scope.get("path") in {"/healthz", "/docs", "/redoc", "/openapi.json"}
+            ),
+        },
     )
 
     # 1. Register RFC 7807 exception handlers
