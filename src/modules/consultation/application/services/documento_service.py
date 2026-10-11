@@ -4,6 +4,7 @@ Owns emitir/compilar/assinar for DocumentoClinico using the canonical
 ``orgs/{org}/consultations/...`` key builder plus SignedCachePort.
 """
 
+import asyncio
 import contextlib
 import hashlib
 from datetime import UTC, datetime
@@ -16,6 +17,7 @@ from sqlalchemy.orm import selectinload
 from src.core.errors import NotFoundError
 from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
+    DocumentoAssinadoResult,
     EmitirDocumentoClinicoCommand,
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
@@ -289,14 +291,14 @@ class DocumentoService:
             sha256_hash=doc.sha256_hash,
         )
 
-        return self._pdf_generator.gerar_pdf(payload)
+        return await asyncio.to_thread(self._pdf_generator.gerar_pdf, payload)
 
     async def assinar(
         self,
         documento_id: UUID,
         atendimento_id: UUID,
         credenciais: DoctorCertificateCredentials,
-    ) -> tuple[DocumentoClinico, bytes]:
+    ) -> DocumentoAssinadoResult:
         """Sign clinical document with ICP-Brasil PAdES standard via Cloud PSC."""
         stmt = (
             select(DocumentoClinico)
@@ -337,4 +339,11 @@ class DocumentoService:
         await self._session.flush()
         await self._session.commit()
 
-        return doc, signed_bytes
+        assinado_em = doc.assinado_em or datetime.now(UTC)
+        return DocumentoAssinadoResult(
+            documento_id=doc.id,
+            tipo_documento=str(doc.tipo_documento),
+            sha256_hash=doc.sha256_hash,
+            assinado_em=assinado_em,
+            tamanho_bytes=len(signed_bytes),
+        )

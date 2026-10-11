@@ -1,8 +1,9 @@
 """Data Transfer Objects for the consultation module."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol
 from uuid import UUID
 
 if TYPE_CHECKING:
@@ -10,6 +11,45 @@ if TYPE_CHECKING:
         DocumentoClinico,
         EvolucaoClinica,
     )
+
+
+class ItemPrescricaoInput(Protocol):
+    """Protocol for prescription medication item input."""
+
+    @property
+    def medicamento(self) -> str: ...
+    @property
+    def dosagem(self) -> str: ...
+    @property
+    def posologia(self) -> str: ...
+    @property
+    def duracao(self) -> str | None: ...
+    @property
+    def controle_especial(self) -> bool: ...
+
+
+@dataclass(frozen=True)
+class EmitirLiveKitTokenCommand:
+    """Command payload for room token generation."""
+
+    organizacao_id: int
+    atendimento_id: UUID
+    participant_id: UUID
+    role: Literal["medico", "paciente"]
+    is_publisher: bool = True
+    participant_name: str | None = None
+    ttl_seconds: int = 3600
+
+
+@dataclass(frozen=True)
+class LiveKitTokenResult:
+    """Result containing the signed LiveKit room token and metadata."""
+
+    token: str
+    room_name: str
+    participant_identity: str
+    server_url: str
+    expires_in: int
 
 
 @dataclass(frozen=True)
@@ -68,7 +108,9 @@ class EmitirDocumentoClinicoCommand:
     organizacao_id: int
     medico_id: UUID
     tipo_documento: str
-    itens: list[CriarItemPrescricaoDTO] = field(default_factory=list)
+    itens: Sequence[ItemPrescricaoInput] = field(
+        default_factory=lambda: list[ItemPrescricaoInput]()
+    )
     chave_s3: str = ""
     sha256_hash: str = ""
 

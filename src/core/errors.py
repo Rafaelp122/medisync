@@ -1,7 +1,9 @@
 """RFC 7807 Problem Details models, domain exceptions, and error handlers."""
 
+import http
 import logging
 from collections.abc import Mapping
+from http import HTTPStatus
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -212,11 +214,20 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
     if not isinstance(exc, StarletteHTTPException):
         return await unhandled_exception_handler(request, exc)
     headers: Mapping[str, str] | None = getattr(exc, "headers", None)
+    try:
+        status_enum = http.HTTPStatus(exc.status_code)
+        title = status_enum.phrase
+        code = HTTPStatus(exc.status_code).name
+    except ValueError:
+        title = "HTTP Error"
+        code = f"HTTP_{exc.status_code}"
+
     return create_problem_response(
         status=exc.status_code,
-        title="HTTP Error",
+        title=title,
         detail=str(exc.detail),
         instance=request.url.path,
+        code=code,
         headers=headers,
     )
 

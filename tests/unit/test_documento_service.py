@@ -221,16 +221,18 @@ async def test_assinar_persiste_chave_canonica_e_marca_cache() -> None:
     )
     creds = DoctorCertificateCredentials(token="tok", provider="fake")
 
-    signed_doc, signed_bytes = await svc.assinar(doc_id, atend_id, creds)
+    result = await svc.assinar(doc_id, atend_id, creds)
 
-    assert signed_bytes == b"%PDF-signed-bytes%"
+    assert result.tamanho_bytes == len(b"%PDF-signed-bytes%")
     expected_key = build_signed_document_key(_ORG_ID, atend_id, doc_id)
-    assert signed_doc.chave_s3 == expected_key
+    assert doc.chave_s3 == expected_key
     assert await storage.obter_documento(expected_key) == b"%PDF-signed-bytes%"
-    assert len(signed_doc.sha256_hash) == 64
-    assert signed_doc.sha256_hash != original_hash
+    assert len(result.sha256_hash) == 64
+    assert result.sha256_hash != original_hash
+    assert result.documento_id == doc_id
+    assert result.status == "ASSINADO"
     assert await cache.is_assinado(doc_id) is True
-    assert await svc.is_assinado(signed_doc) is True
+    assert await svc.is_assinado(doc) is True
     assert session.commits == 1
 
 

@@ -198,6 +198,8 @@ def test_require_permission_guard() -> None:
 @pytest.mark.asyncio
 async def test_get_current_user_tenant_mismatch() -> None:
     """Verify get_current_user enforces tenant isolation against active tenant."""
+    from fastapi.security import HTTPAuthorizationCredentials
+
     settings = get_settings()
     token = _create_token(
         usuario_id=uuid4(),
@@ -210,7 +212,9 @@ async def test_get_current_user_tenant_mismatch() -> None:
     set_current_tenant_id(20)
     try:
         with pytest.raises(ForbiddenError, match="organização 10"):
-            await get_current_user(f"Bearer {token}")
+            await get_current_user(
+                HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+            )
     finally:
         set_current_tenant_id(None)
 
@@ -220,8 +224,6 @@ async def test_get_current_user_missing_header() -> None:
     """Verify get_current_user raises 401 when Authorization header is absent."""
     with pytest.raises(UnauthorizedError, match="não fornecida"):
         await get_current_user(None)
-    with pytest.raises(UnauthorizedError, match="inválido"):
-        await get_current_user("Basic dXNlcjpwYXNz")
 
 
 @pytest.mark.asyncio
@@ -231,6 +233,7 @@ async def test_get_current_user_revoked_token_raises_401() -> None:
     """
     from unittest.mock import patch
 
+    from fastapi.security import HTTPAuthorizationCredentials
     from src.core.errors import TokenRevogadoError
 
     settings = get_settings()
@@ -243,6 +246,8 @@ async def test_get_current_user_revoked_token_raises_401() -> None:
 
     with patch("src.core.authz.dependencies.is_token_revoked", return_value=True):
         with pytest.raises(TokenRevogadoError) as exc_info:
-            await get_current_user(f"Bearer {token}")
+            await get_current_user(
+                HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+            )
         assert exc_info.value.status_code == 401
         assert exc_info.value.code == "TOKEN_REVOGADO"

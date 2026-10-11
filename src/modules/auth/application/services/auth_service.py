@@ -1,5 +1,6 @@
 """Application service orchestrating authentication, lockout, and sessions."""
 
+import asyncio
 import contextlib
 from datetime import UTC, datetime
 from uuid import UUID
@@ -137,19 +138,21 @@ class AuthService:
 
         # 3. User enumeration mitigation: constant-time dummy verify if absent
         if cred is None:
-            self._hasher.dummy_verify()
+            await asyncio.to_thread(self._hasher.dummy_verify)
             raise CredenciaisInvalidasError()
 
         # 4. Check account active and locked status
         if not cred.ativo:
-            self._hasher.dummy_verify()
+            await asyncio.to_thread(self._hasher.dummy_verify)
             raise ContaDesativadaError()
 
         if cred.is_bloqueado():
             raise ContaBloqueadaError()
 
         # 5. Argon2id password verification
-        is_valida = self._hasher.verify(command.senha, cred.senha_hash)
+        is_valida = await asyncio.to_thread(
+            self._hasher.verify, command.senha, cred.senha_hash
+        )
         if not is_valida:
             recem_bloqueado = cred.registrar_falha_login(
                 max_falhas=self._max_attempts,

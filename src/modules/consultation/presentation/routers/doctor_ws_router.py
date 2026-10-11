@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, WebSocket
+from fastapi import APIRouter, Depends, Path, WebSocket
 from redis.asyncio import Redis
 
 from src.core.realtime import channel_doctor_calls, stream_channel
@@ -18,7 +18,7 @@ ValkeyDep = Annotated[Redis, Depends(get_valkey_client)]
 @doctor_ws_router.websocket("/ws/doctor/{medico_id}")
 async def ws_doctor_calls(
     websocket: WebSocket,
-    medico_id: UUID,
+    medico_id: Annotated[UUID, Path(description="ID do médico")],
     valkey: ValkeyDep,
     _auth: DoctorWsAuthDep,
 ) -> None:

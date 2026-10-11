@@ -3,45 +3,25 @@
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI
-from pydantic import BaseModel
+from fastapi import APIRouter, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
 from src.core.config import get_settings
 from src.core.context import get_current_request_id, get_current_tenant_id
+from src.core.database import engine
+from src.core.dependencies import ValkeyDep
 from src.core.errors import register_exception_handlers
 from src.core.logging import setup_logging
 from src.core.middleware import setup_middlewares
+from src.core.schemas import HealthCheckResponse, ValkeyHealth
 from src.core.valkey import (
     check_valkey_health,
     close_valkey_pool,
-    get_valkey_client,
     get_valkey_pool,
 )
 from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
-
-ValkeyDep = Annotated[Redis, Depends(get_valkey_client)]
-
-
-class ValkeyHealth(BaseModel):
-    status: str
-    ping: bool
-    version: str | None = None
-    connected_clients: int | None = None
-    used_memory_human: str | None = None
-    used_memory_peak_human: str | None = None
-    uptime_in_seconds: int | None = None
-    error: str | None = None
-
-
-class HealthCheckResponse(BaseModel):
-    status: str
-    version: str
-    tenant_id: int | None
-    request_id: str | None
-    valkey: ValkeyHealth | None = None
 
 
 @asynccontextmanager
@@ -67,6 +47,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     yield
 
     # 2. Gracefully teardown connection pools on shutdown
+    await engine.dispose()
+    logger.info("Database engine connection pool disposed successfully.")
     await close_valkey_pool()
     logger.info("Valkey connection pool closed successfully.")
 
@@ -79,8 +61,9 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         debug=settings.DEBUG,
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url="/docs" if settings.DEBUG else None,
+        redoc_url="/redoc" if settings.DEBUG else None,
+        openapi_url="/openapi.json" if settings.DEBUG else None,
         lifespan=lifespan,
     )
 
@@ -90,8 +73,18 @@ def create_app() -> FastAPI:
     # 2. Setup HTTP middlewares pipeline
     setup_middlewares(app)
 
-    # 3. System health route with Valkey telemetry
-    @app.get("/healthz", response_model=HealthCheckResponse)
+    # 3. Configure CORSMiddleware
+    cors_origins = ["*"] if settings.DEBUG else settings.CORS_ORIGINS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # 4. System health route with Valkey telemetry
+    @app.get("/healthz")
     async def healthcheck(
         valkey_client: ValkeyDep,
     ) -> HealthCheckResponse:

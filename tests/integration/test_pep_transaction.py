@@ -205,11 +205,9 @@ async def test_assinar_documento_service_commit_visivel_outra_sessao(
         creds = DoctorCertificateCredentials(
             token="valid-token", provider="fake", certificate_alias="cert-tx"
         )
-        doc_signed, signed_bytes = await svc.documento_service.assinar(
-            doc_id, atend_id, creds
-        )
-        assert signed_bytes == b"%PDF-signed-bytes%"
-        assert doc_signed.sha256_hash is not None
+        result = await svc.documento_service.assinar(doc_id, atend_id, creds)
+        assert result.tamanho_bytes == len(b"%PDF-signed-bytes%")
+        assert result.sha256_hash is not None
 
     async with async_session_factory() as s2:
         res = await s2.execute(

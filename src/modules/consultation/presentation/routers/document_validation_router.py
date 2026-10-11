@@ -26,7 +26,6 @@ _JANELA_SEGUNDOS = 60
 
 @validation_router.get(
     "/validate/{token_validacao}",
-    response_model=ValidarDocumentoResponse,
     status_code=status.HTTP_200_OK,
     summary="Validação pública de autenticidade de documento clínico (QR Code CFM/ITI)",
 )

@@ -1,23 +1,17 @@
 """Pydantic v2 schemas for progressive onboarding and patient management."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.modules.identity.application.dtos import (
     CriarDependenteDTO,
-    DependenteDetalheDTO,
-    DependenteOutputDTO,
     Fase1InputDTO,
-    Fase1OutputDTO,
     Fase2InputDTO,
-    Fase2OutputDTO,
     SolicitarOtpInputDTO,
-    SolicitarOtpOutputDTO,
     VerificarOtpInputDTO,
-    VerificarOtpOutputDTO,
 )
 
 
@@ -68,10 +62,16 @@ class Fase1Request(Fase1InputDTO):
     )
 
 
-class Fase1Response(Fase1OutputDTO):
+class Fase1Response(BaseModel):
     """Response after Phase 1 intake execution."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    paciente_id: UUID
+    token: str
+    status: str = "TRIADO_AGUARDANDO_ELEGIBILIDADE"
+    mensagem: str
+    is_novo_paciente: bool
 
 
 class Fase2Request(Fase2InputDTO):
@@ -142,10 +142,23 @@ class Fase2Request(Fase2InputDTO):
     )
 
 
-class Fase2Response(Fase2OutputDTO):
+class Fase2Response(BaseModel):
     """Response after Phase 2 CFM regulatory enrichment."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    paciente_id: UUID
+    nome_completo: str | None
+    nome_mae: str
+    sexo_biologico: str
+    cep: str
+    logradouro: str
+    numero: str
+    bairro: str
+    cidade: str
+    estado: str
+    alergias: list[str]
+    status: str
 
 
 class CriarDependenteRequest(CriarDependenteDTO):
@@ -194,16 +207,33 @@ class CriarDependenteRequest(CriarDependenteDTO):
     )
 
 
-class DependenteResponse(DependenteOutputDTO):
+class DependenteResponse(BaseModel):
     """Summary of created dependent relationship."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    id: UUID
+    organizacao_id: int
+    titular_id: UUID
+    dependente_id: UUID
+    grau_parentesco: str
+    vinculado_em: datetime
 
 
-class DependenteDetalheResponse(DependenteDetalheDTO):
+class DependenteDetalheResponse(BaseModel):
     """Full detail of a dependent including clinical demographics."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    id: UUID
+    titular_id: UUID
+    dependente_id: UUID
+    grau_parentesco: str
+    nome_completo: str | None
+    data_nascimento: date
+    cpf: str | None
+    cns: str | None
+    vinculado_em: datetime
 
 
 class SolicitarOtpRequest(SolicitarOtpInputDTO):
@@ -225,10 +255,14 @@ class SolicitarOtpRequest(SolicitarOtpInputDTO):
     )
 
 
-class SolicitarOtpResponse(SolicitarOtpOutputDTO):
+class SolicitarOtpResponse(BaseModel):
     """Response returned upon OTP request dispatch."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    mensagem: str
+    expira_em_segundos: int
+    codigo_debug: str | None = None
 
 
 class VerificarOtpRequest(VerificarOtpInputDTO):
@@ -250,7 +284,12 @@ class VerificarOtpRequest(VerificarOtpInputDTO):
     )
 
 
-class VerificarOtpResponse(VerificarOtpOutputDTO):
+class VerificarOtpResponse(BaseModel):
     """Response containing issued patient Bearer JWT token."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    access_token: str
+    token_type: str = "bearer"  # noqa: S105
+    expires_in: int
+    paciente_id: UUID

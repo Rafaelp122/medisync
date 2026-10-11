@@ -40,3 +40,15 @@ def test_argon2_dummy_verify_runs_safely() -> None:
     hasher = Argon2PasswordHasher()
     # Must execute smoothly to protect against timing attacks
     hasher.dummy_verify()
+
+
+async def test_argon2_async_verify_and_dummy_verify() -> None:
+    """Validate async verification offloaded to worker threads."""
+    hasher = Argon2PasswordHasher()
+    password = "AsyncMedicalPassword123!"
+
+    hashed = hasher.hash(password)
+    assert await hasher.verify_async(password, hashed) is True
+    assert await hasher.verify_async("WrongPassword!", hashed) is False
+
+    await hasher.dummy_verify_async()
