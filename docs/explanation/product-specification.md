@@ -118,10 +118,12 @@ Os requisitos funcionais descrevem o comportamento observável da solução a pa
 
 ### RF-09: Parametrização de Políticas Operacionais da Unidade
 * **Ator**: Carlos Drumond (Gestor Operacional / Administrador).
+* **Módulo Responsável**: `src/modules/telemetry` (entidade rica `ConfiguracaoPlantao`, isolamento via PostgreSQL RLS e endpoints `GET/PUT /api/v1/telemetria/config-plantao`).
 * **Comportamento**: Permite configurar metas de SLA de espera por cor/nível clínico, TMA padrão de consulta, coeficiente estocástico $\alpha$, cotas de admissão por turno e alternar entre perfis de deploy (SUS vs. Convênios/Particular).
 
 ### RF-10: Telemetria Operacional e Auditoria de Capacidade
 * **Ator**: Gestor Operacional / Corpo Clínico.
+* **Módulo Responsável**: `src/modules/telemetry` (Read Model / CQRS pragmático via `TelemetryReaderPort`, agregação com estado volátil de filas/médicos em Valkey e endpoint `GET /api/v1/telemetria/painel`).
 * **Comportamento**: Disponibiliza painel em tempo real com métricas consolidadas: Tempo Médio de Espera (TME), TMA real vs. projetado, taxa de cumprimento de SLA, taxa de desistência/abandono de fila e índice de *no-show*, mantendo trilha de auditoria completa de eventos.
 
 ---
@@ -146,8 +148,8 @@ A matriz abaixo estabelece a relação auditável ponta a ponta entre as Necessi
 | **NEC-04 (Anti-Deadlock)** | Zero *overbooking* e resolução de *no-show* | RF-03 (Chamada e Ring Timeout) | RN02 (Ring Timeout 45s / No-Show) | RNF-01 (Atomicidade de Lock) |
 | **NEC-05 (PEP e Autonomia)** | Soberania médica CFM 2.314 | RF-07 (Consulta, PEP e Assinatura) | RN06 (Sem Desconexão por Tempo) | RNF-04 (WebRTC) & RNF-06 (ICP) |
 | **NEC-06 (Elegibilidade)** | Glosas $< 0{,}5\%$ sem paywall obstrutivo | RF-02 (Worker Elegibilidade) & RF-05 (Exceção) | RN03 (Invariante de Elegibilidade) | RNF-02 (Resiliência) & RNF-09 |
-| **NEC-07 (Configuração)** | Flexibilidade de deploy (SUS vs. Privado) | RF-04 (Backpressure) & RF-09 (Políticas) | RN05 (Fator $\alpha$ e Transbordo) | RNF-08 (Orquestração) & RT-01 |
-| **NEC-08 (Governança)** | Decisões baseadas em métricas e auditoria | RF-10 (Telemetria Operacional) | RN07 (Auditoria Append-Only UTC) | RNF-10 (Latência Telemetria $< 5\text{ s}$) |
+| **NEC-07 (Configuração)** | Flexibilidade de deploy (SUS vs. Privado) | RF-04 (Backpressure) & RF-09 (Políticas — `src/modules/telemetry`) | RN05 (Fator $\alpha$ e Transbordo) | RNF-08 (Orquestração) & RT-01 |
+| **NEC-08 (Governança)** | Decisões baseadas em métricas e auditoria | RF-10 (Telemetria Operacional — `src/modules/telemetry`) | RN07 (Auditoria Append-Only UTC) | RNF-10 (Latência Telemetria $< 5\text{ s}$) |
 
 ---
 

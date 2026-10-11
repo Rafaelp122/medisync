@@ -25,6 +25,7 @@ _EXPECTED_TABLES = frozenset(
         "documento_itens",
         "audit_events",
         "usuarios_credenciais",
+        "configuracoes_plantao",
     ]
 )
 
@@ -130,6 +131,10 @@ async def test_check_constraints_registered() -> None:
         "chk_documentos_tipo",
         "chk_documentos_sha256_len",
         "chk_audit_ator_tipo",
+        "chk_config_plantao_alpha",
+        "chk_config_plantao_tma",
+        "chk_config_plantao_ring",
+        "chk_config_plantao_modo",
     }
     assert expected_checks.issubset(constraints)
 
