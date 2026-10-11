@@ -125,6 +125,7 @@ def create_app() -> FastAPI:
         fila_router,
         queue_ws_router,
     )
+    from src.modules.telemetry.presentation.routers import telemetry_router
 
     api_v1 = APIRouter(prefix="/api/v1")
     api_v1.include_router(auth_router)
@@ -137,6 +138,7 @@ def create_app() -> FastAPI:
     api_v1.include_router(livekit_router)
     api_v1.include_router(consultation_router)
     api_v1.include_router(validation_router)
+    api_v1.include_router(telemetry_router)
     app.include_router(api_v1)
 
     # 5. Real-time WebSocket signaling routers

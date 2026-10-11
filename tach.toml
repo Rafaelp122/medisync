@@ -167,3 +167,37 @@ depends_on = [
     "src.modules.identity.application",
     "src.modules.identity.composition",
 ]
+
+[[modules]]
+path = "src.modules.telemetry.domain"
+depends_on = ["src.core"]
+
+[[modules]]
+path = "src.modules.telemetry.application"
+depends_on = ["src.core", "src.modules.telemetry.domain"]
+
+[[modules]]
+path = "src.modules.telemetry.infrastructure"
+depends_on = [
+    "src.core",
+    "src.modules.telemetry.application",
+    "src.modules.telemetry.domain",
+]
+
+[[modules]]
+path = "src.modules.telemetry.composition"
+depends_on = [
+    "src.core",
+    "src.modules.telemetry.application",
+    "src.modules.telemetry.domain",
+    "src.modules.telemetry.infrastructure",
+]
+
+[[modules]]
+path = "src.modules.telemetry.presentation"
+depends_on = [
+    "src.core",
+    "src.modules.telemetry.application",
+    "src.modules.telemetry.composition",
+]
+

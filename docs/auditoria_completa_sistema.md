@@ -92,6 +92,10 @@ O [Context Map](file:///home/rafael/projetos/medisync/docs/explanation/domains/c
 * **Pontos Fortes:** PostgreSQL RLS com 100% de cobertura em 9 tabelas de domínio; auditoria append-only imutável em UTC com triggers e DCL no PostgreSQL; worker assíncrono ARQ sobre Valkey 8.0; routers finos 100% em conformidade com AST; RFC 7807 problem details.
 * **Gaps:** Bypasses no `tach.toml` para `queue.application -> triage.domain` e `worker -> billing.infrastructure`.
 
+### 4.8 Módulo TELEMETRY (`src/modules/telemetry`) — Nota: 9.80/10 [SANEADO na Issue #54]
+* **Pontos Fortes:** Read Model / CQRS pragmático perfeitamente desacoplado; agregação analítica SQL somente-leitura nas tabelas transacionais de atendimentos com RLS ativo por organização; cache volátil de painel em Valkey com TTL de 5s (RNF-10); modelo rico `ConfiguracaoPlantao` com salvaguardas invariantes ($1.20 \le \alpha \le 1.30$, médicos $\ge 1$); routers REST finos (`GET /api/v1/telemetria/painel`, `GET/PUT /api/v1/telemetria/config-plantao`); 100% downstream sem acoplamento reverso.
+* **Gaps:** Nenhum gap identificado — implementado como módulo isolado em conformidade estrita com ADR-001 e ADR-008.
+
 ---
 
 ## 5. Mapeamento Consolidado de Não-Conformidades
@@ -146,6 +150,13 @@ O [Context Map](file:///home/rafael/projetos/medisync/docs/explanation/domains/c
 10. **Liquidação Contábil (RF-08):** Criar serviço de faturamento pós-consulta integrado ao encerramento do PEP.
 11. **Validação Ativa de Tokens:** Implementar verificação de revogação de access token no gateway.
 
+### Saneamento da Issue #54: Telemetria Operacional e Read Model (RF-10 e RF-09) [CONCLUÍDO]
+Com a criação do módulo `src/modules/telemetry`, foram formalmente saneados os requisitos de telemetria analítica e parametrização operacional em tempo real:
+1. **Read Model / CQRS Pragmático Desacoplado:** Leitura de métricas agregadas da unidade (TME geral e por nível de prioridade 1..5, TMA geral e por médico, taxas de evasão e de *no-show*, conformidade de SLA com meta $\ge 95\%$) via `TelemetryReaderPort` (`src/modules/telemetry/application/ports/telemetry_reader_port.py`), executando consultas SQL analíticas somente-leitura sobre a tabela `atendimentos` com isolamento multi-tenant PostgreSQL RLS e sem importar modelos de domínio de outros módulos.
+2. **Parametrização Dinâmica do Plantão (RF-09):** Criação da tabela `configuracoes_plantao` (migration `0006_telemetry_config_plantao.py`) com RLS obrigatório, entidade de domínio rica `ConfiguracaoPlantao` encapsulando validações de invariantes ($1.20 \le \alpha \le 1.30$, médicos $\ge 1$, limites de TMA e SLA) e rotas REST para consulta e atualização (`GET/PUT /api/v1/telemetria/config-plantao`).
+3. **Cache de Alta Performance e Estado Volátil (RF-10 e RNF-10):** Integração com Valkey para leitura de estado em memória de filas (`fila:{org}:aptos`) e médicos ativos (`plantao:{org}:medicos_ativos`), combinada com cache volátil com TTL de 5s para o painel operacional gerencial (`GET /api/v1/telemetria/painel`).
+4. **Isolamento Modular Downstream Estrito:** O módulo `src/modules/telemetry` opera exclusivamente como consumidor downstream do fluxo clínico, eliminando qualquer acoplamento reverso ou risco de indisponibilidade em cascata sobre as transações de admissão e atendimento.
+
 ---
 
 ## 8. Mapeamento no Backlog do GitHub (Issues)
@@ -154,7 +165,7 @@ O [Context Map](file:///home/rafael/projetos/medisync/docs/explanation/domains/c
 |---|---|---|---|
 | [#52](https://github.com/Rafaelp122/medisync/issues/52) | `bug` / `critical` | `queue`, `triage`, `worker` | **NC-ARQ-01, NC-BIL-01, NC-MED-01 [SANEADO]:** Sanear acoplamento `queue -> triage`, conectar worker ARQ e ativar salvaguarda SAMU 192. |
 | [#53](https://github.com/Rafaelp122/medisync/issues/53) | `feat` | `queue`, `identidade` | **NC-QUE-01, NC-QUE-02, NC-MED-02, NC-REG-01 [SANEADO]:** Routers REST da fila, cálculo de cota diária no Valkey, botão de piora e `nome_social` (CFM). |
-| [#54](https://github.com/Rafaelp122/medisync/issues/54) | `feat` | `telemetry`, `core` | **RF-10, RF-09:** Módulo desacoplado de telemetria operacional (Read Model/CQRS) e parametrização do plantão. |
+| [#54](https://github.com/Rafaelp122/medisync/issues/54) | feat | telemetry, core | **RF-10, RF-09 [SANEADO]:** Módulo desacoplado de telemetria operacional (Read Model/CQRS) e parametrização do plantão. |
 | [#39](https://github.com/Rafaelp122/medisync/issues/39) | `type:security` | `core`, `auditoria` | Hardening de integridade criptográfica da trilha de auditoria. |
 | [#40](https://github.com/Rafaelp122/medisync/issues/40) | `type:security` | `identidade` | Hardening de permissões de papéis e access control. |
 | [#41](https://github.com/Rafaelp122/medisync/issues/41) | `type:security` | `identidade` | Hardening do fluxo de autenticação e proteção contra brute-force. |

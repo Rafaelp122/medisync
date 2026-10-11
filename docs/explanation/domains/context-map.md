@@ -1,8 +1,8 @@
 # Context Map — Domínios Clínicos
 
-> Como triage, queue, consultation e billing se conectam via ports abstratas, sem importar modelos uns dos outros.
+> Como triage, queue, consultation, billing e telemetry se conectam via ports abstratas, sem importar modelos uns dos outros.
 
-Fluxo clínico corre em uma direção: triagem classifica, fila ordena e aloca, consulta executa o ato médico, faturamento valida cobertura.
+Fluxo clínico corre em uma direção: triagem classifica, fila ordena e aloca, consulta executa o ato médico, faturamento valida cobertura. Telemetria observa como read model desacoplado e parametriza o plantão operacional.
 
 Dependência de código corre na direção oposta quando precisa: quem precisa de dado declara uma port, quem detém o dado pluga o adaptador.
 
@@ -22,11 +22,12 @@ flowchart LR
     queue -->|EligibilityProviderPort<br/>pre-condicao de apto| billing
     queue -->|AllocationPort<br/>lock atomico interno| queue
     triage -->|EmergencyNotifierPort<br/>fuga samu 192| externo((samu externo))
+    queue -.->|TelemetryReaderPort<br/>SQL somente-leitura| telemetry[telemetry<br/>read model e plantao]
 ```
 
-Leitura: triage produz prioridade que queue consome como inteiro, consultation lê estado da fila via reader, billing responde elegibilidade para queue e consultation.
+Leitura: triage produz prioridade que queue consome como inteiro, consultation lê estado da fila via reader, billing responde elegibilidade para queue e consultation, telemetry consome leitura agregada em downstream desacoplado.
 
-Queue usa alocação tipada internamente, triage escapa para samu sem passar pela fila.
+Queue usa alocação tipada internamente, triage escapa para samu sem passar pela fila, telemetry agrega métricas analíticas e parametrização sem acoplamento reverso.
 
 ## 2. Upstream e downstream por módulo
 
@@ -38,6 +39,7 @@ Tabela resumo, detalhe por módulo abaixo.
 | queue | ordena e aloca | elegibilidade do billing | alocação, ausência, transbordo | `src/modules/queue/application/ports/allocation_port.py` |
 | consultation | ato médico | resumo de atendimento | evolução e pep | `src/modules/consultation/application/ports/atendimento_reader_port.py` |
 | billing | cobertura | nada de outro módulo | elegibilidade e falha | `src/modules/billing/application/ports/eligibility_provider.py` |
+| telemetry | read model e parametrização | SQL somente-leitura de atendimentos e Valkey | painel e config plantão | `src/modules/telemetry/application/ports/telemetry_reader_port.py` |
 
 ### 2.1 triage — origem, sem upstream
 
@@ -85,6 +87,15 @@ Serviço que orquestra: `src/modules/billing/application/services/eligibility_se
 
 Queue chama o provedor em background, nunca bloqueia http esperando convênio.
 
+### 2.5 telemetry — read model e parametrização operacional
+
+Downstream estrito e desacoplado, concebido como implementação de CQRS pragmático e read model operacional sem acoplamento reverso.
+
+- **Papel**: Telemetria operacional agregada em tempo real (RF-10) e parametrização dinâmica de plantão por tenant (RF-09).
+- **Consome**: `TelemetryReaderPort` (`src/modules/telemetry/application/ports/telemetry_reader_port.py`) executando queries SQL somente-leitura nas tabelas transacionais de atendimentos (isoladas por tenant com RLS ativo), além de Valkey para estado volátil de filas (`fila:{org}:aptos`) e médicos ativos (`plantao:{org}:medicos_ativos`).
+- **Expõe**: Endpoints REST para gestores clínicos (`GET /api/v1/telemetria/painel`, `GET/PUT /api/v1/telemetria/config-plantao`).
+- **Relação com outros módulos**: Downstream estrito e desacoplado. Nenhum módulo do fluxo clínico depende de `telemetry`, preservando total independência operacional e isolamento de falhas.
+
 ## 3. Regra de ouro
 
 Nunca importar modelos, tabelas ou repositórios de outro módulo.
@@ -109,14 +120,17 @@ Ports que sustentam as arestas do diagrama:
 - `src/modules/consultation/application/ports/atendimento_reader_port.py`
 - `src/modules/billing/application/ports/eligibility_provider.py`
 - `src/modules/billing/application/ports/eligibility_notifier.py`
+- `src/modules/telemetry/application/ports/telemetry_reader_port.py`
+- `src/modules/telemetry/application/ports/config_plantao_port.py`
+- `src/modules/telemetry/application/ports/telemetry_cache_port.py`
 - `src/core/notifications.py`
 - `tach.toml`
 
 ## 5. Verificação
 
 ```bash
-ls src/modules/queue/application/ports/ src/modules/billing/application/ports/ src/modules/consultation/application/ports/ src/modules/triage/application/ports/
-# allocation_port, eligibility_provider, atendimento_reader_port, emergency_notifier visiveis
+ls src/modules/queue/application/ports/ src/modules/billing/application/ports/ src/modules/consultation/application/ports/ src/modules/triage/application/ports/ src/modules/telemetry/application/ports/
+# allocation_port, eligibility_provider, atendimento_reader_port, emergency_notifier, telemetry_reader_port visiveis
 
 just tach
 # fronteiras modulares ok, sem import cruzado

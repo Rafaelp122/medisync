@@ -26,9 +26,10 @@ from src.modules.queue.application.services.alocacao_service import (
 from src.modules.queue.application.services.fila_service import FilaService
 
 CLEAN_TABLES_SQL = text(
-    "TRUNCATE TABLE documento_itens, documentos_clinicos, evolucoes_clinicas, "
-    "triagens, audit_events, atendimentos, dependentes, pacientes, "
-    "profissionais, organizacoes, usuarios_credenciais CASCADE;"
+    "TRUNCATE TABLE configuracoes_plantao, documento_itens, "
+    "documentos_clinicos, evolucoes_clinicas, triagens, audit_events, "
+    "atendimentos, dependentes, pacientes, profissionais, organizacoes, "
+    "usuarios_credenciais CASCADE;"
 )
 
 
@@ -48,6 +49,7 @@ DEFAULT_VALKEY_TEST_PATTERNS: tuple[str, ...] = (
     "auth:ratelimit:*",
     "otp:*",
     "ratelimit:otp:*",
+    "telemetry:*",
 )
 
 
