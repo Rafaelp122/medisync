@@ -181,4 +181,3 @@ class PioraClinicaResult:
     redirecionado_emergencia: bool
     nova_posicao: int | None
     instrucoes: str | None = None
-

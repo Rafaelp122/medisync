@@ -7,7 +7,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-
 from src.core.config import get_settings
 from src.main import create_app
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
@@ -26,7 +25,7 @@ def _make_jwt_token(user_id: UUID, org_id: int, papel: str = "MEDICO") -> str:
 
 @pytest.mark.asyncio
 async def test_chamar_proximo_sucesso_com_paciente_alocado() -> None:
-    """Verifica chamada de próximo paciente alocado com sucesso por médico autenticado."""
+    """Verifica chamada de próximo paciente alocado com sucesso por médico."""
     app = create_app()
     medico_id = uuid4()
     atendimento_id = uuid4()
@@ -69,7 +68,7 @@ async def test_chamar_proximo_sucesso_com_paciente_alocado() -> None:
 
 @pytest.mark.asyncio
 async def test_chamar_proximo_fila_vazia_retorna_200_com_alocado_false() -> None:
-    """Verifica que quando a fila está vazia retorna 200 com alocado=False e mensagem explicativa."""
+    """Verifica retorno 200 com alocado=False e mensagem explicativa em fila vazia."""
     app = create_app()
     medico_id = uuid4()
     org_id = 42
@@ -114,7 +113,7 @@ async def test_chamar_proximo_rejeitado_sem_autenticacao() -> None:
 
 @pytest.mark.asyncio
 async def test_chamar_proximo_rejeitado_papel_nao_autorizado() -> None:
-    """Verifica bloqueio 403 Forbidden se um usuário com papel PACIENTE tentar chamar da fila."""
+    """Verifica bloqueio 403 Forbidden se usuário com papel PACIENTE tentar chamar."""
     app = create_app()
     paciente_id = uuid4()
     org_id = 42

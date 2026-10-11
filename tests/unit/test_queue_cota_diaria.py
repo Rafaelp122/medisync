@@ -122,7 +122,9 @@ async def test_admissao_bloqueada_quando_cota_diaria_atingida(
             pacientes_aguardando=1,
             medicos_ativos=2,
             alpha_utilizado=1.25,
-            mensagem_explicativa="A cota diária de atendimentos da unidade foi atingida.",
+            mensagem_explicativa=(
+                "A cota diária de atendimentos da unidade foi atingida."
+            ),
         )
     )
 

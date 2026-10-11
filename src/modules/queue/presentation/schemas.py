@@ -184,10 +184,10 @@ class PioraClinicaResponse(BaseModel):
         description="Nova prioridade clínica pós-reavaliação"
     )
     alerta_samu_disparado: bool = Field(
-        description="Indica se o paciente foi classificado como emergência máxima (Vermelho)"
+        description="Classificado como emergência máxima (Vermelho)"
     )
     redirecionado_emergencia: bool = Field(
-        description="Indica se o paciente deve ser imediatamente redirecionado ao pronto-socorro"
+        description="Redirecionamento imediato ao pronto-socorro"
     )
     nova_posicao: int | None = Field(
         default=None,

@@ -617,7 +617,8 @@ class FilaService:
                 "ou procure a emergência mais próxima."
             )
             logger.warning(
-                "Patient %s reported severe deterioration in attendance %s. Dispatched SAMU escape.",
+                "Patient %s reported severe deterioration in attendance %s. "
+                "Dispatched SAMU escape.",
                 atendimento.paciente_id,
                 atendimento.id,
             )

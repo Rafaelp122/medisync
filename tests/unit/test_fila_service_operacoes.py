@@ -1,5 +1,6 @@
-"""Unit tests for FilaService operations: position/estimate, cancellation, and clinical deterioration."""
+"""Unit tests for FilaService operations (position, cancel, deterioration)."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -7,8 +8,6 @@ from uuid import uuid4
 import pytest
 from redis.asyncio import Redis
 from src.core.errors import NotFoundError
-from dataclasses import dataclass
-
 from src.modules.queue.application.dtos import (
     PioraClinicaCommand,
 )

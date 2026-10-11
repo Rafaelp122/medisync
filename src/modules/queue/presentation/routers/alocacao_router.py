@@ -21,8 +21,8 @@ alocacao_router = APIRouter(
     description=(
         "Permite ao médico plantonista adquirir e alocar atomicamente via script Lua "
         "o próximo paciente de maior prioridade clínica da fila virtual (ZSET), com "
-        "bloqueio de concorrência e TTL de chamada. Retorna 200 com os dados da chamada "
-        "ou mensagem de fila vazia se não houver pacientes elegíveis."
+        "bloqueio de concorrência e TTL de chamada. Retorna 200 com os dados da "
+        "chamada ou mensagem de fila vazia se não houver pacientes elegíveis."
     ),
 )
 async def chamar_proximo_paciente(

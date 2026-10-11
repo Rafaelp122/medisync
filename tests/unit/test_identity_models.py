@@ -222,4 +222,3 @@ def test_paciente_com_nome_social_succeeds():
     )
     assert paciente.nome_social == "Carla Silva"
     assert paciente.nome_completo == "Carlos Silva"
-

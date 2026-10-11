@@ -1,4 +1,4 @@
-"""Unit tests for patient queue router (position, cancellation, and clinical deterioration)."""
+"""Unit tests for patient queue router (position, cancel, deterioration)."""
 
 from datetime import UTC, datetime
 from typing import cast
@@ -7,7 +7,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-
 from src.core.config import get_settings
 from src.core.errors import NotFoundError
 from src.core.security import create_intake_token
@@ -39,7 +38,7 @@ def _make_jwt_token(user_id: UUID, org_id: int, papel: str = "PACIENTE") -> str:
 
 @pytest.mark.asyncio
 async def test_obter_posicao_sucesso_com_token_intake() -> None:
-    """Verifica consulta de posição ordinal e estimativa com token provisório de intake."""
+    """Verifica consulta de posição ordinal com token provisório de intake."""
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
@@ -87,7 +86,7 @@ async def test_obter_posicao_sucesso_com_token_intake() -> None:
 
 @pytest.mark.asyncio
 async def test_obter_posicao_rejeitada_sem_posse_idor() -> None:
-    """Verifica bloqueio 403 Forbidden quando o token não possui posse sobre o atendimento."""
+    """Verifica bloqueio 403 Forbidden quando o token não possui posse (Anti-IDOR)."""
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
@@ -200,7 +199,7 @@ async def test_cancelar_atendimento_sucesso() -> None:
 
 @pytest.mark.asyncio
 async def test_comunicar_piora_clinica_reclassificacao_sucesso() -> None:
-    """Verifica comunicação de piora clínica que resulta em reclassificação na fila (RF-06)."""
+    """Verifica comunicação de piora clínica e reclassificação na fila (RF-06)."""
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
@@ -253,7 +252,7 @@ async def test_comunicar_piora_clinica_reclassificacao_sucesso() -> None:
 
 @pytest.mark.asyncio
 async def test_comunicar_piora_clinica_emergencia_samu() -> None:
-    """Verifica salvaguarda de emergência imediata (Vermelho) com alerta SAMU disparado."""
+    """Verifica salvaguarda de emergência imediata (Vermelho) com alerta SAMU."""
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()

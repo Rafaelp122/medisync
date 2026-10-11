@@ -113,7 +113,7 @@ class AdmissaoAtendimentoService:
         await self._session.commit()
         await self._session.refresh(atendimento)
 
-        # Increment daily admission quota counter atomically in Valkey (RN05 / NC-QUE-01)
+        # Increment daily admission quota atomically in Valkey (RN05 / NC-QUE-01)
         await self._controle_admissao.incrementar_admissoes_hoje(command.organizacao_id)
 
         # 4. Schedule asynchronous eligibility verification in ARQ worker

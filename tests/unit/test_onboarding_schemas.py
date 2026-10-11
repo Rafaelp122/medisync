@@ -198,4 +198,3 @@ def test_fase_2_request_e_response_com_nome_social() -> None:
         status="DADOS_COMPLETOS",
     )
     assert resp.nome_social == "Carla Silva"
-

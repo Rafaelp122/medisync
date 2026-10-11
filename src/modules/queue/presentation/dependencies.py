@@ -206,7 +206,7 @@ AdmissaoPacienteAuthDep = Annotated[None, Security(validar_admissao_paciente)]
 async def exigir_medico_plantao(
     current_user: CurrentUserDep,
 ) -> AuthenticatedUser:
-    """Garante que o usuário autenticado é médico no plantão ou administrador (RF-03)."""
+    """Garante médico no plantão ou administrador autenticado (RF-03)."""
     if current_user.papel not in (Role.MEDICO, Role.ADMIN_GLOBAL):
         raise ForbiddenError(
             f"Acesso negado: o papel '{current_user.papel}' não possui "
@@ -244,7 +244,9 @@ async def _verificar_posse_token_e_atendimento(
         try:
             paciente_id = UUID(str(claims.get("paciente_id", "")))
         except Exception as exc:
-            raise UnauthorizedError("Payload do token de acolhimento inválido.") from exc
+            raise UnauthorizedError(
+                "Payload do token de acolhimento inválido."
+            ) from exc
 
         token_org_id = int(claims.get("organizacao_id", 0))
         if token_org_id != tenant_id:
@@ -256,7 +258,8 @@ async def _verificar_posse_token_e_atendimento(
         tem_posse = await checker(atendimento_id, paciente_id)
         if not tem_posse:
             raise ForbiddenError(
-                "Acesso negado: o token de acolhimento não confere posse sobre o atendimento."
+                "Acesso negado: o token de acolhimento não confere posse "
+                "sobre o atendimento."
             )
 
     elif len(token_parts) == 3:
@@ -286,7 +289,8 @@ async def _verificar_posse_token_e_atendimento(
         tem_posse = await checker(atendimento_id, user.usuario_id)
         if not tem_posse:
             raise ForbiddenError(
-                "Acesso negado: o usuário autenticado não possui posse sobre o atendimento."
+                "Acesso negado: o usuário autenticado não possui posse "
+                "sobre o atendimento."
             )
     else:
         raise UnauthorizedError("Formato de credencial inválido.")
