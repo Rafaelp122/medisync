@@ -4,10 +4,12 @@ Single place in queue module allowed to import infrastructure adapters.
 Services and tests must resolve allocation via get_alocacao_service.
 """
 
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
 
+from arq.connections import ArqRedis
 from fastapi import Depends
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,10 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.core.notifications import LoggingNotificationAdapter
-from src.core.valkey import get_valkey_client, get_valkey_pool
+from src.core.valkey import get_arq_pool, get_valkey_client, get_valkey_pool
 from src.modules.queue.application.ports.allocation_port import AllocationPort
 from src.modules.queue.application.ports.notification_port import NotificationPort
 from src.modules.queue.application.ports.queue_store_port import QueueStorePort
+from src.modules.queue.application.ports.triage_port import TriagePort
 from src.modules.queue.application.services.admissao_service import (
     AdmissaoAtendimentoService,
 )
@@ -30,6 +33,10 @@ from src.modules.queue.application.services.controle_admissao_service import (
 )
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
+from src.modules.triage.composition import (
+    TriageServiceDep,
+    build_triage_service_for_session,
+)
 
 ValkeyDep = Annotated[Redis, Depends(get_valkey_client)]
 
@@ -104,14 +111,52 @@ def get_queue_store(valkey: ValkeyDep, session: DbSessionDep) -> QueueStorePort:
 QueueStoreDep = Annotated[QueueStorePort, Depends(get_queue_store)]
 
 
-def get_admissao_service(
-    session: DbSessionDep,
-    fila_service: FilaServiceDep,
+logger = logging.getLogger("medisync.queue.composition")
+
+
+async def get_arq_pool_dep() -> ArqRedis | None:
+    """Provide ArqRedis pool dependency, or None if Valkey/ARQ is unavailable."""
+    try:
+        return await get_arq_pool()
+    except Exception as exc:
+        logger.warning("ArqRedis pool connection unavailable in request scope: %s", exc)
+        return None
+
+
+ArqPoolDep = Annotated[ArqRedis | None, Depends(get_arq_pool_dep)]
+
+
+def build_admissao_service_for_session(
+    session: AsyncSession,
+    valkey: Redis | None = None,
+    triage_port: TriagePort | None = None,
+    arq_pool: ArqRedis | None = None,
 ) -> AdmissaoAtendimentoService:
-    """Provide clinical admission and triage service."""
+    """Build admission service outside request scope (tests/worker tooling)."""
+    fila_service = build_fila_service_for_session(session=session, valkey=valkey)
+    resolved_triage: TriagePort = triage_port or build_triage_service_for_session(
+        session=session
+    )
     return AdmissaoAtendimentoService(
         session=session,
         fila_service=fila_service,
+        triage_port=resolved_triage,
+        arq_pool=arq_pool,
+    )
+
+
+def get_admissao_service(
+    session: DbSessionDep,
+    fila_service: FilaServiceDep,
+    triage_service: TriageServiceDep,
+    arq_pool: ArqPoolDep,
+) -> AdmissaoAtendimentoService:
+    """Provide clinical admission and triage service with DI wiring."""
+    return AdmissaoAtendimentoService(
+        session=session,
+        fila_service=fila_service,
+        triage_port=triage_service,
+        arq_pool=arq_pool,
     )
 
 

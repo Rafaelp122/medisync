@@ -119,6 +119,10 @@ class AdmissaoAtendimentoCommand:
     tma_estimado_segundos: int = 600
     alpha_margem: float = 1.25
     cota_diaria_maxima: int | None = 300
+    cpf: str | None = None
+    cns: str | None = None
+    operadora_id: str | None = None
+    numero_carteirinha: str | None = None
 
 
 @dataclass(frozen=True)

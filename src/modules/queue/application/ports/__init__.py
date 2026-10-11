@@ -27,6 +27,10 @@ from src.modules.queue.application.ports.queue_store_port import (
     AtendimentoSnapshotDTO,
     QueueStorePort,
 )
+from src.modules.queue.application.ports.triage_port import (
+    TriageEvaluationDTO,
+    TriagePort,
+)
 
 __all__ = [
     "AdmissaoAptoResult",
@@ -48,4 +52,6 @@ __all__ = [
     "QueueStorePort",
     "RateLimitResult",
     "RateLimitedNotificationAdapter",
+    "TriageEvaluationDTO",
+    "TriagePort",
 ]

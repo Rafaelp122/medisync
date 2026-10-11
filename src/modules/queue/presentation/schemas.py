@@ -35,6 +35,14 @@ class AdmissaoRequest(BaseModel):
         ge=1,
         description="Médicos ativos no plantão para cálculo de backpressure",
     )
+    cpf: str | None = Field(default=None, description="CPF do paciente (opcional)")
+    cns: str | None = Field(default=None, description="Cartão Nacional de Saúde (SUS)")
+    operadora_id: str | None = Field(
+        default=None, description="Código da operadora de saúde"
+    )
+    numero_carteirinha: str | None = Field(
+        default=None, description="Número da carteirinha do plano"
+    )
 
     def to_command(self, organizacao_id: int) -> AdmissaoAtendimentoCommand:
         """Convert request into application command."""
@@ -47,6 +55,10 @@ class AdmissaoRequest(BaseModel):
             tcle_texto=self.tcle_texto,
             tcle_hash=self.tcle_hash,
             medicos_ativos=self.medicos_ativos,
+            cpf=self.cpf,
+            cns=self.cns,
+            operadora_id=self.operadora_id,
+            numero_carteirinha=self.numero_carteirinha,
         )
 
 

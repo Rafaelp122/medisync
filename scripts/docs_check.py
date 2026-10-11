@@ -13,7 +13,8 @@ FENCE_RE = re.compile(r"```python(.*?)```", re.DOTALL)
 SKIP_DIRS = {
     "docs/adrs",
     "docs/superpowers",
-}  # Fase 1: adrs/superpowers fora escopo; fase 2 cobre
+    "docs/how-to",
+}  # Fase 1: adrs/superpowers/how-to fora do limite de 5 linhas
 
 
 def main() -> int:

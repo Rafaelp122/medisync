@@ -105,7 +105,7 @@ depends_on = ["src.core"]
 
 [[modules]]
 path = "src.modules.queue.application"
-depends_on = ["src.core", "src.modules.queue.domain", "src.modules.triage.domain"]
+depends_on = ["src.core", "src.modules.queue.domain"]
 
 [[modules]]
 path = "src.modules.queue.infrastructure"
@@ -118,7 +118,8 @@ depends_on = [
     "src.modules.queue.application",
     "src.modules.queue.domain",
     "src.modules.queue.infrastructure",
-    "src.modules.triage.domain",
+    "src.modules.triage.application",
+    "src.modules.triage.composition",
     "src.modules.identity.application",
     "src.modules.identity.composition",
 ]
@@ -134,6 +135,23 @@ depends_on = ["src.core"]
 [[modules]]
 path = "src.modules.triage.application"
 depends_on = ["src.core", "src.modules.triage.domain"]
+
+[[modules]]
+path = "src.modules.triage.infrastructure"
+depends_on = [
+    "src.core",
+    "src.modules.triage.application",
+    "src.modules.triage.domain",
+]
+
+[[modules]]
+path = "src.modules.triage.composition"
+depends_on = [
+    "src.core",
+    "src.modules.triage.application",
+    "src.modules.triage.domain",
+    "src.modules.triage.infrastructure",
+]
 
 [[modules]]
 path = "src.worker"

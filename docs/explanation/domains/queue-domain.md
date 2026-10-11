@@ -106,7 +106,8 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `src/modules/queue/infrastructure/lua/alocar_chamada.lua`
 - `src/modules/queue/application/ports/queue_store_port.py` (QueueStorePort - interface profunda consolidando PostgreSQL + Valkey)
 - `src/modules/queue/application/services/fila_service.py` (Implementação de QueueStorePort, admissão em fila e reconciliação)
-- `src/modules/queue/application/services/admissao_service.py` (Acolhimento clínico integrado com Triagem persistida)
+- `src/modules/queue/application/services/admissao_service.py` (Acolhimento clínico desacoplado via TriagePort e enfileiramento ARQ)
+- `src/modules/queue/application/ports/triage_port.py` (TriagePort e TriageEvaluationDTO para isolamento de Bounded Context)
 - `src/modules/queue/presentation/routers/admissao_router.py` (POST /api/v1/fila/admissao)
 - `src/modules/queue/presentation/routers/queue_ws_router.py` (WebSocket de avanço da fila do paciente: /ws/queue/{atendimento_id})
 - `src/modules/queue/presentation/dependencies.py` (Guards de autenticação e posse do paciente via QueueWsAuthDep)
@@ -121,6 +122,7 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `tests/unit/test_atendimento_model.py`
 - `tests/unit/test_controle_admissao.py`
 - `tests/unit/test_fila_service.py`
+- `tests/integration/test_admissao_integrada_flow.py`
 
 Prova viva:
 
