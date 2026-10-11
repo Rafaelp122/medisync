@@ -1,5 +1,4 @@
-"""JWT token decoding and verification for authorization guards."""
-
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -8,6 +7,41 @@ import jwt
 from src.core.authz.models import AuthenticatedUser
 from src.core.config import get_settings
 from src.core.errors import UnauthorizedError
+from src.core.uuid7 import uuid7
+
+
+def create_access_token(
+    usuario_id: UUID,
+    organizacao_id: int,
+    papel: str,
+    secret_key: str | None = None,
+    algorithm: str | None = None,
+    expire_minutes: int | None = None,
+) -> str:
+    """Generate a signed JWT access token adhering to AuthenticatedUser claims."""
+    settings = get_settings()
+    key = secret_key or settings.JWT_SECRET_KEY
+    algo = algorithm or settings.JWT_ALGORITHM
+    exp_minutes = (
+        expire_minutes
+        if expire_minutes is not None
+        else settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+    )
+    now = datetime.now(UTC)
+    access_exp = now + timedelta(minutes=exp_minutes)
+
+    payload: dict[str, Any] = {
+        "sub": str(usuario_id),
+        "org_id": organizacao_id,
+        "papel": papel,
+        "iat": int(now.timestamp()),
+        "exp": int(access_exp.timestamp()),
+        "jti": str(uuid7()),
+        "type": "access",
+    }
+    return jwt.encode(  # pyright: ignore[reportUnknownMemberType]
+        payload, key, algorithm=algo
+    )
 
 
 def decode_access_token(

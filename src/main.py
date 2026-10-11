@@ -122,6 +122,7 @@ def create_app() -> FastAPI:
     from src.modules.identity.presentation.routers import (
         onboarding_router,
         pacientes_router,
+        patient_auth_router,
     )
     from src.modules.queue.presentation.routers import (
         admissao_router,
@@ -130,6 +131,7 @@ def create_app() -> FastAPI:
 
     api_v1 = APIRouter(prefix="/api/v1")
     api_v1.include_router(auth_router)
+    api_v1.include_router(patient_auth_router)
     api_v1.include_router(onboarding_router)
     api_v1.include_router(pacientes_router)
     api_v1.include_router(admissao_router)

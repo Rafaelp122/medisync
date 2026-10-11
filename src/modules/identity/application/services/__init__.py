@@ -13,6 +13,9 @@ from src.modules.identity.application.services.onboarding_service import (
     Fase2OutputDTO,
     OnboardingService,
 )
+from src.modules.identity.application.services.patient_auth_service import (
+    PatientAuthService,
+)
 
 __all__ = [
     "CriarDependenteDTO",
@@ -24,4 +27,5 @@ __all__ = [
     "Fase2InputDTO",
     "Fase2OutputDTO",
     "OnboardingService",
+    "PatientAuthService",
 ]

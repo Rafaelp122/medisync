@@ -58,7 +58,11 @@ O sistema opera sob uma **jornada de acesso bimodal**, respeitando a natureza de
 
 ### 2.2 Pacientes em Pronto-Atendimento (Passwordless / Efêmero)
 * **Zero Fricção na Urgência (Acolhimento < 45s):** Em pronto-atendimento virtual, exigir criação de senhas alfanuméricas complexas antes da triagem causaria risco clínico e abandono.
-* **Tokens Efêmeros de Ingestão:** Durante as Fases 1 e 2 do cadastro progressivo, o paciente recebe um token temporário assinado e autenticação baseada em posse via código OTP (One-Time Password) de 6 dígitos enviado por SMS/WhatsApp.
+* **Tokens Efêmeros de Ingestão:** Durante a Fase 1 do acolhimento, o paciente recebe imediatamente um token provisório assinado via HMAC-SHA256 (`create_intake_token`), viabilizando a entrada em fila antes da latência de entrega de mensagens de telecomunicação.
+* **Autenticação Passwordless via OTP (Issue #44):** Para reconexão, retorno à fila, acompanhamento de teleconsulta e gestão de dependentes, o paciente autentica-se comprovando posse de seu número telefônico via código OTP de 6 dígitos:
+  * `POST /api/v1/auth/patient/otp/request`: Envia código OTP de 6 dígitos via `SmsSenderPort`. Protegido por limitação de taxa em janela deslizante no Valkey (máximo 3 solicitações por 15 minutos). Retorna 429 RFC 7807 em caso de excesso e 404 caso o telefone não esteja registrado no tenant.
+  * `POST /api/v1/auth/patient/otp/verify`: Confere o código OTP comparando o hash SHA-256 em tempo constante (`hmac.compare_digest`). Protegido contra adivinhação por força bruta com invalidação automática da chave após 3 tentativas incorretas.
+  * **Emissão de JWT com Papel PACIENTE:** A validação bem-sucedida emite um token Bearer JWT assinado com claims `sub: paciente_id`, `org_id: tenant_id` e `papel: "PACIENTE"`, concedendo acesso às permissões `patient:queue_track` e `patient:doc_view`.
 * **Acesso Pós-Consulta:** Documentos assinados digitalmente (receitas e atestados) são entregues via links assinados com tempo de expiração curto e validados pelo código de autenticidade do documento ICP-Brasil.
 
 ---
