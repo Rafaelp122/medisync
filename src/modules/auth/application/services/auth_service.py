@@ -1,6 +1,7 @@
 """Application service orchestrating authentication, lockout, and sessions."""
 
 import contextlib
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -190,8 +191,10 @@ class AuthService:
                 "O token de atualização apresentado já foi utilizado ou revogado."
             )
 
-        # Mark old token as revoked (one-time use rotation)
-        await self._revocation.revogar(payload.jti)
+        # Mark old token as revoked (one-time use rotation) with dynamic remaining TTL
+        now = datetime.now(UTC)
+        remaining_seconds = max(1, int((payload.exp - now).total_seconds()))
+        await self._revocation.revogar(payload.jti, exp_segundos=remaining_seconds)
 
         # Validate user account is still valid and active in database
         stmt = select(UsuarioCredencial).where(
@@ -212,15 +215,30 @@ class AuthService:
             papel=cred.papel,
         )
 
-    def validar_access_token(self, token: str) -> TokenPayloadDTO:
-        """Validate access token via configured token service."""
-        return self._token_service.validar_access_token(token)
+    async def validar_access_token(self, token: str) -> TokenPayloadDTO:
+        """Validate access token via configured token service and check revocation."""
+        payload = self._token_service.validar_access_token(token)
+        if await self._revocation.is_revogado(payload.jti):
+            raise TokenRevogadoError("O token de acesso apresentado foi revogado.")
+        return payload
 
-    async def revogar_sessao(self, refresh_token: str) -> None:
-        """Revoke a refresh token on user logout."""
+    async def revogar_sessao(
+        self, refresh_token: str, access_token: str | None = None
+    ) -> None:
+        """Revoke a refresh token (and optionally access token) on user logout."""
+        now = datetime.now(UTC)
         with contextlib.suppress(Exception):
             payload = self._token_service.validar_refresh_token(refresh_token)
-            await self._revocation.revogar(payload.jti)
+            remaining_seconds = max(1, int((payload.exp - now).total_seconds()))
+            await self._revocation.revogar(payload.jti, exp_segundos=remaining_seconds)
+
+        if access_token:
+            with contextlib.suppress(Exception):
+                acc_payload = self._token_service.validar_access_token(access_token)
+                acc_remaining = max(1, int((acc_payload.exp - now).total_seconds()))
+                await self._revocation.revogar(
+                    acc_payload.jti, exp_segundos=acc_remaining
+                )
 
     async def obter_usuario_por_id(
         self, usuario_id: UUID, organizacao_id: int

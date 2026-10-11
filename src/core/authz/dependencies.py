@@ -9,22 +9,23 @@ from typing import Annotated
 from fastapi import Depends, Header
 
 from src.core.authz.models import AuthenticatedUser
+from src.core.authz.revocation import is_token_revoked
 from src.core.authz.roles import Role
 from src.core.authz.token import decode_access_token
-from src.core.context import get_current_tenant_id
-from src.core.errors import ForbiddenError, UnauthorizedError
+from src.core.context import get_current_tenant_id, set_current_tenant_id
+from src.core.errors import ForbiddenError, TokenRevogadoError, UnauthorizedError
 
 
-def get_current_user(
+async def get_current_user(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> AuthenticatedUser:
     """Extract, decode, and validate the Bearer token from Authorization header.
 
-    Also validates cross-tenant isolation: non-admin users cannot access
-    resources belonging to another tenant than the one encoded in their token.
+    Also validates cross-tenant isolation and checks real-time revocation in Valkey.
 
     Raises:
         UnauthorizedError: If header is missing, malformed, or token is invalid/expired.
+        TokenRevogadoError: If token JTI is listed in Valkey revocation store.
         ForbiddenError: If user tenant mismatches the requested tenant context.
     """
     if not authorization:
@@ -42,13 +43,15 @@ def get_current_user(
     raw_token = parts[1]
     user = decode_access_token(raw_token)
 
+    # Validate against Valkey token revocation / blacklist in real time
+    if await is_token_revoked(user.token_id):
+        raise TokenRevogadoError("Token de acesso revogado. Realize novo login.")
+
     # Validate Tenant Isolation (defense in depth alongside PostgreSQL RLS)
     active_tenant = get_current_tenant_id()
-    if (
-        active_tenant is not None
-        and user.papel != Role.ADMIN_GLOBAL
-        and user.organizacao_id != active_tenant
-    ):
+    if active_tenant is None:
+        set_current_tenant_id(user.organizacao_id)
+    elif user.papel != Role.ADMIN_GLOBAL and user.organizacao_id != active_tenant:
         raise ForbiddenError(
             f"Acesso negado: o token pertence à organização {user.organizacao_id}, "
             f"mas o contexto solicitado é da organização {active_tenant}."

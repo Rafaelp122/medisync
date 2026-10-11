@@ -4,7 +4,10 @@ from typing import cast
 
 import pytest
 from httpx import AsyncClient
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.core.valkey import get_valkey_pool
+from src.modules.auth.composition import get_token_service
 
 from tests.factories.auth import persist_credencial
 from tests.factories.identity import make_organizacao, make_profissional
@@ -66,7 +69,17 @@ async def test_auth_full_lifecycle_login_me_refresh_logout(
     access_token = cast("str", token_data["access_token"])
     refresh_token = cast("str", token_data["refresh_token"])
 
-    # 2. Consultar perfil em /auth/me usando Bearer token
+    # 2. Consultar perfil em /auth/me usando Bearer token SEM X-Tenant-ID
+    me_resp_no_tenant = await async_client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert me_resp_no_tenant.status_code == 200
+    me_data_no_tenant = cast("dict[str, object]", me_resp_no_tenant.json())
+    assert me_data_no_tenant["usuario_id"] == str(medico.id)
+    assert me_data_no_tenant["organizacao_id"] == org.id
+
+    # Consultar perfil com X-Tenant-ID explícito
     me_resp = await async_client.get(
         "/api/v1/auth/me",
         headers={"Authorization": f"Bearer {access_token}", **headers},
@@ -93,29 +106,51 @@ async def test_auth_full_lifecycle_login_me_refresh_logout(
     assert new_access_token != access_token
     assert new_refresh_token != refresh_token
 
-    # 4. Validar que o refresh token antigo foi invalidado (one-time use)
+    # 4. Validar que o refresh token antigo foi invalidado (one-time use rotation)
     stale_refresh_resp = await async_client.post(
         "/api/v1/auth/refresh",
         json={"refresh_token": refresh_token},
         headers=headers,
     )
     assert stale_refresh_resp.status_code == 401
+    stale_err = cast("dict[str, object]", stale_refresh_resp.json())
+    assert stale_err["code"] == "TOKEN_REVOGADO"
 
-    # 5. Logout com o novo refresh token
+    # Validar gravacao no Valkey com chave auth:revoked:{jti}
+    # e TTL correspondente ao tempo restante de vida
+    valkey_pool = get_valkey_pool()
+    valkey_client = Redis(connection_pool=valkey_pool)
+    token_service = get_token_service()
+    stale_payload = token_service.validar_refresh_token(refresh_token)
+    stale_ttl = await valkey_client.ttl(f"auth:revoked:{stale_payload.jti}")
+    assert stale_ttl > 0
+    assert stale_ttl <= 7 * 86400
+
+    # 5. Logout com o novo refresh token e novo access token
     logout_resp = await async_client.post(
         "/api/v1/auth/logout",
         json={"refresh_token": new_refresh_token},
-        headers=headers,
+        headers={"Authorization": f"Bearer {new_access_token}"},
     )
     assert logout_resp.status_code == 204
 
-    # 6. Validar que o token revogado pelo logout não pode mais ser utilizado
+    # 6. Validar que o refresh token revogado pelo logout nao pode mais ser utilizado
     revoked_refresh_resp = await async_client.post(
         "/api/v1/auth/refresh",
         json={"refresh_token": new_refresh_token},
-        headers=headers,
     )
     assert revoked_refresh_resp.status_code == 401
+    revoked_err = cast("dict[str, object]", revoked_refresh_resp.json())
+    assert revoked_err["code"] == "TOKEN_REVOGADO"
+
+    # 7. Validar que o access token revogado pelo logout e rejeitado imediatamente
+    revoked_access_resp = await async_client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {new_access_token}"},
+    )
+    assert revoked_access_resp.status_code == 401
+    revoked_acc_err = cast("dict[str, object]", revoked_access_resp.json())
+    assert revoked_acc_err["code"] == "TOKEN_REVOGADO"
 
 
 @pytest.mark.asyncio
@@ -283,3 +318,69 @@ async def test_auth_me_bearer_malformado_retorna_401(
         headers={"Authorization": "Token abc", "X-Tenant-ID": "1"},
     )
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_bearer_token_without_x_tenant_id_infers_tenant_for_tenant_dep(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+) -> None:
+    """Verify that omitting X-Tenant-ID header when sending a valid Bearer token
+    automatically resolves active tenant from JWT claims without 400 TENANT_INVALIDO.
+    """
+    from uuid import uuid4
+
+    org = make_organizacao(cnpj="88777666000190")
+    db_session.add(org)
+    await db_session.commit()
+    await db_session.refresh(org)
+
+    medico = make_profissional(
+        org.id,
+        cpf="11122233390",
+        email="dr.tenantless@telemed.com.br",
+        papel="MEDICO",
+        crm="12390",
+        crm_uf="SP",
+    )
+    db_session.add(medico)
+    await db_session.commit()
+    await db_session.refresh(medico)
+
+    await persist_credencial(
+        db_session,
+        organizacao_id=org.id,
+        usuario_id=medico.id,
+        identificador=medico.email,
+        senha_pura="SenhaForte123!@#",
+        papel=medico.papel,
+    )
+
+    login_resp = await async_client.post(
+        "/api/v1/auth/login",
+        json={
+            "identificador": "dr.tenantless@telemed.com.br",
+            "senha": "SenhaForte123!@#",
+        },
+        headers={"X-Tenant-ID": str(org.id)},
+    )
+    assert login_resp.status_code == 200
+    access_token = cast("str", login_resp.json()["access_token"])
+
+    # Query protected /auth/me WITHOUT X-Tenant-ID header
+    me_resp = await async_client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert me_resp.status_code == 200
+    assert cast("dict[str, object]", me_resp.json())["organizacao_id"] == org.id
+
+    # Query protected endpoint that uses TenantDep without X-Tenant-ID
+    pac_id = uuid4()
+    pac_resp = await async_client.get(
+        f"/api/v1/pacientes/{pac_id}/dependentes",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    # Shouldn't fail with 400 TENANT_INVALIDO
+    assert pac_resp.status_code != 400
+    assert cast("dict[str, object]", pac_resp.json()).get("code") != "TENANT_INVALIDO"

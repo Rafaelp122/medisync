@@ -15,11 +15,12 @@ class ValkeyTokenRevocation(TokenRevocationPort):
         )
 
     async def revogar(self, jti: str, exp_segundos: int = 86400 * 7) -> None:
-        key = f"token:revoked:{jti}"
-        await self._valkey.set(key, "1", ex=exp_segundos)  # pyright: ignore[reportUnknownMemberType]
+        key = f"auth:revoked:{jti}"
+        ttl = max(1, exp_segundos)
+        await self._valkey.set(key, "1", ex=ttl)  # pyright: ignore[reportUnknownMemberType]
 
     async def is_revogado(self, jti: str) -> bool:
-        key = f"token:revoked:{jti}"
+        key = f"auth:revoked:{jti}"
         exists = await self._valkey.exists(key)  # pyright: ignore[reportUnknownMemberType]
         return bool(exists)
 

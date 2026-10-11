@@ -1,6 +1,6 @@
-"""FastAPI router for user authentication and session management."""
+from typing import Annotated
 
-from fastapi import APIRouter, Request, Response, status
+from fastapi import APIRouter, Header, Request, Response, status
 
 from src.core.authz import CurrentUserDep
 from src.core.dependencies import OptionalTenantDep
@@ -74,9 +74,18 @@ async def refresh_token(
 async def logout(
     body: RefreshTokenRequest,
     service: AuthServiceDep,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> Response:
-    """Revoga o refresh token fornecido impedindo renovações futuras."""
-    await service.revogar_sessao(body.refresh_token)
+    """Revoga o refresh token fornecido (e access token opcional).
+
+    Impede renovações e acessos subsequentes em toda a malha distribuída.
+    """
+    access_token: str | None = None
+    if authorization:
+        parts = authorization.strip().split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            access_token = parts[1]
+    await service.revogar_sessao(body.refresh_token, access_token=access_token)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -90,6 +90,18 @@ class UnauthorizedError(DomainError):
     code: str = "UNAUTHORIZED"
 
 
+class TokenRevogadoError(UnauthorizedError):
+    """Raised when an access or refresh token has been revoked or reused."""
+
+    title: str = "Token Revogado"
+    code: str = "TOKEN_REVOGADO"
+
+    def __init__(
+        self, detail: str = "Sessão ou token de autenticação revogado."
+    ) -> None:
+        super().__init__(detail, title=self.title, code=self.code)
+
+
 class ForbiddenError(DomainError):
     status_code: int = 403
     title: str = "Forbidden"

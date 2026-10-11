@@ -3,6 +3,7 @@
 from src.core.errors import (
     DomainError,
     ForbiddenError,
+    TokenRevogadoError,
     UnauthorizedError,
 )
 
@@ -88,14 +89,12 @@ class TokenExpiradoError(UnauthorizedError):
         super().__init__(detail, title=self.title, code=self.code)
 
 
-class TokenRevogadoError(UnauthorizedError):
-    """Raised when refresh token has already been revoked or reused."""
-
-    title = "Token Revogado"
-    code = "TOKEN_REVOGADO"
-
-    def __init__(
-        self,
-        detail: str = "Sessão ou token de autenticação revogado.",
-    ) -> None:
-        super().__init__(detail, title=self.title, code=self.code)
+__all__ = [
+    "AuthError",
+    "ContaBloqueadaError",
+    "ContaDesativadaError",
+    "CredenciaisInvalidasError",
+    "TokenExpiradoError",
+    "TokenInvalidoError",
+    "TokenRevogadoError",
+]

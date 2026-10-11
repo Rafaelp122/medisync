@@ -9,6 +9,7 @@ from src.core.authz.dependencies import (
     require_roles,
 )
 from src.core.authz.models import AuthenticatedUser
+from src.core.authz.revocation import is_token_revoked, revoke_token_id
 from src.core.authz.roles import ROLE_PERMISSIONS, Permission, Role
 from src.core.authz.token import decode_access_token
 
@@ -20,8 +21,10 @@ __all__ = [
     "Role",
     "decode_access_token",
     "get_current_user",
+    "is_token_revoked",
     "require_authenticated_user",
     "require_permission",
     "require_role",
     "require_roles",
+    "revoke_token_id",
 ]
