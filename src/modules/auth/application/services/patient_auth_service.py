@@ -6,36 +6,36 @@ import json
 import logging
 import secrets
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import UUID
 
 from redis.asyncio import Redis
-from sqlalchemy import select
 
 from src.core.authz.roles import Role
 from src.core.authz.token import create_access_token
 from src.core.config import get_settings
+from src.core.errors import TenantInvalidoError
 from src.core.uuid7 import uuid7
-from src.modules.identity.application.dtos import (
+from src.modules.auth.application.dtos import (
     SolicitarOtpInputDTO,
     SolicitarOtpOutputDTO,
     VerificarOtpInputDTO,
     VerificarOtpOutputDTO,
 )
-from src.modules.identity.application.ports.sms_sender_port import SmsSenderPort
-from src.modules.identity.domain.exceptions import (
+from src.modules.auth.application.ports.identity_reader_port import (
+    IdentityReaderPort,
+)
+from src.modules.auth.application.ports.sms_sender_port import (
+    SmsSenderPort,
+)
+from src.modules.auth.domain.exceptions import (
     OtpInvalidoOuExpiradoError,
     OtpRateLimitExcedidoError,
     PacienteNaoEncontradoError,
-    TenantInvalidoError,
 )
-from src.modules.identity.domain.models import Paciente
-from src.modules.identity.domain.validators import validate_cpf, validate_telefone
+from src.modules.auth.domain.validators import validate_cpf, validate_telefone
 
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
-
-logger = logging.getLogger("medisync.identity.patient_auth")
+logger = logging.getLogger("medisync.auth.patient_auth")
 
 OTP_TTL_SECONDS = 300  # 5 minutes validity
 OTP_RATE_LIMIT_WINDOW = 900  # 15 minutes window
@@ -48,14 +48,14 @@ class PatientAuthService:
 
     def __init__(
         self,
-        session: "AsyncSession | None" = None,
+        identity_reader: IdentityReaderPort | None = None,
         valkey_client: Redis | None = None,
         sms_sender: SmsSenderPort | None = None,
         secret_key: str | None = None,
         algorithm: str | None = None,
         access_token_expire_minutes: int | None = None,
     ) -> None:
-        self._session = session
+        self._identity_reader = identity_reader
         self._valkey = valkey_client
         self._sms_sender = sms_sender
         self._secret_key = secret_key
@@ -211,12 +211,12 @@ class PatientAuthService:
         self,
         organizacao_id: int,
         dados: SolicitarOtpInputDTO,
-        session: "AsyncSession | None" = None,
     ) -> SolicitarOtpOutputDTO:
         """Execute request OTP use-case with rate limiting and patient lookup."""
-        db = session or self._session
-        if db is None:
-            raise ValueError("AsyncSession não configurada no PatientAuthService.")
+        if self._identity_reader is None:
+            raise ValueError(
+                "IdentityReaderPort não configurado no PatientAuthService."
+            )
         if organizacao_id <= 0:
             raise TenantInvalidoError("Identificador da organização deve ser positivo.")
 
@@ -226,16 +226,12 @@ class PatientAuthService:
         # 1. Enforce rate limiting before reading DB or generating OTP
         await self._check_rate_limit(clean_telefone)
 
-        # 2. Look up patient record within organization
-        stmt = select(Paciente).where(
-            Paciente.organizacao_id == organizacao_id,
-            Paciente.telefone == clean_telefone,
+        # 2. Look up patient record within organization via IdentityReaderPort
+        paciente = await self._identity_reader.buscar_paciente_por_telefone(
+            organizacao_id=organizacao_id,
+            telefone=clean_telefone,
+            cpf=clean_cpf,
         )
-        if clean_cpf:
-            stmt = stmt.where(Paciente.cpf == clean_cpf)
-
-        result = await db.execute(stmt)
-        paciente = result.scalars().first()
         if paciente is None:
             raise PacienteNaoEncontradoError(
                 "Paciente com o telefone informado não encontrado nesta organização. "

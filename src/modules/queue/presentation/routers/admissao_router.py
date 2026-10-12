@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, status
 
 from src.core.dependencies import TenantDep
-from src.modules.queue.composition import AdmissaoServiceDep
+from src.modules.queue.composition import FilaServiceDep
 from src.modules.queue.presentation.dependencies import AdmissaoPacienteAuthDep
 from src.modules.queue.presentation.schemas import AdmissaoRequest, AdmissaoResponse
 
@@ -30,7 +30,7 @@ admissao_router = APIRouter(
 async def admitir_paciente(
     body: Annotated[AdmissaoRequest, Body()],
     tenant_id: TenantDep,
-    service: AdmissaoServiceDep,
+    service: FilaServiceDep,
     _auth: AdmissaoPacienteAuthDep,
 ) -> AdmissaoResponse:
     """Execute patient intake, clinical triage, and queue admission."""

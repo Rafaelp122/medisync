@@ -22,9 +22,6 @@ from src.modules.queue.application.ports.allocation_port import AllocationPort
 from src.modules.queue.application.ports.notification_port import NotificationPort
 from src.modules.queue.application.ports.queue_store_port import QueueStorePort
 from src.modules.queue.application.ports.triage_port import TriagePort
-from src.modules.queue.application.services.admissao_service import (
-    AdmissaoAtendimentoService,
-)
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
@@ -81,57 +78,6 @@ def get_controle_admissao(valkey: ValkeyDep) -> ControleAdmissaoService:
     return ControleAdmissaoService(valkey=valkey)
 
 
-def build_fila_service_for_session(
-    session: AsyncSession,
-    valkey: Redis | None = None,
-    triage_port: TriagePort | None = None,
-) -> FilaService:
-    """Build queue service outside request scope (tests/worker tooling)."""
-    client = valkey if valkey is not None else Redis(connection_pool=get_valkey_pool())
-    resolved_triage: TriagePort = triage_port or build_triage_service_for_session(
-        session=session
-    )
-    return FilaService(
-        valkey=client,
-        db_session=session,
-        alocacao_service=build_alocacao_service_for_session(client, session),
-        controle_admissao=ControleAdmissaoService(valkey=client),
-        triage_port=resolved_triage,
-    )
-
-
-def get_fila_service(
-    valkey: ValkeyDep,
-    session: DbSessionDep,
-    triage_service: TriageServiceDep,
-) -> FilaService:
-    """Build queue service with allocation and admission control wired."""
-    return build_fila_service_for_session(
-        session=session,
-        valkey=valkey,
-        triage_port=triage_service,
-    )
-
-
-FilaServiceDep = Annotated[FilaService, Depends(get_fila_service)]
-
-
-def get_queue_store(
-    valkey: ValkeyDep,
-    session: DbSessionDep,
-    triage_service: TriageServiceDep,
-) -> QueueStorePort:
-    """Provide queue store satisfying QueueStorePort."""
-    return get_fila_service(
-        valkey=valkey,
-        session=session,
-        triage_service=triage_service,
-    )
-
-
-QueueStoreDep = Annotated[QueueStorePort, Depends(get_queue_store)]
-
-
 logger = logging.getLogger("medisync.queue.composition")
 
 
@@ -147,47 +93,61 @@ async def get_arq_pool_dep() -> ArqRedis | None:
 ArqPoolDep = Annotated[ArqRedis | None, Depends(get_arq_pool_dep)]
 
 
-def build_admissao_service_for_session(
+def build_fila_service_for_session(
     session: AsyncSession,
     valkey: Redis | None = None,
     triage_port: TriagePort | None = None,
     arq_pool: ArqRedis | None = None,
-) -> AdmissaoAtendimentoService:
-    """Build admission service outside request scope (tests/worker tooling)."""
+) -> FilaService:
+    """Build queue service outside request scope (tests/worker tooling)."""
+    client = valkey if valkey is not None else Redis(connection_pool=get_valkey_pool())
     resolved_triage: TriagePort = triage_port or build_triage_service_for_session(
         session=session
     )
-    fila_service = build_fila_service_for_session(
-        session=session,
-        valkey=valkey,
-        triage_port=resolved_triage,
-    )
-    return AdmissaoAtendimentoService(
-        session=session,
-        fila_service=fila_service,
+    return FilaService(
+        valkey=client,
+        db_session=session,
+        alocacao_service=build_alocacao_service_for_session(client, session),
+        controle_admissao=ControleAdmissaoService(valkey=client),
         triage_port=resolved_triage,
         arq_pool=arq_pool,
     )
 
 
-def get_admissao_service(
+def get_fila_service(
+    valkey: ValkeyDep,
     session: DbSessionDep,
-    fila_service: FilaServiceDep,
     triage_service: TriageServiceDep,
     arq_pool: ArqPoolDep,
-) -> AdmissaoAtendimentoService:
-    """Provide clinical admission and triage service with DI wiring."""
-    return AdmissaoAtendimentoService(
+) -> FilaService:
+    """Build queue service with allocation and admission control wired."""
+    return build_fila_service_for_session(
         session=session,
-        fila_service=fila_service,
+        valkey=valkey,
         triage_port=triage_service,
         arq_pool=arq_pool,
     )
 
 
-AdmissaoServiceDep = Annotated[
-    AdmissaoAtendimentoService, Depends(get_admissao_service)
-]
+FilaServiceDep = Annotated[FilaService, Depends(get_fila_service)]
+
+
+def get_queue_store(
+    valkey: ValkeyDep,
+    session: DbSessionDep,
+    triage_service: TriageServiceDep,
+    arq_pool: ArqPoolDep,
+) -> QueueStorePort:
+    """Provide queue store satisfying QueueStorePort."""
+    return get_fila_service(
+        valkey=valkey,
+        session=session,
+        triage_service=triage_service,
+        arq_pool=arq_pool,
+    )
+
+
+QueueStoreDep = Annotated[QueueStorePort, Depends(get_queue_store)]
 
 
 async def default_verificar_posse_paciente_fila(

@@ -15,10 +15,7 @@ from src.modules.consultation.application.dtos import (
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
 )
-from src.modules.consultation.composition import (
-    DocumentoServiceDep,
-    PEPServiceDep,
-)
+from src.modules.consultation.composition import PEPServiceDep
 from src.modules.consultation.presentation.dependencies import (
     AtendimentoIdPath,
     ClinicalAccessDep,
@@ -245,7 +242,7 @@ async def obter_documento_pdf(
     atendimento_id: AtendimentoIdPath,
     documento_id: DocumentoIdPath,
     _user: ClinicalAccessReadDep,
-    service: DocumentoServiceDep,
+    service: PEPServiceDep,
 ) -> Response:
     """Retorna o documento clínico compilado em PDF/A com QR Code de verificação."""
     pdf_bytes = await service.compilar_pdf(documento_id)
@@ -270,7 +267,7 @@ async def assinar_documento(
     documento_id: DocumentoIdPath,
     payload: Annotated[AssinarDocumentoRequest, Body()],
     _user: ClinicalAccessMutationDep,
-    service: DocumentoServiceDep,
+    service: PEPServiceDep,
 ) -> AssinarDocumentoResponse:
     """Executa a assinatura digital PAdES em nuvem via PSC (CFM 2.314/2022)."""
     creds = DoctorCertificateCredentials(
@@ -278,7 +275,7 @@ async def assinar_documento(
         provider=payload.provider,
         certificate_alias=payload.certificate_alias,
     )
-    result = await service.assinar(
+    result = await service.assinar_documento(
         documento_id=documento_id,
         atendimento_id=atendimento_id,
         credenciais=creds,

@@ -5,8 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Body, status
 
 from src.core.dependencies import TenantDep
-from src.modules.identity.composition import PatientAuthServiceDep
-from src.modules.identity.presentation.schemas import (
+from src.modules.auth.composition import PatientAuthServiceDep
+from src.modules.auth.presentation.schemas import (
     SolicitarOtpRequest,
     SolicitarOtpResponse,
     VerificarOtpRequest,
@@ -14,13 +14,12 @@ from src.modules.identity.presentation.schemas import (
 )
 
 patient_auth_router = APIRouter(
-    prefix="/auth/patient/otp",
     tags=["Auth Paciente"],
 )
 
 
 @patient_auth_router.post(
-    "/request",
+    "/auth/patient/otp/request",
     status_code=status.HTTP_200_OK,
     summary="Solicitar código OTP para autenticação passwordless",
     description=(
@@ -39,7 +38,7 @@ async def request_otp(
 
 
 @patient_auth_router.post(
-    "/verify",
+    "/auth/patient/otp/verify",
     status_code=status.HTTP_200_OK,
     summary="Verificar código OTP e obter token de paciente",
     description=(

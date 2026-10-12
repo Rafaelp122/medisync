@@ -80,6 +80,7 @@ Para orientar a implementação sem burocracia de RFCs estáticas:
 * 📄 **[Modelo de Dados Relacional e Governança Forense](explanation/architecture/data-model.md)**: Diagrama Entidade-Relacionamento (DER), DDL das 10 tabelas relacionais, políticas PostgreSQL RLS nativas e regras forenses do CFM para snapshots clínicos.
 * 📄 **[Concorrência, Fila Valkey e Ring Timeout](explanation/architecture/concurrency-and-queues.md)**: Script Lua atômico com double-locking de 45s, fórmula do score ponderado de 64 bits para o ZSET do Valkey e agendamento de tarefas no ARQ Worker.
 * 📄 **[Conformidade Clínica, Telemedicina e ICP-Brasil](explanation/architecture/compliance-and-telemedicine.md)**: Topologia WebRTC com LiveKit SFU, fluxo de assinatura digital PAdES-LTV com PyHanko e armazenamento de PDFs no S3/MinIO via presigned URLs.
+* 📄 **[Observabilidade, Logging Estruturado e OpenTelemetry](explanation/architecture/observability-and-opentelemetry.md)**: Tracing distribuído nativo via FastAPI OTel, correlação de traces em logs JSON com UUIDv7 e conformidade LGPD.
 
 ---
 

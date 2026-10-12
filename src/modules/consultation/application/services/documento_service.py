@@ -22,6 +22,7 @@ from src.modules.consultation.application.dtos import (
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
+    is_atendimento_terminal,
 )
 from src.modules.consultation.application.ports.document_directory_port import (
     DocumentDirectoryPort,
@@ -96,14 +97,7 @@ class DocumentoService:
 
     async def _verificar_atendimento_finalizado(self, atendimento_id: UUID) -> bool:
         """Check whether the underlying attendance reached terminal status in DB."""
-        if self._atendimento_reader is not None:
-            try:
-                resumo = await self._atendimento_reader.obter_resumo(atendimento_id)
-                if resumo is not None:
-                    return bool(resumo.is_terminal)
-            except Exception:
-                return False
-        return False
+        return await is_atendimento_terminal(self._atendimento_reader, atendimento_id)
 
     async def emitir_documento(
         self, command: EmitirDocumentoClinicoCommand

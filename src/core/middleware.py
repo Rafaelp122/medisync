@@ -18,6 +18,7 @@ from src.core.context import (
     set_current_request_id,
     set_current_tenant_id,
 )
+from src.core.telemetry import get_current_trace_context
 from src.core.uuid7 import is_valid_uuid, uuid7_str
 
 logger = logging.getLogger("medisync.access")
@@ -158,6 +159,12 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
                 "duration_ms": duration_ms,
                 "client_ip": client_ip,
             }
+
+            trace_id, span_id = get_current_trace_context()
+            if trace_id is not None:
+                log_extra["trace_id"] = trace_id
+            if span_id is not None:
+                log_extra["span_id"] = span_id
 
             msg = f"{request.method} {request.url.path} {status_code} ({duration_ms}ms)"
             logger.info(msg, extra={"extra_fields": log_extra})

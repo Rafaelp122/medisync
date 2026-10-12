@@ -7,9 +7,12 @@ Routers and tests must resolve AuthService via get_auth_service/AuthServiceDep.
 from typing import Annotated
 
 from fastapi import Depends
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
+from src.core.valkey import get_valkey_client
 from src.modules.auth.application.ports.auth_rate_limiter_port import (
     AuthRateLimiterPort,
 )
@@ -21,11 +24,22 @@ from src.modules.auth.application.ports.token_revocation_port import (
 )
 from src.modules.auth.application.ports.token_service_port import TokenServicePort
 from src.modules.auth.application.services.auth_service import AuthService
+from src.modules.auth.application.services.patient_auth_service import (
+    PatientAuthService,
+)
 from src.modules.auth.infrastructure.argon2_hasher import Argon2PasswordHasher
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
 from src.modules.auth.infrastructure.valkey_rate_limiter import ValkeyAuthRateLimiter
 from src.modules.auth.infrastructure.valkey_token_revocation import (
     ValkeyTokenRevocation,
+)
+from src.modules.identity.application.ports.identity_reader_port import (
+    IdentityReaderPort,
+)
+from src.modules.identity.application.ports.sms_sender_port import SmsSenderPort
+from src.modules.identity.composition import (
+    build_identity_reader_sql_for_session,
+    get_sms_sender,
 )
 
 
@@ -67,3 +81,42 @@ def get_auth_service(session: DbSessionDep) -> AuthService:
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+
+
+def build_patient_auth_service_for_session(
+    session: AsyncSession,
+    valkey: Redis | None = None,
+    sms_sender: SmsSenderPort | None = None,
+    identity_reader: IdentityReaderPort | None = None,
+) -> PatientAuthService:
+    """Build PatientAuthService outside request scope (tests/worker tooling)."""
+    settings = get_settings()
+    reader = identity_reader or build_identity_reader_sql_for_session(session)
+    sender = sms_sender or get_sms_sender()
+    return PatientAuthService(
+        identity_reader=reader,
+        valkey_client=valkey,
+        sms_sender=sender,
+        secret_key=settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+        access_token_expire_minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
+    )
+
+
+def get_patient_auth_service(
+    session: DbSessionDep,
+    valkey: Annotated[Redis, Depends(get_valkey_client)],
+) -> PatientAuthService:
+    """Provide PatientAuthService instance wired with dependencies."""
+    settings = get_settings()
+    return PatientAuthService(
+        identity_reader=build_identity_reader_sql_for_session(session),
+        valkey_client=valkey,
+        sms_sender=get_sms_sender(),
+        secret_key=settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+        access_token_expire_minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
+    )
+
+
+PatientAuthServiceDep = Annotated[PatientAuthService, Depends(get_patient_auth_service)]

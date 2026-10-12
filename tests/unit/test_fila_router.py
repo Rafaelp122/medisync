@@ -13,6 +13,7 @@ from src.core.security import create_intake_token
 from src.main import create_app
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
 from src.modules.queue.application.dtos import (
+    AdmissaoAtendimentoResult,
     CancelarAtendimentoResult,
     PioraClinicaResult,
     PosicaoFilaResult,
@@ -297,5 +298,57 @@ async def test_comunicar_piora_clinica_emergencia_samu() -> None:
             assert data["alerta_samu_disparado"] is True
             assert data["redirecionado_emergencia"] is True
             assert data["nova_posicao"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_admissao_paciente_unificada_no_fila_router() -> None:
+    """Verifica admissão de paciente via endpoint unificado da fila (/fila/admissao)."""
+    app = create_app()
+    paciente_id = uuid4()
+    atendimento_id = uuid4()
+    triagem_id = uuid4()
+    org_id = 42
+
+    mock_service = MagicMock(spec=FilaService)
+    mock_service.admitir_paciente = AsyncMock(
+        return_value=AdmissaoAtendimentoResult(
+            atendimento_id=atendimento_id,
+            triagem_id=triagem_id,
+            organizacao_id=org_id,
+            paciente_id=paciente_id,
+            status_atendimento="TRIADO_AGUARDANDO_ELEGIBILIDADE",
+            prioridade_clinica=3,
+            alerta_samu_disparado=False,
+            instrucoes=None,
+        )
+    )
+    app.dependency_overrides[get_fila_service] = lambda: mock_service
+
+    try:
+        token = _make_intake_token(paciente_id, org_id)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/v1/fila/admissao",
+                headers={
+                    "X-Tenant-ID": str(org_id),
+                    "Authorization": f"Bearer {token}",
+                },
+                json={
+                    "paciente_id": str(paciente_id),
+                    "queixa_principal": "Febre e tosse",
+                    "sintomas": ["febre"],
+                    "escala_dor": 3,
+                    "tcle_texto": "Termo de consentimento aceito",
+                },
+            )
+            assert resp.status_code == 201
+            data = cast("dict[str, object]", resp.json())
+            assert data["atendimento_id"] == str(atendimento_id)
+            assert data["triagem_id"] == str(triagem_id)
+            assert data["prioridade_clinica"] == 3
+            mock_service.admitir_paciente.assert_awaited_once()
     finally:
         app.dependency_overrides.clear()

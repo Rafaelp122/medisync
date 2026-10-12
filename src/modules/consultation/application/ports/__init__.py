@@ -3,6 +3,7 @@
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
     AtendimentoResumoDTO,
+    is_atendimento_terminal,
 )
 from src.modules.consultation.application.ports.document_directory_port import (
     DadosVerificacaoDirectory,
@@ -50,4 +51,5 @@ __all__ = [
     "ValidationRateLimiterPort",
     "build_participant_identity",
     "build_room_name",
+    "is_atendimento_terminal",
 ]

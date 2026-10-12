@@ -9,6 +9,7 @@ from src.core.errors import NotFoundError
 from src.modules.identity.application.ports.identity_reader_port import (
     IdentityDirectoryDTO,
     IdentityReaderPort,
+    PacienteAuthLookupDTO,
 )
 from src.modules.identity.domain.models import Organizacao, Paciente, Profissional
 
@@ -94,3 +95,28 @@ class SqlIdentityReader(IdentityReaderPort):
         )
         rows = (await self._session.execute(stmt)).scalars().all()
         return [int(r) for r in rows]
+
+    async def buscar_paciente_por_telefone(
+        self,
+        organizacao_id: int,
+        telefone: str,
+        cpf: str | None = None,
+    ) -> PacienteAuthLookupDTO | None:
+        stmt = select(Paciente).where(
+            Paciente.organizacao_id == organizacao_id,
+            Paciente.telefone == telefone,
+        )
+        if cpf is not None:
+            stmt = stmt.where(Paciente.cpf == cpf)
+
+        pac = (await self._session.execute(stmt)).scalars().first()
+        if pac is None:
+            return None
+
+        return PacienteAuthLookupDTO(
+            id=pac.id,
+            organizacao_id=pac.organizacao_id,
+            telefone=pac.telefone,
+            cpf=pac.cpf,
+            nome_completo=pac.nome_completo or "",
+        )

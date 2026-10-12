@@ -3,6 +3,7 @@
 from src.core.errors import (
     DomainError,
     ForbiddenError,
+    NotFoundError,
     TokenRevogadoError,
     UnauthorizedError,
 )
@@ -89,11 +90,52 @@ class TokenExpiradoError(UnauthorizedError):
         super().__init__(detail, title=self.title, code=self.code)
 
 
+class PacienteNaoEncontradoError(NotFoundError):
+    """Raised when a patient record is not found within the tenant."""
+
+    title = "Paciente Não Encontrado"
+    code = "PACIENTE_NAO_ENCONTRADO"
+
+    def __init__(self, detail: str = "Paciente não encontrado na organização.") -> None:
+        super().__init__(detail, title=self.title, code=self.code)
+
+
+class OtpInvalidoOuExpiradoError(UnauthorizedError):
+    """Raised when OTP code is incorrect, missing, expired, or max attempts reached."""
+
+    title = "Código OTP Inválido"
+    code = "OTP_INVALIDO"
+
+    def __init__(self, detail: str = "Código OTP incorreto ou expirado.") -> None:
+        super().__init__(detail, title=self.title, code=self.code)
+
+
+class OtpRateLimitExcedidoError(DomainError):
+    """Raised when OTP request rate limit has been exceeded."""
+
+    status_code = 429
+    title = "Muitas Requisições de OTP"
+    code = "OTP_RATE_LIMIT_EXCEEDED"
+
+    def __init__(
+        self,
+        detail: str = (
+            "Limite de solicitações de OTP excedido. Tente novamente mais tarde."
+        ),
+    ) -> None:
+        super().__init__(
+            detail, status_code=self.status_code, title=self.title, code=self.code
+        )
+
+
 __all__ = [
     "AuthError",
     "ContaBloqueadaError",
     "ContaDesativadaError",
     "CredenciaisInvalidasError",
+    "OtpInvalidoOuExpiradoError",
+    "OtpRateLimitExcedidoError",
+    "PacienteNaoEncontradoError",
     "TokenExpiradoError",
     "TokenInvalidoError",
     "TokenRevogadoError",

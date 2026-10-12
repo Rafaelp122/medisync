@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.modules.consultation.application.dtos import (
+    DocumentoAssinadoResult,
     EmitirDocumentoClinicoCommand,
     FinalizarConsultaCommand,
     ProntuarioResumoDTO,
@@ -17,8 +18,10 @@ from src.modules.consultation.application.dtos import (
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
+    is_atendimento_terminal,
 )
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
+    DoctorCertificateCredentials,
     ICPBrasilSignerPort,
 )
 from src.modules.consultation.application.ports.pdf_generator_port import (
@@ -54,8 +57,8 @@ class PEPService:
         signer: ICPBrasilSignerPort,
         storage: StoragePort,
         documento_service: DocumentoService,
-        atendimento_reader: AtendimentoReaderPort,
-        evolucao_service: EvolucaoService,
+        atendimento_reader: AtendimentoReaderPort | None = None,
+        evolucao_service: EvolucaoService | None = None,
     ) -> None:
         self._session = session
         self._pdf_generator = pdf_generator
@@ -63,7 +66,9 @@ class PEPService:
         self._storage = storage
         self._reader = atendimento_reader
         self._documentos = documento_service
-        self._evolucao = evolucao_service
+        self._evolucao = evolucao_service or EvolucaoService(
+            session=session, reader=atendimento_reader
+        )
 
     @property
     def storage(self) -> StoragePort:
@@ -81,17 +86,13 @@ class PEPService:
         return self._evolucao
 
     @property
-    def atendimento_reader(self) -> AtendimentoReaderPort:
+    def atendimento_reader(self) -> AtendimentoReaderPort | None:
         """Return the injected attendance reader port."""
         return self._reader
 
     async def _is_terminal(self, atendimento_id: UUID) -> bool:
         """Return True when queue-owned attendance reached terminal status."""
-        try:
-            resumo = await self._reader.obter_resumo(atendimento_id)
-        except Exception:
-            return False
-        return bool(resumo is not None and resumo.is_terminal)
+        return await is_atendimento_terminal(self._reader, atendimento_id)
 
     async def salvar_evolucao_soap(
         self, command: RegistrarEvolucaoSOAPCommand
@@ -108,6 +109,23 @@ class PEPService:
     ) -> DocumentoClinico:
         """Delegate clinical document issuance to DocumentoService."""
         return await self._documentos.emitir_documento(command)
+
+    async def compilar_pdf(self, documento_id: UUID) -> bytes:
+        """Compile PDF/A binary with ITI verification QR Code via DocumentoService."""
+        return await self._documentos.compilar_pdf(documento_id)
+
+    async def assinar_documento(
+        self,
+        documento_id: UUID,
+        atendimento_id: UUID,
+        credenciais: DoctorCertificateCredentials,
+    ) -> DocumentoAssinadoResult:
+        """Sign clinical document with ICP-Brasil PAdES standard via Cloud PSC."""
+        return await self._documentos.assinar(
+            documento_id=documento_id,
+            atendimento_id=atendimento_id,
+            credenciais=credenciais,
+        )
 
     async def finalizar_consulta(
         self, command: FinalizarConsultaCommand
@@ -144,7 +162,8 @@ class PEPService:
             doc.marcar_finalizado()
 
         with contextlib.suppress(Exception):
-            await self._reader.concluir_atendimento(command.atendimento_id)
+            if self._reader is not None:
+                await self._reader.concluir_atendimento(command.atendimento_id)
 
         await self._session.flush()
         await self._session.commit()

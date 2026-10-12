@@ -10,6 +10,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
@@ -238,20 +239,65 @@ def get_evolucao_service(
 DocumentoServiceDep = Annotated[DocumentoService, Depends(get_documento_service)]
 
 
-def get_pep_service(session: DbSessionDep) -> PEPService:
-    """Build PEPService with all mandatory ports wired (no infra defaults)."""
-    reader = get_atendimento_reader(session)
-    documento_service = get_documento_service(session)
-    evolucao_service = get_evolucao_service(session, reader)
+def build_pep_service_for_session(
+    session: AsyncSession,
+    atendimento_reader: AtendimentoReaderPort | None = None,
+    document_directory: DocumentDirectoryPort | None = None,
+    pdf_generator: PDFGeneratorPort | None = None,
+    signer: ICPBrasilSignerPort | None = None,
+    storage: StoragePort | None = None,
+    signed_cache: SignedCachePort | None = None,
+    evolucao_service: EvolucaoService | None = None,
+    documento_service: DocumentoService | None = None,
+) -> PEPService:
+    """Build PEPService with all mandatory ports wired (outside request scope)."""
+    reader = (
+        atendimento_reader
+        if atendimento_reader is not None
+        else get_atendimento_reader(session)
+    )
+    directory = (
+        document_directory
+        if document_directory is not None
+        else get_document_directory(session)
+    )
+    pdf_gen = pdf_generator if pdf_generator is not None else get_pdf_generator()
+    sig = signer if signer is not None else get_signer()
+    stor = storage if storage is not None else get_storage()
+    cache = signed_cache if signed_cache is not None else get_signed_cache()
+
+    doc_svc = (
+        documento_service
+        if documento_service is not None
+        else DocumentoService(
+            session=session,
+            pdf_generator=pdf_gen,
+            signer=sig,
+            storage=stor,
+            cache=cache,
+            atendimento_reader=reader,
+            directory=directory,
+        )
+    )
+    ev_svc = (
+        evolucao_service
+        if evolucao_service is not None
+        else get_evolucao_service(session, reader)
+    )
     return PEPService(
         session=session,
-        pdf_generator=get_pdf_generator(),
-        signer=get_signer(),
-        storage=documento_service.storage,
-        documento_service=documento_service,
+        pdf_generator=pdf_gen,
+        signer=sig,
+        storage=stor,
+        documento_service=doc_svc,
         atendimento_reader=reader,
-        evolucao_service=evolucao_service,
+        evolucao_service=ev_svc,
     )
+
+
+def get_pep_service(session: DbSessionDep) -> PEPService:
+    """Build PEPService with all mandatory ports wired (no infra defaults)."""
+    return build_pep_service_for_session(session)
 
 
 PEPServiceDep = Annotated[PEPService, Depends(get_pep_service)]

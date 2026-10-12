@@ -9,7 +9,7 @@ from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoCommand,
     AdmissaoAtendimentoResult,
 )
-from src.modules.queue.composition import build_admissao_service_for_session
+from src.modules.queue.composition import build_fila_service_for_session
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
 from src.modules.triage.domain.exceptions import EmergenciaCriticaSamuError
@@ -41,7 +41,7 @@ async def test_admissao_integrada_persists_both_models_and_enqueues_arq_job() ->
     try:
         with tenant_context(org.id):
             async with async_session_factory() as session:
-                service = build_admissao_service_for_session(
+                service = build_fila_service_for_session(
                     session=session,
                     valkey=pool,
                     arq_pool=pool,
@@ -136,7 +136,7 @@ async def test_admissao_integrada_emergencia_samu_dispatches_alert_and_blocks_db
                     session=session,
                     notifier=samu_notifier,
                 )
-                service = build_admissao_service_for_session(
+                service = build_fila_service_for_session(
                     session=session,
                     valkey=pool,
                     triage_port=triage_svc,
