@@ -8,9 +8,6 @@ from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoCommand,
     AvaliacaoAdmissaoResult,
 )
-from src.modules.queue.application.services.admissao_service import (
-    AdmissaoAtendimentoService,
-)
 from src.modules.queue.application.services.controle_admissao_service import (
     ControleAdmissaoService,
 )
@@ -81,17 +78,10 @@ def triage_service(mock_db_session: AsyncMock) -> TriageService:
 @pytest.mark.asyncio
 async def test_admissao_consulta_e_incrementa_cota_diaria(
     mock_db_session: AsyncMock,
-    mock_fila_service: MagicMock,
+    mock_fila_service: FilaService,
     mock_controle_admissao: MagicMock,
     triage_service: TriageService,
 ) -> None:
-    service = AdmissaoAtendimentoService(
-        session=mock_db_session,
-        fila_service=mock_fila_service,
-        controle_admissao=mock_controle_admissao,
-        triage_port=triage_service,
-    )
-
     cmd = AdmissaoAtendimentoCommand(
         organizacao_id=42,
         paciente_id=uuid4(),
@@ -101,7 +91,7 @@ async def test_admissao_consulta_e_incrementa_cota_diaria(
         cota_diaria_maxima=300,
     )
 
-    result = await service.admitir_paciente(cmd)
+    result = await mock_fila_service.admitir_paciente(cmd)
     assert result.organizacao_id == 42
 
     # Verifica que consultou a cota do Valkey
@@ -119,7 +109,7 @@ async def test_admissao_consulta_e_incrementa_cota_diaria(
 @pytest.mark.asyncio
 async def test_admissao_bloqueada_quando_cota_diaria_atingida(
     mock_db_session: AsyncMock,
-    mock_fila_service: MagicMock,
+    mock_fila_service: FilaService,
     mock_controle_admissao: MagicMock,
     triage_service: TriageService,
 ) -> None:
@@ -139,13 +129,6 @@ async def test_admissao_bloqueada_quando_cota_diaria_atingida(
         )
     )
 
-    service = AdmissaoAtendimentoService(
-        session=mock_db_session,
-        fila_service=mock_fila_service,
-        controle_admissao=mock_controle_admissao,
-        triage_port=triage_service,
-    )
-
     cmd = AdmissaoAtendimentoCommand(
         organizacao_id=42,
         paciente_id=uuid4(),
@@ -156,7 +139,7 @@ async def test_admissao_bloqueada_quando_cota_diaria_atingida(
     )
 
     with pytest.raises(AdmissaoFilaSuspensaError) as exc_info:
-        await service.admitir_paciente(cmd)
+        await mock_fila_service.admitir_paciente(cmd)
 
     assert exc_info.value.motivo == "COTA_ATINGIDA"
     mock_controle_admissao.incrementar_admissoes_hoje.assert_not_called()

@@ -4,7 +4,6 @@ from uuid import UUID
 from src.core.errors import ValidationError
 from src.core.uuid7 import uuid7
 from src.modules.triage.application.dtos import (
-    ResultadoTriagemDTO,
     TriageRiskEvaluationDTO,
 )
 from src.modules.triage.application.ports.emergency_notifier import (
@@ -92,51 +91,6 @@ class TriageService:
             tcle_hash=tcle_hash_final,
             alerta_samu_disparado=False,
             instrucao_redirecionamento=None,
-        )
-
-    async def avaliar_e_submeter_triagem(
-        self,
-        organizacao_id: int,
-        atendimento_id: UUID,
-        queixa_principal: str,
-        sintomas: list[str],
-        escala_dor: int = 0,
-        tcle_termo_texto: str = "",
-        *,
-        raise_on_emergency: bool = True,
-        tcle_hash: str | None = None,
-        tcle_texto: str = "",
-    ) -> ResultadoTriagemDTO:
-        """Avalia risco clínico, gera hash do TCLE e aplica salvaguarda SAMU 192.
-
-        Mantido para compatibilidade regressiva com consumidores legados, delegando
-        internamente para `avaliar_risco`.
-        """
-        texto_consentimento = tcle_texto or tcle_termo_texto
-        eval_dto = await self.avaliar_risco(
-            organizacao_id=organizacao_id,
-            queixa_principal=queixa_principal,
-            sintomas=sintomas,
-            escala_dor=escala_dor,
-            tcle_texto=texto_consentimento,
-            tcle_hash=tcle_hash,
-            raise_on_emergency=raise_on_emergency,
-            atendimento_id=atendimento_id,
-        )
-
-        triagem = Triagem(
-            organizacao_id=organizacao_id,
-            atendimento_id=atendimento_id,
-            queixa_principal=queixa_principal,
-            prioridade_calculada=eval_dto.prioridade_clinica,
-            sintomas_alerta=sintomas,
-            alerta_samu_disparado=eval_dto.alerta_samu_disparado,
-        )
-
-        return ResultadoTriagemDTO.from_evaluation(
-            eval_dto,
-            triagem_id=triagem.id,
-            triagem=triagem,
         )
 
     async def registrar_triagem(

@@ -22,18 +22,18 @@ from src.modules.auth.application.dtos import (
     VerificarOtpInputDTO,
     VerificarOtpOutputDTO,
 )
+from src.modules.auth.application.ports.identity_reader_port import (
+    IdentityReaderPort,
+)
+from src.modules.auth.application.ports.sms_sender_port import (
+    SmsSenderPort,
+)
 from src.modules.auth.domain.exceptions import (
     OtpInvalidoOuExpiradoError,
     OtpRateLimitExcedidoError,
     PacienteNaoEncontradoError,
 )
 from src.modules.auth.domain.validators import validate_cpf, validate_telefone
-from src.modules.identity.application.ports.identity_reader_port import (  # tach-ignore
-    IdentityReaderPort,
-)
-from src.modules.identity.application.ports.sms_sender_port import (  # tach-ignore
-    SmsSenderPort,
-)
 
 logger = logging.getLogger("medisync.auth.patient_auth")
 
@@ -54,7 +54,6 @@ class PatientAuthService:
         secret_key: str | None = None,
         algorithm: str | None = None,
         access_token_expire_minutes: int | None = None,
-        session: Any = None,
     ) -> None:
         self._identity_reader = identity_reader
         self._valkey = valkey_client
@@ -62,7 +61,6 @@ class PatientAuthService:
         self._secret_key = secret_key
         self._algorithm = algorithm
         self._access_token_expire_minutes = access_token_expire_minutes
-        self._session = session
         # In-memory storage fallback for unit testing when Valkey is None
         self._memory_otp: dict[str, dict[str, Any]] = {}
         self._memory_ratelimit: dict[str, list[float]] = {}
@@ -213,7 +211,6 @@ class PatientAuthService:
         self,
         organizacao_id: int,
         dados: SolicitarOtpInputDTO,
-        session: Any = None,
     ) -> SolicitarOtpOutputDTO:
         """Execute request OTP use-case with rate limiting and patient lookup."""
         if self._identity_reader is None:

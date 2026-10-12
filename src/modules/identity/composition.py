@@ -3,12 +3,9 @@
 from typing import Annotated
 
 from fastapi import Depends
-from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import get_settings
 from src.core.database import DbSessionDep
-from src.core.valkey import get_valkey_client
 from src.modules.identity.application.ports.identity_reader_port import (
     IdentityReaderPort,
 )
@@ -18,9 +15,6 @@ from src.modules.identity.application.services.dependente_service import (
 )
 from src.modules.identity.application.services.onboarding_service import (
     OnboardingService,
-)
-from src.modules.identity.application.services.patient_auth_service import (
-    PatientAuthService,
 )
 from src.modules.identity.infrastructure.fake_sms_adapter import FakeSmsSenderAdapter
 from src.modules.identity.infrastructure.identity_reader_sql import (
@@ -67,23 +61,3 @@ def get_sms_sender() -> SmsSenderPort:
 
 
 SmsSenderDep = Annotated[SmsSenderPort, Depends(get_sms_sender)]
-
-
-def get_patient_auth_service(
-    session: DbSessionDep,
-    sms_sender: SmsSenderDep,
-    valkey: Annotated[Redis, Depends(get_valkey_client)],
-) -> PatientAuthService:
-    """Provide PatientAuthService instance wired with dependencies."""
-    settings = get_settings()
-    return PatientAuthService(
-        session=session,
-        valkey_client=valkey,
-        sms_sender=sms_sender,
-        secret_key=settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-        access_token_expire_minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
-    )
-
-
-PatientAuthServiceDep = Annotated[PatientAuthService, Depends(get_patient_auth_service)]

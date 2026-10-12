@@ -22,9 +22,6 @@ from src.modules.queue.application.ports.allocation_port import AllocationPort
 from src.modules.queue.application.ports.notification_port import NotificationPort
 from src.modules.queue.application.ports.queue_store_port import QueueStorePort
 from src.modules.queue.application.ports.triage_port import TriagePort
-from src.modules.queue.application.services.admissao_service import (
-    AdmissaoAtendimentoService,
-)
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
@@ -151,50 +148,6 @@ def get_queue_store(
 
 
 QueueStoreDep = Annotated[QueueStorePort, Depends(get_queue_store)]
-
-
-def build_admissao_service_for_session(
-    session: AsyncSession,
-    valkey: Redis | None = None,
-    triage_port: TriagePort | None = None,
-    arq_pool: ArqRedis | None = None,
-) -> AdmissaoAtendimentoService:
-    """Build admission service outside request scope (tests/worker tooling)."""
-    resolved_triage: TriagePort = triage_port or build_triage_service_for_session(
-        session=session
-    )
-    fila_service = build_fila_service_for_session(
-        session=session,
-        valkey=valkey,
-        triage_port=resolved_triage,
-        arq_pool=arq_pool,
-    )
-    return AdmissaoAtendimentoService(
-        session=session,
-        fila_service=fila_service,
-        triage_port=resolved_triage,
-        arq_pool=arq_pool,
-    )
-
-
-def get_admissao_service(
-    session: DbSessionDep,
-    fila_service: FilaServiceDep,
-    triage_service: TriageServiceDep,
-    arq_pool: ArqPoolDep,
-) -> AdmissaoAtendimentoService:
-    """Provide clinical admission and triage service with DI wiring."""
-    return AdmissaoAtendimentoService(
-        session=session,
-        fila_service=fila_service,
-        triage_port=triage_service,
-        arq_pool=arq_pool,
-    )
-
-
-AdmissaoServiceDep = Annotated[
-    AdmissaoAtendimentoService, Depends(get_admissao_service)
-]
 
 
 async def default_verificar_posse_paciente_fila(

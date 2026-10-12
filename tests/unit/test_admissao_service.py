@@ -1,4 +1,4 @@
-"""Unit tests for AdmissaoAtendimentoService and unified intake/triage seam (Fase 4)."""
+"""Unit tests for FilaService admission and unified intake/triage seam (Fase 4)."""
 
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -10,9 +10,6 @@ from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoCommand,
     AdmissaoAtendimentoResult,
     AvaliacaoAdmissaoResult,
-)
-from src.modules.queue.application.services.admissao_service import (
-    AdmissaoAtendimentoService,
 )
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
@@ -103,24 +100,9 @@ def fila_service(
     )
 
 
-@pytest.fixture
-def admissao_service(
-    mock_db_session: AsyncMock,
-    fila_service: FilaService,
-    triage_service: TriageService,
-    mock_arq_pool: AsyncMock,
-) -> AdmissaoAtendimentoService:
-    return AdmissaoAtendimentoService(
-        session=mock_db_session,
-        fila_service=fila_service,
-        triage_port=triage_service,
-        arq_pool=mock_arq_pool,
-    )
-
-
 @pytest.mark.asyncio
 async def test_admitir_paciente_success(
-    admissao_service: AdmissaoAtendimentoService,
+    fila_service: FilaService,
     mock_db_session: AsyncMock,
     mock_arq_pool: AsyncMock,
 ) -> None:
@@ -134,7 +116,7 @@ async def test_admitir_paciente_success(
         tcle_texto="Termo de consentimento livre e esclarecido para telemedicina",
     )
 
-    result = await admissao_service.admitir_paciente(cmd)
+    result = await fila_service.admitir_paciente(cmd)
     assert isinstance(result, AdmissaoAtendimentoResult)
     assert result.organizacao_id == 1
     assert result.paciente_id == pac_id
@@ -147,7 +129,7 @@ async def test_admitir_paciente_success(
 
 @pytest.mark.asyncio
 async def test_admitir_paciente_emergencia_critica_raises(
-    admissao_service: AdmissaoAtendimentoService,
+    fila_service: FilaService,
     mock_emergency_notifier: SamuEmergencyNotifierAdapter,
 ) -> None:
     cmd = AdmissaoAtendimentoCommand(
@@ -160,7 +142,7 @@ async def test_admitir_paciente_emergencia_critica_raises(
     )
 
     with pytest.raises(EmergenciaCriticaSamuError):
-        await admissao_service.admitir_paciente(cmd)
+        await fila_service.admitir_paciente(cmd)
 
     assert len(mock_emergency_notifier.sent_alerts) == 1
     assert mock_emergency_notifier.sent_alerts[0].organizacao_id == 1
@@ -169,7 +151,7 @@ async def test_admitir_paciente_emergencia_critica_raises(
 
 @pytest.mark.asyncio
 async def test_admitir_paciente_enqueues_validar_elegibilidade_task(
-    admissao_service: AdmissaoAtendimentoService,
+    fila_service: FilaService,
     mock_arq_pool: AsyncMock,
 ) -> None:
     pac_id = uuid4()
@@ -186,7 +168,7 @@ async def test_admitir_paciente_enqueues_validar_elegibilidade_task(
         numero_carteirinha="998877",
     )
 
-    result = await admissao_service.admitir_paciente(cmd)
+    result = await fila_service.admitir_paciente(cmd)
     mock_arq_pool.enqueue_job.assert_awaited_once_with(
         "validar_elegibilidade_task",
         organizacao_id=1,
@@ -202,7 +184,7 @@ async def test_admitir_paciente_enqueues_validar_elegibilidade_task(
 
 @pytest.mark.asyncio
 async def test_admitir_paciente_backpressure_suspensa(
-    admissao_service: AdmissaoAtendimentoService,
+    fila_service: FilaService,
     mock_controle_admissao: MagicMock,
 ) -> None:
     mock_controle_admissao.avaliar_admissao.return_value = AvaliacaoAdmissaoResult(
@@ -226,12 +208,12 @@ async def test_admitir_paciente_backpressure_suspensa(
     )
 
     with pytest.raises(AdmissaoFilaSuspensaError):
-        await admissao_service.admitir_paciente(cmd)
+        await fila_service.admitir_paciente(cmd)
 
 
 @pytest.mark.asyncio
 async def test_admitir_paciente_tcle_ausente_raises(
-    admissao_service: AdmissaoAtendimentoService,
+    fila_service: FilaService,
 ) -> None:
     cmd = AdmissaoAtendimentoCommand(
         organizacao_id=1,
@@ -244,7 +226,7 @@ async def test_admitir_paciente_tcle_ausente_raises(
     )
 
     with pytest.raises(ValidationError):
-        await admissao_service.admitir_paciente(cmd)
+        await fila_service.admitir_paciente(cmd)
 
 
 @pytest.mark.asyncio
@@ -315,23 +297,3 @@ async def test_fila_service_admitir_paciente_sem_triage_port_raises(
     )
     with pytest.raises(RuntimeError, match="TriagePort não configurado"):
         await service_sem_triage.admitir_paciente(cmd)
-
-
-@pytest.mark.asyncio
-async def test_admissao_service_backward_compatibility_delegates_to_fila_service(
-    admissao_service: AdmissaoAtendimentoService,
-    fila_service: FilaService,
-) -> None:
-    """Verifica delegação de AdmissaoAtendimentoService para fila_service."""
-    assert admissao_service.fila_service is fila_service
-    pac_id = uuid4()
-    cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=1,
-        paciente_id=pac_id,
-        queixa_principal="Dor abdominal leve",
-        sintomas=["dor"],
-        escala_dor=2,
-        tcle_texto="Termo aceito",
-    )
-    result = await admissao_service.admitir_paciente(cmd)
-    assert result.paciente_id == pac_id

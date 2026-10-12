@@ -242,69 +242,6 @@ class MockEmergencyNotifier:
 
 
 @pytest.mark.asyncio
-async def test_triage_service_regular_case() -> None:
-    notifier = MockEmergencyNotifier()
-    service = TriageService(emergency_notifier=notifier)
-
-    atendimento_id = uuid7()
-    res = await service.avaliar_e_submeter_triagem(
-        organizacao_id=1,
-        atendimento_id=atendimento_id,
-        queixa_principal="Dor de garganta leve",
-        sintomas=["dor_garganta"],
-        escala_dor=3,
-        tcle_termo_texto="Termo de aceite",
-    )
-
-    assert res.prioridade_clinica == 4
-    assert res.admissao_bloqueada is False
-    assert res.alerta_samu_disparado is False
-    assert len(res.tcle_hash) == 64
-    assert len(notifier.notificacoes) == 0
-
-
-@pytest.mark.asyncio
-async def test_triage_service_emergency_samu_blocks_admission() -> None:
-    notifier = MockEmergencyNotifier()
-    service = TriageService(emergency_notifier=notifier)
-    atendimento_id = uuid7()
-
-    # Cenário com raise_on_emergency=True (padrão de proteção clínica)
-    with pytest.raises(EmergenciaCriticaSamuError, match="Emergência médica crítica"):
-        await service.avaliar_e_submeter_triagem(
-            organizacao_id=1,
-            atendimento_id=atendimento_id,
-            queixa_principal="Dor precordial opressiva irradiada",
-            sintomas=["dor_toracica_irradiada"],
-            escala_dor=10,
-            tcle_termo_texto="Termo de aceite",
-            raise_on_emergency=True,
-        )
-
-    assert len(notifier.notificacoes) == 1
-    alerta = notifier.notificacoes[0]
-    assert alerta.atendimento_id == atendimento_id
-    assert alerta.organizacao_id == 1
-    assert "SAMU" in alerta.instrucao_redirecionamento
-
-    # Cenário com raise_on_emergency=False (retorna DTO informativo com bloqueio)
-    res = await service.avaliar_e_submeter_triagem(
-        organizacao_id=1,
-        atendimento_id=atendimento_id,
-        queixa_principal="Paciente inconsciente no solo",
-        sintomas=["inconsciencia"],
-        escala_dor=0,
-        tcle_termo_texto="Termo de aceite",
-        raise_on_emergency=False,
-    )
-    assert res.prioridade_clinica == 1
-    assert res.admissao_bloqueada is True
-    assert res.alerta_samu_disparado is True
-    assert res.instrucao_redirecionamento is not None
-    assert len(notifier.notificacoes) == 2
-
-
-@pytest.mark.asyncio
 async def test_triage_service_avaliar_risco_success() -> None:
     notifier = MockEmergencyNotifier()
     service = TriageService(emergency_notifier=notifier)

@@ -13,6 +13,10 @@ from src.modules.auth.application.dtos import (
     SolicitarOtpInputDTO,
     VerificarOtpInputDTO,
 )
+from src.modules.auth.application.ports.identity_reader_port import (
+    IdentityReaderPort,
+    PacienteAuthLookupData,
+)
 from src.modules.auth.application.services.patient_auth_service import (
     PatientAuthService,
 )
@@ -20,13 +24,6 @@ from src.modules.auth.domain.exceptions import (
     OtpInvalidoOuExpiradoError,
     OtpRateLimitExcedidoError,
     PacienteNaoEncontradoError,
-)
-from src.modules.identity.application.ports.identity_reader_port import (
-    IdentityReaderPort,
-    PacienteAuthLookupDTO,
-)
-from src.modules.identity.application.services.patient_auth_service import (
-    PatientAuthService as IdentityPatientAuthService,
 )
 from src.modules.identity.infrastructure.fake_sms_adapter import FakeSmsSenderAdapter
 
@@ -47,18 +44,14 @@ def _make_mock_paciente(
     paciente_id: UUID | None = None,
     org_id: int = 1,
     telefone: str = "11987654321",
-) -> PacienteAuthLookupDTO:
-    return PacienteAuthLookupDTO(
+) -> PacienteAuthLookupData:
+    return PacienteAuthLookupData(
         id=paciente_id or uuid7(),
         organizacao_id=org_id,
         telefone=telefone,
         cpf="11144477735",
         nome_completo="Carlos Teste",
     )
-
-
-def test_backward_compatibility_reexport() -> None:
-    assert IdentityPatientAuthService is PatientAuthService
 
 
 @pytest.mark.asyncio
