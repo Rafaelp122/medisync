@@ -253,10 +253,12 @@ src/
 ```
 
 > **Composition roots (ADR-001 §7)**: `auth/composition.py`, `consultation/composition.py`,
-> `identity/composition.py`, `queue/composition.py` — únicos lugares que importam
-> adaptadores concretos de `infrastructure`. Routers recebem services via `*Dep`
-> (`AuthServiceDep`, `PEPServiceDep`, …). `billing`/`triage` sem composition própria
-> (stateless ou sem presentation).
+> `identity/composition.py`, `queue/composition.py`, `telemetry/composition.py` e `triage/composition.py` —
+> únicos lugares que importam adaptadores concretos de `infrastructure`. Routers recebem services via `*Dep`
+> (`AuthServiceDep`, `PEPServiceDep`, `FilaServiceDep`, `TelemetryServiceDep`, …).
+> O módulo `triage` possui composition root próprio para isolar o adaptador SAMU 192 e é consumido
+> internamente por `queue` (`queue/composition.py`); `billing` permanece sem composition própria (stateless).
+> Detalhes no guia [Composition Root e Injeção de Dependências](../concepts/composition-root-and-dependencies.md).
 >
 > **Prefixo de rotas**: HTTP sob `/api/v1` (`src/main.py`: `APIRouter(prefix="/api/v1")`
 > monta `auth/onboarding/pacientes/consultations/documents`); WebSockets de sinalização

@@ -111,7 +111,6 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `src/modules/queue/infrastructure/lua/alocar_chamada.lua`
 - `src/modules/queue/application/ports/queue_store_port.py` (QueueStorePort - interface profunda consolidando PostgreSQL + Valkey)
 - `src/modules/queue/application/services/fila_service.py` (Implementação de QueueStorePort, admissão, cancelamento, piora e reconciliação)
-- `src/modules/queue/application/services/admissao_service.py` (Acolhimento clínico desacoplado via TriagePort e cota Valkey)
 - `src/modules/queue/application/ports/triage_port.py` (TriagePort e TriageEvaluationDTO para isolamento de Bounded Context)
 - `src/modules/queue/presentation/routers/admissao_router.py` (POST /api/v1/fila/admissao)
 - `src/modules/queue/presentation/routers/alocacao_router.py` (POST /api/v1/fila/chamar-proximo)

@@ -3,16 +3,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, WebSocket
-from redis.asyncio import Redis
+from fastapi import APIRouter, Path, WebSocket
 
+from src.core.dependencies import ValkeyDep
 from src.core.realtime import channel_doctor_calls, stream_channel
-from src.core.valkey import get_valkey_client
 from src.modules.consultation.presentation.dependencies import DoctorWsAuthDep
 
 doctor_ws_router = APIRouter(tags=["doctor-realtime"])
-
-ValkeyDep = Annotated[Redis, Depends(get_valkey_client)]
 
 
 @doctor_ws_router.websocket("/ws/doctor/{medico_id}")

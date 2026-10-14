@@ -97,6 +97,10 @@ Adotamos a **Opção 3: Hexagonal Pragmático com Modelos Ricos no SQLAlchemy 2.
   * Sem `HTTPException` — só `presentation/dependencies.py` pode levantar HTTP (ex.: `exigir_rate_limit` → 429).
   * Sem instanciação `*Service(` — services chegam via `*Dep` da composition (`AuthServiceDep`, `PEPServiceDep`, …).
 * **Prefixo de rotas**: HTTP sob `/api/v1` (`src/main.py` monta `APIRouter(prefix="/api/v1")`); WebSockets (`/ws/...`) fora do prefixo.
+* **Divisão de Responsabilidades — Composition Root vs Presentation Guards**:
+  * `composition.py` (Composition Root na raiz do módulo): Conecta adaptadores concretos de `infrastructure` aos serviços de `application`, expõe dependências tipadas `*Dep = Annotated[T, Depends(get_t)]` para routers e fábricas síncronas `build_*_service_for_session` para workers ARQ e testes. Módulos internos sem camada de apresentação (como `triage`) possuem `composition.py` próprio para encapsular adaptadores (ex.: SAMU 192) consumidos por `queue`.
+  * `presentation/dependencies.py` (Guards de Apresentação): Camada exclusiva de transporte e segurança. Extrai credenciais de transporte (Bearer/HMAC), impõe RBAC (`Role.MEDICO`), autorização contextual ABAC/ReBAC (validação de TCLE, médico responsável, Anti-IDOR) e rate limit de borda (`exigir_rate_limit` levantando `HTTPException(429)` com `Retry-After`). Proibido importar `infrastructure/` ou modelos ORM.
+  * Documentação detalhada: [Composition Root e Injeção de Dependências](../explanation/concepts/composition-root-and-dependencies.md).
 
 ---
 

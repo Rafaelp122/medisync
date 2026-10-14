@@ -39,7 +39,7 @@ confirmado via busca de imports no código.
 | `src/modules/queue/application/ports/notification_port.py` | queue | `src/modules/queue/application/services/alocacao_service.py`, `src/modules/queue/composition.py` |
 | `src/modules/queue/application/ports/paciente_ausente_notifier.py` | queue | `src/worker/tasks/ring_timeout.py` |
 | `src/modules/queue/application/ports/queue_overflow_notifier.py` | queue | `src/modules/queue/application/services/controle_admissao_service.py` |
-| `src/modules/queue/application/ports/triage_port.py` | queue | `src/modules/queue/application/services/admissao_service.py`, `src/modules/queue/composition.py` |
+| `src/modules/queue/application/ports/triage_port.py` | queue | `src/modules/queue/application/services/fila_service.py`, `src/modules/queue/composition.py` |
 | `src/modules/billing/application/ports/eligibility_provider.py` | billing | `src/modules/billing/application/services/eligibility_service.py`, `src/worker/tasks/eligibility.py` |
 | `src/modules/billing/application/ports/eligibility_notifier.py` | billing | `src/modules/billing/application/services/eligibility_service.py`, `src/worker/tasks/eligibility.py` |
 | `src/modules/consultation/application/ports/atendimento_reader_port.py` | consultation | `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/application/services/evolucao_service.py`, `src/modules/consultation/application/policies/clinical_access_policy.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/atendimento_reader_sql.py` |
@@ -67,7 +67,7 @@ Retorna import de `allocation_port` e `notification_port`
 dentro da fila. Mesmo vale para consulta, triagem e auth:
 
 - `src/modules/queue/application/services/alocacao_service.py` consome `allocation_port` e `notification_port`.
-- `src/modules/queue/application/services/admissao_service.py` consome `triage_port`.
+- `src/modules/queue/application/services/fila_service.py` consome `triage_port`.
 - `src/modules/queue/application/services/controle_admissao_service.py` consome `queue_overflow_notifier`.
 - `src/modules/consultation/application/services/pep_service.py` consome `atendimento_reader_port`, `icp_brasil_signer_port`, `pdf_generator_port` e `storage_port`.
 - `src/modules/consultation/application/services/documento_service.py` consome `icp_brasil_signer_port`, `pdf_generator_port`, `signed_cache_port` e `storage_port`.

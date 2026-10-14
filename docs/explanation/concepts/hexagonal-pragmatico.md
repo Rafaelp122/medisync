@@ -99,18 +99,45 @@ Router declara rota, resolve dependência e delega. Nunca
 importa `sqlalchemy`, `infrastructure` ou `domain.models`,
 nunca chama commit, refresh ou select, nunca instancia
 service com construtor direto e nunca levanta
-`HTTPException` própria. Serviços chegam via dependências
-`Dep` exportadas pelo `composition.py` do módulo.
+`HTTPException` própria.
 
-Fiação real:
+A injeção de dependências é estritamente bifurcada em dois
+papéis complementares:
 
-- `src/modules/queue/composition.py` expõe deps de fila,
-  admissão e alocação.
-- `src/modules/identity/composition.py` expõe deps de
-  onboarding e dependentes.
-- `src/modules/consultation/composition.py` expõe deps de
-  documento, pep e validação.
-- `src/modules/auth/composition.py` expõe dep de auth.
+1. **`composition.py` (Composition Root)**: Fica na raiz de
+   cada módulo. É o único arquivo autorizado a importar
+   adaptadores de `infrastructure/`, instanciar classes de
+   serviço e amarrar portas (`typing.Protocol`). Expõe tanto
+   fábricas FastAPI (`*Dep = Annotated[T, Depends(get_t)]`)
+   quanto fábricas síncronas (`build_*_service_for_session`)
+   usadas por workers ARQ e testes fora do ciclo HTTP.
+2. **`presentation/dependencies.py` (Presentation Guards)**:
+   Mora na camada de apresentação. Responsável por segurança
+   de transporte, autenticação (Bearer/HMAC), checagens de
+   papel RBAC (`Role.MEDICO`), autorização contextual
+   ABAC/ReBAC (validação de TCLE, médico alocado, Anti-IDOR)
+   e rate limit de borda (único ponto que levanta `HTTPException`
+   com status 429 e cabeçalho `Retry-After`).
+
+Fiação real nos módulos atuais:
+
+- `src/modules/auth/composition.py`: expõe deps de autenticação,
+  revogação de tokens e rate limiting.
+- `src/modules/consultation/composition.py`: expõe deps de
+  documentos, PEP, teleconsulta LiveKit e validação.
+- `src/modules/identity/composition.py`: expõe deps de
+  onboarding, dependentes e leitor de diretório.
+- `src/modules/queue/composition.py`: expõe deps de fila dinâmica,
+  admissão clínica integrada, alocação e queue store.
+- `src/modules/telemetry/composition.py`: expõe deps de
+  leitura de telemetria operacional e configuração de plantão.
+- `src/modules/triage/composition.py`: expõe deps do motor de
+  classificação clínica e adaptador de escape SAMU 192
+  (isolando a infraestrutura consumida por `queue`).
+
+Para o detalhamento completo do padrão, da matriz de
+responsabilidades e do ciclo de vida, consulte o guia
+[Composition Root e Injeção de Dependências](composition-root-and-dependencies.md).
 
 Fluxo entre camadas:
 
@@ -119,10 +146,10 @@ flowchart LR
     presentation --> composition --> application --> domain
 ```
 
-`presentation` declara rotas e schemas. `composition`
-monta services. `application` orquestra casos de uso.
-`domain` guarda regras. Dependência sempre aponta para
-dentro; nunca o inverso.
+`presentation` declara rotas, schemas e guards de transporte.
+`composition` monta services com adaptadores de infraestrutura.
+`application` orquestra casos de uso. `domain` guarda regras.
+Dependência sempre aponta para dentro; nunca o inverso.
 
 ## 7. Limites verificados por máquina
 
@@ -141,6 +168,8 @@ regressão:
 
 - Decisão hexagonal:
   `docs/adrs/ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md`
+- Composition Root e Dependências:
+  [Composition Root e Injeção de Dependências](composition-root-and-dependencies.md)
 - Padrão de dtos:
   `docs/adrs/ADR-008-Padronizacao-de-DTOs-e-Eliminacao-de-Mapper-Hell-na-Apresentacao.md`
 - Fronteiras: `tach.toml` mais `justfile`

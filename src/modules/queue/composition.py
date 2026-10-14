@@ -16,11 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
+from src.core.dependencies import ValkeyDep
 from src.core.notifications import LoggingNotificationAdapter
-from src.core.valkey import get_arq_pool, get_valkey_client, get_valkey_pool
+from src.core.valkey import get_arq_pool, get_valkey_pool
 from src.modules.queue.application.ports.allocation_port import AllocationPort
 from src.modules.queue.application.ports.notification_port import NotificationPort
-from src.modules.queue.application.ports.queue_store_port import QueueStorePort
 from src.modules.queue.application.ports.triage_port import TriagePort
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
@@ -34,8 +34,6 @@ from src.modules.triage.composition import (
     TriageServiceDep,
     build_triage_service_for_session,
 )
-
-ValkeyDep = Annotated[Redis, Depends(get_valkey_client)]
 
 
 def get_lua_manager() -> AllocationPort:
@@ -68,14 +66,6 @@ def get_alocacao_service(
 ) -> AlocacaoChamadaService:
     """Build allocation service with mandatory Lua port wired."""
     return build_alocacao_service_for_session(valkey, session)
-
-
-AlocacaoServiceDep = Annotated[AlocacaoChamadaService, Depends(get_alocacao_service)]
-
-
-def get_controle_admissao(valkey: ValkeyDep) -> ControleAdmissaoService:
-    """Provide admission control service bound to Valkey."""
-    return ControleAdmissaoService(valkey=valkey)
 
 
 logger = logging.getLogger("medisync.queue.composition")
@@ -130,24 +120,6 @@ def get_fila_service(
 
 
 FilaServiceDep = Annotated[FilaService, Depends(get_fila_service)]
-
-
-def get_queue_store(
-    valkey: ValkeyDep,
-    session: DbSessionDep,
-    triage_service: TriageServiceDep,
-    arq_pool: ArqPoolDep,
-) -> QueueStorePort:
-    """Provide queue store satisfying QueueStorePort."""
-    return get_fila_service(
-        valkey=valkey,
-        session=session,
-        triage_service=triage_service,
-        arq_pool=arq_pool,
-    )
-
-
-QueueStoreDep = Annotated[QueueStorePort, Depends(get_queue_store)]
 
 
 async def default_verificar_posse_paciente_fila(

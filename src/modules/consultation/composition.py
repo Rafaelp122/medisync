@@ -315,10 +315,14 @@ ValidationRateLimiterDep = Annotated[
 
 def get_document_validation_service(
     session: DbSessionDep,
-    directory: Annotated[DocumentDirectoryPort, Depends(get_document_directory)],
+    documento_service: Annotated[DocumentoService, Depends(get_documento_service)],
 ) -> DocumentValidationService:
     """Build DocumentValidationService with directory, storage and PDF compiler."""
-    documento_service = get_documento_service(session)
+    directory = (
+        documento_service.directory
+        if documento_service.directory is not None
+        else get_document_directory(session)
+    )
     return DocumentValidationService(
         session=session,
         directory=directory,
@@ -341,9 +345,6 @@ def get_livekit_adapter() -> LiveKitMediaPort:
         api_secret=settings.LIVEKIT_API_SECRET,
         server_url=settings.LIVEKIT_URL,
     )
-
-
-LiveKitAdapterDep = Annotated[LiveKitMediaPort, Depends(get_livekit_adapter)]
 
 
 def get_teleconsulta_service(
