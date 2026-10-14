@@ -13,7 +13,9 @@ Fluxo canônico: router recebe `*Dep` da `composition.py` → chama service com 
 Checklist obrigatório para todo endpoint novo (conferência via AST, não revisão manual):
 
 1. **Router sem import proibido.** Nunca importe `sqlalchemy`, `infrastructure` ou `domain.models` no router. Nunca chame `.commit()`, `.refresh()`, `text()` ou `select()` no router.
-2. **Router nunca instancia service.** Nada de `*Service(` no router. Receba via `*Dep` da `composition.py` (ex.: `PEPServiceDep`, `TenantDep`, `ClinicalAccessDep` como parâmetros).
+2. **Router nunca instancia service e consome dependências separadas.** Nada de `*Service(` no router:
+   - **Serviços de aplicação**: Receba via `*Dep` exportada exclusivamente pela `composition.py` do módulo (ex.: `PEPServiceDep`, `FilaServiceDep`, `AuthServiceDep`).
+   - **Guardas de segurança e contexto**: Receba via deps de autorização/transporte de `presentation/dependencies.py` (ex.: `ClinicalAccessReadDep`, `ClinicalAccessMutationDep`) ou `core/authz/dependencies.py` (ex.: `TenantDep`).
 3. **Service commita 1x por caso de uso.** `await session.commit()` no fim do método público que persiste. Helpers e policies nunca commitam.
 4. **HTTPException só em `presentation/dependencies.py`.** Único lugar que pode levantar 429 é helper como `exigir_rate_limit` (com header `Retry-After`). Routers importam de lá. Erros de domínio via `src/core/errors.py` (`NotFoundError`, `ForbiddenError`, …).
 5. **Guardas verdes.** `tests/architecture/test_routers_are_thin.py` (AST, 5 testes) e `just tach` (fronteiras) devem passar antes do commit.
@@ -79,5 +81,6 @@ Expected: suite verde. Nota: nesta branch o `test-fast` completo excedeu 300s se
 ## Ver também
 
 - [Backend first feature](../../tutorials/backend-first-feature.md)
+- [Composition Root e Injeção de Dependências](../../explanation/concepts/composition-root-and-dependencies.md)
 - [Run tests](run-tests.md)
 - [ADR-001](../../adrs/ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md)

@@ -18,7 +18,6 @@ from src.modules.consultation.application.ports.icp_brasil_signer_port import (
 from src.modules.consultation.composition import PEPServiceDep
 from src.modules.consultation.presentation.dependencies import (
     AtendimentoIdPath,
-    ClinicalAccessDep,
     ClinicalAccessMutationDep,
     ClinicalAccessReadDep,
     DocumentoIdPath,
@@ -101,7 +100,7 @@ async def obter_evolucao_soap(
 )
 async def obter_prontuario_protegido(
     atendimento_id: AtendimentoIdPath,
-    _user: ClinicalAccessDep,
+    _user: ClinicalAccessReadDep,
     service: PEPServiceDep,
 ) -> ProntuarioResponse:
     """Retorna o prontuário eletrônico mediante verificação em 3 camadas:

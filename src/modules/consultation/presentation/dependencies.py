@@ -100,8 +100,6 @@ async def require_clinical_mutation_access(
     return current_user
 
 
-require_clinical_access = require_clinical_read_access
-
 ClinicalAccessReadDep = Annotated[
     AuthenticatedUser,
     Security(require_clinical_read_access, scopes=["clinical:read"]),
@@ -110,7 +108,6 @@ ClinicalAccessMutationDep = Annotated[
     AuthenticatedUser,
     Security(require_clinical_mutation_access, scopes=["clinical:write"]),
 ]
-ClinicalAccessDep = ClinicalAccessReadDep
 
 
 async def exigir_rate_limit(

@@ -4,6 +4,7 @@ Conceitos transversais explicados em profundidade — padrões e mecanismos reut
 
 Fase 2 (planejado):
 
+- composition-root-and-dependencies
 - hexagonal-pragmatico
 - inter-module-protocols
 - multi-tenancy-rls

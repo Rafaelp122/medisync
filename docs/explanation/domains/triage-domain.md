@@ -71,7 +71,7 @@ stateDiagram-v2
 - `src/modules/triage/application/dtos.py`
 - `src/modules/triage/infrastructure/adapters/samu_emergency_notifier_adapter.py`
 - `src/modules/triage/composition.py`
-- `src/modules/queue/application/services/admissao_service.py` (Admissão e Triagem desacopladas via TriagePort)
+- `src/modules/queue/application/services/fila_service.py` (Admissão e Triagem desacopladas via TriagePort)
 - `src/modules/queue/presentation/routers/admissao_router.py` (POST /api/v1/fila/admissao)
 - `tests/unit/test_triage_model.py`
 - `tests/unit/test_admissao_service.py`

@@ -91,6 +91,11 @@ class DocumentoService:
         """Return the injected signed-document cache."""
         return self._cache
 
+    @property
+    def directory(self) -> DocumentDirectoryPort | None:
+        """Return the injected document directory port."""
+        return self._directory
+
     async def is_assinado(self, doc: DocumentoClinico) -> bool:
         """Check SignedCachePort only; key prefix matches unsigned docs too."""
         return await self._cache.is_assinado(doc.id)

@@ -127,8 +127,6 @@ depends_on = [
     "src.modules.queue.infrastructure",
     "src.modules.triage.application",
     "src.modules.triage.composition",
-    "src.modules.identity.application",
-    "src.modules.identity.composition",
 ]
 
 [[modules]]
