@@ -1,13 +1,16 @@
 """Application settings and environment configuration module."""
 
+import os
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import computed_field
+from pydantic import computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+EnvironmentType = Literal["development", "staging", "production", "test"]
 
-class Settings(BaseSettings):
+
+class CommonSettings(BaseSettings):
     """Core application settings with environment variable loading and validation."""
 
     model_config = SettingsConfigDict(
@@ -17,7 +20,7 @@ class Settings(BaseSettings):
     )
 
     APP_NAME: str = "MediSync Express"
-    ENVIRONMENT: Literal["development", "staging", "production", "test"] = "development"
+    ENVIRONMENT: EnvironmentType = "development"
     DEBUG: bool = False
     SECRET_KEY: str = "dev-insecure-secret-key-change-in-production-min-32-chars"
     CORS_ORIGINS: list[str] = []
@@ -91,6 +94,13 @@ class Settings(BaseSettings):
     S3_PRESIGNED_EXPIRATION_SECONDS: int = 300
     STORAGE_BACKEND: Literal["fake", "s3"] = "fake"
 
+    # --- Adapters & Backend Selectors ---
+    RATE_LIMIT_BACKEND: Literal["valkey", "memory"] = "valkey"
+    TOKEN_REVOCATION_BACKEND: Literal["valkey", "memory"] = "valkey"
+    VALIDATION_RATE_LIMIT_BACKEND: Literal["valkey", "memory"] = "valkey"
+    TELEMETRY_CACHE_BACKEND: Literal["valkey", "memory"] = "valkey"
+    SAMU_WEBHOOK_URL: str | None = None
+
     # --- Messaging & Notifications (WhatsApp / SMS) ---
     NOTIFICATION_PROVIDER: Literal["console", "fake", "noop"] = "console"
     NOTIFICATION_RATE_LIMIT_CAPACITY: int = 5
@@ -138,7 +148,81 @@ class Settings(BaseSettings):
         return self.VALKEY_URL
 
 
+class DevelopmentSettings(CommonSettings):
+    """Local development settings profile with debug and permissive defaults."""
+
+    ENVIRONMENT: EnvironmentType = "development"
+    DEBUG: bool = True
+    STORAGE_BACKEND: Literal["fake", "s3"] = "fake"
+    NOTIFICATION_PROVIDER: Literal["console", "fake", "noop"] = "console"
+    RATE_LIMIT_BACKEND: Literal["valkey", "memory"] = "valkey"
+    TOKEN_REVOCATION_BACKEND: Literal["valkey", "memory"] = "valkey"
+
+
+class TestSettings(CommonSettings):
+    """Test environment profile with in-memory adapters and isolated caches."""
+
+    __test__ = False
+    model_config = SettingsConfigDict(
+        env_file=None,
+        extra="ignore",
+    )
+
+    ENVIRONMENT: EnvironmentType = "test"
+    DEBUG: bool = True
+    STORAGE_BACKEND: Literal["fake", "s3"] = "fake"
+    NOTIFICATION_PROVIDER: Literal["console", "fake", "noop"] = "fake"
+    RATE_LIMIT_BACKEND: Literal["valkey", "memory"] = "memory"
+    TOKEN_REVOCATION_BACKEND: Literal["valkey", "memory"] = "memory"
+    VALIDATION_RATE_LIMIT_BACKEND: Literal["valkey", "memory"] = "memory"
+    TELEMETRY_CACHE_BACKEND: Literal["valkey", "memory"] = "memory"
+
+
+class ProductionSettings(CommonSettings):
+    """Production settings profile with strict security invariant validation."""
+
+    model_config = SettingsConfigDict(
+        env_file=None,
+        extra="ignore",
+    )
+
+    ENVIRONMENT: EnvironmentType = "production"
+    DEBUG: bool = False
+    STORAGE_BACKEND: Literal["fake", "s3"] = "s3"
+    NOTIFICATION_PROVIDER: Literal["console", "fake", "noop"] = "console"
+    RATE_LIMIT_BACKEND: Literal["valkey", "memory"] = "valkey"
+    TOKEN_REVOCATION_BACKEND: Literal["valkey", "memory"] = "valkey"
+    VALIDATION_RATE_LIMIT_BACKEND: Literal["valkey", "memory"] = "valkey"
+    TELEMETRY_CACHE_BACKEND: Literal["valkey", "memory"] = "valkey"
+
+    @model_validator(mode="after")
+    def validate_production_invariants(self) -> Self:
+        """Enforce strict cryptographic and CORS requirements in production."""
+        if "dev-insecure" in self.SECRET_KEY or len(self.SECRET_KEY) < 32:
+            raise ValueError(
+                "SECRET_KEY insegura ou inferior a 32 caracteres em produção."
+            )
+        if "dev-insecure" in self.JWT_SECRET_KEY or len(self.JWT_SECRET_KEY) < 32:
+            raise ValueError(
+                "JWT_SECRET_KEY insegura ou inferior a 32 caracteres em produção."
+            )
+        if not self.CORS_ORIGINS:
+            raise ValueError(
+                "CORS_ORIGINS deve listar explicitamente as origens em produção."
+            )
+        return self
+
+
+# Backward-compatible type alias
+Settings = CommonSettings
+
+
 @lru_cache
-def get_settings() -> Settings:
-    """Retrieve cached singleton application settings instance."""
-    return Settings()
+def get_settings() -> CommonSettings:
+    """Retrieve cached singleton application settings instance matching ENVIRONMENT."""
+    env = os.getenv("ENVIRONMENT", "development").strip().lower()
+    if env in ("production", "staging"):
+        return ProductionSettings()
+    if env == "test":
+        return TestSettings()
+    return DevelopmentSettings()

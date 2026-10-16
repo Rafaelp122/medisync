@@ -13,7 +13,6 @@ from redis.asyncio import Redis
 
 from src.core.authz.roles import Role
 from src.core.authz.token import create_access_token
-from src.core.config import get_settings
 from src.core.errors import TenantInvalidoError
 from src.core.uuid7 import uuid7
 from src.modules.auth.application.dtos import (
@@ -52,15 +51,20 @@ class PatientAuthService:
         valkey_client: Redis | None = None,
         sms_sender: SmsSenderPort | None = None,
         secret_key: str | None = None,
-        algorithm: str | None = None,
-        access_token_expire_minutes: int | None = None,
+        algorithm: str = "HS256",
+        access_token_expire_minutes: int = 60,
+        is_debug: bool = True,
     ) -> None:
         self._identity_reader = identity_reader
         self._valkey = valkey_client
         self._sms_sender = sms_sender
-        self._secret_key = secret_key
+        self._secret_key = (
+            secret_key
+            or "dev-insecure-jwt-secret-key-change-in-production-min-32-chars"
+        )
         self._algorithm = algorithm
         self._access_token_expire_minutes = access_token_expire_minutes
+        self._is_debug = is_debug
         # In-memory storage fallback for unit testing when Valkey is None
         self._memory_otp: dict[str, dict[str, Any]] = {}
         self._memory_ratelimit: dict[str, list[float]] = {}
@@ -254,8 +258,7 @@ class PatientAuthService:
         if self._sms_sender is not None:
             await self._sms_sender.enviar_otp(clean_telefone, codigo)
 
-        settings = get_settings()
-        codigo_debug = codigo if settings.DEBUG else None
+        codigo_debug = codigo if self._is_debug else None
 
         return SolicitarOtpOutputDTO(
             mensagem="Código de verificação enviado com sucesso.",
@@ -314,26 +317,18 @@ class PatientAuthService:
 
         # 5. Issue lightweight JWT access token with Role.PACIENTE
         paciente_id = UUID(str(stored["paciente_id"]))
-        settings = get_settings()
         token = create_access_token(
             usuario_id=paciente_id,
             organizacao_id=organizacao_id,
             papel=Role.PACIENTE.value,
-            secret_key=self._secret_key or settings.JWT_SECRET_KEY,
-            algorithm=self._algorithm or settings.JWT_ALGORITHM,
-            expire_minutes=self._access_token_expire_minutes
-            or settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
-        )
-
-        expire_minutes = (
-            self._access_token_expire_minutes
-            if self._access_token_expire_minutes is not None
-            else settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+            secret_key=self._secret_key,
+            algorithm=self._algorithm,
+            expire_minutes=self._access_token_expire_minutes,
         )
 
         return VerificarOtpOutputDTO(
             access_token=token,
             token_type="bearer",  # noqa: S106
-            expires_in=expire_minutes * 60,
+            expires_in=self._access_token_expire_minutes * 60,
             paciente_id=paciente_id,
         )

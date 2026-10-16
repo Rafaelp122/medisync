@@ -53,6 +53,15 @@ path = "src.modules.billing.infrastructure"
 depends_on = ["src.core", "src.modules.billing.application", "src.modules.billing.domain"]
 
 [[modules]]
+path = "src.modules.billing.composition"
+depends_on = [
+    "src.core",
+    "src.modules.billing.application",
+    "src.modules.billing.domain",
+    "src.modules.billing.infrastructure",
+]
+
+[[modules]]
 path = "src.modules.consultation.domain"
 depends_on = ["src.core"]
 
@@ -168,7 +177,7 @@ depends_on = [
     "src.modules.queue.composition",
     "src.modules.billing.application",
     "src.modules.billing.domain",
-    "src.modules.billing.infrastructure",
+    "src.modules.billing.composition",
     "src.modules.identity.application",
     "src.modules.identity.composition",
 ]

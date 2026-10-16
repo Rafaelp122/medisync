@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import ColumnElement, or_, select
 
-from src.core.config import get_settings
 from src.core.errors import ValidationError
 from src.core.security import create_intake_token
 from src.modules.identity.application.dtos import (
@@ -36,8 +35,15 @@ if TYPE_CHECKING:
 class OnboardingService:
     """Application service coordinating the two-phase onboarding workflow."""
 
-    def __init__(self, session: "AsyncSession | None" = None) -> None:
+    def __init__(
+        self,
+        session: "AsyncSession | None" = None,
+        secret_key: str | None = None,
+    ) -> None:
         self._session = session
+        self._secret_key = (
+            secret_key or "dev-insecure-secret-key-change-in-production-min-32-chars"
+        )
 
     async def realizar_fase_1(
         self,
@@ -113,12 +119,10 @@ class OnboardingService:
         await db.commit()
         await db.refresh(paciente)
 
-        # 3. Generate provisional intake token
-        settings = get_settings()
         token = create_intake_token(
             paciente_id=paciente.id,
             organizacao_id=organizacao_id,
-            secret_key=settings.SECRET_KEY,
+            secret_key=self._secret_key,
             expires_in_seconds=7200,  # 2 hours validity
         )
 

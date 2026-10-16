@@ -82,5 +82,7 @@ Expected: suite verde. Nota: nesta branch o `test-fast` completo excedeu 300s se
 
 - [Backend first feature](../../tutorials/backend-first-feature.md)
 - [Composition Root e Injeção de Dependências](../../explanation/concepts/composition-root-and-dependencies.md)
+- [Wire module dependencies](wire-module-dependencies.md)
 - [Run tests](run-tests.md)
 - [ADR-001](../../adrs/ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md)
+- [ADR-009](../../adrs/ADR-009-Configuracoes-Polimorficas-por-Perfil-e-Desacoplamento-nos-Composition-Roots.md)

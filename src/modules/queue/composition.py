@@ -49,25 +49,6 @@ def get_notification_adapter() -> NotificationPort | None:
     return LoggingNotificationAdapter()
 
 
-def build_alocacao_service_for_session(
-    valkey: Redis, session: AsyncSession
-) -> AlocacaoChamadaService:
-    """Build allocation service outside request scope (tests/worker tooling)."""
-    return AlocacaoChamadaService(
-        valkey=valkey,
-        db_session=session,
-        lua_manager=get_lua_manager(),
-        notification_adapter=get_notification_adapter(),
-    )
-
-
-def get_alocacao_service(
-    valkey: ValkeyDep, session: DbSessionDep
-) -> AlocacaoChamadaService:
-    """Build allocation service with mandatory Lua port wired."""
-    return build_alocacao_service_for_session(valkey, session)
-
-
 logger = logging.getLogger("medisync.queue.composition")
 
 
@@ -81,6 +62,30 @@ async def get_arq_pool_dep() -> ArqRedis | None:
 
 
 ArqPoolDep = Annotated[ArqRedis | None, Depends(get_arq_pool_dep)]
+
+
+def build_alocacao_service_for_session(
+    valkey: Redis,
+    session: AsyncSession,
+    arq_pool: ArqRedis | None = None,
+) -> AlocacaoChamadaService:
+    """Build allocation service outside request scope (tests/worker tooling)."""
+    return AlocacaoChamadaService(
+        valkey=valkey,
+        db_session=session,
+        lua_manager=get_lua_manager(),
+        arq_pool=arq_pool,
+        notification_adapter=get_notification_adapter(),
+    )
+
+
+def get_alocacao_service(
+    valkey: ValkeyDep,
+    session: DbSessionDep,
+    arq_pool: ArqPoolDep = None,
+) -> AlocacaoChamadaService:
+    """Build allocation service with mandatory Lua and ARQ pool wired."""
+    return build_alocacao_service_for_session(valkey, session, arq_pool=arq_pool)
 
 
 def build_fila_service_for_session(
@@ -97,7 +102,9 @@ def build_fila_service_for_session(
     return FilaService(
         valkey=client,
         db_session=session,
-        alocacao_service=build_alocacao_service_for_session(client, session),
+        alocacao_service=build_alocacao_service_for_session(
+            client, session, arq_pool=arq_pool
+        ),
         controle_admissao=ControleAdmissaoService(valkey=client),
         triage_port=resolved_triage,
         arq_pool=arq_pool,

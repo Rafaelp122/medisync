@@ -8,7 +8,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import get_settings
 from src.core.errors import ConflictError
 from src.modules.auth.application.dtos import (
     CadastrarCredencialCommand,
@@ -60,16 +59,17 @@ class AuthService:
         token_service: TokenServicePort,
         rate_limiter: AuthRateLimiterPort,
         revocation: TokenRevocationPort | None = None,
+        max_attempts: int = 5,
+        window_seconds: int = 900,
     ) -> None:
         self._session = session
-        settings = get_settings()
         self._hasher = hasher
         self._token_service = token_service
         self._rate_limiter = rate_limiter
         self._revocation: TokenRevocationPort = revocation or _LocalMemoryRevocation()
 
-        self._max_attempts = settings.AUTH_RATE_LIMIT_MAX_ATTEMPTS
-        self._window_seconds = settings.AUTH_RATE_LIMIT_WINDOW_SECONDS
+        self._max_attempts = max_attempts
+        self._window_seconds = window_seconds
 
     async def cadastrar_credencial(
         self, command: CadastrarCredencialCommand
