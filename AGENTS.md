@@ -17,6 +17,8 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
   * `just test-unit` — Executa testes unitários com cobertura (`pytest tests/unit tests/architecture --cov=src`).
   * `just test-integration` — Executa testes de integração sobre infraestrutura real (`pytest tests/integration`).
   * `just test` — Executa a suíte de testes completa com cobertura consolidada.
+  * `just scan-secrets` — Audita o repositório com Gitleaks (ADR-010) para prevenir vazamento de credenciais.
+
 
 ---
 
@@ -59,4 +61,5 @@ Consulte e utilize as skills especializadas localizadas em `.agents/skills/`:
 Antes de finalizar qualquer tarefa ou abrir PR:
 - [ ] O código adere aos padrões do Hexagonal Pragmático.
 - [ ] Novos testes foram adicionados (unitários ou integração).
+- [ ] `just scan-secrets` foi executado com zero detecções de segredos expostos.
 - [ ] `just check` foi executado e passou com código de retorno 0.
