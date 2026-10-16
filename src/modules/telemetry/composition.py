@@ -11,8 +11,12 @@ from fastapi import Depends
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.core.dependencies import ValkeyDep
+from src.modules.telemetry.application.ports.telemetry_cache_port import (
+    TelemetryCachePort,
+)
 from src.modules.telemetry.application.services.config_plantao_service import (
     ConfigPlantaoService,
 )
@@ -26,8 +30,16 @@ from src.modules.telemetry.infrastructure.telemetry_reader_sql import (
     SqlTelemetryReader,
 )
 from src.modules.telemetry.infrastructure.valkey_telemetry_cache import (
+    MemoryTelemetryCache,
     ValkeyTelemetryCache,
 )
+
+
+def resolve_telemetry_cache(valkey: Redis | None = None) -> TelemetryCachePort:
+    settings = get_settings()
+    if settings.TELEMETRY_CACHE_BACKEND == "memory":
+        return MemoryTelemetryCache()
+    return ValkeyTelemetryCache(valkey=valkey)
 
 
 def build_telemetry_service_for_session(
@@ -37,7 +49,7 @@ def build_telemetry_service_for_session(
     """Build TelemetryService outside request scope (tests/worker tooling)."""
     reader = SqlTelemetryReader(session)
     config_repo = SqlConfigPlantaoRepository(session)
-    cache = ValkeyTelemetryCache(valkey=valkey)
+    cache = resolve_telemetry_cache(valkey=valkey)
     return TelemetryService(
         reader=reader,
         config_repo=config_repo,
@@ -62,7 +74,7 @@ def build_config_plantao_service_for_session(
 ) -> ConfigPlantaoService:
     """Build ConfigPlantaoService outside request scope (tests/worker tooling)."""
     repo = SqlConfigPlantaoRepository(session)
-    cache = ValkeyTelemetryCache(valkey=valkey)
+    cache = resolve_telemetry_cache(valkey=valkey)
     return ConfigPlantaoService(
         repo=repo,
         cache=cache,

@@ -66,6 +66,23 @@ Computados: `async_database_url` monta `postgresql+psycopg://` de partes ou norm
 Cobertura: 3 + 6 + 3 + 5 + 8 = 25 vars. Confere com `rg -c "^[A-Z_]+=" .env.example` → `25`.
 Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3_*`, `JWT_*`, `PSC_*`, `NOTIFICATION_*`) usam defaults sem precisar exportar em dev; documentar aqui só quando virarem obrigatórios.
 
+### 6. Seletores de Adaptadores e Backends (Opcionais)
+
+| Var | Lida em | Valores Permitidos | Padrão | Notas |
+|---|---|---|---|---|
+| `RATE_LIMIT_BACKEND` | `src/core/config.py:CommonSettings.RATE_LIMIT_BACKEND` | `valkey`, `in_memory` | `valkey` | Seleciona adaptador no módulo auth |
+| `TOKEN_REVOCATION_BACKEND` | `src/core/config.py:CommonSettings.TOKEN_REVOCATION_BACKEND` | `valkey`, `in_memory` | `valkey` | Seleciona revogação no módulo auth |
+| `VALIDATION_RATE_LIMIT_BACKEND` | `src/core/config.py:CommonSettings.VALIDATION_RATE_LIMIT_BACKEND` | `valkey`, `in_memory` | `valkey` | Seleciona validador na consulta |
+| `TELEMETRY_CACHE_BACKEND` | `src/core/config.py:CommonSettings.TELEMETRY_CACHE_BACKEND` | `valkey`, `in_memory` | `valkey` | Seleciona cache na telemetria |
+| `SAMU_WEBHOOK_URL` | `src/core/config.py:CommonSettings.SAMU_WEBHOOK_URL` | URL HTTP(S) | `""` | Despacho de emergência 192 em triagem |
+
+### 7. Perfis Polimórficos de Ambiente
+
+O carregamento via `src/core/config.py:get_settings` instancia dinamicamente a subclasse de acordo com `ENVIRONMENT`:
+- `development` → `DevelopmentSettings` (`DEBUG=True`, defaults para Docker Compose local).
+- `test` → `TestSettings` (`DEBUG=False`, seletores automáticos para `in_memory`).
+- `production` → `ProductionSettings` (`DEBUG=False`, fail-fast ativo via `@model_validator` rejeitando `devkey`, segredos fracos e SAMU de teste).
+
 Bootstrap:
 
 ```bash
@@ -74,11 +91,15 @@ cp .env.example .env
 
 ## Onde no código
 
-- Impl: `src/core/config.py:Settings`
+- Impl: `src/core/config.py:CommonSettings`
+- Impl: `src/core/config.py:DevelopmentSettings`
+- Impl: `src/core/config.py:TestSettings`
+- Impl: `src/core/config.py:ProductionSettings`
 - Impl: `src/core/config.py:get_settings`
 - Impl: `src/core/config.py:async_database_url`
 - Impl: `src/core/config.py:async_valkey_url`
 - Spec: `.env.example`
+- Prova viva: `tests/unit/test_config_profiles.py`
 - Ver: `rg -c "^[A-Z_]+=" .env.example`
 - Ver: `rg -n "^[A-Z_]+=" .env.example`
 
@@ -88,14 +109,17 @@ cp .env.example .env
 rg -c "^[A-Z_]+=" .env.example
 rg -n "^(ENVIRONMENT|DATABASE_URL|VALKEY_URL|LIVEKIT_URL|MINIO_ENDPOINT)" .env.example src/core/config.py
 cp .env.example .env && uv run python -c "from src.core.config import get_settings; s=get_settings(); print(s.ENVIRONMENT, s.async_database_url[:20])"
+uv run pytest tests/unit/test_config_profiles.py -v --no-cov
 ```
 
-Esperado: `25`, 5 matches no `.env.example` batendo com campos em `config.py`, bootstrap sem erro.
+Esperado: `25`, 5 matches no `.env.example` batendo com campos em `config.py`, bootstrap sem erro e testes de perfil verdes.
 
 ## Ver também
 
 - [Error envelope](../api/error-envelope.md)
 - [Setup local](../../how-to/dev-environment/setup-local.md)
+- [Wire module dependencies](../../how-to/backend/wire-module-dependencies.md)
 - [Onboarding quickstart](../../tutorials/onboarding-quickstart.md)
+- [ADR-009](../../adrs/ADR-009-Configuracoes-Polimorficas-por-Perfil-e-Desacoplamento-nos-Composition-Roots.md)
 - `docs/explanation/architecture/overview.md`
 - `docs/explanation/architecture/concurrency-and-queues.md`

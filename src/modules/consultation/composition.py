@@ -71,6 +71,7 @@ from src.modules.consultation.infrastructure.s3_storage import (
     S3StorageAdapter,
 )
 from src.modules.consultation.infrastructure.valkey_validation_rate_limiter import (
+    FakeValidationRateLimiter,
     ValkeyValidationRateLimiter,
 )
 from src.modules.identity.application.ports.identity_reader_port import (
@@ -304,7 +305,10 @@ PEPServiceDep = Annotated[PEPService, Depends(get_pep_service)]
 
 
 def get_validation_rate_limiter() -> ValidationRateLimiterPort:
-    """Provide Valkey sliding-window limiter for public validation endpoints."""
+    """Provide validation rate limiter adapter based on active settings."""
+    settings = get_settings()
+    if settings.VALIDATION_RATE_LIMIT_BACKEND == "memory":
+        return FakeValidationRateLimiter()
     return ValkeyValidationRateLimiter()
 
 

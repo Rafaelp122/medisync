@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.modules.identity.application.ports.identity_reader_port import (
     IdentityReaderPort,
@@ -22,17 +23,34 @@ from src.modules.identity.infrastructure.identity_reader_sql import (
 )
 
 
+def build_onboarding_service_for_session(
+    session: AsyncSession,
+    secret_key: str | None = None,
+) -> OnboardingService:
+    """Build onboarding service outside request scope (tests/worker tooling)."""
+    settings = get_settings()
+    key = secret_key or settings.SECRET_KEY
+    return OnboardingService(session=session, secret_key=key)
+
+
 def get_onboarding_service(session: DbSessionDep) -> OnboardingService:
     """Provide scoped onboarding service instance."""
-    return OnboardingService(session=session)
+    return build_onboarding_service_for_session(session)
 
 
 OnboardingServiceDep = Annotated[OnboardingService, Depends(get_onboarding_service)]
 
 
+def build_dependente_service_for_session(
+    session: AsyncSession,
+) -> DependenteService:
+    """Build dependente service outside request scope (tests/worker tooling)."""
+    return DependenteService(session=session)
+
+
 def get_dependente_service(session: DbSessionDep) -> DependenteService:
     """Provide scoped dependent service instance."""
-    return DependenteService(session=session)
+    return build_dependente_service_for_session(session)
 
 
 DependenteServiceDep = Annotated[DependenteService, Depends(get_dependente_service)]

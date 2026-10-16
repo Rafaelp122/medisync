@@ -8,12 +8,10 @@ from src.core.context import tenant_context
 from src.core.errors import NotFoundError
 from src.modules.billing import (
     ElegibilidadeNotifierPort,
-    ElegibilidadeService,
     EligibilityProviderPort,
-    PrivateInsuranceGatewayAdapter,
     RequisicaoElegibilidade,
-    SusEligibilityAdapter,
 )
+from src.modules.billing.composition import build_elegibilidade_service
 from src.modules.identity.composition import get_identity_reader
 from src.modules.queue.composition import build_fila_service_for_session
 from src.worker.context import get_db_session_from_ctx, get_valkey_from_ctx
@@ -58,16 +56,10 @@ async def validar_elegibilidade_task(
                 identity_reader = get_identity_reader(session)
                 is_sus = await identity_reader.obter_modo_sus(organizacao_id)
 
-            # 2. Select adapter
-            resolved_provider = provider
-            if resolved_provider is None:
-                if is_sus:
-                    resolved_provider = SusEligibilityAdapter()
-                else:
-                    resolved_provider = PrivateInsuranceGatewayAdapter()
-
-            service = ElegibilidadeService(
-                provider=resolved_provider,
+            # 2. Build service via billing composition root
+            service = build_elegibilidade_service(
+                is_sus=bool(is_sus),
+                provider=provider,
                 notifier=notifier,
             )
             req = RequisicaoElegibilidade(

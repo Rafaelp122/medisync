@@ -29,8 +29,12 @@ from src.modules.auth.application.services.patient_auth_service import (
 )
 from src.modules.auth.infrastructure.argon2_hasher import Argon2PasswordHasher
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
-from src.modules.auth.infrastructure.valkey_rate_limiter import ValkeyAuthRateLimiter
+from src.modules.auth.infrastructure.valkey_rate_limiter import (
+    FakeAuthRateLimiter,
+    ValkeyAuthRateLimiter,
+)
 from src.modules.auth.infrastructure.valkey_token_revocation import (
+    MemoryTokenRevocation,
     ValkeyTokenRevocation,
 )
 from src.modules.identity.application.ports.identity_reader_port import (
@@ -60,24 +64,44 @@ def get_token_service() -> TokenServicePort:
 
 
 def get_rate_limiter() -> AuthRateLimiterPort:
-    """Provide Valkey sliding-window auth rate limiter adapter."""
+    """Provide auth rate limiter adapter based on active settings."""
+    settings = get_settings()
+    if settings.RATE_LIMIT_BACKEND == "memory":
+        return FakeAuthRateLimiter()
     return ValkeyAuthRateLimiter()
 
 
 def get_token_revocation() -> TokenRevocationPort:
-    """Provide distributed Valkey token revocation adapter."""
+    """Provide token revocation adapter based on active settings."""
+    settings = get_settings()
+    if settings.TOKEN_REVOCATION_BACKEND == "memory":  # noqa: S105
+        return MemoryTokenRevocation()
     return ValkeyTokenRevocation()
+
+
+def build_auth_service_for_session(
+    session: AsyncSession,
+    hasher: PasswordHasherPort | None = None,
+    token_service: TokenServicePort | None = None,
+    rate_limiter: AuthRateLimiterPort | None = None,
+    revocation: TokenRevocationPort | None = None,
+) -> AuthService:
+    """Build AuthService outside request scope (tests/worker tooling)."""
+    settings = get_settings()
+    return AuthService(
+        session=session,
+        hasher=hasher or get_password_hasher(),
+        token_service=token_service or get_token_service(),
+        rate_limiter=rate_limiter or get_rate_limiter(),
+        revocation=revocation or get_token_revocation(),
+        max_attempts=settings.AUTH_RATE_LIMIT_MAX_ATTEMPTS,
+        window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    )
 
 
 def get_auth_service(session: DbSessionDep) -> AuthService:
     """Build AuthService with all mandatory ports wired (no infra defaults)."""
-    return AuthService(
-        session=session,
-        hasher=get_password_hasher(),
-        token_service=get_token_service(),
-        rate_limiter=get_rate_limiter(),
-        revocation=get_token_revocation(),
-    )
+    return build_auth_service_for_session(session)
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
@@ -100,6 +124,7 @@ def build_patient_auth_service_for_session(
         secret_key=settings.JWT_SECRET_KEY,
         algorithm=settings.JWT_ALGORITHM,
         access_token_expire_minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
+        is_debug=settings.DEBUG,
     )
 
 
@@ -108,15 +133,7 @@ def get_patient_auth_service(
     valkey: Annotated[Redis, Depends(get_valkey_client)],
 ) -> PatientAuthService:
     """Provide PatientAuthService instance wired with dependencies."""
-    settings = get_settings()
-    return PatientAuthService(
-        identity_reader=build_identity_reader_sql_for_session(session),
-        valkey_client=valkey,
-        sms_sender=get_sms_sender(),
-        secret_key=settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-        access_token_expire_minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
-    )
+    return build_patient_auth_service_for_session(session=session, valkey=valkey)
 
 
 PatientAuthServiceDep = Annotated[PatientAuthService, Depends(get_patient_auth_service)]
