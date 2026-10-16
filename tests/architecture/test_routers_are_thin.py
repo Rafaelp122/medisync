@@ -17,8 +17,10 @@ SRC_ROOT = REPO_ROOT / "src" / "modules"
 
 
 def _router_files() -> list[Path]:
-    files = sorted((SRC_ROOT).glob("*/presentation/routers/*.py"))
-    assert files, "no router files found under src/modules/*/presentation/routers/"
+    module_files = sorted(SRC_ROOT.glob("*/presentation/routers/*.py"))
+    core_files = sorted((REPO_ROOT / "src" / "core").glob("*router*.py"))
+    files = module_files + core_files
+    assert files, "no router files found under presentation/routers/ or core/"
     return [f for f in files if f.name != "__pycache__"]
 
 
