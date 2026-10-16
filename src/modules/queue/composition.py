@@ -11,7 +11,7 @@ from uuid import UUID
 
 from arq.connections import ArqRedis
 from fastapi import Depends
-from redis.asyncio import Redis
+from redis.asyncio import ConnectionPool, Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
@@ -50,6 +50,20 @@ def get_notification_adapter() -> NotificationPort | None:
 
 
 logger = logging.getLogger("medisync.queue.composition")
+
+
+async def on_startup(pool: ConnectionPool | None = None) -> None:
+    """Preload Valkey Lua scripts on application startup (Lifespan hook)."""
+    target_pool = pool or get_valkey_pool()
+    client = Redis(connection_pool=target_pool)
+    try:
+        script_manager = get_lua_script_manager()
+        loaded = await script_manager.preload_scripts(client)
+        logger.info(
+            "Preloaded %d Valkey Lua scripts: %s", len(loaded), list(loaded.keys())
+        )
+    finally:
+        await client.aclose()
 
 
 async def get_arq_pool_dep() -> ArqRedis | None:
