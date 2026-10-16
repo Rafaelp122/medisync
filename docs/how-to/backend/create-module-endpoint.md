@@ -19,6 +19,7 @@ Checklist obrigatório para todo endpoint novo (conferência via AST, não revis
 3. **Service commita 1x por caso de uso.** `await session.commit()` no fim do método público que persiste. Helpers e policies nunca commitam.
 4. **HTTPException só em `presentation/dependencies.py`.** Único lugar que pode levantar 429 é helper como `exigir_rate_limit` (com header `Retry-After`). Routers importam de lá. Erros de domínio via `src/core/errors.py` (`NotFoundError`, `ForbiddenError`, …).
 5. **Guardas verdes.** `tests/architecture/test_routers_are_thin.py` (AST, 5 testes) e `just tach` (fronteiras) devem passar antes do commit.
+6. **Conexão ao Roteador Agregado do Módulo.** Conecte o novo router ao `http_router` (ou `ws_router`) em `src/modules/<modulo>/presentation/routers/__init__.py`. Não altere `src/main.py`: o entrypoint consome apenas o router agregado do módulo (Issue #68).
 
 Entrada: se dados vêm 100% do corpo JSON, use schema Pydantic (`frozen=True`) direto como entrada do service. Use `@dataclass(frozen=True)` com sufixo `Command` só para agregar múltiplas origens (path params, tenant, IP). Saída: `model_config = ConfigDict(from_attributes=True)` + `model_validate`. Proibido mapeamento manual campo a campo e DTOs espelho com `to_domain`/`to_orm`.
 

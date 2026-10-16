@@ -260,9 +260,10 @@ src/
 > internamente por `queue` (`queue/composition.py`); `billing` permanece sem composition própria (stateless).
 > Detalhes no guia [Composition Root e Injeção de Dependências](../concepts/composition-root-and-dependencies.md).
 >
-> **Prefixo de rotas**: HTTP sob `/api/v1` (`src/main.py`: `APIRouter(prefix="/api/v1")`
-> monta `auth/onboarding/pacientes/consultations/documents`); WebSockets de sinalização
-> (`/ws/queue/{id}`, `/ws/doctor/{id}`) fora do prefixo, montados direto no `app`.
+> **Prefixo de rotas e Roteadores Agregados (ADR-001 §7.1 / Issue #68)**: HTTP sob `/api/v1` (`src/main.py`: `APIRouter(prefix="/api/v1")`).
+> Cada módulo agrega seus sub-roteadores em `src/modules/<modulo>/presentation/routers/__init__.py` exportando `http_router` (e `ws_router`),
+> permitindo que `src/main.py` monte um único router por módulo. WebSockets de sinalização
+> (`/ws/queue/{id}`, `/ws/doctor/{id}`) rodam fora do prefixo, montados direto no `app`. O endpoint `/healthz` é isolado em `src/core/health_router.py`.
 >
 > **Breakings routers finos**: alias `/atendimentos/{id}/prontuario` removido (usar
 > `/api/v1/consultations/{id}/prontuario`); tenant ausente `400 TENANT_INVALIDO`, login sem

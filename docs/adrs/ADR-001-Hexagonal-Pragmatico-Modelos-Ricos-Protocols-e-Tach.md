@@ -122,3 +122,23 @@ Adotamos a **Opção 3: Hexagonal Pragmático com Modelos Ricos no SQLAlchemy 2.
   * Emissão de tokens JWT com Video Grants do LiveKit SFU encapsulada em `TeleconsultaService`, eliminando injeção direta de adaptadores de infraestrutura no router de apresentação.
 * **Revogação Distribuída de Tokens JWT (`TokenRevocationPort`)**:
   * Substituição do cache em memória por `ValkeyTokenRevocation`, garantindo invalidação atômica e distribuída de refresh tokens entre múltiplos workers e instâncias.
+
+---
+
+## 9. Adendo — Composition Root Enxuto e Agregação de Rotas (Issue #68 - 2026-10-16)
+
+* **Composition Root Global Enxuto (`src/main.py`)**:
+  * `src/main.py` atua estritamente como montador da aplicação FastAPI e do ciclo de vida assíncrono (`lifespan`).
+  * **Proibição de imports de infraestrutura**: `main.py` não importa adaptadores nem classes de `src.modules.*.infrastructure` (garantido por guard AST em `tests/architecture/test_main_composition_root.py`).
+* **Agregação Modular de Rotas (Estilo `urls.py` do Django)**:
+  * Cada módulo expõe suas rotas em `src/modules/<modulo>/presentation/routers/__init__.py`:
+    * `http_router`: agrega todos os sub-roteadores HTTP do módulo.
+    * `ws_router`: agrega os endpoints WebSocket (onde aplicável).
+  * `src/main.py` faz exatamente um `include_router` por módulo sob o prefixo `/api/v1` (`api_v1.include_router(modulo.http_router)`) e monta os WebSockets diretamente na raiz da aplicação.
+* **Extração e Blindagem de `/healthz`**:
+  * O endpoint de diagnóstico do sistema foi extraído da factory `create_app` para `src/core/health_router.py`.
+  * Passa a ser auditado pelo guard AST de routers finos (`tests/architecture/test_routers_are_thin.py`).
+  * Versão consumida dinamicamente via `CommonSettings.APP_VERSION` em `src/core/config.py`.
+* **Hooks Assíncronos de Ciclo de Vida (`on_startup`)**:
+  * Inicializações técnicas de infraestrutura (como pré-carregamento de scripts Lua em Valkey) foram migradas para hooks assíncronos no composition root do respectivo módulo (ex.: `src/modules/queue/composition.py:on_startup`).
+  * O `lifespan` de `main.py` apenas despacha esses hooks, mantendo o encapsulamento hexagonal.

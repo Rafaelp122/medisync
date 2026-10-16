@@ -67,6 +67,15 @@ app.dependency_overrides[get_fila_service] = lambda: mock_service
 
 Combinado com perfis `ENVIRONMENT="test"`, os testes alcançam execução instantânea em memória (`just test-fast`).
 
+### 6. Composition Root da Aplicação (`src/main.py`) e Hooks de Ciclo de Vida
+
+No nível global, `src/main.py` é o **Composition Root enxuto** da aplicação:
+
+1. **Montagem de Rotas**: `src/main.py` não conhece sub-roteadores internos. Cada módulo exporta `http_router` (e `ws_router`) via `presentation/routers/__init__.py`. O `main.py` monta cada módulo com um único `api_v1.include_router(...)`.
+2. **Isolamento de Infraestrutura**: `main.py` **nunca importa nada de `src.modules.*.infrastructure`** (assegurado por `tests/architecture/test_main_composition_root.py`).
+3. **Hooks de Ciclo de Vida (`on_startup`)**: Quando um módulo precisa executar inicializações na inicialização do servidor (como o pré-carregamento de scripts Lua no Valkey), a lógica fica encapsulada no `composition.py` do módulo (ex.: `src/modules/queue/composition.py:on_startup`). O `lifespan` em `main.py` apenas despacha o hook assíncrono.
+4. **Diagnóstico do Sistema**: O endpoint `/healthz` é isolado em `src/core/health_router.py` sob o guard de routers finos, consumindo `APP_VERSION` do `Settings`.
+
 ## Onde no código
 
 - Impl auth composition: `src/modules/auth/composition.py:get_auth_service`
@@ -74,10 +83,14 @@ Combinado com perfis `ENVIRONMENT="test"`, os testes alcançam execução instan
 - Impl consultation composition: `src/modules/consultation/composition.py:get_pep_service`
 - Impl identity composition: `src/modules/identity/composition.py:get_onboarding_service`
 - Impl queue composition: `src/modules/queue/composition.py:get_fila_service`
+- Impl queue startup hook: `src/modules/queue/composition.py:on_startup`
 - Impl telemetry composition: `src/modules/telemetry/composition.py:get_telemetry_service`
+- Impl global composition root: `src/main.py:create_app`
+- Impl health router: `src/core/health_router.py:health_router`
 - Spec de fronteiras: `tach.toml`
 - Prova viva AST serviços: `tests/architecture/test_services_and_composition.py:test_services_do_not_import_config_or_get_settings`
 - Prova viva AST routers: `tests/architecture/test_routers_are_thin.py:test_routers_do_not_instantiate_services`
+- Prova viva AST main composition root: `tests/architecture/test_main_composition_root.py:test_main_does_not_import_infrastructure`
 - Prova viva wiring: `tests/unit/test_composition_wiring.py:test_auth_rate_limiter_resolution`
 - Ver: `rg -n "build_.*_for_session|get_.*_service" src/modules/*/composition.py`
 

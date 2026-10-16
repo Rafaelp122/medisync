@@ -44,6 +44,11 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
    * Router nunca importa `sqlalchemy`/`infrastructure`/`domain.models`, nunca chama `.commit()/.refresh()/text()/select()`, nunca instancia `*Service(` (usa `*Dep` da `composition.py`).
    * `HTTPException` só em `presentation/dependencies.py` (ex.: `exigir_rate_limit` → 429); routers importam de lá. Erros de domínio via `src/core/errors.py` (`NotFoundError`, `ForbiddenError`, …).
    * Guardas: `tach check` (Stage B camadas + composition) + `tests/architecture/test_routers_are_thin.py` (AST) devem passar.
+5. **Composition Root Enxuto e Agregação de Rotas (ADR-001 §7.1 / Issue #68):**
+   * `src/main.py` é composition root enxuto: proibido importar `modules/*/infrastructure` (guard AST `tests/architecture/test_main_composition_root.py`).
+   * Cada módulo agrega suas rotas em `src/modules/<modulo>/presentation/routers/__init__.py` exportando `http_router` (e `ws_router`). `main.py` inclui apenas 1 router HTTP por módulo sob `/api/v1`.
+   * Endpoint de saúde `/healthz` reside em `src/core/health_router.py` sob o guard de routers finos e versão via `Settings.APP_VERSION`.
+   * Ciclo de vida (`lifespan`) delega inicializações para hooks assíncronos nos composition roots dos módulos (ex: `queue.composition.on_startup`).
 
 ---
 
