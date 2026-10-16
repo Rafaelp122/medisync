@@ -92,6 +92,18 @@ migration-history:
 docs-check:
     uv run python scripts/docs_check.py
 
+# Executa auditoria estática de segredos com gitleaks (binário local ou Docker)
+scan-secrets:
+    @if command -v gitleaks >/dev/null 2>&1; then \
+        gitleaks detect --config=.gitleaks.toml --verbose --redact; \
+    else \
+        docker run --rm -v {{invocation_directory()}}:/path zricethezav/gitleaks:latest detect --source="/path" --config="/path/.gitleaks.toml" --verbose --redact; \
+    fi
+
+# Instala hooks locais de pre-commit no repositório git via uvx
+pre-commit-install:
+    uvx pre-commit install
+
 # Compila a imagem Docker de produção
 docker-build:
     docker build -t medisync:latest --target production .
@@ -99,4 +111,3 @@ docker-build:
 # Compila a imagem Docker de desenvolvimento
 docker-build-dev:
     docker build -t medisync:dev --target development .
-

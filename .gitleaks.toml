@@ -1,0 +1,28 @@
+title = "MediSync Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlists for synthetic test fixtures, documentation and dev defaults"
+paths = [
+    '''(?i)tests/''',
+    '''(?i)docs/''',
+    '''\.env\.example''',
+    '''\.pytest_cache/''',
+]
+regexes = [
+    '''dev-insecure-.*''',
+    '''fake-.*''',
+    '''valid-oauth2-psc-token''',
+    '''token-xyz''',
+    '''test_org:.*''',
+    '''medisync:latest''',
+    '''medisync:dev''',
+    '''chave=s3_key''',
+]
+stopwords = [
+    "s3_key",
+    "chave=s3_key",
+]
+

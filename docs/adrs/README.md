@@ -17,6 +17,7 @@ Este diretório armazena o registro formal de **Decisões de Arquitetura (ADRs)*
 | **[ADR-007](ADR-007-Auditoria-Imutavel-Append-Only.md)** | Trilha de Auditoria Imutável Append-Only via DCL e Triggers Restritivas | Aprovado | Chaves em UUIDv7 (sem sequências de banco), blindagem de `audit_events` via `REVOKE UPDATE, DELETE` e Triggers com `RAISE EXCEPTION`. |
 | **[ADR-008](ADR-008-Padronizacao-de-DTOs-e-Eliminacao-de-Mapper-Hell-na-Apresentacao.md)** | Padronização de DTOs e Eliminação de Mapper Hell na Apresentação | Aprovado | Uso de Pydantic v2 imutável em entradas 1:1, `Command` apenas com enriquecimento de contexto, `from_attributes=True` e `model_validate()` em responses (zero mappers manuais). |
 | **[ADR-009](ADR-009-Configuracoes-Polimorficas-por-Perfil-e-Desacoplamento-nos-Composition-Roots.md)** | Configurações Polimórficas por Perfil e Desacoplamento nos Composition Roots | Aprovado | Perfis polimórficos de Pydantic Settings (`development`, `test`, `production`) com fail-fast, eliminação de singletons mutáveis (`global`), fiação dinâmica nos Composition Roots e proibição de `get_settings()` em services. |
+| **[ADR-010](ADR-010-Estrategia-DevSecOps-Defesa-em-Profundidade-de-Segredos-e-SAST.md)** | Estratégia de DevSecOps — Defesa em Profundidade de Segredos e SAST em Camadas | Aprovado | Firewall de segredos com Gitleaks no PR e pré-commit opcional via `just scan-secrets`, SAST profundo assíncrono com CodeQL em Python 3.12, allowlists de dados sintéticos e preservação estrita do Fast CI (<30s). |
 
 
 ---

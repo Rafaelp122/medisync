@@ -1,0 +1,4 @@
+# Gitleaks ignore file for MediSync
+# Fingerprints of known false-positives in historical git commits
+
+f21c50f569e4b4bbdf8e2ce357164f6505c40fe9:src/modules/consultation/application/services/document_validation_service.py:generic-api-key:174

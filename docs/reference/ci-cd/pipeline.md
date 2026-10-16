@@ -20,6 +20,15 @@ O pipeline é acionado nos eventos `push` e `pull_request` direcionados à branc
 | `unit-tests` | Regras clínicas, modelos ricos e AST routers | `uv run pytest tests/unit tests/architecture -n auto --cov=src` | Nenhuma (em memória) |
 | `docker-build` | Validação de empacotamento OCI multi-stage | `docker buildx build --target production` (cache `gha`) | Docker Buildx |
 
+### Workflows Complementares de Segurança (DevSecOps)
+
+Além do pipeline principal de CI, o repositório conta com dois workflows dedicados à segurança no GitHub Actions:
+
+| Workflow | Arquivo | Gatilhos | Objetivo e Ferramental |
+| :--- | :--- | :--- | :--- |
+| **Secret Scanning** | `.github/workflows/secret-scanning.yml` | `push` e `pull_request` (branch `main`) | Detecção preventiva de segredos, credenciais e chaves via `gitleaks-action@v2` e `.gitleaks.toml`. |
+| **Deep SAST** | `.github/workflows/codeql.yml` | `push` (branch `main`), `schedule` (semanal) e `pull_request` (código em src/) | Análise estática profunda de vulnerabilidades e fluxo de dados (*taint tracking*) em Python 3.12 via GitHub CodeQL. |
+
 ### Estágios do `Dockerfile`
 
 O arquivo `Dockerfile` define quatro estágios sequenciais e reutilizáveis:
@@ -77,14 +86,17 @@ uv run ruff format --check .
 uv run ruff check .
 uv run basedpyright
 uv run tach check
+just scan-secrets
 just docker-build
 ```
 
-Esperado: todas as checagens estáticas retornam código 0; build Docker conclui gerando tag `medisync:latest`.
+Esperado: todas as checagens estáticas e varredura de segredos retornam código 0; build Docker conclui gerando tag `medisync:latest`.
 
 ## Ver também
 
+- [ADR-010: Estratégia de DevSecOps](../../adrs/ADR-010-Estrategia-DevSecOps-Defesa-em-Profundidade-de-Segredos-e-SAST.md)
 - [Run Docker Container](../../how-to/dev-environment/run-docker.md)
 - [Testing Strategy](../../explanation/architecture/testing-strategy.md)
 - [CI/CD Strategy & Container Architecture](../../explanation/architecture/ci-cd-and-containers.md)
 - [Environment Variables](../environment/variables.md)
+

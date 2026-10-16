@@ -214,4 +214,3 @@ depends_on = [
     "src.modules.telemetry.application",
     "src.modules.telemetry.composition",
 ]
-

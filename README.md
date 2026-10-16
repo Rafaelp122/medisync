@@ -7,7 +7,7 @@
 ## 📌 Contexto do Projeto & Isenção de Escopo (Portfolio Disclaimer)
 
 > [!IMPORTANT]
-> **Natureza do Projeto:**  
+> **Natureza do Projeto:**
 > O **MediSync Express** é um **projeto conceitual de engenharia de software e arquitetura avançada desenvolvido para fins de portfólio técnico**.
 >
 > **O que este projeto É:**
@@ -236,6 +236,12 @@ ruff check .
 
 # 4. Execução da suíte de testes automatizados
 pytest
+
+# 5. Auditoria de segredos e credenciais (Gitleaks - ADR-010)
+just scan-secrets
+
+# (Opcional) Instalar hooks locais de pré-commit
+just pre-commit-install
 ```
 
 ---

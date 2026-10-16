@@ -48,6 +48,13 @@ Em conformidade com a LGPD e normas do CFM para dados clínicos sensíveis, o ar
 * **Bloqueio de Variáveis Locais:** Arquivos `.env` e chaves temporárias são explicitamente excluídos do contexto enviado ao Docker Daemon.
 * **Eliminação de Resíduos de Teste:** Diretórios `.pytest_cache`, `.coverage` e `.venv` são ignorados, garantindo que o estágio `builder` compile dependências limpas e reprodutíveis a partir do `uv.lock`.
 
+### 6. Estratégia de DevSecOps e SAST em Camadas (ADR-010)
+
+O MediSync Express adota uma estratégia de segurança em profundidade no ciclo de desenvolvimento (SDLC) estruturada em três camadas desacopladas:
+1. **Firewall Local & Pre-Commit:** Verificação opcional no commit via `.pre-commit-config.yaml` e comando local `just scan-secrets`, executando o Gitleaks com allowlists estruturadas (`.gitleaks.toml` e `.gitleaksignore`) para proteger chaves e certificados de saúde.
+2. **Fast CI de Pull Request (<30s):** O workflow `.github/workflows/secret-scanning.yml` executa o Gitleaks em paralelo aos jobs de lint, tipos e testes unitários em memória. Testes com I/O pesado ou contêineres reais não são executados neste portão síncrono.
+3. **Deep SAST Assíncrono (CodeQL):** O workflow `.github/workflows/codeql.yml` realiza rastreamento profundo de fluxo de dados (*taint analysis*) em Python 3.12, acionado em pushes para a `main`, schedule semanal e PRs que mutacionam arquivos em `src/`, sem onerar o tempo de resposta do Fast CI.
+
 
 ## Onde no código
 
@@ -73,8 +80,10 @@ Esperado: contêiner sobe em segundo plano, executa como usuário não-root e en
 
 ## Ver também
 
+- [ADR-010: Estratégia de DevSecOps](../../adrs/ADR-010-Estrategia-DevSecOps-Defesa-em-Profundidade-de-Segredos-e-SAST.md)
 - [Run Docker Container](../../how-to/dev-environment/run-docker.md)
 - [CI Pipeline & Docker Specification](../../reference/ci-cd/pipeline.md)
 - [Testing Strategy](testing-strategy.md)
 - [Architecture Overview](overview.md)
 - [Setup Local](../../how-to/dev-environment/setup-local.md)
+
