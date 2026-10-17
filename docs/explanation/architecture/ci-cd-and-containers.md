@@ -55,11 +55,26 @@ O MediSync Express adota uma estratégia de segurança em profundidade no ciclo 
 2. **Fast CI de Pull Request (<30s):** O workflow `.github/workflows/secret-scanning.yml` executa o Gitleaks em paralelo aos jobs de lint, tipos e testes unitários em memória. Testes com I/O pesado ou contêineres reais não são executados neste portão síncrono.
 3. **Deep SAST Assíncrono (CodeQL):** O workflow `.github/workflows/codeql.yml` realiza rastreamento profundo de fluxo de dados (*taint analysis*) em Python 3.12, acionado em pushes para a `main`, schedule semanal e PRs que mutacionam arquivos em `src/`, sem onerar o tempo de resposta do Fast CI.
 
+### 7. Estratégia de Versionamento Semântico Automatizado (Commitizen & SemVer)
+
+A rastreabilidade de versões no MediSync Express é tratada como requisito de governança clínica e conformidade regulatória (CFM e ANVISA). Para assegurar auditabilidade estrita sem fricção humana:
+
+1. **Commitizen Nativo em Python:** Em vez de introduzir ecossistemas Node.js/npm no pipeline exclusivamente para release semântico, o projeto adota o `commitizen-tools` executado diretamente no ambiente Python com `uv`.
+2. **Prevenção de Loops Recursivos no CI:** O workflow `.github/workflows/release.yml` monitora pushes na branch `main`. A cláusula condicional de job ignora commits iniciados por `bump:` ou `chore(release):`, prevenindo que a própria criação de tag e changelog dispare novos ciclos infinitos de release.
+3. **Sincronização Atômica Multiarquivo (`.cz.toml`):** A cada bump, o Commitizen propaga simultaneamente o número de versão para:
+   - `pyproject.toml` (metadados do pacote Python);
+   - `src/core/config.py` (constante `APP_VERSION`, exposta publicamente no `/healthz` para checagem de integridade do cluster);
+   - `CHANGELOG.md` (registro histórico incremental agrupado por `Feat`, `Fix` e `Refactor`).
+4. **Governança de Fase Pré-1.0:** A diretiva `major_version_zero = true` no `.cz.toml` orienta o cálculo SemVer durante a fase de validação e homologação, permitindo evolução ágil sem inflar prematuramente a versão maior antes da maturidade de produção.
+
 
 ## Onde no código
 
 - Impl: `.github/workflows/ci.yml:jobs`
+- Impl: `.github/workflows/release.yml:jobs`
 - Impl: `Dockerfile:production`
+- Config: `.cz.toml`
+- Versão: `src/core/config.py:APP_VERSION`
 - Prova viva: `tests/integration/test_migrations.py:test_downgrade_base_and_reupgrade_lifecycle`
 - Spec: `docs/explanation/architecture/testing-strategy.md`
 - Ver: `rg -n "name: CI" .github/workflows/ci.yml`
@@ -82,6 +97,7 @@ Esperado: contêiner sobe em segundo plano, executa como usuário não-root e en
 
 - [ADR-010: Estratégia de DevSecOps](../../adrs/ADR-010-Estrategia-DevSecOps-Defesa-em-Profundidade-de-Segredos-e-SAST.md)
 - [Run Docker Container](../../how-to/dev-environment/run-docker.md)
+- [Release e Versionamento Semântico](../../how-to/dev-environment/release-and-versioning.md)
 - [CI Pipeline & Docker Specification](../../reference/ci-cd/pipeline.md)
 - [Testing Strategy](testing-strategy.md)
 - [Architecture Overview](overview.md)

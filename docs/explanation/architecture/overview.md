@@ -261,7 +261,7 @@ src/
 > Detalhes no guia [Composition Root e Injeção de Dependências](../concepts/composition-root-and-dependencies.md).
 >
 > **Prefixo de rotas e Roteadores Agregados (ADR-001 §7.1 / Issue #68)**: HTTP sob `/api/v1` (`src/main.py`: `APIRouter(prefix="/api/v1")`).
-> Cada módulo agrega seus sub-roteadores em `src/modules/<modulo>/presentation/routers/__init__.py` exportando `http_router` (e `ws_router`),
+> Cada módulo agrega seus sub-roteadores em `presentation/routers/__init__.py` exportando `http_router` (e `ws_router`),
 > permitindo que `src/main.py` monte um único router por módulo. WebSockets de sinalização
 > (`/ws/queue/{id}`, `/ws/doctor/{id}`) rodam fora do prefixo, montados direto no `app`. O endpoint `/healthz` é isolado em `src/core/health_router.py`.
 >
