@@ -1,3 +1,9 @@
+## v0.2.1 (2026-10-17)
+
+### Fix
+
+- **queue/identity/telemetry**: correções operacionais de atendimento, onboarding OTP e TTL de telemetria
+
 ## v0.2.0 (2026-10-17)
 
 ### Feat
