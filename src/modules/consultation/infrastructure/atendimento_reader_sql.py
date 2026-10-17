@@ -55,3 +55,15 @@ class SqlAtendimentoReader:
             ),
             {"id": atendimento_id},
         )
+        await self._session.commit()
+
+    async def atender_chamada(self, atendimento_id: UUID) -> None:
+        await self._session.execute(
+            text(
+                "UPDATE atendimentos SET status = 'EM_ATENDIMENTO', "
+                "atualizado_em = NOW() "
+                "WHERE id = :id AND status = 'CHAMANDO_PACIENTE'"
+            ),
+            {"id": atendimento_id},
+        )
+        await self._session.commit()

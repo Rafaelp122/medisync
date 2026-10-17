@@ -4,7 +4,7 @@
 > **Invariantes Relacionadas:** RN02 (Ring Timeout e Liberação de Lock), RN03  
 > **Personas:** Juliana Silva (Paciente) e Dr. Eduardo Rocha (Médico)  
 > **Módulos:** `queue`, `worker`, `consultation`  
-> **Status de Qualidade:** 🟡 **Parcial** *(NC-QUE-03 / Integração do ingresso no LiveKit com transição de atendimento)*
+> **Status de Qualidade:** 🟢 **Conforme**
 
 ---
 
@@ -74,7 +74,7 @@
 
 - [x] **Domínio:** Método `Atendimento.atender_chamada()` implementado e testado no modelo (`src/modules/queue/domain/models/atendimento.py`).
 - [x] **Worker de No-Show:** Tarefa assíncrona `ring_timeout_task` libera locks e transiciona para `PACIENTE_AUSENTE` (`src/worker/tasks/ring_timeout.py`).
-- [ ] **Integração de Ingresso (NC-QUE-03):** Acionar `Atendimento.atender_chamada()` e neutralização do timeout na emissão de token LiveKit do paciente em `TeleconsultaService` ou via webhook do LiveKit (`src/modules/consultation/application/services/teleconsulta_service.py`).
+- [x] **Integração de Ingresso (NC-QUE-03):** Acionar `Atendimento.atender_chamada()` e neutralização do timeout na emissão de token LiveKit do paciente em `TeleconsultaService` (`src/modules/consultation/application/services/teleconsulta_service.py`).
 - [x] **Testes Automatizados:**
   - `tests/unit/test_atendimento_model.py`
   - `tests/integration/test_ring_timeout_flow.py`

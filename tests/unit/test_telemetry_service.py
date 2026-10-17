@@ -110,7 +110,7 @@ async def test_telemetry_service_obter_painel_cache_miss() -> None:
     cache.salvar_painel.assert_awaited_once_with(
         organizacao_id=10,
         painel=fresh_painel,
-        ttl_segundos=15,
+        ttl_segundos=5,
     )
 
 
@@ -135,7 +135,35 @@ async def test_telemetry_service_obter_painel_desconsiderar_cache() -> None:
     cache.salvar_painel.assert_awaited_once_with(
         organizacao_id=10,
         painel=fresh_painel,
-        ttl_segundos=15,
+        ttl_segundos=5,
+    )
+
+
+@pytest.mark.asyncio
+async def test_telemetry_service_custom_cache_ttl_segundos() -> None:
+    reader = AsyncMock(spec=TelemetryReaderPort)
+    config_repo = AsyncMock(spec=ConfigPlantaoRepositoryPort)
+    cache = AsyncMock(spec=TelemetryCachePort)
+
+    cache.obter_painel.return_value = None
+    config = ConfiguracaoPlantao(organizacao_id=10)
+    config_repo.obter_por_organizacao.return_value = config
+
+    fresh_painel = _sample_painel(org_id=10)
+    reader.obter_painel_telemetria.return_value = fresh_painel
+
+    service = TelemetryService(
+        reader=reader,
+        config_repo=config_repo,
+        cache=cache,
+        cache_ttl_segundos=30,
+    )
+    result = await service.obter_painel(organizacao_id=10)
+    assert result == fresh_painel
+    cache.salvar_painel.assert_awaited_once_with(
+        organizacao_id=10,
+        painel=fresh_painel,
+        ttl_segundos=30,
     )
 
 

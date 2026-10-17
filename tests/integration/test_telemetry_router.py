@@ -61,7 +61,7 @@ async def test_obter_painel_telemetria_gestor_sucesso(
     valkey = Redis(connection_pool=get_valkey_pool())
     ttl = await valkey.ttl(f"telemetry:painel:{org.id}")
     assert ttl > 0
-    assert ttl <= 15
+    assert ttl <= 5
 
     # 3. Segunda consulta: retorna do cache
     resp_cached = await async_client.get("/api/v1/telemetria/painel", headers=headers)

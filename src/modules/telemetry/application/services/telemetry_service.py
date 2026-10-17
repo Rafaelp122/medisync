@@ -12,8 +12,6 @@ from src.modules.telemetry.application.ports.telemetry_reader_port import (
 )
 from src.modules.telemetry.domain.models import ConfiguracaoPlantao
 
-_CACHE_TTL_SEGUNDOS = 15
-
 
 class TelemetryService:
     """Service handling operational shift telemetry metrics with TTL caching."""
@@ -23,10 +21,12 @@ class TelemetryService:
         reader: TelemetryReaderPort,
         config_repo: ConfigPlantaoRepositoryPort,
         cache: TelemetryCachePort,
+        cache_ttl_segundos: int = 5,
     ) -> None:
         self._reader = reader
         self._config_repo = config_repo
         self._cache = cache
+        self._cache_ttl_segundos = cache_ttl_segundos
 
     async def obter_painel(
         self, organizacao_id: int, desconsiderar_cache: bool = False
@@ -49,7 +49,7 @@ class TelemetryService:
         await self._cache.salvar_painel(
             organizacao_id=organizacao_id,
             painel=painel,
-            ttl_segundos=_CACHE_TTL_SEGUNDOS,
+            ttl_segundos=self._cache_ttl_segundos,
         )
 
         return painel

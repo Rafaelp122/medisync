@@ -100,6 +100,7 @@ class CommonSettings(BaseSettings):
     TOKEN_REVOCATION_BACKEND: Literal["valkey", "memory"] = "valkey"
     VALIDATION_RATE_LIMIT_BACKEND: Literal["valkey", "memory"] = "valkey"
     TELEMETRY_CACHE_BACKEND: Literal["valkey", "memory"] = "valkey"
+    TELEMETRY_CACHE_TTL_SEGUNDOS: int = 5
     SAMU_WEBHOOK_URL: str | None = None
 
     # --- Messaging & Notifications (WhatsApp / SMS) ---

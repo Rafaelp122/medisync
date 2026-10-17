@@ -28,6 +28,8 @@ class AtendimentoReaderPort(Protocol):
 
     async def concluir_atendimento(self, atendimento_id: UUID) -> None: ...
 
+    async def atender_chamada(self, atendimento_id: UUID) -> None: ...
+
 
 async def is_atendimento_terminal(
     reader: AtendimentoReaderPort | None,

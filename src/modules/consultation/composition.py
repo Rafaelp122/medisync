@@ -5,6 +5,7 @@ Routers and tests must resolve PEPService via get_pep_service/PEPServiceDep
 and LiveKit service via get_teleconsulta_service/TeleconsultaServiceDep.
 """
 
+import logging
 from functools import lru_cache
 from typing import Annotated
 from uuid import UUID
@@ -81,6 +82,8 @@ from src.modules.identity.composition import get_identity_reader
 from src.modules.queue.application.ports.queue_store_port import QueueStorePort
 from src.modules.queue.composition import build_fila_service_for_session
 
+logger = logging.getLogger("medisync.consultation.composition")
+
 
 class QueueStoreAtendimentoReaderAdapter:
     """Adapts QueueStorePort to consultation's AtendimentoReaderPort without raw SQL."""
@@ -104,6 +107,9 @@ class QueueStoreAtendimentoReaderAdapter:
 
     async def concluir_atendimento(self, atendimento_id: UUID) -> None:
         await self._queue_store.concluir_atendimento(atendimento_id)
+
+    async def atender_chamada(self, atendimento_id: UUID) -> None:
+        await self._queue_store.atender_chamada(atendimento_id)
 
 
 class IdentityDocumentDirectoryAdapter:
@@ -199,7 +205,12 @@ def get_atendimento_reader(session: DbSessionDep) -> AtendimentoReaderPort:
     try:
         queue_store: QueueStorePort = build_fila_service_for_session(session=session)
         return QueueStoreAtendimentoReaderAdapter(queue_store)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Falha ao instanciar QueueStoreAtendimentoReaderAdapter, "
+            "usando fallback SqlAtendimentoReader: %s",
+            exc,
+        )
         return SqlAtendimentoReader(session)
 
 
@@ -351,14 +362,36 @@ def get_livekit_adapter() -> LiveKitMediaPort:
     )
 
 
-def get_teleconsulta_service(
-    adapter: Annotated[LiveKitMediaPort, Depends(get_livekit_adapter)],
+def build_teleconsulta_service_for_session(
+    session: AsyncSession,
+    media_port: LiveKitMediaPort | None = None,
+    atendimento_reader: AtendimentoReaderPort | None = None,
 ) -> TeleconsultaService:
-    """Build TeleconsultaService with media port adapter."""
+    """Build TeleconsultaService outside request scope (tests/worker tooling)."""
+    adapter = media_port if media_port is not None else get_livekit_adapter()
+    reader = (
+        atendimento_reader
+        if atendimento_reader is not None
+        else get_atendimento_reader(session)
+    )
     server_url = getattr(adapter, "server_url", "http://localhost:7880")
     return TeleconsultaService(
         media_port=adapter,
         server_url=server_url,
+        atendimento_reader=reader,
+    )
+
+
+def get_teleconsulta_service(
+    session: DbSessionDep,
+    adapter: Annotated[LiveKitMediaPort, Depends(get_livekit_adapter)],
+    reader: Annotated[AtendimentoReaderPort, Depends(get_atendimento_reader)],
+) -> TeleconsultaService:
+    """Build TeleconsultaService with media port adapter and attendance reader."""
+    return build_teleconsulta_service_for_session(
+        session=session,
+        media_port=adapter,
+        atendimento_reader=reader,
     )
 
 

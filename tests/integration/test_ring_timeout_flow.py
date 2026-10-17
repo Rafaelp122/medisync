@@ -5,8 +5,12 @@ from datetime import UTC, datetime
 import pytest
 from arq.connections import create_pool
 from arq.worker import create_worker
+from httpx import ASGITransport, AsyncClient
+from src.core.config import get_settings
 from src.core.context import tenant_context
 from src.core.database import async_session_factory
+from src.core.security import create_intake_token
+from src.main import app
 from src.modules.queue.application.dtos import AlocarChamadaCommand
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
@@ -190,5 +194,93 @@ async def test_alocar_chamada_schedules_arq_job_in_valkey() -> None:
         job_key = f"arq:job:ring_timeout:{atendimento.id}"
         exists = await pool.exists(job_key)
         assert exists == 1
+    finally:
+        await pool.aclose()
+
+
+@pytest.mark.asyncio
+async def test_end_to_end_patient_livekit_token_issuance_prevents_noshow() -> None:
+    """When patient issues LiveKit room token, status transitions to EM_ATENDIMENTO
+
+    and locks promote, preventing false no-show when ring timeout worker fires.
+    """
+    with tenant_context(_TEST_ORG_ID):
+        async with async_session_factory() as session:
+            cenario = await seed_clinical_scenario(
+                session,
+                org_id=_TEST_ORG_ID,
+                status_atendimento=StatusAtendimento.CHAMANDO_PACIENTE,
+            )
+            cenario.atendimento.chamada_iniciada_em = datetime.now(UTC)
+            session.add(cenario.atendimento)
+            await session.commit()
+            org = cenario.organizacao
+            doctor = cenario.medico
+            patient = cenario.paciente
+            atendimento = cenario.atendimento
+
+    pool = await create_pool(WorkerSettings.redis_settings)
+    try:
+        k_medico = f"lock:{org.id}:medico:{doctor.id}"
+        k_atend = f"lock:{org.id}:atendimento:{atendimento.id}"
+        k_consulta = f"lock:{org.id}:consulta_ativa:medico:{doctor.id}"
+        await pool.set(k_medico, str(atendimento.id), ex=45)
+        await pool.set(k_atend, str(doctor.id), ex=45)
+
+        # Enqueue the 45s timeout resolution job
+        job = await pool.enqueue_job(
+            "resolver_ring_timeout_task",
+            organizacao_id=org.id,
+            atendimento_id=str(atendimento.id),
+            medico_id=str(doctor.id),
+        )
+        assert job is not None
+
+        # Patient answers the call by requesting the LiveKit token
+        settings = get_settings()
+        intake_token = create_intake_token(patient.id, org.id, settings.SECRET_KEY)
+        payload = {
+            "organizacao_id": org.id,
+            "participant_id": str(patient.id),
+            "role": "paciente",
+            "participant_name": "Juliana Silva",
+            "is_publisher": True,
+            "ttl_seconds": 1800,
+        }
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/api/v1/consultations/{atendimento.id}/livekit/token",
+                json=payload,
+                headers={"Authorization": f"Bearer {intake_token}"},
+            )
+        assert resp.status_code == 200
+
+        # Execute worker in burst mode (as if 45s elapsed)
+        worker = create_worker(
+            WorkerSettings,  # pyright: ignore[reportArgumentType]
+            burst=True,
+            redis_pool=pool,
+        )
+        await worker.main()
+
+        # Verify PostgreSQL persistence: state must remain EM_ATENDIMENTO
+        # (NOT PACIENTE_AUSENTE)
+        with tenant_context(org.id):
+            async with async_session_factory() as session:
+                refreshed = await session.get(Atendimento, atendimento.id)
+                assert refreshed is not None
+                assert refreshed.status == StatusAtendimento.EM_ATENDIMENTO.value
+                assert refreshed.chamada_finalizada_em is None
+
+        # Verify active consultation lock is promoted in Valkey with TTL 7200s
+        consulta_lock_exists = await pool.exists(k_consulta)
+        assert consulta_lock_exists == 1
+        ttl = await pool.ttl(k_consulta)
+        assert ttl > 0
+
+        # Ring locks are discarded
+        assert await pool.exists(k_medico) == 0
+        assert await pool.exists(k_atend) == 0
     finally:
         await pool.aclose()

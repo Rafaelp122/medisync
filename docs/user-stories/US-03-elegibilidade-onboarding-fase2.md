@@ -4,7 +4,7 @@
 > **Invariantes Relacionadas:** RN03, RN-REG-02 (CFM 1.821/2007 e 2.314/2022)  
 > **Personas:** Juliana Silva (Paciente) e Patrícia Mendes (Faturamento)  
 > **Módulos:** `identity`, `billing`, `queue`, `worker`  
-> **Status de Qualidade:** 🟡 **Parcial** *(NC-IDN-01: intake token vs JWT OTP)*
+> **Status de Qualidade:** 🟢 **Conforme**
 
 ---
 
@@ -72,7 +72,7 @@
 - [x] **Modelo:** Suporte a `nome_social` e dados completos do CFM em `Paciente` (`src/modules/identity/domain/models/paciente.py`).
 - [x] **Worker ARQ:** Tarefa `validar_elegibilidade_task` com idempotência e timeout de 15s (`src/worker/tasks/eligibility.py`).
 - [x] **Adaptadores:** `SusEligibilityAdapter` (no-op) e `PrivateInsuranceGatewayAdapter` (`src/modules/billing/infrastructure/adapters/`).
-- [ ] **Débito NC-IDN-01:** Dependência `validar_intake_fase2` aceitar polimorfismo de token JWT OTP (Previsto na Issue #76).
+- [x] **Débito NC-IDN-01:** Dependência `validar_intake_fase2` aceitar polimorfismo de token JWT OTP (Resolvido na Issue #76).
 - [x] **Testes Automatizados:**
   - `tests/unit/test_onboarding_schemas.py`
   - `tests/unit/test_eligibility_task.py`

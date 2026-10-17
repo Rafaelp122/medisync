@@ -4,7 +4,7 @@
 > **Invariantes Relacionadas:** RNF-10 (Latência de Telemetria < 5s), Metas SMART 1 a 5  
 > **Persona:** Carlos Drumond (Diretor Clínico e Gestor Operacional)  
 > **Módulos:** `telemetry`  
-> **Status de Qualidade:** 🟢 **Conforme** *(Com ajuste de TTL de 15s para 5s - NC-TEL-01)*
+> **Status de Qualidade:** 🟡 **Parcial** *(TTL ajustado para 5s - NC-TEL-01; acesso médico pendente na Issue #87)*
 
 ---
 
@@ -72,7 +72,7 @@
 
 - [x] **Read Model Desacoplado:** Leitor puro SQL com queries agregadas assíncronas (`src/modules/telemetry/infrastructure/telemetry_reader_sql.py`).
 - [x] **Cache Volátil no Valkey:** Caching de telemetria para garantir alta performance sem onerar o Postgres (`src/modules/telemetry/application/services/telemetry_service.py`).
-- [ ] **Ajuste de TTL (NC-TEL-01):** Reduzir `_CACHE_TTL_SEGUNDOS` de 15s para 5s para cumprir RNF-10 e Meta SMART 5 (Objeto da Issue #76).
+- [x] **Ajuste de TTL (NC-TEL-01):** Reduzir `_CACHE_TTL_SEGUNDOS` de 15s para 5s via injeção IoC (ADR-009) para cumprir RNF-10 e Meta SMART 5 (Resolvido na Issue #76).
 - [x] **Apresentação:** Router fino `telemetry_router.py` montado em `/api/v1/telemetria/painel`.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_telemetry_service.py`

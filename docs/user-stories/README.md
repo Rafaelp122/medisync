@@ -38,15 +38,15 @@ O catálogo é estruturado entre **Jornadas Assistenciais e Operacionais Primár
 | :---: | :--- | :---: | :---: | :--- | :---: |
 | **US-01** | [`US-01-acolhimento-triagem-tcle.md`](./US-01-acolhimento-triagem-tcle.md) | RF-01 | RN07, RN-REG-02 | Juliana Silva | 🟡 **Parcial** *(Omissão de `tcle_hash` no DTO de resposta)* |
 | **US-02** | [`US-02-autenticacao-passwordless-otp.md`](./US-02-autenticacao-passwordless-otp.md) | RF-01 (#44) | RN-REG-02 | Juliana Silva | 🟡 **Parcial** *(HTTP 401 em vez de 429 no bloqueio de tentativas; falta `role` no response)* |
-| **US-03** | [`US-03-elegibilidade-onboarding-fase2.md`](./US-03-elegibilidade-onboarding-fase2.md) | RF-02 | RN03, RN-REG-02 | Juliana / Patrícia | 🟡 **Parcial** *(NC-IDN-01: rejeição de JWT de OTP na Fase 2)* |
+| **US-03** | [`US-03-elegibilidade-onboarding-fase2.md`](./US-03-elegibilidade-onboarding-fase2.md) | RF-02 | RN03, RN-REG-02 | Juliana / Patrícia | 🟢 **Conforme** |
 | **US-06** | [`US-06-deterioracao-clinica-escape-samu.md`](./US-06-deterioracao-clinica-escape-samu.md) | RF-06 | RN04, RN-REG-01 | Juliana Silva | 🟢 **Conforme** |
 | **US-07** | [`US-07-alocacao-chamada-medica.md`](./US-07-alocacao-chamada-medica.md) | RF-03 | RN01, RN02 | Dr. Eduardo Rocha | 🟢 **Conforme** |
-| **US-08** | [`US-08-atendimento-chamada-no-show.md`](./US-08-atendimento-chamada-no-show.md) | RF-03 | RN02, RN03 | Juliana / Eduardo | 🟡 **Parcial** *(NC-QUE-03 / Issue #76: ingresso não chama `atender_chamada()`)* |
+| **US-08** | [`US-08-atendimento-chamada-no-show.md`](./US-08-atendimento-chamada-no-show.md) | RF-03 | RN02, RN03 | Juliana / Eduardo | 🟢 **Conforme** |
 | **US-09** | [`US-09-teleconsulta-pep-soap.md`](./US-09-teleconsulta-pep-soap.md) | RF-07 | RN06, RN-REG-01 | Dr. Eduardo Rocha | 🟢 **Conforme** |
 | **US-10** | [`US-10-prescricao-assinatura-icp-brasil.md`](./US-10-prescricao-assinatura-icp-brasil.md) | RF-07 | Portaria 344/98 | Dr. Eduardo / Juliana | 🟢 **Conforme** |
 | **US-11** | [`US-11-liquidacao-fechamento-contabil.md`](./US-11-liquidacao-fechamento-contabil.md) | RF-08 | RN-NEG-01 | Patrícia Mendes | 🔴 **Não Conforme** *(Issue #78: ausência de liquidação e BPA/TISS)* |
 | **US-12** | [`US-12-parametrizacao-politicas-plantao.md`](./US-12-parametrizacao-politicas-plantao.md) | RF-09 | RN05 | Carlos Drumond | 🟢 **Conforme** |
-| **US-13** | [`US-13-telemetria-painel-operacional.md`](./US-13-telemetria-painel-operacional.md) | RF-10 | RNF-10, SMART 1-5 | Carlos Drumond | 🟡 **Parcial** *(TTL de cache 15s excede 5s do RNF-10; médico sem acesso ao painel)* |
+| **US-13** | [`US-13-telemetria-painel-operacional.md`](./US-13-telemetria-painel-operacional.md) | RF-10 | RNF-10, SMART 1-5 | Carlos Drumond | 🟡 **Parcial** *(TTL ajustado para 5s - NC-TEL-01; gap remanescente: médico sem acesso ao painel - Issue #87)* |
 
 ### 3.2 Políticas e Salvaguardas Transversais de Regra de Negócio
 
