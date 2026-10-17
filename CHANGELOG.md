@@ -1,4 +1,4 @@
-## Unreleased
+## v0.2.0 (2026-10-17)
 
 ### Feat
 
@@ -51,6 +51,7 @@
 
 ### Fix
 
+- **ci**: ativar pipeline de release semantico automatizado e commitizen
 - **queue**: integrar leitura e incremento da cota diaria no Valkey (NC-QUE-01 / RN05)
 - **queue**: sanear acoplamento com triagem, conectar worker de elegibilidade e ativar salvaguarda SAMU 192 (closes #52)
 - **identity**: implementar prova de posse via intake token no onboarding Fase 2 e dependentes (#40)
