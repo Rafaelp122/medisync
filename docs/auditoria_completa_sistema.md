@@ -143,3 +143,17 @@ Esta auditoria independente consolidou as análises dos 4 streams de trabalho es
    - Adicionar `tcle_hash` em `AdmissaoResponse`.
    - Adicionar `role: str = "PACIENTE"` em `VerificarOtpResponse`.
    - Aceitar formatos textuais em `Fase2Request.sexo_biologico`.
+
+---
+
+## 8. Mapeamento no Backlog do GitHub (Issues)
+
+| Issue | Tipo / Prioridade | Módulo | Descrição / Escopo |
+| :--- | :--- | :--- | :--- |
+| [#76](https://github.com/Rafaelp122/medisync/issues/76) | `bug` / `high` (3pt) | `queue`, `identity`, `telemetry` | **NC-QUE-03, NC-IDN-01, NC-TEL-01:** Conectar emissão de token LiveKit a `atender_chamada()`, onboarding OTP e TTL de telemetria. |
+| [#77](https://github.com/Rafaelp122/medisync/issues/77) | `refactor` / `medium` (3pt) | `consultation`, `billing`, `worker` | **NC-CON-01, NC-CON-02, NC-BIL-03, NC-CON-03:** Hardening de cache distribuído, composition root de billing e blindagem de conclusão do PEP. |
+| [#78](https://github.com/Rafaelp122/medisync/issues/78) | `type:feature` / `epic` (8pt) | `billing`, `consultation` | **NC-BIL-02 (RF-08):** Fechamento contábil, modelo de faturamento e liquidação pós-consulta SUS/Particular. |
+| [#85](https://github.com/Rafaelp122/medisync/issues/85) | `bug` / `high` (3pt) | `queue`, `worker` | **NC-QUE-04 (US-05 / RF-05):** Preservar timestamp original de admissão na regularização de fila e criar endpoint de contingência. |
+| [#86](https://github.com/Rafaelp122/medisync/issues/86) | `bug` / `medium` (2pt) | `auth`, `identity` | **NC-AUT-02 (US-02 / US-03):** Retornar HTTP 429 no bloqueio de tentativas OTP, role no response e flexibilizar sexo biológico. |
+| [#87](https://github.com/Rafaelp122/medisync/issues/87) | `bug` / `medium` (2pt) | `telemetry`, `core` | **NC-TEL-02, NC-SEC-01 (US-13):** Conceder acesso de leitura ao painel para médicos e incluir configuracoes_plantao nos testes RLS. |
+| [#88](https://github.com/Rafaelp122/medisync/issues/88) | `enhancement` / `low` (2pt) | `queue`, `presentation` | **Harmonização de Schemas:** Adicionar `tcle_hash` em AdmissaoResponse, campos de PioraClinicaResponse e ChamarProximoResponse. |
