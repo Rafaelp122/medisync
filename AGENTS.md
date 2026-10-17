@@ -18,6 +18,7 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
   * `just test-integration` — Executa testes de integração sobre infraestrutura real (`pytest tests/integration`).
   * `just test` — Executa a suíte de testes completa com cobertura consolidada.
   * `just scan-secrets` — Audita o repositório com Gitleaks (ADR-010) para prevenir vazamento de credenciais.
+  * `just bump-check` — Simula o próximo bump de versão semântica e changelog via Commitizen.
 
 
 ---

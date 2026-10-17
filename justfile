@@ -104,6 +104,14 @@ scan-secrets:
 pre-commit-install:
     uvx pre-commit install
 
+# Simula o próximo bump de versão e valida consistência (dry-run)
+bump-check:
+    uv run cz bump --dry-run --check-consistency
+
+# Executa o bump semântico de versão e atualiza changelog localmente
+bump:
+    uv run cz bump --changelog --check-consistency
+
 # Compila a imagem Docker de produção
 docker-build:
     docker build -t medisync:latest --target production .
