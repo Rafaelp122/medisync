@@ -45,15 +45,23 @@ def resolve_telemetry_cache(valkey: Redis | None = None) -> TelemetryCachePort:
 def build_telemetry_service_for_session(
     session: AsyncSession,
     valkey: Redis | None = None,
+    cache_ttl_segundos: int | None = None,
 ) -> TelemetryService:
     """Build TelemetryService outside request scope (tests/worker tooling)."""
+    settings = get_settings()
     reader = SqlTelemetryReader(session)
     config_repo = SqlConfigPlantaoRepository(session)
     cache = resolve_telemetry_cache(valkey=valkey)
+    ttl = (
+        cache_ttl_segundos
+        if cache_ttl_segundos is not None
+        else settings.TELEMETRY_CACHE_TTL_SEGUNDOS
+    )
     return TelemetryService(
         reader=reader,
         config_repo=config_repo,
         cache=cache,
+        cache_ttl_segundos=ttl,
     )
 
 

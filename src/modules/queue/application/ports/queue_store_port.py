@@ -64,6 +64,17 @@ class QueueStorePort(Protocol):
         """
         ...
 
+    async def atender_chamada(
+        self,
+        atendimento_id: UUID,
+    ) -> None:
+        """Transition attendance in CHAMANDO_PACIENTE to EM_ATENDIMENTO,
+
+        commit DB, and promote doctor ring lock to active consultation (7200s).
+        Idempotent if already in EM_ATENDIMENTO.
+        """
+        ...
+
     async def concluir_atendimento(
         self,
         atendimento_id: UUID,

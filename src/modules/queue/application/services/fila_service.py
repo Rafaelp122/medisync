@@ -430,7 +430,9 @@ class FilaService:
         k_atend_ring = f"lock:{organizacao_id}:atendimento:{atend_id_str}"
         k_medico_consulta = f"lock:{organizacao_id}:consulta_ativa:medico:{med_id_str}"
 
-        atendimento = await self._db_session.get(Atendimento, atendimento_id)
+        atendimento = await self._db_session.get(
+            Atendimento, atendimento_id, with_for_update=True
+        )
         if atendimento is None or atendimento.organizacao_id != organizacao_id:
             logger.warning(
                 "Ring timeout task: attendance %s not found in org=%d",
@@ -484,6 +486,56 @@ class FilaService:
             pipe.delete(k_atend_ring)
             await pipe.execute()
         return "already_finalized"
+
+    async def atender_chamada(
+        self,
+        atendimento_id: UUID,
+    ) -> None:
+        """Transition attendance in CHAMANDO_PACIENTE to EM_ATENDIMENTO.
+
+        Commits DB session, and atomically promotes Valkey doctor ring lock
+        to active consultation (7200s). Idempotent if already in EM_ATENDIMENTO.
+        """
+        atendimento = await self._db_session.get(
+            Atendimento, atendimento_id, with_for_update=True
+        )
+        if atendimento is None:
+            raise NotFoundError(f"Atendimento '{atendimento_id}' não encontrado.")
+
+        if atendimento.status == StatusAtendimento.EM_ATENDIMENTO.value:
+            if atendimento.medico_id is not None:
+                k_medico_consulta = (
+                    f"lock:{atendimento.organizacao_id}:consulta_ativa:medico:"
+                    f"{atendimento.medico_id}"
+                )
+                await self._valkey.set(k_medico_consulta, str(atendimento.id), ex=7200)
+            return
+
+        if atendimento.status != StatusAtendimento.CHAMANDO_PACIENTE.value:
+            raise TransicaoEstadoInvalidaError(
+                f"Apenas atendimentos em '{StatusAtendimento.CHAMANDO_PACIENTE}' "
+                f"podem ser atendidos. Estado atual: '{atendimento.status}'."
+            )
+
+        atendimento.atender_chamada()
+        await self._db_session.commit()
+
+        if atendimento.medico_id is not None:
+            k_medico_ring = (
+                f"lock:{atendimento.organizacao_id}:medico:{atendimento.medico_id}"
+            )
+            k_atend_ring = (
+                f"lock:{atendimento.organizacao_id}:atendimento:{atendimento.id}"
+            )
+            k_medico_consulta = (
+                f"lock:{atendimento.organizacao_id}:consulta_ativa:medico:"
+                f"{atendimento.medico_id}"
+            )
+            async with self._valkey.pipeline(transaction=True) as pipe:
+                pipe.delete(k_medico_ring)
+                pipe.delete(k_atend_ring)
+                pipe.set(k_medico_consulta, str(atendimento.id), ex=7200)
+                await pipe.execute()
 
     async def concluir_atendimento(
         self,

@@ -54,3 +54,44 @@ async def test_reader_nao_terminal_e_none_quando_ausente() -> None:
     assert dto.organizacao_id == 2
 
     assert await reader.obter_resumo(uuid4()) is None
+
+
+@pytest.mark.asyncio
+async def test_reader_concluir_atendimento_executes_and_commits() -> None:
+    session = AsyncMock(spec=AsyncSession)
+    reader = SqlAtendimentoReader(session)
+    atend_id = uuid4()
+    await reader.concluir_atendimento(atend_id)
+    session.execute.assert_awaited_once()
+    session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reader_atender_chamada_executes_and_commits() -> None:
+    session = AsyncMock(spec=AsyncSession)
+    reader = SqlAtendimentoReader(session)
+    atend_id = uuid4()
+    await reader.atender_chamada(atend_id)
+    session.execute.assert_awaited_once()
+    session.commit.assert_awaited_once()
+
+
+def test_get_atendimento_reader_fallback_logs_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+    from unittest.mock import patch
+
+    from src.modules.consultation.composition import get_atendimento_reader
+
+    session = AsyncMock(spec=AsyncSession)
+    with (
+        patch(
+            "src.modules.consultation.composition.build_fila_service_for_session",
+            side_effect=RuntimeError("queue_init_failed"),
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        reader = get_atendimento_reader(session)
+        assert isinstance(reader, SqlAtendimentoReader)
+        assert "Falha ao instanciar QueueStoreAtendimentoReaderAdapter" in caplog.text

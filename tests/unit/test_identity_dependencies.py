@@ -1,6 +1,7 @@
 """Unit tests for identity presentation proof-of-possession dependencies."""
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import jwt
@@ -8,7 +9,7 @@ import pytest
 from fastapi.security import HTTPAuthorizationCredentials
 from src.core.authz.roles import Role
 from src.core.config import get_settings
-from src.core.errors import ForbiddenError, UnauthorizedError
+from src.core.errors import ForbiddenError, TokenRevogadoError, UnauthorizedError
 from src.core.security import create_intake_token
 from src.core.uuid7 import uuid7
 from src.modules.identity.presentation.dependencies import (
@@ -67,6 +68,24 @@ async def test_validar_intake_fase2_via_header_success() -> None:
         body=body,
         tenant_id=org_id,
         credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials=token),
+    )
+
+
+@pytest.mark.asyncio
+async def test_validar_intake_fase2_via_header_with_whitespace_success() -> None:
+    settings = get_settings()
+    paciente_id = uuid7()
+    org_id = 10
+    token = create_intake_token(paciente_id, org_id, settings.SECRET_KEY)
+    body = _make_fase2_request(paciente_id)
+
+    # Token with whitespace should be stripped and accepted
+    await validar_intake_fase2(
+        body=body,
+        tenant_id=org_id,
+        credentials=HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=f"  {token}  "
+        ),
     )
 
 
@@ -147,6 +166,246 @@ async def test_validar_intake_fase2_mismatched_tenant_raises_403() -> None:
             tenant_id=2,
             credentials=HTTPAuthorizationCredentials(
                 scheme="Bearer", credentials=token
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_validar_intake_fase2_via_jwt_patient_success() -> None:
+    settings = get_settings()
+    paciente_id = uuid7()
+    org_id = 10
+    token = _make_jwt(
+        usuario_id=paciente_id,
+        organizacao_id=org_id,
+        papel=Role.PACIENTE,
+        secret_key=settings.JWT_SECRET_KEY,
+    )
+    body = _make_fase2_request(paciente_id)
+
+    # Should not raise any error
+    await validar_intake_fase2(
+        body=body,
+        tenant_id=org_id,
+        credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials=token),
+    )
+
+
+@pytest.mark.asyncio
+async def test_validar_intake_fase2_via_jwt_admin_success() -> None:
+    settings = get_settings()
+    paciente_id = uuid7()
+    admin_id = uuid7()
+    org_id = 10
+    token = _make_jwt(
+        usuario_id=admin_id,
+        organizacao_id=org_id,
+        papel=Role.ADMIN_GLOBAL,
+        secret_key=settings.JWT_SECRET_KEY,
+    )
+    body = _make_fase2_request(paciente_id)
+
+    # Admin global is authorized
+    await validar_intake_fase2(
+        body=body,
+        tenant_id=org_id,
+        credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials=token),
+    )
+
+
+@pytest.mark.asyncio
+async def test_validar_intake_fase2_via_jwt_gestor_unidade_success() -> None:
+    settings = get_settings()
+    paciente_id = uuid7()
+    gestor_id = uuid7()
+    org_id = 10
+    token = _make_jwt(
+        usuario_id=gestor_id,
+        organizacao_id=org_id,
+        papel=Role.GESTOR_UNIDADE,
+        secret_key=settings.JWT_SECRET_KEY,
+    )
+    body = _make_fase2_request(paciente_id)
+
+    # Unit manager in same org is authorized
+    await validar_intake_fase2(
+        body=body,
+        tenant_id=org_id,
+        credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials=token),
+    )
+
+
+@pytest.mark.asyncio
+async def test_validar_intake_fase2_via_jwt_admin_global_cross_tenant_success() -> None:
+    settings = get_settings()
+    paciente_id = uuid7()
+    admin_id = uuid7()
+    token = _make_jwt(
+        usuario_id=admin_id,
+        organizacao_id=10,
+        papel=Role.ADMIN_GLOBAL,
+        secret_key=settings.JWT_SECRET_KEY,
+    )
+    body = _make_fase2_request(paciente_id)
+
+    # Admin global is allowed cross-tenant (org_id 10 vs tenant_id 20)
+    await validar_intake_fase2(
+        body=body,
+        tenant_id=20,
+        credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials=token),
+    )
+
+
+@pytest.mark.asyncio
+async def test_validar_intake_fase2_via_jwt_mismatched_patient_raises_403() -> None:
+    settings = get_settings()
+    paciente_a = uuid7()
+    paciente_b = uuid7()
+    org_id = 10
+    token = _make_jwt(
+        usuario_id=paciente_a,
+        organizacao_id=org_id,
+        papel=Role.PACIENTE,
+        secret_key=settings.JWT_SECRET_KEY,
+    )
+    body_b = _make_fase2_request(paciente_b)
+
+    with pytest.raises(ForbiddenError, match="não é o paciente informado"):
+        await validar_intake_fase2(
+            body=body_b,
+            tenant_id=org_id,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=token
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_validar_intake_fase2_via_jwt_mismatched_tenant_raises_403() -> None:
+    settings = get_settings()
+    paciente_id = uuid7()
+    token = _make_jwt(
+        usuario_id=paciente_id,
+        organizacao_id=1,
+        papel=Role.PACIENTE,
+        secret_key=settings.JWT_SECRET_KEY,
+    )
+    body = _make_fase2_request(paciente_id)
+
+    with pytest.raises(ForbiddenError, match="pertence à organização"):
+        await validar_intake_fase2(
+            body=body,
+            tenant_id=2,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=token
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_validar_intake_fase2_via_jwt_unauthorized_role_raises_403() -> None:
+    settings = get_settings()
+    doctor_id = uuid7()
+    paciente_id = uuid7()
+    org_id = 10
+    token = _make_jwt(
+        usuario_id=doctor_id,
+        organizacao_id=org_id,
+        papel=Role.MEDICO,
+        secret_key=settings.JWT_SECRET_KEY,
+    )
+    body = _make_fase2_request(paciente_id)
+
+    with pytest.raises(ForbiddenError, match="não possui permissão"):
+        await validar_intake_fase2(
+            body=body,
+            tenant_id=org_id,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=token
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_validar_intake_fase2_via_jwt_expired_raises_401() -> None:
+    settings = get_settings()
+    paciente_id = uuid7()
+    org_id = 10
+    expired_token = _make_jwt(
+        usuario_id=paciente_id,
+        organizacao_id=org_id,
+        papel=Role.PACIENTE,
+        secret_key=settings.JWT_SECRET_KEY,
+        expires_in_seconds=-10,
+    )
+    body = _make_fase2_request(paciente_id)
+
+    with pytest.raises(UnauthorizedError, match="expirado"):
+        await validar_intake_fase2(
+            body=body,
+            tenant_id=org_id,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=expired_token
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_validar_intake_fase2_via_jwt_revogado_raises_401() -> None:
+    settings = get_settings()
+    paciente_id = uuid7()
+    org_id = 10
+    token = _make_jwt(
+        usuario_id=paciente_id,
+        organizacao_id=org_id,
+        papel=Role.PACIENTE,
+        secret_key=settings.JWT_SECRET_KEY,
+    )
+    body = _make_fase2_request(paciente_id)
+
+    with (
+        patch(
+            "src.modules.identity.presentation.dependencies.is_token_revoked",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        pytest.raises(TokenRevogadoError, match="revogado"),
+    ):
+        await validar_intake_fase2(
+            body=body,
+            tenant_id=org_id,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=token
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_validar_intake_fase2_malformed_token_raises_401() -> None:
+    paciente_id = uuid7()
+    body = _make_fase2_request(paciente_id)
+
+    with pytest.raises(UnauthorizedError, match="formato inválido"):
+        await validar_intake_fase2(
+            body=body,
+            tenant_id=1,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials="single_part_token"
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_validar_intake_fase2_four_parts_raises_401() -> None:
+    paciente_id = uuid7()
+    body = _make_fase2_request(paciente_id)
+
+    with pytest.raises(UnauthorizedError, match="formato inválido"):
+        await validar_intake_fase2(
+            body=body,
+            tenant_id=1,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials="a.b.c.d"
             ),
         )
 
@@ -284,5 +543,29 @@ async def test_validar_posse_titular_unauthorized_role_raises_403() -> None:
             tenant_id=org_id,
             credentials=HTTPAuthorizationCredentials(
                 scheme="Bearer", credentials=medico_jwt
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_validar_posse_titular_jwt_revogado_raises_401() -> None:
+    settings = get_settings()
+    titular_id = uuid7()
+    org_id = 5
+    patient_jwt = _make_jwt(titular_id, org_id, Role.PACIENTE, settings.JWT_SECRET_KEY)
+
+    with (
+        patch(
+            "src.modules.identity.presentation.dependencies.is_token_revoked",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        pytest.raises(TokenRevogadoError, match="revogado"),
+    ):
+        await validar_posse_titular(
+            id=titular_id,
+            tenant_id=org_id,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=patient_jwt
             ),
         )

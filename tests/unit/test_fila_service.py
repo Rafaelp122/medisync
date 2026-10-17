@@ -1,11 +1,13 @@
 """Unit tests for queue ingestion service, 64-bit scoring, and retry loop (RN01)."""
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from src.core.errors import ValidationError
+from redis.asyncio import Redis
+from src.core.errors import NotFoundError, ValidationError
+from src.core.uuid7 import uuid7
 from src.modules.queue.application.dtos import (
     AdquirirProximoPacienteCommand,
     AlocacaoChamadaResult,
@@ -20,8 +22,13 @@ from src.modules.queue.application.services.fila_service import (
 from src.modules.queue.domain.exceptions import (
     AtendimentoNaoDisponivelError,
     MedicoOcupadoError,
+    TransicaoEstadoInvalidaError,
 )
-from src.modules.queue.domain.models import PrioridadeClinica, StatusAtendimento
+from src.modules.queue.domain.models import (
+    Atendimento,
+    PrioridadeClinica,
+    StatusAtendimento,
+)
 from src.modules.queue.domain.scoring import calcular_score
 
 
@@ -286,3 +293,251 @@ async def test_remover_e_obter_posicao_e_tamanho() -> None:
 
     lista = await service.listar_fila(1, offset=0, limit=2)
     assert lista == ["id-1", "id-2"]
+
+
+@pytest.mark.asyncio
+async def test_atender_chamada_success_transitions_state_and_locks() -> None:
+    """Transition from CHAMANDO_PACIENTE to EM_ATENDIMENTO with lock promotion."""
+    mock_pipe = MagicMock()
+    mock_pipe.execute = AsyncMock()
+    mock_valkey = MagicMock(spec=Redis)
+    mock_valkey.pipeline.return_value.__aenter__.return_value = mock_pipe
+    mock_session = AsyncMock()
+
+    paciente_id = uuid7()
+    medico_id = uuid7()
+    atendimento = Atendimento(
+        organizacao_id=1,
+        paciente_id=paciente_id,
+        tcle_hash="a" * 64,
+    )
+    atendimento.promover_para_apto()
+    atendimento.iniciar_chamada(medico_id=medico_id)
+    assert atendimento.status == StatusAtendimento.CHAMANDO_PACIENTE.value
+
+    mock_session.get.return_value = atendimento
+
+    service = FilaService(
+        valkey=mock_valkey,
+        db_session=mock_session,
+        alocacao_service=AsyncMock(),
+    )
+
+    await service.atender_chamada(atendimento.id)
+
+    mock_session.get.assert_awaited_once_with(
+        Atendimento, atendimento.id, with_for_update=True
+    )
+    assert atendimento.status == StatusAtendimento.EM_ATENDIMENTO.value
+    mock_session.commit.assert_awaited_once()
+
+    k_medico_ring = f"lock:1:medico:{medico_id}"
+    k_atend_ring = f"lock:1:atendimento:{atendimento.id}"
+    k_medico_consulta = f"lock:1:consulta_ativa:medico:{medico_id}"
+
+    mock_pipe.delete.assert_any_call(k_medico_ring)
+    mock_pipe.delete.assert_any_call(k_atend_ring)
+    mock_pipe.set.assert_called_once_with(
+        k_medico_consulta, str(atendimento.id), ex=7200
+    )
+    mock_pipe.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_atender_chamada_idempotent_when_already_em_atendimento() -> None:
+    """Refreshes active consultation lock without error when already active."""
+    mock_valkey = AsyncMock()
+    mock_session = AsyncMock()
+
+    paciente_id = uuid7()
+    medico_id = uuid7()
+    atendimento = Atendimento(
+        organizacao_id=1,
+        paciente_id=paciente_id,
+        tcle_hash="a" * 64,
+    )
+    atendimento.promover_para_apto()
+    atendimento.iniciar_chamada(medico_id=medico_id)
+    atendimento.atender_chamada()
+    assert atendimento.status == StatusAtendimento.EM_ATENDIMENTO.value
+
+    mock_session.get.return_value = atendimento
+
+    service = FilaService(
+        valkey=mock_valkey,
+        db_session=mock_session,
+        alocacao_service=AsyncMock(),
+    )
+
+    # Re-call should be idempotent
+    await service.atender_chamada(atendimento.id)
+
+    mock_session.get.assert_awaited_once_with(
+        Atendimento, atendimento.id, with_for_update=True
+    )
+    mock_session.commit.assert_not_called()
+    k_medico_consulta = f"lock:1:consulta_ativa:medico:{medico_id}"
+    mock_valkey.set.assert_awaited_once_with(
+        k_medico_consulta, str(atendimento.id), ex=7200
+    )
+
+
+@pytest.mark.asyncio
+async def test_atender_chamada_invalid_status_raises_conflict() -> None:
+    """Cannot directly answer attendance in APTO_PARA_CHAMADA."""
+    mock_valkey = AsyncMock()
+    mock_session = AsyncMock()
+
+    atendimento = Atendimento(
+        organizacao_id=1,
+        paciente_id=uuid7(),
+        tcle_hash="a" * 64,
+    )
+    atendimento.promover_para_apto()
+    assert atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA.value
+
+    mock_session.get.return_value = atendimento
+
+    service = FilaService(
+        valkey=mock_valkey,
+        db_session=mock_session,
+        alocacao_service=AsyncMock(),
+    )
+
+    with pytest.raises(TransicaoEstadoInvalidaError, match="Apenas atendimentos em"):
+        await service.atender_chamada(atendimento.id)
+
+    mock_session.get.assert_awaited_once_with(
+        Atendimento, atendimento.id, with_for_update=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_atender_chamada_not_found_raises_404() -> None:
+    """Non-existent attendance raises NotFoundError."""
+    mock_valkey = AsyncMock()
+    mock_session = AsyncMock()
+    mock_session.get.return_value = None
+
+    service = FilaService(
+        valkey=mock_valkey,
+        db_session=mock_session,
+        alocacao_service=AsyncMock(),
+    )
+
+    target_id = uuid4()
+    with pytest.raises(NotFoundError, match="não encontrado"):
+        await service.atender_chamada(target_id)
+
+    mock_session.get.assert_awaited_once_with(
+        Atendimento, target_id, with_for_update=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolver_ring_timeout_with_for_update_no_show() -> None:
+    """Validate with_for_update=True and no-show transition when CHAMANDO_PACIENTE."""
+    mock_pipe = MagicMock()
+    mock_pipe.execute = AsyncMock()
+    mock_valkey = MagicMock(spec=Redis)
+    mock_valkey.pipeline.return_value.__aenter__.return_value = mock_pipe
+    mock_session = AsyncMock()
+
+    paciente_id = uuid7()
+    medico_id = uuid7()
+    atendimento = Atendimento(
+        organizacao_id=1,
+        paciente_id=paciente_id,
+        tcle_hash="a" * 64,
+    )
+    atendimento.promover_para_apto()
+    atendimento.iniciar_chamada(medico_id=medico_id)
+    assert atendimento.status == StatusAtendimento.CHAMANDO_PACIENTE.value
+
+    mock_session.get.return_value = atendimento
+
+    service = FilaService(
+        valkey=mock_valkey,
+        db_session=mock_session,
+        alocacao_service=AsyncMock(),
+    )
+
+    res = await service.resolver_ring_timeout(
+        organizacao_id=1,
+        atendimento_id=atendimento.id,
+        medico_id=medico_id,
+    )
+
+    assert res == "no_show_recorded"
+    mock_session.get.assert_awaited_once_with(
+        Atendimento, atendimento.id, with_for_update=True
+    )
+    assert atendimento.status == StatusAtendimento.PACIENTE_AUSENTE.value
+    mock_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_resolver_ring_timeout_with_for_update_active_consultation() -> None:
+    """Validate with_for_update=True and active lock promotion when EM_ATENDIMENTO."""
+    mock_pipe = MagicMock()
+    mock_pipe.execute = AsyncMock()
+    mock_valkey = MagicMock(spec=Redis)
+    mock_valkey.pipeline.return_value.__aenter__.return_value = mock_pipe
+    mock_session = AsyncMock()
+
+    paciente_id = uuid7()
+    medico_id = uuid7()
+    atendimento = Atendimento(
+        organizacao_id=1,
+        paciente_id=paciente_id,
+        tcle_hash="a" * 64,
+    )
+    atendimento.promover_para_apto()
+    atendimento.iniciar_chamada(medico_id=medico_id)
+    atendimento.atender_chamada()
+    assert atendimento.status == StatusAtendimento.EM_ATENDIMENTO.value
+
+    mock_session.get.return_value = atendimento
+
+    service = FilaService(
+        valkey=mock_valkey,
+        db_session=mock_session,
+        alocacao_service=AsyncMock(),
+    )
+
+    res = await service.resolver_ring_timeout(
+        organizacao_id=1,
+        atendimento_id=atendimento.id,
+        medico_id=medico_id,
+    )
+
+    assert res == "active_consultation_preserved"
+    mock_session.get.assert_awaited_once_with(
+        Atendimento, atendimento.id, with_for_update=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolver_ring_timeout_with_for_update_not_found() -> None:
+    """Validate with_for_update=True when attendance not found."""
+    mock_valkey = MagicMock(spec=Redis)
+    mock_session = AsyncMock()
+    mock_session.get.return_value = None
+
+    service = FilaService(
+        valkey=mock_valkey,
+        db_session=mock_session,
+        alocacao_service=AsyncMock(),
+    )
+
+    target_id = uuid4()
+    res = await service.resolver_ring_timeout(
+        organizacao_id=1,
+        atendimento_id=target_id,
+        medico_id=uuid4(),
+    )
+
+    assert res == "not_found"
+    mock_session.get.assert_awaited_once_with(
+        Atendimento, target_id, with_for_update=True
+    )

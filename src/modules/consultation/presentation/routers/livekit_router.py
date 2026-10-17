@@ -41,5 +41,5 @@ async def generate_teleconsulta_room_token(
         participant_name=request.participant_name,
         ttl_seconds=request.ttl_seconds,
     )
-    result = service.emitir_token_sala(cmd)
+    result = await service.emitir_token_sala(cmd)
     return LiveKitTokenResponse.model_validate(result)

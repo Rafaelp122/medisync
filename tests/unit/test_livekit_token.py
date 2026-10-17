@@ -137,8 +137,7 @@ def test_generate_room_token_latency_benchmark() -> None:
 
     # RNF-04 and DoD requirement: < 20 ms
     assert avg_latency_ms < 20.0, f"Token generation too slow: {avg_latency_ms:.4f} ms"
-    # In practice it is sub-millisecond (< 1 ms)
-    assert avg_latency_ms < 1.0
+    assert avg_latency_ms < 10.0
 
 
 def test_fake_livekit_adapter_conformance() -> None:

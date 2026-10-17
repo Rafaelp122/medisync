@@ -7,11 +7,12 @@ from fastapi import Path, Security
 from fastapi.security import HTTPAuthorizationCredentials
 
 from src.core.authz import http_bearer_scheme
+from src.core.authz.revocation import is_token_revoked
 from src.core.authz.roles import Role
 from src.core.authz.token import decode_access_token
 from src.core.config import get_settings
 from src.core.dependencies import TenantDep
-from src.core.errors import ForbiddenError, UnauthorizedError
+from src.core.errors import ForbiddenError, TokenRevogadoError, UnauthorizedError
 from src.core.security import verify_intake_token
 from src.modules.identity.presentation.schemas import Fase2Request
 
@@ -31,9 +32,14 @@ async def validar_intake_fase2(
 
     Raises:
         UnauthorizedError: If token is missing, expired, or malformed (401).
+        TokenRevogadoError: If access token has been revoked (401).
         ForbiddenError: If token belongs to another patient or organization (403).
     """
-    token: str | None = credentials.credentials if credentials else None
+    token: str | None = (
+        credentials.credentials.strip()
+        if credentials and credentials.credentials
+        else None
+    )
     if not token and body.token:
         token = body.token.strip()
 
@@ -43,25 +49,55 @@ async def validar_intake_fase2(
             "Authorization: Bearer <token> ou no corpo da requisição."
         )
 
-    settings = get_settings()
-    try:
-        claims = verify_intake_token(token, settings.SECRET_KEY)
-    except ValueError as exc:
-        raise UnauthorizedError(str(exc)) from exc
+    token_parts = token.split(".")
+    if len(token_parts) == 2:
+        settings = get_settings()
+        try:
+            claims = verify_intake_token(token, settings.SECRET_KEY)
+        except ValueError as exc:
+            raise UnauthorizedError(str(exc)) from exc
 
-    token_paciente_id = str(claims.get("paciente_id", ""))
-    if token_paciente_id != str(body.paciente_id):
-        raise ForbiddenError(
-            "Acesso negado: o token de acolhimento não confere posse "
-            "sobre o paciente informado."
-        )
+        token_paciente_id = str(claims.get("paciente_id", ""))
+        if token_paciente_id != str(body.paciente_id):
+            raise ForbiddenError(
+                "Acesso negado: o token de acolhimento não confere posse "
+                "sobre o paciente informado."
+            )
 
-    token_org_id = int(claims.get("organizacao_id", 0))
-    if token_org_id != tenant_id:
-        raise ForbiddenError(
-            f"Acesso negado: o token pertence à organização {token_org_id}, "
-            f"mas o contexto solicitado é da organização {tenant_id}."
-        )
+        token_org_id = int(claims.get("organizacao_id", 0))
+        if token_org_id != tenant_id:
+            raise ForbiddenError(
+                f"Acesso negado: o token pertence à organização {token_org_id}, "
+                f"mas o contexto solicitado é da organização {tenant_id}."
+            )
+
+    elif len(token_parts) == 3:
+        user = decode_access_token(token)
+
+        if await is_token_revoked(user.token_id):
+            raise TokenRevogadoError("Token de acesso revogado. Realize novo login.")
+
+        if user.papel != Role.ADMIN_GLOBAL and user.organizacao_id != tenant_id:
+            raise ForbiddenError(
+                f"Acesso negado: o token pertence à organização {user.organizacao_id}, "
+                f"mas o contexto solicitado é da organização {tenant_id}."
+            )
+
+        if user.papel in (Role.ADMIN_GLOBAL, Role.GESTOR_UNIDADE):
+            return
+
+        if user.papel == Role.PACIENTE:
+            if user.usuario_id != body.paciente_id:
+                raise ForbiddenError(
+                    "Acesso negado: o usuário autenticado não é o paciente informado."
+                )
+        else:
+            raise ForbiddenError(
+                f"Acesso negado: o papel '{user.papel}' não possui permissão "
+                "para onboarding de paciente."
+            )
+    else:
+        raise UnauthorizedError("Token fornecido em formato inválido.")
 
 
 async def validar_posse_titular(
@@ -80,16 +116,23 @@ async def validar_posse_titular(
     Raises:
         UnauthorizedError: If header is missing, malformed, or token is
             invalid/expired (401).
+        TokenRevogadoError: If access token has been revoked (401).
         ForbiddenError: If caller lacks possession of the titular record
             or belongs to another organization (403).
     """
-    if not credentials:
+    if not credentials or not credentials.credentials:
         raise UnauthorizedError(
             "Credencial de acesso não fornecida. Envie o token no cabeçalho "
             "Authorization: Bearer <token>."
         )
 
-    raw_token = credentials.credentials
+    raw_token = credentials.credentials.strip()
+    if not raw_token:
+        raise UnauthorizedError(
+            "Credencial de acesso não fornecida. Envie o token no cabeçalho "
+            "Authorization: Bearer <token>."
+        )
+
     token_parts = raw_token.split(".")
 
     if len(token_parts) == 2:
@@ -117,6 +160,9 @@ async def validar_posse_titular(
     elif len(token_parts) == 3:
         # Corporate or patient JWT access token
         user = decode_access_token(raw_token)
+
+        if await is_token_revoked(user.token_id):
+            raise TokenRevogadoError("Token de acesso revogado. Realize novo login.")
 
         if user.papel != Role.ADMIN_GLOBAL and user.organizacao_id != tenant_id:
             raise ForbiddenError(

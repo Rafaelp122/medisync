@@ -39,6 +39,19 @@ class FakeAtendimentoReader(AtendimentoReaderPort):
     async def concluir_atendimento(self, atendimento_id: UUID) -> None:
         pass
 
+    async def atender_chamada(self, atendimento_id: UUID) -> None:
+        self.chamada_atendida = True
+        if self.resumo is not None and self.resumo.atendimento_id == atendimento_id:
+            self.resumo = AtendimentoResumoDTO(
+                atendimento_id=self.resumo.atendimento_id,
+                organizacao_id=self.resumo.organizacao_id,
+                medico_id=self.resumo.medico_id,
+                paciente_id=self.resumo.paciente_id,
+                status="EM_ATENDIMENTO",
+                tcle_hash=self.resumo.tcle_hash,
+                is_terminal=self.resumo.is_terminal,
+            )
+
 
 @pytest.mark.asyncio
 async def test_livekit_token_endpoint_doctor() -> None:
@@ -117,7 +130,7 @@ async def test_livekit_token_endpoint_patient() -> None:
             organizacao_id=org_id,
             medico_id=doctor_id,
             paciente_id=patient_id,
-            status="EM_ATENDIMENTO",
+            status="CHAMANDO_PACIENTE",
             tcle_hash="a" * 64,
             is_terminal=False,
         )
@@ -149,6 +162,8 @@ async def test_livekit_token_endpoint_patient() -> None:
         data = cast("dict[str, object]", resp.json())
         assert data["participant_identity"] == f"paciente_{patient_id}"
         assert data["expires_in"] == 1800
+        assert reader.resumo is not None
+        assert reader.resumo.status == "EM_ATENDIMENTO"
     finally:
         app.dependency_overrides.pop(get_atendimento_reader, None)
 
