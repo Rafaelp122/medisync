@@ -1,96 +1,115 @@
 ---
 name: medisync-pr-auditor
-description: Auditoria hostil e verificação formal pré-merge baseada em evidências ("Evidence over Narrative"). Audita arquitetura hexagonal, routers finos, clean code para IA, testes com Fakes, rastreabilidade Diátaxis e executa o portão de qualidade completo. Use antes de aprovar PRs, concluir tarefas ou mesclar código.
+description: Auditoria hostil pré-merge em dois eixos (Standards vs Spec) executados via subagentes paralelos com base em evidências ("Evidence over Narrative"). Audita gates automatizados, arquitetura hexagonal, routers finos, fakes tipados, baseline de code smells e fidelidade à Issue/Spec sem scope creep.
 ---
 
-# MediSync PR Auditor: Auditoria Hostil Baseada em Evidências
+# MediSync PR Auditor: Auditoria Hostil em Dois Eixos Baseada em Evidências
 
-Esta skill define o protocolo de auditoria rigoroso para validação de implementações e pull requests no MediSync Express. 
-
----
-
-## 1. Princípio Fundamental: Evidências sobre Narrativa
-
-Nenhuma alegação de desenvolvedor ou subagente é tratada como verdade por padrão.
-- Afirmações como *"está testado"*, *"está tipado"* ou *"passou no linter"* são nulas sem a saída do terminal comprovando o código de retorno 0.
-- Qualquer desvio das regras de `AGENTS.md`, ADRs ou User Stories é **bloqueante** para aprovação.
+Esta skill define o protocolo de auditoria rigoroso para validação de implementações e pull requests no MediSync Express, estruturada em **dois eixos ortogonais** executados em subagentes paralelos isolados.
 
 ---
 
-## 2. Roteiro de Verificação Automatizada (Gates de Execução)
+## 1. Princípios Fundamentais
 
-O auditor deve executar a sequência completa de comandos no terminal e inspecionar os resultados:
+1. **Evidências sobre Narrativa (*Evidence over Narrative*):** Nenhuma alegação de desenvolvedor ou IA é aceita como verdade sem a saída do terminal comprovando código de retorno 0.
+2. **Revisão em Dois Eixos Ortogonais (Standards vs. Spec):**
+   - **Eixo Standards:** O código cumpre os padrões arquiteturais, tipagem estrita, portões automatizados e ausência de code smells?
+   - **Eixo Spec:** O código implementa fielmente o que a issue/spec pediu, sem itens parciais e sem *scope creep*?
+   - *Regra de Ouro:* Um eixo jamais mascara o outro (*Standards PASS + Spec FAIL* é tão reprovável quanto *Spec PASS + Standards FAIL*).
+3. **Isolamento de Contexto via Subagentes Paralelos:** Os dois eixos rodam como subagentes separados para não haver contaminação de contexto (*context pollution*).
 
-### Gate 1: Auditoria Estática de Clean Code para IA
-```bash
-just audit-ai-code
-```
-- **Critério de Rejeição:** Qualquer função com profundidade de aninhamento $> 2$ ou novos `raise` de exceção com strings estáticas cegas (sem *offending value*).
+---
 
-### Gate 2: Auditoria de Fronteiras Modulares
-```bash
-just tach
-```
-- **Critério de Rejeição:** Qualquer violação de camadas ou import cruzado de infraestrutura entre módulos.
+## 2. Processo de Auditoria em 4 Fases
 
-### Gate 3: Auditoria de Integridade Documental Diátaxis
-```bash
-just docs-check
-```
-- **Critério de Rejeição:** Qualquer link relativo markdown quebrado ou bloco de código colado $> 5$ linhas.
+### Fase 1: Fixação do Ponto de Comparação & Identificação da Spec
 
-### Gate 4: Auditoria de Segredos e Credenciais
-```bash
-just scan-secrets
-```
-- **Critério de Rejeição:** Qualquer credencial, token ou chave privada exposta no histórico git.
+1. **Definir o Ponto Fixo:** Obtenha o branch base (default: `origin/main`).
+   - Diff command: `git diff origin/main...HEAD`
+   - Commits: `git log origin/main..HEAD --oneline`
+   - Valide se há diff: se o diff for vazio ou o ref for inválido, aborte imediatamente.
+2. **Identificar a Issue / Spec:**
+   - Obtenha o número da issue associada (`#xyz` nos commits ou fornecida pelo usuário).
+   - Inspecione a issue canônica via:
+     ```bash
+     gh issue view <numero> --json title,body
+     ```
+   - Localize a User Story canônica correspondente em `docs/user-stories/` se for funcionalidade clínica.
 
-### Gate 5: Portão de Qualidade Completo
+---
+
+### Fase 2: Portão Executável Automatizado (Fast-Fail)
+
+Antes de despachar subagentes de leitura, execute o portão orquestrado no terminal:
+
 ```bash
 just check
 ```
-- **Critério de Rejeição:** Qualquer falha em `fmt`, `lint` (Ruff), `typecheck` (`basedpyright` em modo strict), testes unitários com cobertura inferior à meta, ou testes de integração.
+*(Em ambiente local de desenvolvimento sem contêineres Docker, execute `just check-fast`).*
+
+- **Critério de Bloqueio Imediato:** Se `just check` (ou `check-fast`) falhar em qualquer etapa (`scan-secrets`, `docs-check`, `audit-ai-code`, `fmt`, `lint`, `typecheck`, `tach`, `test-unit`, `test-integration`), **REPROVE O PR IMEDIATAMENTE**. Não gaste tokens rodando subagentes se a base não compila, vaza segredos ou quebra testes.
 
 ---
 
-## 3. Checklist Manual de Arquitetura e Clean Code
+### Fase 3: Disparo de Subagentes Paralelos (Os Dois Eixos)
 
-Além dos comandos automatizados, o auditor deve inspecionar o diff (`git diff`) avaliando:
+Com o portão automatizado verde, execute dois subagentes concorrentes:
 
-1. **Routers Finos (ADR-001 §6-§7):**
-   - O router faz chamadas diretas ao banco, `commit()`, `refresh()` ou `text()`? (Se sim: **REJEITAR**).
-   - O router importa `infrastructure` ou instancia services diretamente sem passar pela `composition.py`? (Se sim: **REJEITAR**).
-2. **Eliminação de Mapper Hell (ADR-008):**
-   - Foram criados DTOs espelho manuais com conversores `to_domain` ou `to_orm`? (Se sim: **REJEITAR**).
-   - Schemas de apresentação usam `model_config = ConfigDict(from_attributes=True)` e validação direta?
-3. **Qualidade dos Testes (Named Fakes vs Anonymous Mocks):**
-   - Os novos testes unitários abusam de `MagicMock()`, `patch()` ou `cast("Any", ...)` onde cabiam os fakes tipados de `tests/doubles.py` (`FakeAsyncSession`, `FakeMemoryStorage`, `FakePDFGenerator`, `FakeArqPool`)? (Se sim: **EXIGIR REFATORAÇÃO**).
-4. **Docstrings de Proveniência (Lean):**
-   - Métodos públicos de services contêm docstrings enxutas de 3 a 5 linhas apontando para as regras canônicas (`Regras: docs/...`) sem repetir `Args:` e `Returns:` já tipados?
-5. **Aderência à User Story:**
-   - A entrega atende integralmente aos critérios de aceite da User Story canônica em `docs/user-stories/`?
+#### 🅰️ Subagente 1 — Eixo Standards & Arquitetura
+Prompt do subagente:
+- Fornecer o `git diff origin/main...HEAD`.
+- Auditar contra os padrões do repositório (`AGENTS.md` e ADRs):
+  1. **Routers Finos (ADR-001 §6-§7):** Routers nunca chamam banco, `.commit()`, `.refresh()`, `text()` nem importam `infrastructure`.
+  2. **Zero Mapper Hell (ADR-008):** Proibido criar DTOs manuais duplicados com conversores `to_domain`/`to_orm`. Schemas de resposta usam `from_attributes=True`.
+  3. **Testes com Fakes Tipados:** Proibido mocks anônimos (`MagicMock`, `patch`) onde cabem os fakes de `tests/doubles.py`.
+  4. **Docstrings de Proveniência:** Métodos públicos de negócio contêm docstring enxuta (3-5 linhas) apontando para `Regras: docs/...`.
+  5. **Exceções com Offending Value:** Erros interpolam valor recebido com valor esperado e máscara LGPD.
+- **Smell Baseline (Fowler Heuristics):**
+  - *Speculative Generality:* Criou abstrações, hooks ou parâmetros para necessidades não existentes?
+  - *Middle Man:* Criou classes ou métodos que apenas delegam sem agregar regra?
+  - *Feature Envy:* Método acessando mais dados de outro módulo/objeto do que os seus?
+  - *Data Clumps:* Campos viajando repetidamente soltos que deveriam ser um DTO imutável?
+
+#### 🅱️ Subagente 2 — Eixo Spec & Scope Creep
+Prompt do subagente:
+- Fornecer o `git diff origin/main...HEAD` e o corpo da Issue / User Story.
+- Auditar rigorosamente:
+  1. **Requisitos Faltantes/Parciais:** Requisitos solicitados no *In Scope* ou critérios de aceitação da issue que não foram implementados no diff.
+  2. **Scope Creep (Não Solicitado):** Comportamentos, refatorações não relacionadas ou endpoints adicionados que NÃO estavam no escopo ou que violam a seção *Out of Scope* da issue.
+  3. **Divergência Lógica:** Código implementado cuja regra diverge do comportamento esperado descrito na issue.
 
 ---
 
-## 4. Emissão do Relatório de Auditoria
+### Fase 4: Agregação & Parecer Final
 
-Ao concluir a análise, o auditor deve emitir o parecer final no seguinte formato:
+Apresente os resultados sob os dois eixos e emita o veredito formal:
 
 ```markdown
 ### 📋 Relatório de Auditoria Hostil de PR
 
-| Item Auditado | Status | Evidência / Observação |
-|---|:---:|---|
-| **Clean Code AST (`just audit-ai-code`)** | PASS / FAIL | Zero aninhamento > 2, exceções ricas |
-| **Fronteiras Tach (`just tach`)** | PASS / FAIL | Todos os módulos validados |
-| **Documentação Diátaxis (`just docs-check`)** | PASS / FAIL | Zero links quebrados |
-| **Varredura de Segredos (`just scan-secrets`)** | PASS / FAIL | Zero leaks detectados |
-| **Portão Completo (`just check`)** | PASS / FAIL | Testes, types (strict) e linter verdes |
-| **Routers Finos & Mapper Hell** | PASS / FAIL | Conformidade com ADR-001 e ADR-008 |
-| **Testes com Fakes Tipados** | PASS / FAIL | Uso canônico de tests/doubles.py |
-| **Aderência à User Story** | PASS / FAIL | Atendimento aos critérios de aceite |
+#### 1. Portões de Execução Automatizada (`just check`)
+- **Secrets (Gitleaks):** ✅ PASS (zero leaks)
+- **Docs Diátaxis:** ✅ PASS (zero links quebrados, zero código colado)
+- **Clean Code IA:** ✅ PASS (zero funções com aninhamento > 2)
+- **Tipos & Linters:** ✅ PASS (basedpyright strict + ruff)
+- **Fronteiras Modulares:** ✅ PASS (tach check)
+- **Suíte de Testes:** ✅ PASS (unitários + integração verdes)
 
-**Veredito:** [APROVADO PARA MERGE] ou [REPROVADO COM PENDÊNCIAS]
+#### 2. Eixo Standards & Arquitetura (Subagente 1)
+- **Routers Finos & DI:** [PASS / FAIL] — detalhes...
+- **Mapper Hell (ADR-008):** [PASS / FAIL] — detalhes...
+- **Fakes Tipados:** [PASS / FAIL] — detalhes...
+- **Fowler Smells:** [Nenhum smell detectado / Smells encontrados...]
 
-*(Se reprovado, listar os arquivos, linhas exatas e comando de correção necessário)*
+#### 3. Eixo Spec & Scope Creep (Subagente 2)
+- **Fidelidade aos Requisitos:** [100% Atendido / Requisitos pendentes...]
+- **Filtro Anti-Scope-Creep:** [Respeitado / Violações de não-escopo...]
+- **Critérios de Aceite da Issue:** [Atendidos / Pendentes...]
+
+---
+
+### ⚖️ Veredito Final
+**[APROVADO PARA MERGE]** ou **[REPROVADO COM PENDÊNCIAS]**
+
+*(Se reprovado, listar arquivos, linhas e comandos exatos de correção necessários).*
 ```
