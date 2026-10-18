@@ -12,6 +12,7 @@ flowchart LR
 
     subgraph P2["2. Produto (Solution Space)"]
         SP["docs/explanation/<br/>product-specification.md<br/><i>O QUÊ</i>"]
+        US["docs/user-stories/<br/>US-01 a US-13<br/><i>LIVING SPECIFICATIONS</i>"]
     end
 
     subgraph P3["3. Engenharia (Architecture)"]
@@ -20,10 +21,11 @@ flowchart LR
     end
 
     subgraph P4["4. Decisões Estruturais (ADRs)"]
-        ADR["docs/adrs/<br/>ADR-001 a ADR-007<br/><i>TRADE-OFFS & EVOLUÇÃO</i>"]
+        ADR["docs/adrs/<br/>ADR-001 a ADR-010<br/><i>TRADE-OFFS & EVOLUÇÃO</i>"]
     end
 
     BV -->|Direciona| SP
+    SP -->|Desdobra em Cenários| US
     SP -->|Vincula Invariantes| AR
     AR -->|Especifica Detalhes| BM
     AR -->|Fundamenta com Trade-offs| ADR
@@ -69,8 +71,16 @@ flowchart LR
     * Comunicação inter-módulos em duas vias: *Ports & Adapters* (síncrona) e *Event Bus em memória* (assíncrona);
     * Isolamento estrito de fronteiras e módulos auditado via **Tach** (`tach check`);
   * **Topologia C4**: Diagramas de Contexto (Nível 1) e Contêineres (Nível 2);
-  * Decomposição Modular do Código (`src/` dividido em módulos verticais: `identity`, `triage`, `queue`, `consultation`, `billing`);
+  * Decomposição Modular do Código (`src/` dividido em módulos verticais: `auth`, `identity`, `triage`, `queue`, `consultation`, `telemetry`, `billing`);
   * Matriz de Requisitos Não Funcionais (FURPS+ / ISO 25010: fila $\le 200\text{ ms}$, resiliência do worker, WebRTC $\le 150\text{ ms}$, segurança TLS 1.3/AES-256 e acessibilidade WCAG 2.1 AA).
+
+### 📄 [04. Especificações Vivas & Catálogo de User Stories](user-stories/README.md)
+* **Responsabilidade**: *Living Specifications & BDD* (Critérios de Aceite e Qualidade).
+* **Conteúdo**:
+  * Jornadas Assistenciais e Operacionais Primárias (US-01 a US-03, US-06 a US-13);
+  * Políticas Transversais de Salvaguarda e Backpressure (US-04, US-05);
+  * Critérios de aceite em Gherkin puro (*Dado / Quando / Então*);
+  * Checklist técnico de inspeção vertical e rastreabilidade com o código.
 
 ---
 
@@ -95,4 +105,7 @@ Para orientar a implementação sem burocracia de RFCs estáticas:
   * **[ADR-005](adrs/ADR-005-Desacoplamento-de-Midia-LiveKit-SFU.md)**: Desacoplamento do Servidor de Mídia WebRTC via LiveKit SFU
   * **[ADR-006](adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md)**: Assinatura Digital ICP-Brasil em Nuvem via PSCs e PAdES
   * **[ADR-007](adrs/ADR-007-Auditoria-Imutavel-Append-Only.md)**: Trilha de Auditoria Imutável Append-Only via DCL e Triggers Restritivas
+  * **[ADR-008](adrs/ADR-008-Padronizacao-de-DTOs-e-Eliminacao-de-Mapper-Hell-na-Apresentacao.md)**: Padronização de DTOs e Eliminação de Mapper Hell na Apresentação
+  * **[ADR-009](adrs/ADR-009-Configuracoes-Polimorficas-por-Perfil-e-Desacoplamento-nos-Composition-Roots.md)**: Configurações Polimórficas por Perfil e Desacoplamento nos Composition Roots
+  * **[ADR-010](adrs/ADR-010-Estrategia-DevSecOps-Defesa-em-Profundidade-de-Segredos-e-SAST.md)**: Estratégia de DevSecOps — Defesa em Profundidade de Segredos e SAST em Camadas
 * **Diretriz Ágil**: Novas decisões são registradas sob demanda quando a equipe de engenharia se depara com encruzilhadas técnicas reais ao longo da implementação.

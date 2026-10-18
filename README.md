@@ -159,11 +159,12 @@ A governança do repositório é estritamente segregada em três pilares ortogon
 | :--- | :--- | :--- |
 | **[Business Vision](docs/explanation/business-vision.md)** | *Problem Space* (O Porquê) | Contexto de PA Virtual 24/7, Canvas de Requisitos, Metas SMART, Personas e Matriz de Necessidades de Negócio (NEC-01 a NEC-08). |
 | **[Product Specification](docs/explanation/product-specification.md)** | *Solution Space* (O Quê) | Invariantes Formais de Domínio (**RN01 a RN07**), Requisitos Funcionais (**RF-01 a RF-10**) e Matriz de Rastreabilidade Vertical. |
+| **[User Stories & Living Specs](docs/user-stories/README.md)** | *Living Specifications* (Qualidade & BDD) | Linha de base comportamental em Gherkin puro, checklists técnicos de inspeção e rastreabilidade vertical ([US-01 a US-13](docs/user-stories/README.md)). |
 | **[Architecture Overview](docs/explanation/architecture/overview.md)** | *Engineering Foundations* (O Como) | Hexagonal Pragmático, protocolos, Event Bus, diagramas C4 (Contexto e Contêineres) e Matriz FURPS+ / ISO 25010. |
 | **[Data Model](docs/explanation/architecture/data-model.md)** | Blueprint Técnico | Diagrama Entidade-Relacionamento (DER), DDL das 10 tabelas relacionais, regras de RLS e snapshots forenses do CFM. |
 | **[Concurrency & Queues](docs/explanation/architecture/concurrency-and-queues.md)** | Blueprint Técnico | Script Lua atômico (`alocar_chamada.lua`), fórmula do score do ZSET e resolução determinística de No-Show via ARQ. |
 | **[Compliance & Telemedicine](docs/explanation/architecture/compliance-and-telemedicine.md)** | Blueprint Técnico | Topologia LiveKit SFU WebRTC, fluxo de assinatura digital PAdES-LTV com PyHanko e guarda em Object Storage S3/MinIO. |
-| **[Architecture Decision Records (ADRs)](docs/adrs/README.md)** | Governança & Trade-offs | Registro formal das 7 decisões estruturais fundamentais ([ADR-001 a ADR-007](docs/adrs/README.md)). |
+| **[Architecture Decision Records (ADRs)](docs/adrs/README.md)** | Governança & Trade-offs | Registro formal das 10 decisões estruturais fundamentais ([ADR-001 a ADR-010](docs/adrs/README.md)). |
 
 ---
 
@@ -196,9 +197,6 @@ A governança do repositório é estritamente segregada em três pilares ortogon
 ---
 
 ## 🚀 Como Executar o Projeto
-
-> [!NOTE]
-> **Fase do Projeto**: A modelagem conceitual, governança DDD, arquitetura hexagonal pragmática e blueprints técnicos encontram-se consolidados e aprovados. Os manifestos de tooling (`pyproject.toml`, `docker-compose.yml`, `tach.toml`) e a suíte de testes serão provisionados na Sprint 1 de Engenharia.
 
 ### Pré-requisitos
 * Python 3.12 ou superior instalado;

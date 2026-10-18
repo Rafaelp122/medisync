@@ -1,104 +1,122 @@
 # Backend first feature
 
-> Vertical slice completo: router fino → `*Dep` composition → service com `commit()` 1x → teste verde.
+> Guia prático passo a passo: construindo uma fatia vertical completa no padrão Hexagonal Pragmático sem mapper hell.
 
-## Contexto
+## Visão geral
 
-Primeiro endpoint toca 4 camadas sem vazar SQL no router nem instanciar service na mão.
-Padrão vale para qualquer módulo em `src/modules/`. Exemplo canônico abaixo usa identity onboarding; fila usa mesmo esqueleto com Valkey + Lua.
+Neste tutorial, você aprenderá a construir um novo endpoint seguindo os princípios de design do MediSync Express (ADR-001 e ADR-008): schemas Pydantic v2 diretos, regras de negócio encapsuladas no Service com transação atômica única, injeção de dependência na Composition Root e um Router fino validado por AST e Tach.
 
-## Conceito
+Utilizaremos como exemplo canônico o fluxo de acolhimento do paciente no módulo `src/modules/identity/`.
 
-### Router fino
+---
 
-Router só declara rota, recebe `body + TenantDep + DbSessionDep + *Dep`, chama 1 método do service, retorna `Response.model_validate(result)`.
-Proibido no router: importar `sqlalchemy`, `infrastructure`, `domain.models`; chamar `.commit()`, `.refresh()`, `text()`, `select()`; instanciar `*Service(`; levantar `HTTPException` direto.
+## Passo 1: Definir os schemas de entrada e saída
 
-### Composition `*Dep`
+Em `src/modules/identity/presentation/schemas.py`, declare o schema de entrada derivado do Pydantic v2 com `frozen=True`. Se os dados vêm 100% do corpo JSON, utilize o próprio schema como entrada do caso de uso no Service, eliminando DTOs espelho:
 
-Service é stateless e vem de `src/modules/identity/composition.py` via `Annotated[..., Depends(...)]`.
-Router nunca faz `OnboardingService()`. Troca de impl (mock em teste, outra infra) acontece na composition, não no router.
-
-### Service commita 1x, helpers nunca
-
-Método público que persiste termina com 1 `await session.commit()` ( + `refresh` se precisa retornar entidade).
-Helpers, policies e validators nunca commitam. Regra permite 1 transação por caso de uso, rollback simples, teste determinístico.
-Queue segue mesma regra com `self._db_session.commit()` após transição de estado + compensação Valkey em `except`.
-
-### `HTTPException` só em `presentation/dependencies.py`
-
-Rate limit, path parsing, guardas HTTP vivem em dependencies. Exemplo: `exigir_rate_limit` → 429 com header `Retry-After`.
-Routers importam o guard de lá. Erro de negócio nunca é `HTTPException`; é exceção de domínio.
-
-### Erros de domínio via `src/core/errors.py`
-
-Service levanta `NotFoundError`, `ForbiddenError`, `ValidationError`, `TenantInvalidoError`, etc.
-Handler global converte para RFC 7807 (`title/status/detail/code`). Router não faz try/except de negócio.
-Códigos estáveis: `TENANT_INVALIDO`, `NOT_FOUND`, `VALIDATION_ERROR`, `CONFLICT`, `FORBIDDEN`.
-
-### Fronteira `tach.toml`
-
-`presentation` depende de `application + composition + core`. Nunca de `infrastructure` ou `domain` alheio.
-Comunicação inter-módulos só via `Protocol` + DTO imutável. `tach check` quebra build se inverter.
-Teste AST `tests/architecture/test_routers_are_thin.py` trava router fino no CI.
-
-## Onde no código (só links)
-
-- Router fino HTTP: `src/modules/identity/presentation/routers/onboarding_router.py:intake_fase_1`
-- Router fino HTTP (segundo verbo): `src/modules/identity/presentation/routers/onboarding_router.py:enrichment_fase_2`
-- Router WS fino: `src/modules/queue/presentation/routers/queue_ws_router.py:ws_queue_patient`
-- Composition DI: `src/modules/identity/composition.py:OnboardingServiceDep`
-- Service com commit 1x: `src/modules/identity/application/services/onboarding_service.py:realizar_fase_1`
-- Service com commit 1x (fase 2): `src/modules/identity/application/services/onboarding_service.py:realizar_fase_2`
-- Service fila com commit + compensação: `src/modules/queue/application/services/alocacao_service.py:alocar_chamada`
-- Guard HTTP único: `src/modules/consultation/presentation/dependencies.py:exigir_rate_limit`
-- Erros domínio: `src/core/errors.py:DomainError`
-- Erros domínio (códigos): `src/core/errors.py:TenantInvalidoError`
-- Fronteira modular: `tach.toml`
-- Schemas resposta: `src/modules/identity/presentation/schemas.py:Fase1Response`
-- Prova viva HTTP: `tests/integration/test_onboarding_api.py`
-- Trava arquitetural: `tests/architecture/test_routers_are_thin.py`
-
-Ver:
-
-```bash
-rg -n "await session.commit\(\)" src/modules/identity/application/services/onboarding_service.py
-rg -n "_db_session.commit" src/modules/queue/application/services/alocacao_service.py
-ls src/modules/queue/presentation/routers/ src/modules/identity/presentation/routers/
-rg -n "HTTPException" src/modules/consultation/presentation/dependencies.py
+```python
+class Fase1Request(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    nome_completo: str
+    queixa_principal: str
 ```
 
-## Verificação
+Para a resposta, configure `from_attributes=True` para permitir a serialização direta de entidades do domínio ou DTOs sem conversores manuais:
 
-Run:
-
-```bash
-just tach
+```python
+class Fase1Response(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    paciente_id: UUID
+    token: str
 ```
 
-Expected: `tach check` pass, zero violação de fronteira.
+---
 
-Run:
+## Passo 2: Implementar o caso de uso no Service
+
+No Service de aplicação (`src/modules/identity/application/services/onboarding_service.py`), implemente a regra de negócio executando exatamente 1 transação por caso de uso. O método público que persiste é o único responsável por finalizar com `await session.commit()`:
+
+```python
+# Service commita 1x no final do caso de uso
+await db.commit()
+await db.refresh(paciente)
+return Fase1OutputDTO(paciente_id=paciente.id, token=token)
+```
+
+Regras obrigatórias do Service:
+- Helpers, policies e validadores nunca chamam `.commit()`.
+- Erros de validação ou regras clínicas devem lançar exceções de domínio de `src/core/errors.py` (ex.: `ValidationError`, `TenantInvalidoError`), nunca `HTTPException`.
+
+---
+
+## Passo 3: Declarar a injeção na Composition Root
+
+Em `src/modules/identity/composition.py`, centralize a montagem do serviço e suas portas. Nunca instancie o serviço diretamente no Router. Exporte um alias tipado com `Annotated` e `Depends`:
+
+```python
+def get_onboarding_service(session: DbSessionDep) -> OnboardingService:
+    return OnboardingService(session=session)
+
+OnboardingServiceDep = Annotated[OnboardingService, Depends(get_onboarding_service)]
+```
+
+Essa separação garante desacoplamento de infraestrutura (ADR-009) e permite substituição transparente de dependências em testes automatizados.
+
+---
+
+## Passo 4: Criar o router fino
+
+Crie a rota HTTP em `src/modules/identity/presentation/routers/onboarding_router.py`. O router é estritamente fino: ele apenas recebe a requisição, invoca o método do Service e valida a resposta:
+
+```python
+@onboarding_router.post("/fase-1", status_code=201)
+async def intake(body: Fase1Request, t: TenantDep, s: OnboardingServiceDep):
+    result = await s.realizar_fase_1(t, body)
+    return Fase1Response.model_validate(result)
+```
+
+Restrições pétreas para o Router (validadas por AST):
+- Proibido importar `sqlalchemy`, `infrastructure` ou `domain.models`.
+- Proibido chamar `.commit()`, `.refresh()`, `text()` ou `select()`.
+- Proibido instanciar serviços com `*Service()`.
+- Proibido levantar `HTTPException` para erros de negócio.
+- Registre o router no agregador `src/modules/identity/presentation/routers/__init__.py`.
+
+---
+
+## Passo 5: Escrever o teste de integração e validar
+
+Crie o teste em `tests/integration/test_onboarding_api.py` consumindo o endpoint via `httpx.AsyncClient` contra a infraestrutura real:
 
 ```bash
 uv run pytest tests/integration/test_onboarding_api.py -v
 ```
 
-Expected: onboarding fase-1 + fase-2 passam.
+Valide que as fronteiras modulares hexagonais não foram violadas:
 
-Run:
+```bash
+just tach
+```
+
+Valide que a trava arquitetural do Router Fino (AST) foi respeitada:
+
+```bash
+uv run pytest tests/architecture/test_routers_are_thin.py --no-cov -q
+```
+
+Por fim, execute o portão completo de qualidade:
 
 ```bash
 just check
 ```
 
-Expected: fmt + lint + typecheck + tach + test verdes.
+---
 
 ## Ver também
 
-- [Create module endpoint](../how-to/backend/create-module-endpoint.md)
-- [Write tests](../how-to/backend/write-tests.md)
-- [Testing Strategy](../explanation/architecture/testing-strategy.md)
-- [ADR-001 Hexagonal pragmático](../adrs/ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md)
-- [ADR-008 DTOs sem mapper hell](../adrs/ADR-008-Padronizacao-de-DTOs-e-Eliminacao-de-Mapper-Hell-na-Apresentacao.md)
+- [Criar endpoint em módulo](../how-to/backend/create-module-endpoint.md)
+- [Escrever testes](../how-to/backend/write-tests.md)
+- [Estratégia de testes](../explanation/architecture/testing-strategy.md)
+- [ADR-001: Hexagonal Pragmático](../adrs/ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md)
+- [ADR-008: DTOs sem Mapper Hell](../adrs/ADR-008-Padronizacao-de-DTOs-e-Eliminacao-de-Mapper-Hell-na-Apresentacao.md)
 - [Onboarding quickstart](onboarding-quickstart.md)

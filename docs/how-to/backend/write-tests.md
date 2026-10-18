@@ -9,106 +9,82 @@
 Testes unitários residem em `tests/unit/`, rodam 100% em memória, não usam Docker e devem executar em milissegundos.
 
 ### Exemplo: Testando Regras de Domínio ou Modelos Ricos
-Para validar entidades e cálculos de domínio, utilize as fábricas em memória de `tests/factories/`:
 
-```python
-from tests.factories.identity import make_organizacao, make_profissional
-from tests.factories.queue import make_atendimento
-from src.modules.queue.domain.models import StatusAtendimento
+Para validar entidades e cálculos de domínio sem acoplamento a banco de dados, utilize as fábricas em memória de `tests/factories/` e teste métodos ricos diretamente no modelo.
 
-def test_medico_pode_atender_quando_ativo() -> None:
-    # Arrange
-    org = make_organizacao()
-    medico = make_profissional(organizacao_id=org.id, papel="MEDICO", ativo=True)
-    atendimento = make_atendimento(organizacao_id=org.id, status=StatusAtendimento.APTO_PARA_CHAMADA)
+- Impl: `src/modules/queue/domain/models/atendimento.py:Atendimento`
+- Spec: `docs/explanation/domains/queue-domain.md`
+- Prova viva: `tests/unit/test_atendimento_model.py:test_ciclo_vida_completo_happy_path`
+- Ver:
 
-    # Act & Assert
-    assert medico.is_medico() is True
-    assert atendimento.pode_ser_alocado() is True
+```bash
+rg -n "def test_ciclo_vida|def test_transicoes" tests/unit/test_atendimento_model.py
+```
+
+Rode para verificar:
+
+```bash
+uv run pytest tests/unit/test_atendimento_model.py -v --no-cov
 ```
 
 ### Exemplo: Testando Services com Mocks de Sessão
-Para testar métodos de aplicação/serviço que recebem uma `AsyncSession`, utilize a fixture compartilhada `mock_db_session` ou dublês de `tests/doubles.py`:
 
-```python
-import pytest
-from unittest.mock import AsyncMock
-from tests.helpers import make_pep_service
-from src.modules.consultation.domain.exceptions import ConsultaFinalizadaError
+Para testar métodos de aplicação e regras de serviço que recebem uma `AsyncSession`, utilize a fixture compartilhada `mock_db_session` ou helpers de construção com mocks:
 
-async def test_pep_service_rejeita_edicao_em_consulta_finalizada(mock_db_session: AsyncMock) -> None:
-    # Arrange
-    service = make_pep_service(mock_db_session)
-    
-    # Act & Assert
-    with pytest.raises(ConsultaFinalizadaError):
-        await service.validar_alteracao_permitida(consulta_finalizada=True)
+- Impl: `src/modules/consultation/application/services/pep_service.py:PEPService`
+- Spec: `src/modules/consultation/domain/exceptions.py:ConsultaFinalizadaError`
+- Prova viva: `tests/unit/test_pep_soap_service.py:test_finalized_consultation_immutability`
+- Ver:
+
+```bash
+rg -n "def test_.*finaliz|make_pep_service" tests/unit/test_pep_soap_service.py
+```
+
+Rode para verificar:
+
+```bash
+uv run pytest tests/unit/test_pep_soap_service.py -v --no-cov
 ```
 
 ---
 
 ## 2. Como Escrever um Teste de Integração (Camada I)
 
-Testes de integração residem em `tests/integration/` e utilizam o banco de dados e Valkey reais.
+Testes de integração residem em `tests/integration/` e utilizam o PostgreSQL 17 e Valkey 8.0 reais provisionados localmente.
 
 ### Exemplo: Testando um Endpoint HTTP Autenticado
-Utilize as fixtures globais `async_client`, `authed_client_factory` e a fábrica de cenários `seed_clinical_scenario`:
 
-```python
-import pytest
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
-from tests.factories.scenarios import seed_clinical_scenario
-from src.core.auth.roles import Role
+Utilize a fixture global `async_client`, o helper `auth_headers` (com papéis definidos em `src/core/authz/roles.py:Role`) e a persistência atômica de cenários com `seed_clinical_scenario`:
 
-@pytest.mark.asyncio
-async def test_medico_consegue_registrar_evolucao_soap(
-    db_session: AsyncSession,
-    authed_client_factory: Any,
-) -> None:
-    # 1. Arrange: Popula o banco com 1 única linha canônica (Org, Paciente, Médico, Atendimento)
-    cenario = await seed_clinical_scenario(db_session)
+- Impl: `src/modules/consultation/presentation/routers/consultation_router.py`
+- Spec: `tests/factories/scenarios.py:seed_clinical_scenario`
+- Prova viva: `tests/integration/test_consultation_endpoints.py:test_consultation_soap_full_lifecycle_and_safeguards`
+- Ver:
 
-    # 2. Cliente HTTP pré-autenticado com token JWT real e X-Tenant-ID
-    client: AsyncClient = authed_client_factory(
-        papel=Role.MEDICO,
-        org_id=cenario.organizacao.id,
-        usuario_id=cenario.medico.id,
-    )
+```bash
+rg -n "test_consultation_soap|seed_clinical_scenario" tests/integration/test_consultation_endpoints.py
+```
 
-    payload = {
-        "anamnese": "Paciente com dor de cabeça e febre moderada.",
-        "conduta": "Prescrito repouso e hidratação.",
-        "cid10_principal": "R51",
-    }
+Rode para verificar:
 
-    # 3. Act
-    response = await client.post(
-        f"/api/v1/consultas/{cenario.atendimento.id}/evolucao",
-        json=payload,
-    )
-
-    # 4. Assert
-    assert response.status_code == 201
-    data = response.json()
-    assert data["atendimento_id"] == str(cenario.atendimento.id)
+```bash
+uv run pytest tests/integration/test_consultation_endpoints.py -k test_consultation_soap_full_lifecycle_and_safeguards
 ```
 
 ---
 
 ## 3. Como Limpar Estado em Testes de Integração
 
-* **Automático:** A fixture global `clean_db_and_valkey` (ou `clean_db`) em `tests/conftest.py` é executada automaticamente antes e depois de cada teste de integração.
-* **Sob demanda:** Caso seu teste realize operações concorrentes que exijam limpeza intermediária:
-  ```python
-  from tests.helpers import clean_database_tables, clean_valkey_keys
+- **Automático:** A fixture global `clean_db_and_valkey` (ou `clean_db`) em `tests/conftest.py` é executada automaticamente antes e depois de cada teste de integração, garantindo isolamento total entre execuções.
+- **Sob demanda:** Caso seu teste realize operações concorrentes que exijam limpeza intermediária de tabelas ou chaves:
+  - Impl: `tests/helpers.py:clean_database_tables`
+  - Spec: `tests/conftest.py:clean_db`
+  - Prova viva: `tests/conftest.py:clean_db_and_valkey`
+  - Ver:
 
-  # Limpar tabelas mantendo o schema e RLS
-  await clean_database_tables()
-
-  # Limpar chaves voláteis do Valkey
-  await clean_valkey_keys("fila:*", "lock:*")
-  ```
+```bash
+rg -n "clean_database_tables|clean_valkey_keys" tests/helpers.py
+```
 
 ---
 

@@ -15,17 +15,19 @@ Config: `.env.example` (37 linhas) é o contrato de variáveis; runtime lê `.en
 Pipeline ordenado, cada passo depende do anterior:
 
 1. `just up` — sobe contêineres e aguarda saúde (`--wait`).
-2. `uv sync` — instala deps travadas de `pyproject.toml`.
+2. `just install` — instala dependências travadas de `pyproject.toml` via `uv sync`.
 3. `cp .env.example .env` — cria config local a partir do contrato.
 4. `just migrate` — aplica schema (`alembic upgrade head`) contra postgres saudável.
 5. `just check` — portão verde (fmt + lint + typecheck + tach + test).
+6. `just pre-commit-install` — instala os hooks locais de pre-commit do Git via uvx.
+7. `just scan-secrets` — executa auditoria estática contra vazamento de segredos com Gitleaks.
 
 Ordem importa: migrate sem postgres saudável falha; `just check` sem migrate quebra testes de integração. Operação diária: `just ps` (saúde), `just logs` (cauda), `just down` (parar). `clean-docker` apaga volumes — destrutivo, só para estado zero. `rollback` / `rollback-base` revertem migrações.
 
 ## Onde no código (só links)
 
 - Topologia: `docker-compose.yml`
-- Receitas: `justfile:up`, `justfile:down`, `justfile:logs`, `justfile:ps`, `justfile:migrate`, `justfile:check`, `justfile:install`, `justfile:clean-docker`
+- Receitas: `justfile:up`, `justfile:down`, `justfile:logs`, `justfile:ps`, `justfile:migrate`, `justfile:check`, `justfile:install`, `justfile:pre-commit-install`, `justfile:scan-secrets`, `justfile:clean-docker`
 - Contrato env: `.env.example`
 - Settings que consomem env: `src/core/config.py`
 - Sessão DB: `src/core/database.py`
@@ -58,10 +60,10 @@ Expected: 4 contêineres `healthy` (postgres, valkey, livekit, minio).
 Run:
 
 ```bash
-uv sync
+just install
 ```
 
-Expected: ambiente sincronizado, exit 0.
+Expected: ambiente e dependências sincronizados com uv sync, exit 0.
 
 Run:
 
@@ -86,6 +88,22 @@ just check
 ```
 
 Expected: fmt + lint + typecheck + tach + pytest verdes, exit 0.
+
+Run:
+
+```bash
+just pre-commit-install
+```
+
+Expected: hooks de pre-commit instalados com sucesso no repositório git local.
+
+Run:
+
+```bash
+just scan-secrets
+```
+
+Expected: auditoria do Gitleaks concluída sem detecções de segredos vazados (exit 0).
 
 Run:
 

@@ -5,7 +5,7 @@
 | **Status** | Aprovado |
 | **Data** | 2026-09-30 |
 | **Decisores** | Time de Arquitetura & Engenharia |
-| **Referência** | [Overview](../03-architecture/overview.md), [Data Model](../03-architecture/data-model.md) (RN07, RNF-05) |
+| **Referência** | [Overview](../explanation/architecture/overview.md), [Data Model](../explanation/architecture/data-model.md) (RN07, RNF-05) |
 
 ---
 

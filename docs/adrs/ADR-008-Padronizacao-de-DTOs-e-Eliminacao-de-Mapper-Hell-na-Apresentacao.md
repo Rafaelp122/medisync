@@ -5,7 +5,7 @@
 | **Status** | Aprovado |
 | **Data** | 2026-10-04 |
 | **Decisores** | Time de Arquitetura & Engenharia |
-| **Referência** | [ADR-001](ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md), [Overview de Arquitetura](../03-architecture/overview.md) |
+| **Referência** | [ADR-001](ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md), [Overview de Arquitetura](../explanation/architecture/overview.md) |
 
 ---
 

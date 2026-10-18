@@ -4,7 +4,7 @@
 > **Invariantes Relacionadas:** RN-REG-02 (LGPD), OWASP ASVS  
 > **Persona:** Juliana Silva (Paciente Espontânea)  
 > **Módulos:** `auth`, `identity`  
-> **Status de Qualidade:** 🟢 **Conforme**
+> **Status de Qualidade:** 🟡 **Parcial** *(Ao atingir 3 falhas de OTP a rota retorna HTTP 401 em vez do mandatório 429 `OtpTentativasExcedidasError`; payload omite campo `role`)*
 
 ---
 
@@ -70,7 +70,7 @@
 ## 4. Checklist de Inspeção de Código
 
 - [x] **Segurança Criptográfica:** Geração via CSPRNG (`secrets.choice`) e armazenamento com hash SHA-256 no Valkey com TTL de 300s (`src/modules/auth/application/services/patient_auth_service.py`).
-- [x] **Proteção de Acesso:** Rate limiting com contadores voláteis no Valkey bloqueando após 3 falhas ou 3 envios/15min (`patient_auth_service.py`).
+- [ ] **Proteção de Acesso:** Rate limiting com contadores voláteis no Valkey bloqueando após 3 falhas ou 3 envios/15min (pendência: ao atingir 3 falhas retorna HTTP 401 em vez de 429 `OtpTentativasExcedidasError`; payload omite campo `role`).
 - [x] **Apresentação:** Router fino `patient_auth_router.py` integrado em `src/modules/auth/presentation/routers/`.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_patient_auth_service.py`

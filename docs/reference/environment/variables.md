@@ -70,17 +70,17 @@ Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3
 
 | Var | Lida em | Valores Permitidos | Padrão | Notas |
 |---|---|---|---|---|
-| `RATE_LIMIT_BACKEND` | `src/core/config.py:CommonSettings.RATE_LIMIT_BACKEND` | `valkey`, `in_memory` | `valkey` | Seleciona adaptador no módulo auth |
-| `TOKEN_REVOCATION_BACKEND` | `src/core/config.py:CommonSettings.TOKEN_REVOCATION_BACKEND` | `valkey`, `in_memory` | `valkey` | Seleciona revogação no módulo auth |
-| `VALIDATION_RATE_LIMIT_BACKEND` | `src/core/config.py:CommonSettings.VALIDATION_RATE_LIMIT_BACKEND` | `valkey`, `in_memory` | `valkey` | Seleciona validador na consulta |
-| `TELEMETRY_CACHE_BACKEND` | `src/core/config.py:CommonSettings.TELEMETRY_CACHE_BACKEND` | `valkey`, `in_memory` | `valkey` | Seleciona cache na telemetria |
+| `RATE_LIMIT_BACKEND` | `src/core/config.py:CommonSettings.RATE_LIMIT_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona adaptador no módulo auth |
+| `TOKEN_REVOCATION_BACKEND` | `src/core/config.py:CommonSettings.TOKEN_REVOCATION_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona revogação no módulo auth |
+| `VALIDATION_RATE_LIMIT_BACKEND` | `src/core/config.py:CommonSettings.VALIDATION_RATE_LIMIT_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona validador na consulta |
+| `TELEMETRY_CACHE_BACKEND` | `src/core/config.py:CommonSettings.TELEMETRY_CACHE_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona cache na telemetria |
 | `SAMU_WEBHOOK_URL` | `src/core/config.py:CommonSettings.SAMU_WEBHOOK_URL` | URL HTTP(S) | `""` | Despacho de emergência 192 em triagem |
 
 ### 7. Perfis Polimórficos de Ambiente
 
 O carregamento via `src/core/config.py:get_settings` instancia dinamicamente a subclasse de acordo com `ENVIRONMENT`:
 - `development` → `DevelopmentSettings` (`DEBUG=True`, defaults para Docker Compose local).
-- `test` → `TestSettings` (`DEBUG=False`, seletores automáticos para `in_memory`).
+- `test` → `TestSettings` (`DEBUG=True`, seletores automáticos para `memory`).
 - `production` → `ProductionSettings` (`DEBUG=False`, fail-fast ativo via `@model_validator` rejeitando `devkey`, segredos fracos e SAMU de teste).
 
 Bootstrap:

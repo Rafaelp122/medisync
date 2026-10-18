@@ -1,77 +1,100 @@
-# Fixtures, Factories e Dublês (Testing Reference)
+# Fixtures, Fábricas e Dublês
 
 > Catálogo técnico de fixtures em `tests/conftest.py`, fábricas em `tests/factories/` e dublês em `tests/doubles.py`.
 
----
+## Contexto
 
-## 1. Fixtures Globais (`tests/conftest.py`)
+A suíte de testes do MediSync Express opera sob o princípio de feedback ultrarrápido sem dependência de containers para testes unitários (`just test-fast`).
+Fixtures globais orquestram o ciclo de vida do cliente HTTP, sessões assíncronas de banco de dados e pools de cache.
+Fábricas modulares instanciam modelos ricos com atributos padrão consistentes, permitindo sobrescritas explícitas sem acoplamento a arquivos estáticos em JSON ou SQL.
+Para testes de integração, seeders compostos persistem grafos clínicos completos garantindo integridade relacional e multi-tenancy.
 
-| Fixture | Escopo | Tipo de Retorno | Descrição |
-| :--- | :--- | :--- | :--- |
-| `async_client` | Function | `AsyncGenerator[AsyncClient, None]` | Cliente HTTP assíncrono conectado ao app FastAPI via `ASGITransport(app=app)`. |
-| `authed_client_factory` | Function | `Callable[[str, int, UUID \| None], AsyncClient]` | Função geradora de `AsyncClient` com headers `Authorization: Bearer <token>` e `X-Tenant-ID` pré-configurados. |
-| `db_session` | Function | `AsyncGenerator[AsyncSession, None]` | Sessão assíncrona do SQLAlchemy 2.0 conectada ao PostgreSQL real com rollback/fechamento automático. |
-| `mock_db_session` | Function | `AsyncMock` | Dublê mock de `AsyncSession` com mocks preparados para `add`, `flush`, `commit`, `refresh` e `execute`. |
-| `clean_db` | Function (Autouse opcional) | `AsyncGenerator[None, None]` | Trunca todas as tabelas de domínio via `clean_database_tables()` antes e depois do teste. |
-| `clean_db_and_valkey` | Function | `AsyncGenerator[None, None]` | Trunca tabelas de domínio e remove chaves de namespaces de teste do Valkey. |
-| `cleanup_valkey_pool_fixture` | Function (Autouse) | `AsyncGenerator[None, None]` | Fecha graciosamente os pools de conexão com Valkey após cada teste. |
+## Conceito
 
----
+A infraestrutura de teste é organizada em quatro grupos: fixtures globais, fábricas de modelos, dublês canônicos e helpers de suporte.
 
-## 2. Catálogo de Fábricas de Modelos (`tests/factories/`)
+### Fixtures Globais (`tests/conftest.py`)
 
-Todas as fábricas retornam instâncias tipadas com valores padrão válidos, aceitando sobrescritas explícitas:
+| Fixture | Escopo | Retorno | Descrição |
+|---|---|---|---|
+| `sample_async_resource` | Function | `AsyncGenerator[str, None]` | Recurso assíncrono para validação do escopo do event loop `pytest-asyncio`. |
+| `async_client` | Function | `AsyncGenerator[AsyncClient, None]` | Cliente HTTP assíncrono conectado ao ASGI FastAPI via `ASGITransport`. |
+| `authed_client_factory` | Function | `Callable[[str, int, UUID \| None], AsyncClient]` | Gerador de cliente HTTP com cabeçalhos `Authorization` e `X-Tenant-ID`. |
+| `db_session` | Function | `AsyncGenerator[AsyncSession, None]` | Sessão assíncrona SQLAlchemy conectada ao Postgres real com rollback automático. |
+| `mock_db_session` | Function | `AsyncMock` | Dublê mock de `AsyncSession` com métodos preparados (`add`, `commit`, etc.). |
+| `clean_db` | Function | `AsyncGenerator[None, None]` | Trunca tabelas de domínio via `clean_database_tables()` antes e após o teste. |
+| `clean_db_and_valkey` | Function | `AsyncGenerator[None, None]` | Limpeza coordenada de tabelas Postgres e chaves de teste no Valkey. |
+| `cleanup_valkey_pool_fixture` | Function (Autouse) | `AsyncGenerator[None, None]` | Fecha graciosamente os pools de conexão Valkey ao final de cada teste. |
 
-### Módulo Identidade (`tests/factories/identity.py`)
-* `make_organizacao(*, cnpj, razao_social, modo_publico_sus, ...) -> Organizacao`
-* `make_profissional(organizacao_id, *, cpf, papel, crm, ...) -> Profissional`
-* `make_paciente(organizacao_id, *, cpf, data_nascimento, ...) -> Paciente`
-* `make_dependente(organizacao_id, titular_id, dependente_id, ...) -> Dependente`
+### Fábricas de Modelos de Domínio (`tests/factories/`)
 
-### Módulo Fila (`tests/factories/queue.py`)
-* `make_atendimento(organizacao_id, paciente_id, *, status, prioridade_clinica, ...) -> Atendimento`
+- **Identidade** (`tests/factories/identity.py`):
+  - `make_organizacao(*, cnpj, razao_social, nome_fantasia, id, ...) -> Organizacao`
+  - `make_profissional(organizacao_id, *, cpf, papel, crm, ...) -> Profissional`
+  - `make_paciente(organizacao_id, *, cpf, data_nascimento, ...) -> Paciente`
+  - `make_dependente(organizacao_id, titular_id, dependente_id, ...) -> Dependente`
+- **Fila** (`tests/factories/queue.py`):
+  - `make_atendimento(organizacao_id, paciente_id, *, status, prioridade_clinica, ...) -> Atendimento`
+- **Triagem** (`tests/factories/triage.py`):
+  - `make_triagem(organizacao_id, atendimento_id, *, queixa_principal, prioridade_calculada, ...) -> Triagem`
+- **Consulta & PEP** (`tests/factories/consultation.py`):
+  - `make_evolucao_clinica(organizacao_id, atendimento_id, *, cid10_principal, ...) -> EvolucaoClinica`
+  - `make_documento_clinico(organizacao_id, atendimento_id, *, tipo_documento, ...) -> DocumentoClinico`
+  - `make_documento_item(organizacao_id, documento_id, *, medicamento, posologia, ...) -> DocumentoItem`
+- **Auditoria** (`tests/factories/audit.py`):
+  - `make_audit_event(organizacao_id, atendimento_id, *, tipo_evento, ator_tipo, ...) -> AuditEvent`
+- **Autenticação** (`tests/factories/auth.py`):
+  - `make_usuario_credencial(organizacao_id, usuario_id, *, identificador, senha_hash, ...) -> UsuarioCredencial`
+  - `make_cadastrar_credencial_command(organizacao_id, usuario_id, *, identificador, senha_pura, ...) -> CadastrarCredencialCommand`
+  - `persist_credencial(session, organizacao_id, usuario_id, *, identificador, senha_pura, papel, hasher) -> UsuarioCredencial`
+- **Cenários Compostos** (`tests/factories/scenarios.py`):
+  - `seed_clinical_scenario(session, *, org_id, org_cnpj, org_razao_social, org_nome_fantasia, paciente_nome, paciente_cpf, medico_nome, medico_cpf, medico_email, medico_papel, medico_crm, medico_crm_uf, status_atendimento, prioridade_clinica, tcle_hash) -> ClinicalScenario`
+  - `seed_multi_tenant_orgs(session) -> tuple[Organizacao, Organizacao]`
 
-### Módulo Triagem (`tests/factories/triage.py`)
-* `make_triagem(organizacao_id, atendimento_id, *, queixa_principal, prioridade_calculada, ...) -> Triagem`
+### Dublês Canônicos (`tests/doubles.py`)
 
-### Módulo Consulta & PEP (`tests/factories/consultation.py`)
-* `make_evolucao_clinica(organizacao_id, atendimento_id, *, cid10_principal, ...) -> EvolucaoClinica`
-* `make_documento_clinico(organizacao_id, atendimento_id, *, tipo_documento, ...) -> DocumentoClinico`
-* `make_documento_item(organizacao_id, documento_id, *, medicamento, posologia, ...) -> DocumentoItem`
+- `FakeAsyncSession`: Dublê assíncrono de sessão SQLAlchemy para testes sem I/O real.
+- `FakeResult` / `FakeAddedResult`: Dublês de retorno escalar para queries simuladas.
+- `FakeValkey`: Dublê em memória de cliente Valkey com comandos de chave/valor e Pub/Sub.
+- `FakePubSub`: Dublê in-memory thread-safe para canais de notificação WebSocket e SSE.
 
-### Módulo Auditoria (`tests/factories/audit.py`)
-* `make_audit_event(organizacao_id, atendimento_id, *, tipo_evento, ator_tipo, ...) -> AuditEvent`
+### Helpers de Teste (`tests/helpers.py`)
 
-### Módulo Autenticação (`tests/factories/auth.py`)
-* `make_usuario_credencial(organizacao_id, usuario_id, *, identificador, senha_hash, ...) -> UsuarioCredencial`
-* `make_cadastrar_credencial_command(organizacao_id, usuario_id, *, identificador, senha_pura, ...) -> CadastrarCredencialCommand`
+- `clean_database_tables()`: Executa `TRUNCATE TABLE ... CASCADE` nas tabelas de domínio.
+- `clean_valkey_keys(*patterns)`: Limpa chaves do Valkey por padrão glob.
+- `clean_database_and_valkey(*valkey_patterns)`: Limpeza coordenada de Postgres e Valkey.
+- `auth_headers(papel, org_id, usuario_id)`: Gera cabeçalhos HTTP com JWT assinado real.
+- `make_auth_service(session, **overrides)`: Monta `AuthService` com dependências dubladas.
+- `make_pep_service(session, **overrides)`: Monta `PEPService` com dependências dubladas.
+- `make_alocacao(valkey, db_session, **overrides)`: Monta `AlocacaoChamadaService`.
+- `make_fila_service(valkey, db_session, **overrides)`: Monta `FilaService`.
 
-### Cenários Compostos Persistentes (`tests/factories/scenarios.py`)
-* `seed_clinical_scenario(session, *, org_kwargs, paciente_kwargs, medico_kwargs, atendimento_kwargs) -> ClinicalScenario`
-  * Cria e persiste atomicamente no banco: `Organizacao` + `Paciente` + `Profissional` (Médico) + `Atendimento`.
-* `seed_multi_tenant_orgs(session) -> tuple[Organizacao, Organizacao]`
-  * Cria e persiste duas organizações distintas para testes de isolamento multi-tenant e RLS.
+## Onde no código
 
----
+- Impl: `tests/conftest.py:sample_async_resource`
+- Impl: `tests/conftest.py:async_client`
+- Impl: `tests/factories/identity.py:make_organizacao`
+- Impl: `tests/factories/queue.py:make_atendimento`
+- Impl: `tests/factories/triage.py:make_triagem`
+- Impl: `tests/factories/consultation.py:make_evolucao_clinica`
+- Impl: `tests/factories/audit.py:make_audit_event`
+- Impl: `tests/factories/auth.py:persist_credencial`
+- Impl: `tests/factories/scenarios.py:seed_clinical_scenario`
+- Impl: `tests/doubles.py:FakeAsyncSession`
+- Impl: `tests/helpers.py:clean_database_and_valkey`
 
-## 3. Catálogo de Dublês Canônicos (`tests/doubles.py`)
+## Verificação
 
-Dublês em memória para acelerar testes unitários sem acoplamento com serviços externos:
+```bash
+pytest tests/unit/test_smoke.py
+rg -n "def persist_credencial" tests/factories/auth.py
+rg -n "def seed_clinical_scenario" tests/factories/scenarios.py
+rg -n "def sample_async_resource" tests/conftest.py
+```
 
-* **`FakeAsyncSession`:** Dublê assíncrono de sessão SQLAlchemy com suporte a resultados pré-programados em `execute()`, rastreamento de entidades em `add()` e transações aninhadas em `begin_nested()`.
-* **`FakeResult` / `FakeAddedResult`:** Dublês para respostas escalares (`scalar_one_or_none`, `scalar_one`).
-* **`FakeValkey`:** Dublê em memória de cliente Valkey suportando operações de publicação e pubsub assíncrono.
-* **`FakePubSub`:** Dublê in-memory thread-safe de canal Pub/Sub para testes de WebSockets e SSE.
+## Ver também
 
----
-
-## 4. Helpers Canônicos de Teste (`tests/helpers.py`)
-
-* `clean_database_tables() -> None`: Executa `TRUNCATE TABLE ... CASCADE` nas tabelas de domínio do Postgres.
-* `clean_valkey_keys(*patterns: str) -> None`: Limpa chaves do Valkey por padrão glob ou padrões padrão (`DEFAULT_VALKEY_TEST_PATTERNS`).
-* `clean_database_and_valkey(*valkey_patterns: str) -> None`: Executa limpeza coordenada de Postgres e Valkey.
-* `auth_headers(papel: str, org_id: int, usuario_id: UUID) -> dict[str, str]`: Emite cabeçalho HTTP `{"Authorization": "Bearer <jwt>"}` com token real assinado.
-* `make_auth_service(session, **overrides) -> AuthService`: Fábrica do serviço de autenticação com fakes padrão.
-* `make_pep_service(session, **overrides) -> PEPService`: Fábrica do serviço de prontuário eletrônico com fakes padrão.
-* `make_alocacao(valkey, db_session, **overrides) -> AlocacaoChamadaService`: Fábrica do serviço de alocação de chamadas com fakes padrão.
-* `make_fila_service(valkey, db_session, **overrides) -> FilaService`: Fábrica do serviço de filas com fakes padrão.
+- [Documentation standards](../architecture-standards/documentation-standards.md)
+- [Setup local](../../how-to/dev-environment/setup-local.md)
+- [Create module endpoint](../../how-to/backend/create-module-endpoint.md)
+- `docs/explanation/architecture/overview.md`

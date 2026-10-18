@@ -101,15 +101,16 @@ resolver fora do domínio.
 
 Só a raiz de composição pode importar adaptadores de
 infraestrutura. Routers e tasks pedem deps prontas, nunca
-instanciam service com construtor direto. Há 4 raízes:
+instanciam service com construtor direto. Há 6 raízes:
 
 - `src/modules/queue/composition.py` fia fila, admissão e alocação sobre valkey e lua.
 - `src/modules/consultation/composition.py` fia documento, pep, validação, leitor de atendimento, midia e armazenamento.
 - `src/modules/auth/composition.py` fia hash, token e rate limit de auth.
 - `src/modules/identity/composition.py` expõe onboarding e dependentes sem ports externos.
+- `src/modules/triage/composition.py` fia triagem e notificador de emergência SAMU.
+- `src/modules/telemetry/composition.py` fia telemetria e agregação de métricas operacionais.
 
-Billing e triage não têm `composition.py`; expõem ports
-consumidos por service próprio e por worker. A fiação de
+Apenas billing não possui composition root (expõe ports consumidos por service próprio e por worker). A fiação de
 fila usa `get_lua_manager` e `get_notification_adapter`;
 a de consulta usa `get_storage`, `get_pdf_generator`,
 `get_signer`, `get_signed_cache`, `get_atendimento_reader`
@@ -185,6 +186,8 @@ regressão e um comando prova o grafo:
 - Fiação consultation: `src/modules/consultation/composition.py`
 - Fiação auth: `src/modules/auth/composition.py`
 - Fiação identity: `src/modules/identity/composition.py`
+- Fiação triage: `src/modules/triage/composition.py`
+- Fiação telemetry: `src/modules/telemetry/composition.py`
 - Consumo fora de services:
   `src/worker/tasks/eligibility.py` e
   `src/worker/tasks/ring_timeout.py`
