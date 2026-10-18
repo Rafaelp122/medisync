@@ -6,7 +6,7 @@
 > **Invariantes Relacionadas:** RN01 (Prevalência Clínica), RN03 (Desvio Temporário e Preservação de Antiguidade)  
 > **Personas:** Juliana Silva (Paciente) e Patrícia Mendes (Faturamento)  
 > **Módulos:** `queue`, `billing`  
-> **Status de Qualidade:** 🟢 **Conforme**
+> **Status de Qualidade:** 🔴 **Não Conforme** *(Gap crítico NC-QUE-04: `promover_para_apto()` grava `data_entrada_fila = now` tardio violando antiguidade RN01/RN03 e ausência de rota REST de regularização)*
 
 ---
 
@@ -46,7 +46,8 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Preservação de Antiguidade:** `FilaService` calcula score utilizando `atendimento.criado_em` / `data_entrada_fila` (`src/modules/queue/application/services/fila_service.py`).
+- [ ] **Preservação de Antiguidade:** Gap crítico NC-QUE-04: `promover_para_apto()` grava `data_entrada_fila = now` tardio violando antiguidade RN01/RN03 (`src/modules/queue/application/services/fila_service.py`).
+- [ ] **Rota REST de Regularização:** Ausência de rota REST dedicada para regularização de elegibilidade.
 - [x] **Desvio Temporário:** Médico consome exclusivamente o conjunto de aptos, ignorando atendimentos retidos (`src/modules/queue/infrastructure/lua/alocar_chamada.lua`).
 - [x] **Testes Automatizados:**
   - `tests/unit/test_queue_scoring.py`

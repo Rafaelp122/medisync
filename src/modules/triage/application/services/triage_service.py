@@ -23,7 +23,12 @@ if TYPE_CHECKING:
 
 
 class TriageService:
-    """Clinical triage evaluation and emergency admission control service."""
+    """Serviço de avaliação clínica de risco, cálculo de TCLE e bloqueio de emergência.
+
+    Consolida salvaguarda SAMU 192 (RN04) e validação criptográfica de TCLE (RN07).
+    Regras: docs/explanation/domains/triage-domain.md.
+    História: docs/user-stories/US-01-acolhimento-triagem-tcle.md.
+    """
 
     def __init__(
         self,
@@ -45,17 +50,20 @@ class TriageService:
         raise_on_emergency: bool = True,
         atendimento_id: UUID | None = None,
     ) -> TriageRiskEvaluationDTO:
-        """Classifica risco clínico, calcula hash do TCLE e valida SAMU 192.
+        """Avalia risco clínico, gera hash do TCLE e valida SAMU 192 (RN04, RN07).
 
-        Consolida a avaliação de risco clínico (RN01), cálculo canônico do hash
-        do TCLE (SHA-256) e disparo da salvaguarda SAMU 192 (RN04).
+        Regras: docs/explanation/domains/triage-domain.md.
+        História: docs/user-stories/US-01-acolhimento-triagem-tcle.md.
         """
         tcle_hash_final = tcle_hash.strip().lower() if tcle_hash else None
         if not tcle_hash_final:
             if tcle_texto and tcle_texto.strip():
                 tcle_hash_final = calcular_hash_tcle(tcle_texto)
             else:
-                raise ValidationError("Consentimento TCLE obrigatório (texto ou hash).")
+                raise ValidationError(
+                    "Consentimento TCLE obrigatório (texto ou hash). "
+                    f"Recebido tcle_texto='{tcle_texto}' e tcle_hash='{tcle_hash}'."
+                )
 
         prioridade = classificar_risco_clinico(
             queixa_principal=queixa_principal,
@@ -75,8 +83,9 @@ class TriageService:
 
             if raise_on_emergency:
                 raise EmergenciaCriticaSamuError(
-                    "Emergência médica crítica detectada (Nível 1). "
-                    "Ingresso no PA Virtual bloqueado. Acione imediatamente o SAMU 192."
+                    "Emergência médica crítica detectada (Nível 1) na organização "
+                    f"'{organizacao_id}'. Ingresso no PA Virtual bloqueado. "
+                    "Acione imediatamente o SAMU 192."
                 )
 
             return TriageRiskEvaluationDTO(
@@ -102,10 +111,15 @@ class TriageService:
         prioridade_calculada: int,
         alerta_samu_disparado: bool = False,
     ) -> UUID:
-        """Persiste atomicamente a entidade Triagem associada 1:1 ao atendimento."""
+        """Persiste atomicamente Triagem associada 1:1 ao atendimento (RN04, RN07).
+
+        Regras: docs/explanation/domains/triage-domain.md.
+        História: docs/user-stories/US-01-acolhimento-triagem-tcle.md.
+        """
         if self._session is None:
             raise RuntimeError(
-                "AsyncSession é necessária para persistir o registro de Triagem."
+                "AsyncSession é necessária para persistir o registro de "
+                f"Triagem do atendimento '{atendimento_id}'."
             )
 
         triagem = Triagem(

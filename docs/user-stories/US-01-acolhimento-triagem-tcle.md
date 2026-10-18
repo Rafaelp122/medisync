@@ -4,7 +4,7 @@
 > **Invariantes Relacionadas:** RN07, RN-REG-02, RN-REG-03  
 > **Persona:** Juliana Silva (Paciente Espontânea)  
 > **Módulos:** `identity`, `triage`, `queue`  
-> **Status de Qualidade:** 🟢 **Conforme**
+> **Status de Qualidade:** 🟡 **Parcial** *(Endpoint de admissão omite o campo `tcle_hash` no schema `AdmissaoResponse`)*
 
 ---
 
@@ -76,7 +76,7 @@
 - [x] **Domínio:** Entidade rica `Triagem` com cálculo de prioridade aberta ACR (`src/modules/triage/domain/classification.py`).
 - [x] **Hash TCLE:** Hash SHA-256 gerado e armazenado com timestamp UTC (`src/modules/triage/domain/classification.py`).
 - [x] **Aplicação:** `FilaService.admitir_paciente()` orquestra persistência atômica e enfileira job ARQ de elegibilidade (`src/modules/queue/application/services/fila_service.py`).
-- [x] **Apresentação:** Router fino `admissao_router.py` montado em `/api/v1/fila/admissao`.
+- [ ] **Apresentação:** Router fino `admissao_router.py` montado em `/api/v1/fila/admissao` (omite campo `tcle_hash` no schema `AdmissaoResponse`).
 - [x] **Testes Automatizados:**
   - `tests/unit/test_triage_model.py`
   - `tests/unit/test_admissao_service.py`

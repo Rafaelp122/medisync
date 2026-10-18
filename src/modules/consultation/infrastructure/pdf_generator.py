@@ -191,46 +191,65 @@ class ReportLabPDFGenerator(PDFGeneratorPort):
             f"{self._validation_url_prefix}/{payload.documento_id}"
         )
 
-        story: list[Any] = []
+        story = self._construir_story_documento(
+            payload, tipo_str, styles, validation_url
+        )
 
+        doc.build(story, canvasmaker=PDFACanvas)  # pyright: ignore[reportUnknownMemberType]
+        return buffer.getvalue()
+
+    def _render_prescricao_duas_vias(
+        self,
+        payload: DocumentoPDFPayload,
+        styles: dict[str, ParagraphStyle],
+        validation_url: str,
+    ) -> list[Any]:
+        """Renderiza prescrição em 2 vias para controle especial e antimicrobianos."""
+        story: list[Any] = []
+        story.extend(
+            self._render_prescricao_via(
+                payload,
+                styles,
+                via_numero=1,
+                via_titulo="1ª VIA — RETENÇÃO DA FARMÁCIA / DROGARIA",
+                validation_url=validation_url,
+            )
+        )
+        story.append(PageBreak())
+        story.extend(
+            self._render_prescricao_via(
+                payload,
+                styles,
+                via_numero=2,
+                via_titulo="2ª VIA — ORIENTAÇÃO DO PACIENTE",
+                validation_url=validation_url,
+            )
+        )
+        return story
+
+    def _construir_story_documento(
+        self,
+        payload: DocumentoPDFPayload,
+        tipo_str: str,
+        styles: dict[str, ParagraphStyle],
+        validation_url: str,
+    ) -> list[Any]:
+        """Despacha a montagem do documento clínico por tipo regulamentado."""
         if tipo_str in (
             TipoDocumentoClinico.RECEITA_ANTIMICROBIANO.value,
             TipoDocumentoClinico.RECEITA_CONTROLE_ESPECIAL_C1.value,
         ):
-            # Prescrições de controle especial e antimicrobianos exigem 2 vias
-            story.extend(
-                self._render_prescricao_via(
-                    payload,
-                    styles,
-                    via_numero=1,
-                    via_titulo="1ª VIA — RETENÇÃO DA FARMÁCIA / DROGARIA",
-                    validation_url=validation_url,
-                )
-            )
-            story.append(PageBreak())
-            story.extend(
-                self._render_prescricao_via(
-                    payload,
-                    styles,
-                    via_numero=2,
-                    via_titulo="2ª VIA — ORIENTAÇÃO DO PACIENTE",
-                    validation_url=validation_url,
-                )
-            )
-        elif tipo_str == TipoDocumentoClinico.RECEITA_SIMPLES.value:
-            story.extend(self._render_receita_simples(payload, styles, validation_url))
-        elif tipo_str == TipoDocumentoClinico.ATESTADO_MEDICO.value:
-            story.extend(self._render_atestado_medico(payload, styles, validation_url))
-        elif tipo_str == TipoDocumentoClinico.RELATORIO_ENCAMINHAMENTO.value:
-            story.extend(
-                self._render_relatorio_encaminhamento(payload, styles, validation_url)
-            )
-        else:
-            # Fallback genérico para documentos clínicos
-            story.extend(self._render_receita_simples(payload, styles, validation_url))
+            return self._render_prescricao_duas_vias(payload, styles, validation_url)
 
-        doc.build(story, canvasmaker=PDFACanvas)  # pyright: ignore[reportUnknownMemberType]
-        return buffer.getvalue()
+        dispatch_map = {
+            TipoDocumentoClinico.RECEITA_SIMPLES.value: self._render_receita_simples,
+            TipoDocumentoClinico.ATESTADO_MEDICO.value: self._render_atestado_medico,
+            TipoDocumentoClinico.RELATORIO_ENCAMINHAMENTO.value: (
+                self._render_relatorio_encaminhamento
+            ),
+        }
+        render_fn = dispatch_map.get(tipo_str, self._render_receita_simples)
+        return render_fn(payload, styles, validation_url)
 
     def _build_styles(self) -> dict[str, ParagraphStyle]:
         """Construct typography palette using embedded Vera fonts."""

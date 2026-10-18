@@ -57,7 +57,13 @@ TERMINAL_STATUSES = frozenset(
 
 
 class Atendimento(Base):
-    """Attendance aggregate root governing the patient lifecycle."""
+    """Raiz de agregado do atendimento clínico governando o ciclo de vida.
+
+    Garante score 64-bit (RN01), lock 45s (RN02) e backpressure (RN05).
+    Regras: docs/explanation/domains/queue-domain.md
+    ADR: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
+    História: docs/user-stories/US-07-alocacao-chamada-medica.md
+    """
 
     __tablename__ = "atendimentos"
     __table_args__ = (
@@ -153,13 +159,15 @@ class Atendimento(Base):
     ) -> None:
         if organizacao_id <= 0:
             raise ValidationError(
-                "organizacao_id inválido: deve ser um identificador positivo."
+                f"organizacao_id '{organizacao_id}' inválido; "
+                "deve ser um identificador positivo > 0."
             )
 
         prioridade_int = int(prioridade_clinica)
         if prioridade_int < 1 or prioridade_int > 5:
             raise ValidationError(
-                "Prioridade clínica deve ser entre 1 e 5 (1=Emergência, 5=Não Urgente)."
+                f"Prioridade clínica '{prioridade_int}' inválida; esperado valor "
+                "entre 1 e 5 (1=Emergência, 5=Não Urgente)."
             )
 
         clean_tcle: str | None = None
@@ -186,11 +194,15 @@ class Atendimento(Base):
     # -------------------------------------------------------------------------
 
     def registrar_tcle(self, tcle_hash: str) -> None:
-        """Registra o hash do TCLE com imutabilidade forense."""
+        """Registra o hash do TCLE com imutabilidade forense (RN07, LGPD Art. 11).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         self._assegurar_nao_finalizado()
         if self.tcle_hash is not None:
             raise ValidationError(
-                "TCLE já registrado para este atendimento e não pode ser alterado."
+                f"TCLE já registrado ('{self.tcle_hash}') para este atendimento e "
+                f"não pode ser alterado para '{tcle_hash}'."
             )
         self.tcle_hash = self._validar_formato_tcle(tcle_hash)
         self.atualizado_em = datetime.now(UTC)
@@ -200,7 +212,7 @@ class Atendimento(Base):
         cleaned = hash_str.strip()
         if not _HEX64_REGEX.match(cleaned):
             raise ValidationError(
-                "Hash do TCLE inválido: deve conter 64 caracteres "
+                f"Hash do TCLE '{hash_str}' inválido: deve conter 64 caracteres "
                 "hexadecimais (SHA-256)."
             )
         return cleaned.lower()
@@ -210,7 +222,10 @@ class Atendimento(Base):
     # -------------------------------------------------------------------------
 
     def promover_para_apto(self) -> None:
-        """Transiciona de TRIADO_AGUARDANDO_ELEGIBILIDADE para APTO_PARA_CHAMADA."""
+        """Transiciona de TRIADO para APTO_PARA_CHAMADA na fila (RN03, RN07).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         self._assegurar_nao_finalizado()
         if self.status != StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE:
             raise TransicaoEstadoInvalidaError(
@@ -221,8 +236,8 @@ class Atendimento(Base):
 
         if self.tcle_hash is None:
             raise ValidationError(
-                "Atendimento não pode ser promovido para apto sem consentimento "
-                "do TCLE."
+                f"Atendimento '{self.id}' não pode ser promovido para apto sem "
+                "consentimento do TCLE (tcle_hash ausente)."
             )
 
         now = datetime.now(UTC)
@@ -232,11 +247,16 @@ class Atendimento(Base):
         self.atualizado_em = now
 
     def iniciar_chamada(self, medico_id: UUID) -> None:
-        """Aloca o médico e transiciona de APTO_PARA_CHAMADA para CHAMANDO_PACIENTE."""
+        """Aloca médico e transiciona para CHAMANDO_PACIENTE com lock 45s (RN02, RN03).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        ADR: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
+        """
         self._assegurar_nao_finalizado()
         if not medico_id:
             raise ValidationError(
-                "Médico responsável é obrigatório para iniciar a chamada."
+                "Médico responsável é obrigatório para iniciar a chamada. "
+                f"Valor recebido: '{medico_id}'."
             )
 
         if self.status != StatusAtendimento.APTO_PARA_CHAMADA:
@@ -253,7 +273,10 @@ class Atendimento(Base):
         self.atualizado_em = now
 
     def atender_chamada(self) -> None:
-        """Paciente conecta à videochamada e transiciona para EM_ATENDIMENTO."""
+        """Paciente conecta à videochamada e transiciona para EM_ATENDIMENTO (RN03).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         self._assegurar_nao_finalizado()
         if self.status != StatusAtendimento.CHAMANDO_PACIENTE:
             raise TransicaoEstadoInvalidaError(
@@ -266,7 +289,11 @@ class Atendimento(Base):
         self.atualizado_em = now
 
     def registrar_ausencia_paciente(self) -> None:
-        """Timeout de toque (45s sem resposta): transiciona para PACIENTE_AUSENTE."""
+        """Timeout de toque (45s sem resposta): vai para PACIENTE_AUSENTE (RN02).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        ADR: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
+        """
         self._assegurar_nao_finalizado()
         if self.status != StatusAtendimento.CHAMANDO_PACIENTE:
             raise TransicaoEstadoInvalidaError(
@@ -280,7 +307,10 @@ class Atendimento(Base):
         self.atualizado_em = now
 
     def concluir_atendimento(self) -> None:
-        """Médico finaliza a teleconsulta e transiciona para CONCLUIDO."""
+        """Médico finaliza a teleconsulta e transiciona para CONCLUIDO (RN03).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         self._assegurar_nao_finalizado()
         if self.status != StatusAtendimento.EM_ATENDIMENTO:
             raise TransicaoEstadoInvalidaError(
@@ -294,20 +324,27 @@ class Atendimento(Base):
         self.atualizado_em = now
 
     def cancelar_pelo_paciente(self, motivo: str | None = None) -> None:
-        """Registra desistência do paciente antes da consulta clínica."""
+        """Registra desistência do paciente antes da consulta clínica (RN03).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         self._assegurar_nao_finalizado()
         if self.status == StatusAtendimento.EM_ATENDIMENTO:
             raise TransicaoEstadoInvalidaError(
-                "Não é possível cancelar atendimento já em andamento clínico."
+                "Não é possível cancelar atendimento já em andamento clínico. "
+                f"Estado atual: '{self.status}'."
             )
 
-        if self.status not in (
+        permitidos = (
             StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
             StatusAtendimento.APTO_PARA_CHAMADA,
             StatusAtendimento.CHAMANDO_PACIENTE,
-        ):
+        )
+        if self.status not in permitidos:
+            permitidos_str = ", ".join(f"'{s}'" for s in permitidos)
             raise TransicaoEstadoInvalidaError(
-                f"Estado '{self.status}' não permite cancelamento pelo paciente."
+                f"Estado '{self.status}' não permite cancelamento pelo paciente; "
+                f"esperados: [{permitidos_str}]."
             )
 
         now = datetime.now(UTC)
@@ -321,27 +358,32 @@ class Atendimento(Base):
     # -------------------------------------------------------------------------
 
     def atualizar_prioridade(self, nova_prioridade: int | PrioridadeClinica) -> None:
-        """Soberania diagnóstica do médico assistente (RN-REG-01)."""
+        """Soberania diagnóstica do médico assistente (RN01, RN-REG-01).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         self._assegurar_nao_finalizado()
         prioridade_int = int(nova_prioridade)
         if prioridade_int < 1 or prioridade_int > 5:
             raise ValidationError(
-                "Prioridade clínica deve ser entre 1 e 5 (1=Emergência, 5=Não Urgente)."
+                f"Prioridade clínica '{prioridade_int}' inválida; esperado valor "
+                "entre 1 e 5 (1=Emergência, 5=Não Urgente)."
             )
         self.prioridade_clinica = prioridade_int
         self.atualizado_em = datetime.now(UTC)
 
     def calcular_score_fila(self) -> int:
-        """Calcula o score de 64 bits para indexação no Sorted Set (ZSET) do Valkey.
+        """Calcula o score de 64 bits para indexação no ZSET do Valkey (RN01).
 
-        Score = (prioridade_clinica * 10^12) + timestamp_entrada_epoch
+        Regras: docs/explanation/domains/queue-domain.md
         """
         # lazy import: scoring imports PrioridadeClinica from models (cycle)
         from src.modules.queue.domain.scoring import calcular_score
 
         if self.data_entrada_fila is None:
             raise ValidationError(
-                "Atendimento sem data de entrada na fila não possui score calculado."
+                f"Atendimento '{self.id}' sem data de entrada na fila "
+                "não possui score calculado."
             )
         return calcular_score(int(self.prioridade_clinica), self.data_entrada_fila)
 

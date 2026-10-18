@@ -23,7 +23,12 @@ from src.modules.triage.domain.exceptions import TriagemInvalidaError
 
 
 class Triagem(Base):
-    """Clinical triage record associated 1:1 with an attendance."""
+    """Registro clínico de triagem associado 1:1 ao atendimento do paciente.
+
+    Governa detecção de risco com salvaguarda SAMU 192 (RN04) e auditoria TCLE (RN07).
+    Regras: docs/explanation/domains/triage-domain.md.
+    História: docs/user-stories/US-01-acolhimento-triagem-tcle.md.
+    """
 
     __tablename__ = "triagens"
     __table_args__ = (
@@ -75,17 +80,21 @@ class Triagem(Base):
     ) -> None:
         if organizacao_id <= 0:
             raise TriagemInvalidaError(
-                "organizacao_id inválido: deve ser um identificador positivo."
+                f"organizacao_id '{organizacao_id}' inválido; "
+                "deve ser um identificador positivo > 0."
             )
 
         if not queixa_principal or not queixa_principal.strip():
-            raise TriagemInvalidaError("Queixa principal não pode ser vazia.")
+            raise TriagemInvalidaError(
+                f"Queixa principal '{queixa_principal}' não pode ser vazia; "
+                "esperado texto descritivo preenchido."
+            )
 
         prioridade_int = int(prioridade_calculada)
         if prioridade_int < 1 or prioridade_int > 5:
             raise TriagemInvalidaError(
-                "Prioridade calculada deve ser entre 1 e 5 "
-                "(1=Emergência, 5=Não Urgente)."
+                f"Prioridade calculada '{prioridade_int}' inválida; "
+                "esperado valor entre 1 e 5."
             )
 
         clean_sintomas = [
@@ -104,16 +113,25 @@ class Triagem(Base):
         )
 
     def disparar_alerta_samu(self) -> None:
-        """Sinaliza a salvaguarda de deterioração e redirecionamento SAMU 192 (RN04)."""
+        """Sinaliza a salvaguarda de deterioração e redirecionamento SAMU 192 (RN04).
+
+        Regras: docs/explanation/domains/triage-domain.md
+        """
         self.alerta_samu_disparado = True
 
     def adicionar_sintoma_alerta(self, sintoma: str) -> None:
-        """Adiciona um novo sintoma de alerta à lista, evitando duplicidades."""
+        """Adiciona um novo sintoma de alerta à lista, evitando duplicidades (RN04).
+
+        Regras: docs/explanation/domains/triage-domain.md
+        """
         cleaned = sintoma.strip().lower()
         if cleaned and cleaned not in self.sintomas_alerta:
             self.sintomas_alerta = [*self.sintomas_alerta, cleaned]
 
     @property
     def is_emergencia_critica(self) -> bool:
-        """Indica se a triagem configura emergência de nível 1 com risco à vida."""
+        """Indica se a triagem configura emergência de nível 1 com risco à vida (RN04).
+
+        Regras: docs/explanation/domains/triage-domain.md
+        """
         return self.prioridade_calculada == 1 or self.alerta_samu_disparado

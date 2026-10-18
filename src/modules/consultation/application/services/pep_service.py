@@ -72,22 +72,34 @@ class PEPService:
 
     @property
     def storage(self) -> StoragePort:
-        """Return the injected storage port instance."""
+        """Instância de StoragePort para binários de documentos sob ADR-006.
+
+        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
         return self._storage
 
     @property
     def documento_service(self) -> DocumentoService:
-        """Return the owned clinical document lifecycle service."""
+        """Serviço de ciclo de vida de documentos e assinatura digital.
+
+        Regras: Portaria 344/98 e ADR-006.
+        """
         return self._documentos
 
     @property
     def evolucao_service(self) -> EvolucaoService:
-        """Return the owned SOAP evolution service."""
+        """Serviço de registro de evolução clínica SOAP.
+
+        Regras: RN06 (Ato Médico) e CFM nº 1.821/2007.
+        """
         return self._evolucao
 
     @property
     def atendimento_reader(self) -> AtendimentoReaderPort | None:
-        """Return the injected attendance reader port."""
+        """Porta de leitura de atendimento para validação de terminalidade.
+
+        Regras: RN06 e docs/explanation/domains/consultation-domain.md.
+        """
         return self._reader
 
     async def _is_terminal(self, atendimento_id: UUID) -> bool:
@@ -97,21 +109,37 @@ class PEPService:
     async def salvar_evolucao_soap(
         self, command: RegistrarEvolucaoSOAPCommand
     ) -> EvolucaoClinica:
-        """Delegate SOAP evolution persistence to EvolucaoService."""
+        """Registra ou atualiza evolução SOAP com CID-10 e conduta médica.
+
+        Garante soberania clínica e preenchimento sob CFM nº 2.314/2022.
+        Regras: RN06 (Ato Médico) e docs/explanation/domains/consultation-domain.md.
+        """
         return await self._evolucao.salvar_evolucao_soap(command)
 
     def validar_prescricao(self, medicamento: str) -> None:
-        """Validate single medication against Portaria 344/98 Lists A & B."""
+        """Valida emissão digital de medicamento sob Portaria SVS/MS nº 344/98.
+
+        Rejeita substâncias das Listas A/B que exigem talonário físico.
+        Regras: Portaria 344/98 e docs/explanation/domains/consultation-domain.md.
+        """
         validar_substancia_permitida_telemedicina(medicamento)
 
     async def emitir_documento(
         self, command: EmitirDocumentoClinicoCommand
     ) -> DocumentoClinico:
-        """Delegate clinical document issuance to DocumentoService."""
+        """Delega emissão de documento clínico ao DocumentoService.
+
+        Valida itens contra restrições sanitárias e gera chave canônica.
+        Regras: Portaria 344/98 e ADR-006.
+        """
         return await self._documentos.emitir_documento(command)
 
     async def compilar_pdf(self, documento_id: UUID) -> bytes:
-        """Compile PDF/A binary with ITI verification QR Code via DocumentoService."""
+        """Gera binário PDF/A-1b do documento com validação pública ITI.
+
+        Garante conformidade com PAdES e CFM nº 2.314/2022 via DocumentoService.
+        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
         return await self._documentos.compilar_pdf(documento_id)
 
     async def assinar_documento(
@@ -120,7 +148,11 @@ class PEPService:
         atendimento_id: UUID,
         credenciais: DoctorCertificateCredentials,
     ) -> DocumentoAssinadoResult:
-        """Sign clinical document with ICP-Brasil PAdES standard via Cloud PSC."""
+        """Assina documento clínico no padrão ICP-Brasil via Cloud PSC.
+
+        Garante validade jurídica sob MP nº 2.200-2/2001 e CFM nº 2.314/2022.
+        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
         return await self._documentos.assinar(
             documento_id=documento_id,
             atendimento_id=atendimento_id,
@@ -130,7 +162,11 @@ class PEPService:
     async def finalizar_consulta(
         self, command: FinalizarConsultaCommand
     ) -> EvolucaoClinica:
-        """Lock PEP evolution and documents, enforcing clinical record immutability."""
+        """Encerra a consulta clínica, bloqueando evolução SOAP e documentos.
+
+        Assegura imutabilidade sob CFM nº 1.821/2007 e CFM nº 2.314/2022.
+        Regras: RN06 (Ato Médico) e docs/explanation/domains/consultation-domain.md.
+        """
         stmt = select(EvolucaoClinica).where(
             EvolucaoClinica.atendimento_id == command.atendimento_id
         )
@@ -139,15 +175,17 @@ class PEPService:
 
         if evolucao is None:
             raise ConsultaInvalidaError(
-                "Atendimento sem evolução clínica preenchida. É obrigatório registrar "
-                "a evolução SOAP antes da finalização."
+                f"Atendimento '{command.atendimento_id}' sem evolução preenchida. "
+                "É obrigatório registrar a evolução SOAP antes da finalização."
             )
 
         is_term = await self._is_terminal(command.atendimento_id)
         if evolucao.is_finalizado or is_term:
             evolucao.marcar_finalizado()
+            status_desc = "terminal" if is_term else "evolucao_finalizada"
             raise ConsultaFinalizadaError(
-                "A consulta já se encontra finalizada e imutável."
+                f"A consulta '{command.atendimento_id}' já se encontra "
+                f"finalizada e imutável (status atual: '{status_desc}')."
             )
 
         evolucao.marcar_finalizado()
@@ -175,10 +213,10 @@ class PEPService:
         iniciado_em: datetime | None = None,
         tma_planejado_segundos: int = 900,
     ) -> TMAStatusDTO:
-        """Compute TMA indicators while preserving sovereign medical act (RN06).
+        """Calcula telemetria de TMA preservando soberania do ato médico.
 
-        Under RN06, exceeding TMA generates only discrete visual telemetry.
-        Software is strictly forbidden from forcing disconnection.
+        Veda desconexão forçada ao estourar TMA, gerando aviso visual discreto.
+        Regras: RN06 e docs/explanation/domains/consultation-domain.md.
         """
         now = datetime.now(UTC)
         inicio_raw = iniciado_em or now
@@ -208,7 +246,11 @@ class PEPService:
         )
 
     async def obter_prontuario(self, atendimento_id: UUID) -> ProntuarioResumoDTO:
-        """Retrieve aggregated clinical record view for an attendance."""
+        """Recupera visão unificada com evolução SOAP e documentos vinculados.
+
+        Aplica bloqueio de integridade se atendimento encerrado (CFM 1.821/2007).
+        Regras: RN06 e docs/explanation/domains/consultation-domain.md.
+        """
         stmt = select(EvolucaoClinica).where(
             EvolucaoClinica.atendimento_id == atendimento_id
         )
@@ -239,5 +281,9 @@ class PEPService:
         )
 
     async def obter_evolucao(self, atendimento_id: UUID) -> EvolucaoClinica:
-        """Delegate SOAP evolution retrieval to EvolucaoService."""
+        """Recupera evolução clínica SOAP persistida para o atendimento.
+
+        Assegura acesso rastreável ao registro médico conforme CFM nº 1.821/2007.
+        Regras: RN06 e docs/explanation/domains/consultation-domain.md.
+        """
         return await self._evolucao.obter_evolucao(atendimento_id)

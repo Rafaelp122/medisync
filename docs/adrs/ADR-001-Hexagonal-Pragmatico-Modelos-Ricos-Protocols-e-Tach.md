@@ -5,7 +5,7 @@
 | **Status** | Aprovado |
 | **Data** | 2026-09-30 |
 | **Decisores** | Time de Arquitetura & Engenharia |
-| **Referência** | [Overview de Arquitetura](../03-architecture/overview.md) (RNF-08, RNF-09) |
+| **Referência** | [Overview de Arquitetura](../explanation/architecture/overview.md) (RNF-08, RNF-09) |
 
 ---
 

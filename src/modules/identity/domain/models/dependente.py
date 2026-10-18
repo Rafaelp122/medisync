@@ -20,7 +20,11 @@ from src.core.uuid7 import uuid7
 
 
 class Dependente(Base):
-    """Pediatric or legal dependent linkage to titular patient."""
+    """Vínculo de dependência pediátrica ou representação legal entre pacientes.
+
+    Regras: RN07 (TCLE/consentimento de menores), LGPD Art. 11, CFM 1.821/2007.
+    Documentação: docs/explanation/domains/identity-domain.md
+    """
 
     __tablename__ = "dependentes"
     __table_args__ = (
@@ -60,7 +64,10 @@ class Dependente(Base):
         id: UUID | None = None,
     ) -> None:
         if titular_id == dependente_id:
-            raise ValidationError("Paciente não pode ser dependente de si mesmo.")
+            raise ValidationError(
+                f"Paciente não pode ser dependente de si mesmo: titular '{titular_id}' "
+                f"e dependente '{dependente_id}' são idênticos."
+            )
 
         super().__init__(
             id=id or uuid7(),

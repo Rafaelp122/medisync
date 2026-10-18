@@ -5,7 +5,7 @@
 | **Status** | Aprovado |
 | **Data** | 2026-09-30 |
 | **Decisores** | Time de Arquitetura & Engenharia |
-| **Referência** | [Overview](../03-architecture/overview.md), [Concorrência](../03-architecture/concurrency-and-queues.md) (RN02, RNF-02) |
+| **Referência** | [Overview](../explanation/architecture/overview.md), [Concorrência](../explanation/architecture/concurrency-and-queues.md) (RN02, RNF-02) |
 
 ---
 

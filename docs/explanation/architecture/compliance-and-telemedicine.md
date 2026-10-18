@@ -114,6 +114,6 @@ sequenceDiagram
 
 ### 4.1 Detalhes Técnicos da Assinatura:
 1. **Geração do PDF/A**: Geração via `ReportLab`, inserindo QR Code de autenticidade, cabeçalho da unidade de saúde e declaração de atendimento virtual nos termos do CFM nº 2.314/2022.
-2. **Assinatura PAdES em Nuvem ([ADR-006](../adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md))**: Integração via `PyHanko` com provedores PSC (BirdID, SafeID, Vidaas) através de OAuth2, dispensando tokens físicos USB e viabilizando plantões ágeis.
+2. **Assinatura PAdES em Nuvem ([ADR-006](../../adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md))**: Integração via `PyHanko` com provedores PSC (BirdID, SafeID, Vidaas) através de OAuth2, dispensando tokens físicos USB e viabilizando plantões ágeis.
 3. **Persistência em Object Storage**: O PDF assinado é salvo no bucket MinIO/S3 (`s3://medisync-docs/{org_id}/atendimentos/{atendimento_id}/{uuid}.pdf`). O PostgreSQL armazena apenas a chave S3 e o hash SHA-256 no log de auditoria imutável.
 4. **Presigned URLs**: Entrega ao paciente e farmacêutico via link de validação pública que gera uma *Presigned URL* fresca com validade de 15 minutos (900 segundos).

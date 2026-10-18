@@ -10,14 +10,35 @@ def _clean_digits(val: str) -> str:
     return re.sub(r"\D", "", val)
 
 
+def _mascarar_cpf(cpf: str) -> str:
+    digits = _clean_digits(cpf)
+    if len(digits) >= 11:
+        return f"{digits[:3]}.***.***-{digits[-2:]}"
+    return f"{digits[:3]}***" if len(digits) >= 3 else "***"
+
+
+def _mascarar_telefone(tel: str) -> str:
+    digits = _clean_digits(tel)
+    if len(digits) >= 4:
+        return f"{digits[:2]}****{digits[-2:]}"
+    return "****"
+
+
 def validate_cpf(cpf: str) -> str:
     """Validate Brazilian CPF format and check digits (RFC mod-11)."""
     digits = _clean_digits(cpf)
     if len(digits) != 11:
-        raise ValidationError("CPF deve conter exatamente 11 dígitos numéricos.")
+        msg = (
+            f"CPF deve conter exatamente 11 dígitos numéricos; "
+            f"recebido {len(digits)} dígitos ({_mascarar_cpf(cpf)})."
+        )
+        raise ValidationError(msg)
 
     if len(set(digits)) == 1:
-        raise ValidationError("CPF inválido: sequência com todos os dígitos iguais.")
+        masked = _mascarar_cpf(cpf)
+        raise ValidationError(
+            f"CPF inválido: sequência com todos os dígitos iguais ({masked})."
+        )
 
     int_digits = [int(d) for d in digits]
 
@@ -26,14 +47,20 @@ def validate_cpf(cpf: str) -> str:
     resto_1 = soma_1 % 11
     dv_1 = 0 if resto_1 < 2 else 11 - resto_1
     if int_digits[9] != dv_1:
-        raise ValidationError("CPF inválido: dígitos verificadores incorretos.")
+        raise ValidationError(
+            f"CPF inválido: dígitos verificadores incorretos ({_mascarar_cpf(cpf)}). "
+            f"Esperado primeiro DV '{dv_1}', obtido '{int_digits[9]}'."
+        )
 
     # Second check digit
     soma_2 = sum(int_digits[i] * (11 - i) for i in range(10))
     resto_2 = soma_2 % 11
     dv_2 = 0 if resto_2 < 2 else 11 - resto_2
     if int_digits[10] != dv_2:
-        raise ValidationError("CPF inválido: dígitos verificadores incorretos.")
+        raise ValidationError(
+            f"CPF inválido: dígitos verificadores incorretos ({_mascarar_cpf(cpf)}). "
+            f"Esperado segundo DV '{dv_2}', obtido '{int_digits[10]}'."
+        )
 
     return digits
 
@@ -43,17 +70,22 @@ def validate_telefone(telefone: str) -> str:
     digits = _clean_digits(telefone)
     if len(digits) not in (10, 11):
         raise ValidationError(
-            "Telefone inválido: deve conter DDD e ter 10 ou 11 dígitos numéricos."
+            f"Telefone inválido: deve conter DDD e ter 10 ou 11 dígitos numéricos; "
+            f"recebido {len(digits)} dígitos ({_mascarar_telefone(telefone)})."
         )
 
     ddd = int(digits[:2])
     if ddd < 11 or ddd > 99:
-        raise ValidationError("Telefone inválido: DDD inválido.")
+        raise ValidationError(
+            f"Telefone inválido: DDD '{ddd}' fora da faixa permitida (11 a 99)."
+        )
 
     if len(digits) == 11 and digits[2] != "9":
-        raise ValidationError(
-            "Telefone celular inválido: nono dígito (9) obrigatório para 11 dígitos."
+        msg = (
+            "Telefone celular inválido: nono dígito (9) obrigatório "
+            f"para 11 dígitos; recebido '{digits[2]}'."
         )
+        raise ValidationError(msg)
 
     return digits
 

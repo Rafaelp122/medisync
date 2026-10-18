@@ -28,6 +28,20 @@ class PrivateInsuranceGatewayAdapter:
         self._timeout = timeout_segundos
         self._client = client
 
+    async def _post_payload(self, payload: dict[str, Any]) -> httpx.Response:
+        """Dispatch HTTP POST to operator gateway using injected or ephemeral client."""
+        if self._client is not None:
+            return await self._client.post(
+                self._base_url,
+                json=payload,
+                timeout=self._timeout,
+            )
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            return await client.post(
+                self._base_url,
+                json=payload,
+            )
+
     async def verificar_elegibilidade(
         self, requisicao: RequisicaoElegibilidade
     ) -> ResultadoElegibilidade:
@@ -43,45 +57,34 @@ class PrivateInsuranceGatewayAdapter:
         }
 
         try:
-            if self._client is not None:
-                response = await self._client.post(
-                    self._base_url,
-                    json=payload,
-                    timeout=self._timeout,
-                )
-            else:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    response = await client.post(
-                        self._base_url,
-                        json=payload,
-                    )
+            response = await self._post_payload(payload)
 
-            if response.status_code == 200:
-                data: dict[str, Any] = response.json()
-                aprovado = bool(data.get("aprovado", False))
-                if aprovado:
-                    return ResultadoElegibilidade(
-                        aprovado=True,
-                        status=StatusElegibilidade.APROVADO,
-                        codigo_autorizacao=data.get("codigo_autorizacao", "AUTH-OK"),
-                    )
+            if response.status_code != 200:
+                logger.warning(
+                    "Gateway HTTP error status=%d body=%s",
+                    response.status_code,
+                    response.text,
+                )
                 return ResultadoElegibilidade(
                     aprovado=False,
                     status=StatusElegibilidade.REJEITADO,
-                    motivo=data.get(
-                        "motivo", "Autorização recusada pela operadora de saúde."
-                    ),
+                    motivo=f"Operadora retornou status HTTP {response.status_code}.",
                 )
 
-            logger.warning(
-                "Gateway HTTP error status=%d body=%s",
-                response.status_code,
-                response.text,
-            )
+            data: dict[str, Any] = response.json()
+            if bool(data.get("aprovado", False)):
+                return ResultadoElegibilidade(
+                    aprovado=True,
+                    status=StatusElegibilidade.APROVADO,
+                    codigo_autorizacao=data.get("codigo_autorizacao", "AUTH-OK"),
+                )
+
             return ResultadoElegibilidade(
                 aprovado=False,
                 status=StatusElegibilidade.REJEITADO,
-                motivo=f"Operadora retornou status HTTP {response.status_code}.",
+                motivo=data.get(
+                    "motivo", "Autorização recusada pela operadora de saúde."
+                ),
             )
 
         except httpx.TimeoutException:

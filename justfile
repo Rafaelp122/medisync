@@ -92,6 +92,14 @@ migration-history:
 docs-check:
     uv run python scripts/docs_check.py
 
+# Audita o código sob os princípios de Clean Code para Agentes de IA
+audit-ai-code:
+    uv run python scripts/audit_ai_clean_code.py
+
+# Cria esqueleto físico hexagonal para novo módulo e registra no tach.toml
+scaffold-module name:
+    uv run python scripts/scaffold_module.py {{name}}
+
 # Executa auditoria estática de segredos com gitleaks (binário local ou Docker)
 scan-secrets:
     @if command -v gitleaks >/dev/null 2>&1; then \

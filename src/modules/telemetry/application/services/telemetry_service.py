@@ -31,7 +31,11 @@ class TelemetryService:
     async def obter_painel(
         self, organizacao_id: int, desconsiderar_cache: bool = False
     ) -> PainelTelemetriaDTO:
-        """Fetch aggregated operational telemetry panel with caching and SLA targets."""
+        """Recupera painel consolidado de telemetria operacional com cache.
+
+        Computa filas, tempos médios e alertas sem interferir na autonomia.
+        Regras: RN06 (Ato Médico) e docs/explanation/domains/telemetry-domain.md.
+        """
         if not desconsiderar_cache:
             cached = await self._cache.obter_painel(organizacao_id)
             if cached is not None:

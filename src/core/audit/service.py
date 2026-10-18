@@ -12,7 +12,11 @@ from src.core.uuid7 import uuid7
 
 
 class AuditService:
-    """Service dispatching append-only audit trail entries within active transaction."""
+    """Serviço transacional para emissão de trilha append-only de auditoria (ADR-007).
+
+    Encapsula o registro de eventos de conformidade médica e LGPD Art. 11.
+    Decisões: docs/adrs/ADR-007-Auditoria-Imutavel-Append-Only.md
+    """
 
     @staticmethod
     async def record_event(
@@ -31,7 +35,11 @@ class AuditService:
         ip_origem: str | None = None,
         id: UUID | None = None,
     ) -> AuditEvent:
-        """Create and add an AuditEvent to the session within current transaction."""
+        """Persiste evento de auditoria imutável na transação corrente (ADR-007).
+
+        Garante não-repúdio e rastreabilidade para conformidade CFM e LGPD Art. 11.
+        Decisões: docs/adrs/ADR-007-Auditoria-Imutavel-Append-Only.md
+        """
         event = AuditEvent(
             organizacao_id=organizacao_id,
             atendimento_id=atendimento_id,
@@ -54,7 +62,11 @@ class AuditService:
         session: AsyncSession,
         atendimento_id: UUID,
     ) -> Sequence[AuditEvent]:
-        """Retrieve full chronological audit trail for a clinical attendance."""
+        """Recupera trilha cronológica completa de eventos do atendimento (ADR-007).
+
+        Garante auditoria forense do ciclo de vida clínico (CFM 2.314/2022).
+        Decisões: docs/adrs/ADR-007-Auditoria-Imutavel-Append-Only.md
+        """
         stmt = (
             select(AuditEvent)
             .where(AuditEvent.atendimento_id == atendimento_id)

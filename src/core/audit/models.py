@@ -50,7 +50,12 @@ class AtorPapel(StrEnum):
 
 
 class AuditEvent(Base):
-    """Append-only audit record tracking domain events and state transitions."""
+    """Trilha imutável append-only de eventos de auditoria clínica.
+
+    Conformidade com ADR-007, CFM 2.314/2022 e LGPD Art. 11.
+    Decisões: docs/adrs/ADR-007-Auditoria-Imutavel-Append-Only.md
+    Regras: docs/explanation/architecture/security-and-authorization.md
+    """
 
     __tablename__ = "audit_events"
     __table_args__ = (
@@ -107,12 +112,14 @@ class AuditEvent(Base):
     ) -> None:
         if organizacao_id <= 0:
             raise AuditoriaInvalidaError(
-                "organizacao_id inválido: deve ser um identificador positivo."
+                f"organizacao_id '{organizacao_id}' inválido: "
+                "deve ser um identificador positivo (> 0)."
             )
 
         if not tipo_evento or not tipo_evento.strip():
             raise AuditoriaInvalidaError(
-                "tipo_evento é obrigatório e não pode ser vazio."
+                f"tipo_evento '{tipo_evento}' inválido: "
+                "é obrigatório e não pode ser vazio."
             )
 
         try:
@@ -180,19 +187,23 @@ class AuditEvent(Base):
 
 @event.listens_for(AuditEvent, "before_update")
 def impedir_update_audit_event(
-    _mapper: Any, _connection: Any, _target: AuditEvent
+    _mapper: Any, _connection: Any, target: AuditEvent
 ) -> None:
+    target_id = getattr(target, "id", None)
     raise AuditoriaImutavelError(
-        "A tabela audit_events é estritamente append-only (CFM 2.314/2022 e "
-        "LGPD Art. 11). Operações de UPDATE são terminantemente proibidas."
+        f"A tabela audit_events é estritamente append-only (CFM 2.314/2022 e "
+        f"LGPD Art. 11). Operações de UPDATE no registro {target_id} são "
+        "terminantemente proibidas."
     )
 
 
 @event.listens_for(AuditEvent, "before_delete")
 def impedir_delete_audit_event(
-    _mapper: Any, _connection: Any, _target: AuditEvent
+    _mapper: Any, _connection: Any, target: AuditEvent
 ) -> None:
+    target_id = getattr(target, "id", None)
     raise AuditoriaImutavelError(
-        "A tabela audit_events é estritamente append-only (CFM 2.314/2022 e "
-        "LGPD Art. 11). Operações de DELETE são terminantemente proibidas."
+        f"A tabela audit_events é estritamente append-only (CFM 2.314/2022 e "
+        f"LGPD Art. 11). Operações de DELETE no registro {target_id} são "
+        "terminantemente proibidas."
     )

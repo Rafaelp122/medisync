@@ -37,7 +37,11 @@ def _normalizar_texto(texto: str) -> str:
 
 
 def calcular_hash_tcle(texto_termo: str) -> str:
-    """Calcula o hash SHA-256 do texto de consentimento (RN07, LGPD Art. 11)."""
+    """Calcula o hash SHA-256 do texto de consentimento forense (RN07, LGPD Art. 11).
+
+    Regras: docs/explanation/domains/triage-domain.md.
+    História: docs/user-stories/US-01-acolhimento-triagem-tcle.md.
+    """
     digest = hashlib.sha256(texto_termo.encode("utf-8")).hexdigest()
     return digest.lower()
 
@@ -49,18 +53,20 @@ def classificar_risco_clinico(
 ) -> int:
     """Classifica a prioridade de acolhimento de 1 (Emergência) a 5 (Não Urgente).
 
-    Adota a taxonomia aberta neutra compatível com o ACR do SUS (RN01, RN-REG-03):
-    - 1: Emergência (Vermelho) — Risco Iminente de Morte ou Instabilidade Grave
-    - 2: Muito Urgente (Laranja) — Alta Gravidade / Dor Severa (8-10)
-    - 3: Urgente (Amarelo) — Moderada Gravidade / Febre / Dor Moderada (5-7)
-    - 4: Pouco Urgente (Verde) — Baixa Gravidade / Dor Leve (1-4)
-    - 5: Não Urgente (Azul) — Eletivo / Sem dor ou sintomas agudos
+    Aplica salvaguarda imediata SAMU 192 (RN04) e protocolo Manchester/ACR (RN01, RN07).
+    Regras: docs/explanation/domains/triage-domain.md.
+    História: docs/user-stories/US-01-acolhimento-triagem-tcle.md.
     """
     if not queixa_principal or not queixa_principal.strip():
-        raise TriagemInvalidaError("Queixa principal não pode ser vazia.")
+        raise TriagemInvalidaError(
+            f"Queixa principal '{queixa_principal}' não pode ser vazia; "
+            "esperado relato descritivo preenchido."
+        )
 
     if escala_dor < 0 or escala_dor > 10:
-        raise TriagemInvalidaError("Escala de dor deve ser entre 0 e 10.")
+        raise TriagemInvalidaError(
+            f"Escala de dor '{escala_dor}' inválida; esperado valor entre 0 e 10."
+        )
 
     sintomas_set = {s.strip().lower() for s in sintomas}
     queixa_norm = _normalizar_texto(queixa_principal)
@@ -94,3 +100,14 @@ def classificar_risco_clinico(
 
     # 5. Nível 5 (Não Urgente - Azul)
     return 5
+
+
+class ClassificadorManchester:
+    """Motor de classificação clínica Manchester/ACR com salvaguarda SAMU 192 e TCLE.
+
+    Aplica salvaguarda imediata SAMU 192 (RN04) e protocolo Manchester/ACR (RN01, RN07).
+    Regras: docs/explanation/domains/triage-domain.md.
+    História: docs/user-stories/US-01-acolhimento-triagem-tcle.md.
+    """
+
+    classificar = staticmethod(classificar_risco_clinico)

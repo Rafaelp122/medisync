@@ -12,6 +12,20 @@ from src.modules.consultation.domain.exceptions import (
 )
 
 
+def _extrair_codigo_erro_s3(err: ClientError) -> str:
+    """Extrai código de erro da resposta ClientError de forma segura."""
+    resp_obj: object = getattr(err, "response", None)
+    if not isinstance(resp_obj, dict):
+        return ""
+    resp_dict = cast("dict[str, object]", resp_obj)
+    err_obj = resp_dict.get("Error")
+    if not isinstance(err_obj, dict):
+        return ""
+    err_dict = cast("dict[str, object]", err_obj)
+    code_val = err_dict.get("Code")
+    return code_val if isinstance(code_val, str) else ""
+
+
 class S3StorageAdapter(StoragePort):
     """Asynchronous Object Storage adapter backed by AWS S3 or MinIO via aioboto3."""
 
@@ -70,19 +84,11 @@ class S3StorageAdapter(StoragePort):
                 raw_bytes: Any = await body.read()  # pyright: ignore[reportUnknownMemberType]
                 return bytes(raw_bytes)
         except ClientError as err:
-            code = ""
-            resp_obj: object = getattr(err, "response", None)
-            if isinstance(resp_obj, dict):
-                resp_dict = cast("dict[str, object]", resp_obj)
-                err_obj = resp_dict.get("Error")
-                if isinstance(err_obj, dict):
-                    err_dict = cast("dict[str, object]", err_obj)
-                    code_val = err_dict.get("Code")
-                    if isinstance(code_val, str):
-                        code = code_val
+            code = _extrair_codigo_erro_s3(err)
             if code in ("NoSuchKey", "404", "NotFound"):
                 raise DocumentoNaoEncontradoNoStorageError(
-                    f"Documento com chave '{chave}' não encontrado no storage."
+                    f"Documento com chave '{chave}' não encontrado no storage "
+                    f"(código '{code}')."
                 ) from err
             raise
 

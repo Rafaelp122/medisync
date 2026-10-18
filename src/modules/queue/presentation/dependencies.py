@@ -26,6 +26,56 @@ from src.modules.queue.presentation.schemas import (
 )
 
 
+def _extrair_ws_intake_paciente(token: str) -> UUID:
+    settings = get_settings()
+    try:
+        claims = verify_intake_token(token, settings.SECRET_KEY)
+    except ValueError as exc:
+        raise WebSocketException(
+            code=4401,
+            reason="Token de acolhimento inválido ou expirado.",
+        ) from exc
+
+    try:
+        return UUID(str(claims["paciente_id"]))
+    except Exception as exc:
+        raw_paciente = claims.get("paciente_id")
+        raise WebSocketException(
+            code=4401,
+            reason=(
+                "Payload do token de acolhimento inválido para paciente "
+                f"'{raw_paciente}'."
+            ),
+        ) from exc
+
+
+async def _extrair_ws_access_paciente(token: str) -> tuple[UUID, bool]:
+    try:
+        user = decode_access_token(token)
+    except Exception as exc:
+        raise WebSocketException(
+            code=4401,
+            reason=f"Token de acesso inválido ou expirado: {exc}",
+        ) from exc
+
+    if await is_token_revoked(user.token_id):
+        raise WebSocketException(
+            code=4401,
+            reason=f"Token de acesso '{user.token_id}' revogado.",
+        )
+
+    if user.papel not in (Role.PACIENTE, Role.ADMIN_GLOBAL):
+        raise WebSocketException(
+            code=4403,
+            reason=(
+                f"Acesso negado: papel '{user.papel}' não autorizado "
+                "para acompanhar fila."
+            ),
+        )
+
+    return user.usuario_id, user.papel == Role.ADMIN_GLOBAL
+
+
 async def validar_ws_queue_token(
     websocket: WebSocket,
     atendimento_id: UUID,
@@ -51,56 +101,19 @@ async def validar_ws_queue_token(
 
     token_parts = token.split(".")
     if len(token_parts) == 2:
-        settings = get_settings()
-        try:
-            claims = verify_intake_token(token, settings.SECRET_KEY)
-        except ValueError as exc:
-            raise WebSocketException(
-                code=4401,
-                reason="Token de acolhimento inválido ou expirado.",
-            ) from exc
-
-        try:
-            paciente_id = UUID(str(claims["paciente_id"]))
-        except Exception as exc:
-            raise WebSocketException(
-                code=4401,
-                reason="Payload do token de acolhimento inválido.",
-            ) from exc
-
+        paciente_id = _extrair_ws_intake_paciente(token)
         is_admin = False
-
     elif len(token_parts) == 3:
-        try:
-            user = decode_access_token(token)
-        except Exception as exc:
-            raise WebSocketException(
-                code=4401,
-                reason="Token de acesso inválido ou expirado.",
-            ) from exc
-
-        if await is_token_revoked(user.token_id):
-            raise WebSocketException(
-                code=4401,
-                reason="Token de acesso revogado.",
-            )
-
-        if user.papel not in (Role.PACIENTE, Role.ADMIN_GLOBAL):
-            raise WebSocketException(
-                code=4403,
-                reason="Acesso negado: papel não autorizado para acompanhar fila.",
-            )
-
-        paciente_id = user.usuario_id
-        is_admin = user.papel == Role.ADMIN_GLOBAL
-
+        paciente_id, is_admin = await _extrair_ws_access_paciente(token)
     else:
         raise WebSocketException(
             code=4401,
-            reason="Formato de credencial inválido.",
+            reason=(
+                f"Formato de credencial inválido ({len(token_parts)} "
+                "partes recebidas; esperadas 2 ou 3)."
+            ),
         )
 
-    # Administradores globais podem acompanhar qualquer atendimento na fila
     if is_admin:
         return
 
@@ -110,11 +123,77 @@ async def validar_ws_queue_token(
     if not tem_posse:
         raise WebSocketException(
             code=4403,
-            reason="Acesso negado: o token não confere posse sobre o atendimento.",
+            reason=(
+                f"Acesso negado: token do paciente '{paciente_id}' não confere "
+                f"posse sobre o atendimento '{atendimento_id}'."
+            ),
         )
 
 
 QueueWsAuthDep = Annotated[None, Depends(validar_ws_queue_token)]
+
+
+def _validar_admissao_intake_token(
+    token: str,
+    paciente_id_esperado: UUID,
+    tenant_id: int,
+) -> None:
+    settings = get_settings()
+    try:
+        claims = verify_intake_token(token, settings.SECRET_KEY)
+    except ValueError as exc:
+        raise UnauthorizedError(f"Token de acolhimento inválido: {exc}") from exc
+
+    token_paciente_id = str(claims.get("paciente_id", ""))
+    if token_paciente_id != str(paciente_id_esperado):
+        raise ForbiddenError(
+            f"Acesso negado: o token de acolhimento pertence ao paciente "
+            f"'{token_paciente_id}', mas o corpo requisitou '{paciente_id_esperado}'."
+        )
+
+    token_org_id = int(claims.get("organizacao_id", 0))
+    if token_org_id != tenant_id:
+        raise ForbiddenError(
+            f"Acesso negado: o token pertence à organização {token_org_id}, "
+            f"mas o contexto solicitado é da organização {tenant_id}."
+        )
+
+
+async def _validar_admissao_access_token(
+    token: str,
+    paciente_id_esperado: UUID,
+    tenant_id: int,
+) -> None:
+    try:
+        user = decode_access_token(token)
+    except Exception as exc:
+        raise UnauthorizedError(f"Token de acesso inválido: {exc}") from exc
+
+    if await is_token_revoked(user.token_id):
+        raise UnauthorizedError(f"Token de acesso '{user.token_id}' revogado.")
+
+    papeis_permitidos = (Role.PACIENTE, Role.ADMIN_GLOBAL, Role.GESTOR_UNIDADE)
+    if user.papel not in papeis_permitidos:
+        permitidos = sorted(p.value for p in papeis_permitidos)
+        raise ForbiddenError(
+            f"Acesso negado: papel '{user.papel}' não autorizado "
+            f"para admissão na fila; esperados: {permitidos}."
+        )
+
+    if user.papel == Role.ADMIN_GLOBAL:
+        return
+
+    if user.organizacao_id != tenant_id:
+        raise ForbiddenError(
+            f"Acesso negado: token pertence à organização {user.organizacao_id}, "
+            f"mas o contexto solicitado é da organização {tenant_id}."
+        )
+
+    if user.papel == Role.PACIENTE and user.usuario_id != paciente_id_esperado:
+        raise ForbiddenError(
+            f"Acesso negado: o usuário autenticado '{user.usuario_id}' "
+            f"não é o paciente informado '{paciente_id_esperado}'."
+        )
 
 
 async def validar_admissao_paciente(
@@ -136,68 +215,26 @@ async def validar_admissao_paciente(
     """
     if not credentials or not credentials.credentials:
         raise UnauthorizedError(
-            "Credencial de autenticação não fornecida. Envie o token no cabeçalho "
-            "Authorization: Bearer <token> para admissão na fila."
+            f"Credencial de autenticação não fornecida para a organização {tenant_id}. "
+            "Envie o token no cabeçalho Authorization: Bearer <token> "
+            "para admissão na fila."
         )
 
     token = credentials.credentials
     token_parts = token.split(".")
 
     if len(token_parts) == 2:
-        settings = get_settings()
-        try:
-            claims = verify_intake_token(token, settings.SECRET_KEY)
-        except ValueError as exc:
-            raise UnauthorizedError(f"Token de acolhimento inválido: {exc}") from exc
+        _validar_admissao_intake_token(token, body.paciente_id, tenant_id)
+        return
 
-        token_paciente_id = str(claims.get("paciente_id", ""))
-        if token_paciente_id != str(body.paciente_id):
-            raise ForbiddenError(
-                "Acesso negado: o token de acolhimento não confere posse "
-                "sobre o paciente informado."
-            )
+    if len(token_parts) == 3:
+        await _validar_admissao_access_token(token, body.paciente_id, tenant_id)
+        return
 
-        token_org_id = int(claims.get("organizacao_id", 0))
-        if token_org_id != tenant_id:
-            raise ForbiddenError(
-                f"Acesso negado: o token pertence à organização {token_org_id}, "
-                f"mas o contexto solicitado é da organização {tenant_id}."
-            )
-
-    elif len(token_parts) == 3:
-        try:
-            user = decode_access_token(token)
-        except Exception as exc:
-            raise UnauthorizedError(f"Token de acesso inválido: {exc}") from exc
-
-        if await is_token_revoked(user.token_id):
-            raise UnauthorizedError("Token de acesso revogado.")
-
-        if user.papel not in (Role.PACIENTE, Role.ADMIN_GLOBAL, Role.GESTOR_UNIDADE):
-            raise ForbiddenError(
-                f"Acesso negado: papel '{user.papel}' não autorizado "
-                "para admissão na fila."
-            )
-
-        if user.papel == Role.PACIENTE:
-            if user.usuario_id != body.paciente_id:
-                raise ForbiddenError(
-                    "Acesso negado: o usuário autenticado não é o paciente informado."
-                )
-            if user.organizacao_id != tenant_id:
-                raise ForbiddenError(
-                    "Acesso negado: token pertence à organização "
-                    f"{user.organizacao_id}, mas o contexto solicitado "
-                    f"é da organização {tenant_id}."
-                )
-        elif user.papel != Role.ADMIN_GLOBAL and user.organizacao_id != tenant_id:
-            raise ForbiddenError(
-                "Acesso negado: token pertence à organização "
-                f"{user.organizacao_id}, mas o contexto solicitado "
-                f"é da organização {tenant_id}."
-            )
-    else:
-        raise UnauthorizedError("Formato de credencial inválido.")
+    raise UnauthorizedError(
+        f"Formato de credencial inválido ({len(token_parts)} partes recebidas; "
+        "esperadas 2 ou 3)."
+    )
 
 
 AdmissaoPacienteAuthDep = Annotated[None, Security(validar_admissao_paciente)]
@@ -218,6 +255,79 @@ async def exigir_medico_plantao(
 MedicoPlantaoAuthDep = Annotated[AuthenticatedUser, Depends(exigir_medico_plantao)]
 
 
+async def _verificar_posse_intake_token(
+    token: str,
+    atendimento_id: UUID,
+    tenant_id: int,
+    checker: PatientQueueOwnershipChecker,
+) -> None:
+    settings = get_settings()
+    try:
+        claims = verify_intake_token(token, settings.SECRET_KEY)
+    except ValueError as exc:
+        raise UnauthorizedError(f"Token de acolhimento inválido: {exc}") from exc
+
+    try:
+        paciente_id = UUID(str(claims.get("paciente_id", "")))
+    except Exception as exc:
+        raw_paciente = claims.get("paciente_id")
+        raise UnauthorizedError(
+            f"Payload do token de acolhimento com paciente_id '{raw_paciente}' "
+            f"inválido: {exc}"
+        ) from exc
+
+    token_org_id = int(claims.get("organizacao_id", 0))
+    if token_org_id != tenant_id:
+        raise ForbiddenError(
+            f"Acesso negado: o token pertence à organização {token_org_id}, "
+            f"mas o contexto solicitado é da organização {tenant_id}."
+        )
+
+    tem_posse = await checker(atendimento_id, paciente_id)
+    if not tem_posse:
+        raise ForbiddenError(
+            f"Acesso negado: o token de acolhimento do paciente '{paciente_id}' "
+            f"não confere posse sobre o atendimento '{atendimento_id}'."
+        )
+
+
+async def _verificar_posse_access_token(
+    token: str,
+    atendimento_id: UUID,
+    tenant_id: int,
+    checker: PatientQueueOwnershipChecker,
+) -> None:
+    try:
+        user = decode_access_token(token)
+    except Exception as exc:
+        raise UnauthorizedError(f"Token de acesso inválido: {exc}") from exc
+
+    if await is_token_revoked(user.token_id):
+        raise UnauthorizedError(f"Token de acesso '{user.token_id}' revogado.")
+
+    if user.papel == Role.ADMIN_GLOBAL:
+        return
+
+    if user.papel != Role.PACIENTE:
+        raise ForbiddenError(
+            f"Acesso negado: papel '{user.papel}' não autorizado "
+            "para operações de paciente na fila; esperado 'PACIENTE' ou 'ADMIN_GLOBAL'."
+        )
+
+    if user.organizacao_id != tenant_id:
+        raise ForbiddenError(
+            f"Acesso negado: token pertence à organização {user.organizacao_id}, "
+            f"mas o contexto solicitado é da organização {tenant_id}."
+        )
+
+    tem_posse = await checker(atendimento_id, user.usuario_id)
+    if not tem_posse:
+        raise ForbiddenError(
+            f"Acesso negado: o usuário autenticado '{user.usuario_id}' "
+            f"não possui posse sobre o atendimento '{atendimento_id}'."
+        )
+
+
 async def _verificar_posse_token_e_atendimento(
     credentials: HTTPAuthorizationCredentials | None,
     atendimento_id: UUID,
@@ -227,7 +337,8 @@ async def _verificar_posse_token_e_atendimento(
     """Verifica credenciais e posse sobre o atendimento (Anti-IDOR)."""
     if not credentials or not credentials.credentials:
         raise UnauthorizedError(
-            "Credencial de autenticação não fornecida. Envie o token no cabeçalho "
+            "Credencial de autenticação não fornecida para atendimento "
+            f"'{atendimento_id}'. Envie o token no cabeçalho "
             "Authorization: Bearer <token>."
         )
 
@@ -235,65 +346,17 @@ async def _verificar_posse_token_e_atendimento(
     token_parts = token.split(".")
 
     if len(token_parts) == 2:
-        settings = get_settings()
-        try:
-            claims = verify_intake_token(token, settings.SECRET_KEY)
-        except ValueError as exc:
-            raise UnauthorizedError(f"Token de acolhimento inválido: {exc}") from exc
+        await _verificar_posse_intake_token(token, atendimento_id, tenant_id, checker)
+        return
 
-        try:
-            paciente_id = UUID(str(claims.get("paciente_id", "")))
-        except Exception as exc:
-            raise UnauthorizedError(
-                "Payload do token de acolhimento inválido."
-            ) from exc
+    if len(token_parts) == 3:
+        await _verificar_posse_access_token(token, atendimento_id, tenant_id, checker)
+        return
 
-        token_org_id = int(claims.get("organizacao_id", 0))
-        if token_org_id != tenant_id:
-            raise ForbiddenError(
-                f"Acesso negado: o token pertence à organização {token_org_id}, "
-                f"mas o contexto solicitado é da organização {tenant_id}."
-            )
-
-        tem_posse = await checker(atendimento_id, paciente_id)
-        if not tem_posse:
-            raise ForbiddenError(
-                "Acesso negado: o token de acolhimento não confere posse "
-                "sobre o atendimento."
-            )
-
-    elif len(token_parts) == 3:
-        try:
-            user = decode_access_token(token)
-        except Exception as exc:
-            raise UnauthorizedError(f"Token de acesso inválido: {exc}") from exc
-
-        if await is_token_revoked(user.token_id):
-            raise UnauthorizedError("Token de acesso revogado.")
-
-        if user.papel == Role.ADMIN_GLOBAL:
-            return
-
-        if user.papel != Role.PACIENTE:
-            raise ForbiddenError(
-                f"Acesso negado: papel '{user.papel}' não autorizado "
-                "para operações de paciente na fila."
-            )
-
-        if user.organizacao_id != tenant_id:
-            raise ForbiddenError(
-                f"Acesso negado: token pertence à organização {user.organizacao_id}, "
-                f"mas o contexto solicitado é da organização {tenant_id}."
-            )
-
-        tem_posse = await checker(atendimento_id, user.usuario_id)
-        if not tem_posse:
-            raise ForbiddenError(
-                "Acesso negado: o usuário autenticado não possui posse "
-                "sobre o atendimento."
-            )
-    else:
-        raise UnauthorizedError("Formato de credencial inválido.")
+    raise UnauthorizedError(
+        f"Formato de credencial inválido ({len(token_parts)} partes recebidas; "
+        "esperadas 2 ou 3)."
+    )
 
 
 async def validar_posse_atendimento_path(

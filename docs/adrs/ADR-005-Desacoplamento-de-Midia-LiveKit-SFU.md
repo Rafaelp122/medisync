@@ -5,7 +5,7 @@
 | **Status** | Aprovado |
 | **Data** | 2026-09-30 |
 | **Decisores** | Time de Arquitetura & Engenharia |
-| **Referência** | [Overview](../03-architecture/overview.md), [Telemedicina](../03-architecture/compliance-and-telemedicine.md) (RNF-04, PREM-01) |
+| **Referência** | [Overview](../explanation/architecture/overview.md), [Telemedicina](../explanation/architecture/compliance-and-telemedicine.md) (RNF-04, PREM-01) |
 
 ---
 

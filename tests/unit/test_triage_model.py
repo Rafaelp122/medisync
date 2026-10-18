@@ -118,18 +118,14 @@ def test_classificar_risco_niveis_2_a_5() -> None:
 
 def test_classificar_risco_validacao_inputs() -> None:
     with pytest.raises(
-        TriagemInvalidaError, match="Queixa principal não pode ser vazia"
+        TriagemInvalidaError, match=r"Queixa principal '.*' não pode ser vazia"
     ):
         classificar_risco_clinico("", [])
 
-    with pytest.raises(
-        TriagemInvalidaError, match="Escala de dor deve ser entre 0 e 10"
-    ):
+    with pytest.raises(TriagemInvalidaError, match=r"Escala de dor '.*' inválida"):
         classificar_risco_clinico("Queixa", [], escala_dor=-1)
 
-    with pytest.raises(
-        TriagemInvalidaError, match="Escala de dor deve ser entre 0 e 10"
-    ):
+    with pytest.raises(TriagemInvalidaError, match=r"Escala de dor '.*' inválida"):
         classificar_risco_clinico("Queixa", [], escala_dor=11)
 
 
@@ -157,7 +153,7 @@ def test_triagem_model_creation_and_defaults() -> None:
 def test_triagem_model_validations() -> None:
     atendimento_id = uuid7()
 
-    with pytest.raises(TriagemInvalidaError, match="organizacao_id inválido"):
+    with pytest.raises(TriagemInvalidaError, match=r"organizacao_id '.*' inválido"):
         Triagem(
             organizacao_id=0,
             atendimento_id=atendimento_id,
@@ -166,7 +162,7 @@ def test_triagem_model_validations() -> None:
         )
 
     with pytest.raises(
-        TriagemInvalidaError, match="Queixa principal não pode ser vazia"
+        TriagemInvalidaError, match=r"Queixa principal '.*' não pode ser vazia"
     ):
         Triagem(
             organizacao_id=1,
@@ -176,7 +172,7 @@ def test_triagem_model_validations() -> None:
         )
 
     with pytest.raises(
-        TriagemInvalidaError, match="Prioridade calculada deve ser entre 1 e 5"
+        TriagemInvalidaError, match=r"Prioridade calculada '.*' inválida"
     ):
         Triagem(
             organizacao_id=1,
@@ -186,7 +182,7 @@ def test_triagem_model_validations() -> None:
         )
 
     with pytest.raises(
-        TriagemInvalidaError, match="Prioridade calculada deve ser entre 1 e 5"
+        TriagemInvalidaError, match=r"Prioridade calculada '.*' inválida"
     ):
         Triagem(
             organizacao_id=1,

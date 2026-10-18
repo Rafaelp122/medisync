@@ -21,6 +21,9 @@ A cadeia tem três elos: contexto de tenant no código em
 `src/core/context.py`, ponte de sessão em
 `src/core/database.py` e imposição no banco em
 `migrations/versions/0002_row_level_security.py`.
+Catálogo formal de tabelas, índices e DDL em
+[Database Schema & RLS](../../reference/database/schema-and-rls.md)
+(`docs/reference/database/schema-and-rls.md`).
 Prova ponta a ponta em
 `tests/integration/test_rls_security.py`.
 
@@ -104,6 +107,9 @@ Lista e colunas em `../architecture/data-model.md`,
 sem duplicar definição aqui. Nomes das policies seguem
 o padrão `tenant_isolation_*`, um por tabela, o que
 permite auditar cobertura por consulta a `pg_policies`.
+Catálogo físico completo das 12 tabelas, índices e
+predicados em
+[Database Schema & RLS](../../reference/database/schema-and-rls.md).
 
 ## 6. Defesa em profundidade e lição issue #38
 
@@ -158,6 +164,9 @@ Buscas de prova repetíveis sem banco:
   `migrations/versions/0003_auth_credentials.py`
 - Modelo de dados e tabelas cobertas:
   `docs/explanation/architecture/data-model.md`
+- Catálogo formal de schema e RLS:
+  [Database Schema & RLS](../../reference/database/schema-and-rls.md)
+  (`docs/reference/database/schema-and-rls.md`)
 - Prova de isolamento:
   `tests/integration/test_rls_security.py`
 - Comando de docs: `justfile` com `docs-check`

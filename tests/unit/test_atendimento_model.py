@@ -79,21 +79,17 @@ def test_criar_atendimento_defaults() -> None:
 def test_criar_atendimento_validacoes_iniciais() -> None:
     paciente_id = uuid7()
 
-    with pytest.raises(ValidationError, match="organizacao_id inválido"):
+    with pytest.raises(ValidationError, match=r"organizacao_id '.*' inválido"):
         Atendimento(organizacao_id=0, paciente_id=paciente_id)
 
-    with pytest.raises(
-        ValidationError, match="Prioridade clínica deve ser entre 1 e 5"
-    ):
+    with pytest.raises(ValidationError, match=r"Prioridade clínica '.*' inválida"):
         Atendimento(
             organizacao_id=1,
             paciente_id=paciente_id,
             prioridade_clinica=0,
         )
 
-    with pytest.raises(
-        ValidationError, match="Prioridade clínica deve ser entre 1 e 5"
-    ):
+    with pytest.raises(ValidationError, match=r"Prioridade clínica '.*' inválida"):
         Atendimento(
             organizacao_id=1,
             paciente_id=paciente_id,
@@ -104,7 +100,7 @@ def test_criar_atendimento_validacoes_iniciais() -> None:
 def test_tcle_hash_validacao_e_imutabilidade() -> None:
     paciente_id = uuid7()
 
-    with pytest.raises(ValidationError, match="Hash do TCLE inválido"):
+    with pytest.raises(ValidationError, match=r"Hash do TCLE '.*' inválido"):
         Atendimento(
             organizacao_id=1,
             paciente_id=paciente_id,
@@ -349,9 +345,7 @@ def test_atualizacao_de_prioridade_clinica_medica() -> None:
     atendimento.atualizar_prioridade(1)
     assert atendimento.prioridade_clinica == 1
 
-    with pytest.raises(
-        ValidationError, match="Prioridade clínica deve ser entre 1 e 5"
-    ):
+    with pytest.raises(ValidationError, match=r"Prioridade clínica '.*' inválida"):
         atendimento.atualizar_prioridade(9)
 
 
@@ -366,9 +360,7 @@ def test_calcular_score_fila_valkey() -> None:
         prioridade_clinica=PrioridadeClinica.MUITO_URGENTE,  # 2
     )
 
-    with pytest.raises(
-        ValidationError, match="Atendimento sem data de entrada na fila"
-    ):
+    with pytest.raises(ValidationError, match=r"sem data de entrada na fila"):
         atendimento.calcular_score_fila()
 
     atendimento.data_entrada_fila = entrada

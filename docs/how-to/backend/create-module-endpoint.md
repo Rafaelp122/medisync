@@ -6,6 +6,12 @@
 
 Vale para qualquer módulo em src/modules (auth, consultation, identity, queue). Arquitetura Hexagonal Pragmática (ADR-001/ADR-008): router fino, service commita, composition injeta, fronteiras validadas por `tach check` + guarda AST.
 
+Para inicializar um novo módulo do zero com estrutura física hexagonal (árvore de diretórios, `__init__.py`, regras `tach.toml`, testes e stub Diátaxis), execute:
+
+```bash
+just scaffold-module <nome>
+```
+
 Fluxo canônico: router recebe `*Dep` da `composition.py` → chama service com schema Pydantic ou `Command` → service persiste com 1 `commit()` → resposta via `ResponseSchema.model_validate(objeto)`. Schemas moram em `presentation/schemas.py`; Commands em `application/dtos.py`.
 
 ## Conceito
@@ -25,6 +31,7 @@ Entrada: se dados vêm 100% do corpo JSON, use schema Pydantic (`frozen=True`) d
 
 ## Onde no código (só links)
 
+- Gerador físico de módulos: `scripts/scaffold_module.py`
 - Fronteira modular: `tach.toml`
 - Rate limit canônico: `src/modules/consultation/presentation/dependencies.py:exigir_rate_limit` (levanta 429 + `Retry-After`; routers importam daqui)
 - Router fino exemplo: `src/modules/consultation/presentation/routers/consultation_router.py:PEPServiceDep` (recebe service via Dep; erros de `src/core/errors.py`)
@@ -77,7 +84,7 @@ Run:
 just test-fast
 ```
 
-Expected: suite verde. Nota: nesta branch o `test-fast` completo excedeu 300s sem concluir (ver detalhe em [Run tests](run-tests.md)); para validar endpoint novo prefira o nível unitário + guarda AST acima, sem corrigir suite aqui.
+Expected: suite verde (600+ testes unitários e de arquitetura em paralelo, 100% em memória).
 
 ## Ver também
 

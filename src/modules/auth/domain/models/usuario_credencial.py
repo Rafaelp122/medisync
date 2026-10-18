@@ -91,7 +91,10 @@ class UsuarioCredencial(Base):
         )
 
     def is_bloqueado(self, agora: datetime | None = None) -> bool:
-        """Check if account is temporarily locked due to consecutive failed attempts."""
+        """Verifica se a conta está em lockout temporário por falhas consecutivas.
+
+        Regras: RN-AUT-04 (auth-domain.md), ADR-007, RF-01.
+        """
         if self.bloqueado_ate is None:
             return False
         momento = agora or datetime.now(UTC)
@@ -108,10 +111,9 @@ class UsuarioCredencial(Base):
         minutos_bloqueio: int = 15,
         agora: datetime | None = None,
     ) -> bool:
-        """Increment consecutive failures; lock account if threshold reached.
+        """Incrementa falhas consecutivas e aplica lockout de 15 min no limiar.
 
-        Returns:
-            True if account was newly locked, False otherwise.
+        Regras: docs/explanation/domains/auth-domain.md
         """
         momento = agora or datetime.now(UTC)
         self.falhas_login_consecutivas += 1
@@ -122,24 +124,36 @@ class UsuarioCredencial(Base):
         return False
 
     def registrar_sucesso_login(self, agora: datetime | None = None) -> None:
-        """Reset consecutive failures and lockout on successful authentication."""
+        """Reseta contadores de falhas e desbloqueia após autenticação com sucesso.
+
+        Regras: docs/explanation/domains/auth-domain.md
+        """
         self.falhas_login_consecutivas = 0
         self.bloqueado_ate = None
         self.atualizado_em = agora or datetime.now(UTC)
 
     def atualizar_senha(self, novo_hash: str, agora: datetime | None = None) -> None:
-        """Update password hash and reset security counters."""
+        """Atualiza hash Argon2id e reseta contadores de segurança.
+
+        Regras: docs/adrs/ADR-005-Autenticacao-Passwordless-Argon2id.md
+        """
         self.senha_hash = novo_hash.strip()
         self.falhas_login_consecutivas = 0
         self.bloqueado_ate = None
         self.atualizado_em = agora or datetime.now(UTC)
 
     def desativar(self) -> None:
-        """Deactivate account preventing any future login."""
+        """Desativa conta impedindo novas sessões (revogação de acesso).
+
+        Regras: docs/explanation/domains/auth-domain.md
+        """
         self.ativo = False
         self.atualizado_em = datetime.now(UTC)
 
     def ativar(self) -> None:
-        """Activate account."""
+        """Reativa credencial de usuário para autenticação.
+
+        Regras: docs/explanation/domains/auth-domain.md
+        """
         self.ativo = True
         self.atualizado_em = datetime.now(UTC)

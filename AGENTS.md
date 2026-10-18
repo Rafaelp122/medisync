@@ -8,6 +8,7 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
 
 * **Gerenciador de Pacotes:** `uv`. Nunca use `pip install` global.
 * **Automação:** Sempre utilize os comandos do `justfile`:
+  * `just install` — Sincroniza ambiente e dependências com `uv` (`uv sync`).
   * `just check` — Executa o portão de qualidade completo (fmt, lint, typecheck, tach, test-unit, test-integration).
   * `just fmt` — Formata o código com `ruff`.
   * `just lint` — Executa lint com autofix seguro (`ruff check . --fix`).
@@ -17,6 +18,9 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
   * `just test-unit` — Executa testes unitários com cobertura (`pytest tests/unit tests/architecture --cov=src`).
   * `just test-integration` — Executa testes de integração sobre infraestrutura real (`pytest tests/integration`).
   * `just test` — Executa a suíte de testes completa com cobertura consolidada.
+  * `just docs-check` — Valida links `src/docs`, referências relativas e proíbe código colado nos docs.
+  * `just audit-ai-code` — Audita o código sob os princípios de Clean Code para Agentes de IA.
+  * `just scaffold-module <nome>` — Cria esqueleto físico hexagonal para novo módulo e registra no `tach.toml`.
   * `just scan-secrets` — Audita o repositório com Gitleaks (ADR-010) para prevenir vazamento de credenciais.
   * `just bump-check` — Simula o próximo bump de versão semântica e changelog via Commitizen.
 
@@ -50,15 +54,31 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
    * Cada módulo agrega suas rotas em `src/modules/<modulo>/presentation/routers/__init__.py` exportando `http_router` (e `ws_router`). `main.py` inclui apenas 1 router HTTP por módulo sob `/api/v1`.
    * Endpoint de saúde `/healthz` reside em `src/core/health_router.py` sob o guard de routers finos e versão via `Settings.APP_VERSION`.
    * Ciclo de vida (`lifespan`) delega inicializações para hooks assíncronos nos composition roots dos módulos (ex: `queue.composition.on_startup`).
+6. **Configurações Desacopladas por Perfil (ADR-009):**
+   * Services e domínio nunca importam `get_settings()` ou `src.core.config`.
+   * Dependências de ambiente são resolvidas exclusivamente nas composition roots (`composition.py`) e injetadas como tipos primitivos ou ports no service (guard AST `tests/architecture/test_services_and_composition.py`).
+7. **Governança de Documentação Diátaxis (ADR-001 / Padrão Atômico-Denso):**
+   * Toda nova feature, regra de negócio ou endpoint deve atualizar a documentação no mesmo PR: 1 conceito por arquivo (80–250 linhas), template obrigatório de 5 seções, zero código colado >5 linhas (usar `path:símbolo` + `rg`).
+   * Novo `.env` $\to$ atualizar `docs/reference/environment/variables.md`; novo erro $\to$ `docs/reference/api/error-envelope.md`.
+8. **Clean Code para Agentes de IA & Navegabilidade Semântica:**
+   * **Nomes Únicos e 'Greppáveis' (<5 matches no `rg`):** Símbolos públicos (classes, métodos de serviço, ports, exceptions) devem ter nomes distintivos e rastreáveis. Proibido nomes genéricos como `data`, `handler`, `Manager`, `process()`, `execute()`.
+   * **Exceções com Contexto do Valor Ofensivo (*Offending Value + Expected Shape*):** Exceções de domínio e validações devem sempre interpolar o valor recebido e o valor esperado (ex.: `raise StatusInvalidoError(f"Status '{status}' inválido; esperados: {sorted(StatusAtendimento)}")`), viabilizando diagnóstico instantâneo no traceback.
+   * **Early Returns e Aninhamento Raso (Max 2 níveis):** Guard clauses imediatas no topo de funções e métodos. Proibido aninhamento profundo (`if/else` encadeados dentro de loops). Limite máximo de 2 níveis de estruturas de controle por função.
+   * **Docstrings Atômicas de Proveniência (WHY, not WHAT):** Docstrings atômicas de 3 a 5 linhas em métodos públicos de services e modelos clínicos com regras de negócio, referenciando explicitamente a regra canônica (`RN01-RN07`, `RF-01-RF-10`, `ADR-xxx`, normas CFM/LGPD) e o link do documento em `docs/`. Proibido repetir `Args:` e `Returns:` já tipados na assinatura. Código aponta para doc (`Regras: docs/...`), doc aponta para código (`Impl: src/...:simbolo`).
+   * **Fakes Nomeados sobre Mocks Inline Anônimos:** Testes unitários devem priorizar Fakes em memória tipados (`MemoryTokenRevocation`, `MemoryQueuePort`) em vez de mocks anônimos (`MagicMock()`, `patch()`), garantindo checagem de tipos estrita (`basedpyright`) nos testes.
 
 ---
 
 ## 3. Catálogo de Skills do Projeto
 
 Consulte e utilize as skills especializadas localizadas em `.agents/skills/`:
+* [`.agents/skills/medisync-issue-creator`](.agents/skills/medisync-issue-creator/SKILL.md): Formalização de necessidades espontâneas, ideias fora do plano, bugs e débitos técnicos em issues canônicas com critérios de aceitação e guardrails de não-escopo.
+* [`.agents/skills/medisync-issue-planner`](.agents/skills/medisync-issue-planner/SKILL.md): Planejamento sistemático de issues com subagentes, TDD por camadas (Inside-Out) e governança Diátaxis.
+* [`.agents/skills/medisync-pr-auditor`](.agents/skills/medisync-pr-auditor/SKILL.md): Auditoria rigorosa pré/pós-implementação ("Evidence over Narrative"), AST Clean Code e portões de qualidade.
 * [`.agents/skills/fastapi`](.agents/skills/fastapi/SKILL.md): Boas práticas com FastAPI, injeção de dependências, routers e Pydantic v2.
 * [`.agents/skills/sqlalchemy-alembic-expert-best-practices-code-review`](.agents/skills/sqlalchemy-alembic-expert-best-practices-code-review/SKILL.md): Padrões de queries assíncronas no SQLAlchemy 2.0, migrations idempotentes e modelagem relacional.
 * [`.agents/skills/valkey`](.agents/skills/valkey/SKILL.md): Comandos atômicos, Sorted Sets (ZSET), scripts Lua e caching de alta performance.
+* [`.agents/skills/codebase-design`](.agents/skills/codebase-design/SKILL.md): Design de módulos profundos, interfaces coesas e encapsulamento.
 
 ---
 
@@ -67,5 +87,10 @@ Consulte e utilize as skills especializadas localizadas em `.agents/skills/`:
 Antes de finalizar qualquer tarefa ou abrir PR:
 - [ ] O código adere aos padrões do Hexagonal Pragmático.
 - [ ] Novos testes foram adicionados (unitários ou integração).
+- [ ] Exceções levantadas contêm o valor ofensivo e a restrição esperada.
+- [ ] Aninhamento de controle de fluxo respeita o teto de 2 níveis.
+- [ ] Docstrings de regras de negócio contêm links atômicos de proveniência para `docs/`.
+- [ ] Documentação correspondente atualizada sob o padrão Diátaxis (sem código colado >5 linhas).
 - [ ] `just scan-secrets` foi executado com zero detecções de segredos expostos.
+- [ ] `just docs-check` foi executado e passou com código de retorno 0.
 - [ ] `just check` foi executado e passou com código de retorno 0.

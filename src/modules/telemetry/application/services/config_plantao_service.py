@@ -29,7 +29,11 @@ class ConfigPlantaoService:
         self._session = session
 
     async def obter_configuracao(self, organizacao_id: int) -> ConfigPlantaoResultDTO:
-        """Retrieve active configuration or initialize tenant default in database."""
+        """Recupera configuração ativa do plantão ou cria padrões do tenant.
+
+        Garante parametrização de SLAs, TMA e limites operacionais.
+        Regras: docs/explanation/domains/telemetry-domain.md.
+        """
         config = await self._repo.obter_por_organizacao(organizacao_id)
         if config is None:
             config = ConfiguracaoPlantao(organizacao_id=organizacao_id)
@@ -41,7 +45,11 @@ class ConfigPlantaoService:
     async def atualizar_configuracao(
         self, command: ConfigPlantaoCommand
     ) -> ConfigPlantaoResultDTO:
-        """Create or update shift configuration, invalidate cache, and commit."""
+        """Cria ou atualiza configuração do plantão, persistindo e invalidando cache.
+
+        Valida parâmetros de alpha backpressure, TMA e ring tolerance do domínio.
+        Regras: docs/explanation/domains/telemetry-domain.md.
+        """
         config = await self._repo.obter_por_organizacao(command.organizacao_id)
         if config is None:
             config = ConfiguracaoPlantao(

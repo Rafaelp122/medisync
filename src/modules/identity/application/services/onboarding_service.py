@@ -33,7 +33,11 @@ if TYPE_CHECKING:
 
 
 class OnboardingService:
-    """Application service coordinating the two-phase onboarding workflow."""
+    """Orquestra o acolhimento progressivo em duas fases (rápido e regulatório).
+
+    Regras: RN07 (TCLE), LGPD Art. 11 (tratamento de dados de saúde), CFM 1.821/2007.
+    Documentação: docs/explanation/domains/identity-domain.md
+    """
 
     def __init__(
         self,
@@ -51,12 +55,19 @@ class OnboardingService:
         dados: Fase1InputDTO,
         session: "AsyncSession | None" = None,
     ) -> Fase1OutputDTO:
-        """Execute Phase 1 rapid intake in under 45 seconds (NEC-01)."""
+        """Executa acolhimento rápido Fase 1 em <45 segundos emitindo token provisório.
+
+        Regras: RN07 (TCLE), LGPD Art. 11, NEC-01.
+        Documentação: docs/explanation/domains/identity-domain.md
+        """
         db = session or self._session
         if db is None:
             raise ValueError("AsyncSession não configurada no OnboardingService.")
         if organizacao_id <= 0:
-            raise TenantInvalidoError("Identificador da organização deve ser positivo.")
+            raise TenantInvalidoError(
+                f"Identificador da organização '{organizacao_id}' deve ser "
+                "positivo; esperado valor > 0."
+            )
 
         # 1. Mandatory input validations
         clean_cpf = validate_cpf(dados.cpf) if dados.cpf else None
@@ -70,12 +81,16 @@ class OnboardingService:
         _ = validate_tcle_hash(dados.tcle_hash)
 
         if dados.data_nascimento > date.today():
-            raise ValidationError("Data de nascimento não pode estar no futuro.")
+            raise ValidationError(
+                f"Data de nascimento '{dados.data_nascimento}' não pode estar no "
+                f"futuro (hoje: {date.today()})."
+            )
 
         queixa = dados.queixa_principal.strip()
         if len(queixa) < 3:
             raise ValidationError(
-                "Queixa principal deve conter ao menos 3 caracteres descritivos."
+                f"Queixa principal '{queixa}' muito curta ({len(queixa)} chars); "
+                "esperado ao menos 3 caracteres descritivos."
             )
 
         # 2. Check for existing patient record in this organization
@@ -140,12 +155,19 @@ class OnboardingService:
         dados: Fase2InputDTO,
         session: "AsyncSession | None" = None,
     ) -> Fase2OutputDTO:
-        """Execute Phase 2 clinical record enrichment (CFM 1.821/2007)."""
+        """Executa enriquecimento cadastral e clínico da Fase 2 sob normas regulatórias.
+
+        Regras: CFM 1.821/2007 (prontuário eletrônico), LGPD Art. 11.
+        Documentação: docs/explanation/domains/identity-domain.md
+        """
         db = session or self._session
         if db is None:
             raise ValueError("AsyncSession não configurada no OnboardingService.")
         if organizacao_id <= 0:
-            raise TenantInvalidoError("Identificador da organização deve ser positivo.")
+            raise TenantInvalidoError(
+                f"Identificador da organização '{organizacao_id}' deve ser "
+                "positivo; esperado valor > 0."
+            )
 
         # 1. Regulatory validations
         clean_nome_mae = validate_nome_mae(dados.nome_mae)
@@ -154,7 +176,8 @@ class OnboardingService:
         sexo = dados.sexo_biologico.strip().upper()
         if sexo not in ("M", "F"):
             raise ValidationError(
-                "Sexo biológico inválido: deve ser 'M' (Masculino) ou 'F' (Feminino)."
+                f"Sexo biológico '{dados.sexo_biologico}' inválido: deve ser 'M' "
+                "ou 'F' (Feminino)."
             )
 
         logradouro = dados.logradouro.strip()
@@ -171,7 +194,8 @@ class OnboardingService:
 
         if len(estado) != 2:
             raise ValidationError(
-                "Sigla de estado (UF) inválida: deve conter exatamente 2 caracteres."
+                f"Sigla de estado (UF) '{estado}' inválida ({len(estado)} chars); "
+                "esperado exatamente 2 caracteres."
             )
 
         # 2. Retrieve patient
@@ -184,7 +208,8 @@ class OnboardingService:
 
         if paciente is None:
             raise PacienteNaoEncontradoError(
-                f"Paciente '{dados.paciente_id}' não encontrado nesta organização."
+                f"Paciente '{dados.paciente_id}' não encontrado na "
+                f"organização '{organizacao_id}'."
             )
 
         # 3. Enrich patient fields

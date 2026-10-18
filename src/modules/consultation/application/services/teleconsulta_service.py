@@ -29,14 +29,21 @@ class TeleconsultaService:
 
     @property
     def server_url(self) -> str:
-        """Return SFU server URL."""
+        """URL do servidor de mídia WebRTC LiveKit para conexões de teleconsulta.
+
+        Regras: CFM nº 2.314/2022 e docs/explanation/domains/consultation-domain.md.
+        """
         return self._server_url
 
     async def emitir_token_sala(
         self,
         command: EmitirLiveKitTokenCommand,
     ) -> LiveKitTokenResult:
-        """Issue signed JWT token with video grants for doctor or patient."""
+        """Emite token de sala WebRTC com permissões de vídeo/áudio.
+
+        Assegura conformidade com CFM nº 2.314/2022 e transição da fila.
+        Regras: RN06 (Ato Médico) e docs/explanation/domains/consultation-domain.md.
+        """
         if command.role == "paciente" and self._atendimento_reader is not None:
             await self._atendimento_reader.atender_chamada(command.atendimento_id)
 

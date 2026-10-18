@@ -74,22 +74,26 @@ class DocumentoItem(Base):
     ) -> None:
         if organizacao_id <= 0:
             raise ConsultaInvalidaError(
-                "organizacao_id inválido: deve ser um identificador positivo."
+                f"organizacao_id inválido: {organizacao_id}; "
+                "deve ser um identificador positivo (> 0)."
             )
 
         if not medicamento or not medicamento.strip():
             raise ConsultaInvalidaError(
-                "Nome do medicamento é obrigatório e não pode ser vazio."
+                f"Nome do medicamento é obrigatório e não pode ser vazio: "
+                f"{medicamento!r}."
             )
 
         if not dosagem or not dosagem.strip():
             raise ConsultaInvalidaError(
-                "Dosagem do medicamento é obrigatória e não pode ser vazia."
+                f"Dosagem do medicamento é obrigatória e não pode ser vazia: "
+                f"{dosagem!r}."
             )
 
         if not posologia or not posologia.strip():
             raise ConsultaInvalidaError(
-                "Posologia do medicamento é obrigatória e não pode ser vazia."
+                f"Posologia do medicamento é obrigatória e não pode ser vazia: "
+                f"{posologia!r}."
             )
 
         # Regra sanitária: valida contra Listas A e B da Portaria 344/98

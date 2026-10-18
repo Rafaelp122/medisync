@@ -29,7 +29,11 @@ _STATUS_TERMINAIS = frozenset({"CONCLUIDO", "PACIENTE_AUSENTE", "CANCELADO_PACIE
 
 
 class EvolucaoClinica(Base):
-    """Clinical evolution aggregate entity storing medical SOAP notes."""
+    """Registro de evolução clínica estruturada SOAP do Prontuário Eletrônico.
+
+    Garante imutabilidade sob CFM nº 1.821/2007 e CFM nº 2.314/2022.
+    Regras: RN06 (Ato Médico) e docs/explanation/domains/consultation-domain.md.
+    """
 
     __tablename__ = "evolucoes_clinicas"
     __table_args__ = (
@@ -83,17 +87,18 @@ class EvolucaoClinica(Base):
     ) -> None:
         if organizacao_id <= 0:
             raise ConsultaInvalidaError(
-                "organizacao_id inválido: deve ser um identificador positivo."
+                f"organizacao_id inválido: {organizacao_id}; "
+                "deve ser um identificador positivo (> 0)."
             )
 
         if not anamnese or not anamnese.strip():
             raise ConsultaInvalidaError(
-                "Anamnese clínica é obrigatória e não pode ser vazia."
+                f"Anamnese clínica é obrigatória e não pode ser vazia: {anamnese!r}."
             )
 
         if not conduta or not conduta.strip():
             raise ConsultaInvalidaError(
-                "Conduta clínica é obrigatória e não pode ser vazia."
+                f"Conduta clínica é obrigatória e não pode ser vazia: {conduta!r}."
             )
 
         clean_cid10: str | None = None
@@ -129,31 +134,41 @@ class EvolucaoClinica(Base):
 
     @property
     def is_finalizado(self) -> bool:
-        """Indicate whether the clinical consultation was marked as finalized."""
+        """Indica se a consulta atingiu o estado terminal e teve PEP bloqueado.
+
+        Assegura imutabilidade legal do registro após encerramento (CFM nº 1.821/2007).
+        Regras: RN06 e docs/explanation/domains/consultation-domain.md.
+        """
         return self.finalizado_em is not None or getattr(self, "_is_finalizado", False)
 
     def marcar_finalizado(self) -> None:
-        """Lock the clinical record preventing further edits or deletion."""
+        """Congela a evolução clínica e registra data/hora final de atendimento.
+
+        Inviabiliza adulterações posteriores conforme CFM nº 1.821/2007 e LGPD Art. 16.
+        Regras: RN06 e docs/explanation/domains/consultation-domain.md.
+        """
         self.finalizado_em = datetime.now(UTC)
         self._is_finalizado = True
 
     def validar_pode_excluir(self, status_atendimento: str | None = None) -> None:
-        """Check if deletion is permitted based on consultation status.
+        """Valida se a exclusão da evolução é legalmente admissível.
 
-        Under CFM regulations and PEP immutability, finalized attendance records
-        cannot be deleted or mutated.
+        Veda exclusão de registros após conclusão clínica sob CFM nº 1.821/2007 e RN06.
+        Regras: docs/explanation/domains/consultation-domain.md.
         """
         if self.is_finalizado:
             raise ConsultaFinalizadaError(
-                "Não é permitido excluir evolução de consulta finalizada."
+                f"Não é permitido excluir evolução '{self.id}' de consulta finalizada "
+                "(is_finalizado=True)."
             )
 
         if status_atendimento is not None:
             status_clean = str(status_atendimento).strip().upper()
             if status_clean in _STATUS_TERMINAIS:
                 raise ConsultaFinalizadaError(
-                    "Não é permitido excluir evolução de consulta finalizada "
-                    f"(status terminal '{status_clean}')."
+                    f"Não é permitido excluir evolução '{self.id}' de consulta "
+                    f"finalizada (status terminal: '{status_clean}'; "
+                    f"terminais: {sorted(_STATUS_TERMINAIS)})."
                 )
 
 
@@ -161,7 +176,13 @@ class EvolucaoClinica(Base):
 def impedir_exclusao_evolucao_finalizada(
     _mapper: Any, _connection: Any, target: EvolucaoClinica
 ) -> None:
+    """Impede deleção física de evolução clínica finalizada no banco.
+
+    Garante conformidade com o Art. 11 da CFM 1.821/2007 sobre guarda do PEP.
+    Regras: docs/explanation/domains/consultation-domain.md.
+    """
     if target.is_finalizado:
         raise ConsultaFinalizadaError(
-            "Não é permitido excluir evolução de consulta finalizada."
+            f"Não é permitido excluir evolução clínica '{target.id}' "
+            "de consulta finalizada (is_finalizado=True)."
         )

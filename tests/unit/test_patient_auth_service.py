@@ -194,6 +194,8 @@ async def test_verificar_otp_codigo_incorreto(
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.code == "OTP_INVALIDO"
+    assert "1198****4321" in exc_info.value.detail
+    assert "Restam 2 tentativa(s)" in exc_info.value.detail
 
 
 @pytest.mark.asyncio

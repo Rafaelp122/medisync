@@ -63,6 +63,15 @@ Ruim (cola que drifta; proibido):
 
 Drift real evitado: se doc colasse `return 0 -- médico ocupado`, e Lua trocasse `0` por `409`, doc mentiria. Com link, doc diz "código `0` = médico ocupado, `-1` = indisponível" (spec ≤5 linhas) e aponta para `alocar_chamada.lua` + `test_alocacao_service.py`, onde mudança quebra teste antes de quebrar doc.
 
+### Rastreabilidade Bidirecional (Código ↔ Docs)
+
+A rastreabilidade é uma via de mão dupla:
+- **Dos Docs para o Código:** Feita via `Impl: src/...:símbolo` e `Prova viva: tests/...:teste`.
+- **Do Código para os Docs:** Feita via **Docstrings Atômicas de Proveniência (*Lean Provenance*)** em métodos de serviços e modelos que implementam regras de negócio:
+  * 3 a 5 linhas no máximo: 1 linha de intenção clínica/arquitetural + links canônicos (`Regras: docs/...`) + `Raises:` de erros de negócio.
+  * Proibido duplicação de parâmetros e tipos (`Args:` e `Returns:` omitidos, pois o `basedpyright` já valida na assinatura).
+  * Proibido em métodos auxiliares privados ou código trivial (zero inflação de tokens).
+
 ### Quando atualizar
 
 - Router/composition/service/commit → `docs/how-to/backend/create-module-endpoint.md`.
@@ -75,7 +84,6 @@ Drift real evitado: se doc colasse `return 0 -- médico ocupado`, e Lua trocasse
 
 - Impl: `src/modules/queue/infrastructure/lua/alocar_chamada.lua:alocar_chamada`
 - Prova viva: `tests/unit/test_alocacao_service.py:test_alocar_chamada_medico_ocupado_retorna_409`
-- Spec: `docs/superpowers/specs/2026-10-05-docs-diataxis-design.md`
 - Spec: `docs/reference/index.md`
 - Ver: `rg -n "alocar_chamada" src/modules/queue/infrastructure/lua/`
 - Ver: `rg -n "test_alocar_chamada" tests/unit/test_alocacao_service.py`
@@ -96,8 +104,8 @@ Esperado: cada arquivo entre 80–250 linhas; nenhum bloco python gigante em `tu
 - [Environment variables](../environment/variables.md)
 - [Create module endpoint](../../how-to/backend/create-module-endpoint.md)
 - [Run tests](../../how-to/backend/run-tests.md)
-- `docs/explanation/architecture/concurrency-and-queues.md`
-- `docs/superpowers/specs/2026-10-05-docs-diataxis-design.md`
+- [Concurrency and queues](../../explanation/architecture/concurrency-and-queues.md)
+- [Hexagonal pragmático](../../explanation/concepts/hexagonal-pragmatico.md)
 
 ### DoD docs
 

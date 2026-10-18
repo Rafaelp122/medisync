@@ -28,18 +28,15 @@ async def get_current_user(
         Security(http_bearer_scheme),
     ] = None,
 ) -> AuthenticatedUser:
-    """Extract, decode, and validate the Bearer token from Authorization header.
+    """Extrai e valida token Bearer assegurando isolamento multi-tenant (ADR-003).
 
-    Also validates cross-tenant isolation and checks real-time revocation in Valkey.
-
-    Raises:
-        UnauthorizedError: If header is missing, malformed, or token is invalid/expired.
-        TokenRevogadoError: If token JTI is listed in Valkey revocation store.
-        ForbiddenError: If user tenant mismatches the requested tenant context.
+    Verifica revogação em tempo real via Valkey e alinha tenant context (LGPD Art. 11).
+    Decisões: docs/adrs/ADR-003-Multi-Tenancy-Logico-Postgres-RLS.md
+    Regras: docs/explanation/architecture/security-and-authorization.md
     """
     if credentials is None:
         raise UnauthorizedError(
-            "Credencial de autenticação não fornecida. "
+            f"Credencial de autenticação não fornecida (recebido: {credentials}). "
             "Envie o token no cabeçalho Authorization: Bearer <token>."
         )
 
@@ -48,7 +45,9 @@ async def get_current_user(
 
     # Validate against Valkey token revocation / blacklist in real time
     if await is_token_revoked(user.token_id):
-        raise TokenRevogadoError("Token de acesso revogado. Realize novo login.")
+        raise TokenRevogadoError(
+            f"Token de acesso revogado (jti={user.token_id}). Realize novo login."
+        )
 
     # Validate Tenant Isolation (defense in depth alongside PostgreSQL RLS)
     active_tenant = get_current_tenant_id()
@@ -67,12 +66,18 @@ CurrentUserDep = Annotated[AuthenticatedUser, Security(get_current_user)]
 
 
 def require_authenticated_user(current_user: CurrentUserDep) -> AuthenticatedUser:
-    """Ensure the request is authenticated with a valid token."""
+    """Garante autenticação válida do usuário solicitante (ADR-003).
+
+    Regras: docs/explanation/architecture/security-and-authorization.md
+    """
     return current_user
 
 
 def require_role(*roles: str) -> Callable[[AuthenticatedUser], AuthenticatedUser]:
-    """Dependency factory restricting endpoint to users possessing one of the roles."""
+    """Fabrica guard de autorização macro RBAC por papéis de usuário (ADR-003).
+
+    Regras: docs/explanation/architecture/security-and-authorization.md
+    """
 
     def role_checker(
         current_user: Annotated[
@@ -92,14 +97,20 @@ def require_role(*roles: str) -> Callable[[AuthenticatedUser], AuthenticatedUser
 
 
 def require_roles(*roles: str) -> Callable[[AuthenticatedUser], AuthenticatedUser]:
-    """Alias for require_role."""
+    """Alias para require_role (ADR-003).
+
+    Regras: docs/explanation/architecture/security-and-authorization.md
+    """
     return require_role(*roles)
 
 
 def require_permission(
     *permissions: str,
 ) -> Callable[[AuthenticatedUser], AuthenticatedUser]:
-    """Dependency factory requiring user role to possess all specified permissions."""
+    """Fabrica guard de autorização por permissões granulares de acesso (ADR-003).
+
+    Regras: docs/explanation/architecture/security-and-authorization.md
+    """
 
     def permission_checker(
         current_user: Annotated[

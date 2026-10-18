@@ -30,9 +30,7 @@ sweeper cura divergência entre memória e banco.
 Prova de existência das peças, confirmada por busca:
 
 `ls src/modules/queue/infrastructure/lua/`
-
 `rg -n "async def |_defer_by" src/worker/tasks/ring_timeout.py src/worker/tasks/sweeper.py`
-
 `rg -n "def calcular_score" src/modules/queue/domain/scoring.py`
 
 Retornam `alocar_chamada.lua`, as duas tasks e
@@ -53,7 +51,9 @@ Ingestão mora em
 `src/modules/queue/application/services/fila_service.py`.
 Método `ingressar_fila` calcula o score e grava com
 `zadd` na chave `fila:{org}:aptos`, depois lê
-`zrank` para devolver a posição. Reentrada após
+`zrank` para devolver a posição. Dicionário canônico de
+chaves e TTLs em [Valkey Keys Dictionary](../../reference/valkey/keys-dictionary.md)
+(`docs/reference/valkey/keys-dictionary.md`). Reentrada após
 falha preserva score original porque a fórmula é
 pura em cima de prioridade mais timestamp.
 
@@ -71,7 +71,6 @@ Detalhe na seção de desempate FIFO de
 Busca de prova:
 
 `rg -n "calcular_score|zadd" src/modules/queue/application/services/fila_service.py`
-
 `rg -n "uuid7" src/modules/queue/domain/models/atendimento.py src/core/uuid7.py`
 
 ## 3. Alocação atômica Lua
@@ -80,6 +79,9 @@ Script em
 `src/modules/queue/infrastructure/lua/alocar_chamada.lua`,
 carregado e executado via
 `src/modules/queue/infrastructure/lua_loader.py`.
+Especificação formal de parâmetros e retornos em
+[Valkey Lua Scripts](../../reference/valkey/lua-scripts.md)
+(`docs/reference/valkey/lua-scripts.md`).
 Classe `LuaScriptManager` descobre os arquivos da
 pasta `lua`, executa por `EVALSHA` com auto-cura em
 `NOSCRIPT` (recarrega e reexecuta, com fallback para
@@ -108,7 +110,6 @@ progressão da fila.
 Busca de prova:
 
 `rg -n "return 0|return -1|return 1" src/modules/queue/infrastructure/lua/alocar_chamada.lua`
-
 `rg -n "alocar_chamada|liberar_locks|enqueue_job" src/modules/queue/application/services/alocacao_service.py`
 
 ## 4. No-show determinístico via ARQ
@@ -118,6 +119,9 @@ Logo após alocar, o service agenda a tarefa com
 passando organização, atendimento e médico, com
 `_defer_by` igual ao ttl do comando e id de job
 `ring_timeout:{atendimento_id}` para deduplicar.
+Catálogo formal de tarefas em
+[ARQ Background Tasks](../../reference/worker/arq-tasks.md)
+(`docs/reference/worker/arq-tasks.md`).
 Implementação em
 `src/worker/tasks/ring_timeout.py`: se o estado
 ainda é chamado tocando, registra ausência via
@@ -144,7 +148,6 @@ milissegundos, conforme
 Busca de prova:
 
 `rg -n "_defer_by|_job_id" src/modules/queue/application/services/alocacao_service.py`
-
 `rg -n "async def resolver_ring_timeout_task|registrar_ausencia_paciente" src/worker/tasks/ring_timeout.py`
 
 ## 5. Sweeper de auto-cura
@@ -169,7 +172,6 @@ reconciliação nunca cruza tenant.
 Busca de prova:
 
 `rg -n "async def reconciliar_fila_orphans_task|calcular_score|zadd" src/worker/tasks/sweeper.py`
-
 `rg -n "reconciliar_fila_orphans_cron|cron" src/worker/settings.py`
 
 ## 6. Fluxo ponta a ponta
@@ -228,6 +230,9 @@ Guardas repetíveis sem infra:
 - Score: `src/modules/queue/domain/scoring.py`
 - Ingestão: `src/modules/queue/application/services/fila_service.py`
 - Id ordenável: `src/core/uuid7.py`, `src/modules/queue/domain/models/atendimento.py`
+- Dicionário de chaves Valkey: [Valkey Keys Dictionary](../../reference/valkey/keys-dictionary.md) (`docs/reference/valkey/keys-dictionary.md`)
+- Scripts Lua atômicos: [Valkey Lua Scripts](../../reference/valkey/lua-scripts.md) (`docs/reference/valkey/lua-scripts.md`)
+- Tarefas assíncronas do worker: [ARQ Background Tasks](../../reference/worker/arq-tasks.md) (`docs/reference/worker/arq-tasks.md`)
 - Script: `src/modules/queue/infrastructure/lua/alocar_chamada.lua`
 - Loader: `src/modules/queue/infrastructure/lua_loader.py`
 - Orquestra, ttl, defer: `src/modules/queue/application/services/alocacao_service.py`, `src/modules/queue/application/dtos.py`
