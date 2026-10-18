@@ -123,6 +123,108 @@ def test_queue_alocacao_wiring_with_arq() -> None:
     assert service._arq_pool is mock_arq  # pyright: ignore[reportPrivateUsage]
 
 
+def test_queue_notification_rate_limiter_settings_injection() -> None:
+    from unittest.mock import AsyncMock, patch
+
+    from src.modules.queue.composition import get_notification_rate_limiter
+    from src.modules.queue.infrastructure.notifications import (
+        NotificationRateLimiter,
+    )
+
+    mock_valkey = AsyncMock()
+    with patch("src.modules.queue.composition.get_settings") as mock_settings:
+        mock_settings.return_value = CommonSettings(
+            NOTIFICATION_RATE_LIMIT_CAPACITY=8,
+            NOTIFICATION_RATE_LIMIT_REFILL_RATE=0.25,
+            NOTIFICATION_RATE_LIMIT_TTL_SECONDS=7200,
+        )
+        limiter = get_notification_rate_limiter(valkey=mock_valkey)
+        assert isinstance(limiter, NotificationRateLimiter)
+        assert limiter._capacity == 8  # pyright: ignore[reportPrivateUsage]
+        assert limiter._refill_rate == 0.25  # pyright: ignore[reportPrivateUsage]
+        assert limiter._ttl_seconds == 7200  # pyright: ignore[reportPrivateUsage]
+        assert limiter._valkey is mock_valkey  # pyright: ignore[reportPrivateUsage]
+
+
+def test_queue_notification_adapter_resolution_with_rate_limiter() -> None:
+    from unittest.mock import AsyncMock, patch
+
+    from src.modules.queue.composition import get_notification_adapter
+    from src.modules.queue.infrastructure.notifications import (
+        LoggingNotificationAdapter,
+        RateLimitedNotificationAdapter,
+    )
+
+    mock_valkey = AsyncMock()
+    with patch("src.modules.queue.composition.get_settings") as mock_settings:
+        mock_settings.return_value = CommonSettings(
+            NOTIFICATION_PROVIDER="console",
+            NOTIFICATION_RATE_LIMIT_CAPACITY=10,
+        )
+        adapter = get_notification_adapter(valkey=mock_valkey)
+        assert isinstance(adapter, RateLimitedNotificationAdapter)
+        assert isinstance(
+            adapter._delegate,  # pyright: ignore[reportPrivateUsage]
+            LoggingNotificationAdapter,
+        )
+        assert (
+            adapter._rate_limiter._capacity  # pyright: ignore[reportPrivateUsage]
+            == 10
+        )
+
+
+def test_queue_notification_adapter_noop_returns_none() -> None:
+    from unittest.mock import AsyncMock, patch
+
+    from src.modules.queue.composition import get_notification_adapter
+
+    mock_valkey = AsyncMock()
+    with patch("src.modules.queue.composition.get_settings") as mock_settings:
+        mock_settings.return_value = CommonSettings(
+            NOTIFICATION_PROVIDER="noop",
+        )
+        adapter = get_notification_adapter(valkey=mock_valkey)
+        assert adapter is None
+
+
+def test_queue_alocacao_service_build_wiring_with_valkey() -> None:
+    from unittest.mock import AsyncMock
+
+    from src.modules.queue.composition import build_alocacao_service_for_session
+    from src.modules.queue.infrastructure.notifications import (
+        RateLimitedNotificationAdapter,
+    )
+
+    mock_valkey = AsyncMock()
+    mock_session = AsyncMock()
+
+    service = build_alocacao_service_for_session(
+        valkey=mock_valkey, session=mock_session
+    )
+    assert isinstance(
+        service._notification_adapter,  # pyright: ignore[reportPrivateUsage]
+        RateLimitedNotificationAdapter,
+    )
+    assert (
+        service._notification_adapter._rate_limiter._valkey  # pyright: ignore[reportPrivateUsage]
+        is mock_valkey
+    )
+
+
+def test_queue_notification_rate_limiter_in_memory_fallback() -> None:
+    from src.modules.queue.composition import get_notification_adapter
+    from src.modules.queue.infrastructure.notifications import (
+        RateLimitedNotificationAdapter,
+    )
+
+    adapter = get_notification_adapter(valkey=None)
+    assert isinstance(adapter, RateLimitedNotificationAdapter)
+    assert (
+        adapter._rate_limiter._valkey  # pyright: ignore[reportPrivateUsage]
+        is None
+    )
+
+
 def test_auth_and_identity_session_factories() -> None:
     from unittest.mock import AsyncMock
 

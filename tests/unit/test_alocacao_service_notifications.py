@@ -8,17 +8,18 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.core.notifications import LoggingNotificationAdapter, NotificationPort
 from src.core.uuid7 import uuid7
 from src.modules.queue.application.dtos import AlocarChamadaCommand
 from src.modules.queue.application.ports.allocation_port import (
     AllocationPort,
     AlocacaoCodigo,
 )
+from src.modules.queue.application.ports.notification_port import NotificationPort
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
 from src.modules.queue.domain.models import Atendimento, StatusAtendimento
+from src.modules.queue.infrastructure.notifications import LoggingNotificationAdapter
 
 
 @pytest.fixture

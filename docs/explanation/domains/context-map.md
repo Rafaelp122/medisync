@@ -63,7 +63,7 @@ Expõe `src/modules/queue/application/ports/queue_overflow_notifier.py` para tra
 
 Serviços que orquestram: `src/modules/queue/application/services/alocacao_service.py` e `src/modules/queue/application/services/controle_admissao_service.py`.
 
-Notificação genérica reutiliza `src/core/notifications.py` via `src/modules/queue/application/ports/notification_port.py`.
+Notificação genérica reside em `src/modules/queue/application/ports/notification_port.py` com adaptadores em `src/modules/queue/infrastructure/notifications/`.
 
 ### 2.3 consultation — lê sem possuir
 
@@ -123,8 +123,9 @@ Ports que sustentam as arestas do diagrama:
 - `src/modules/telemetry/application/ports/telemetry_reader_port.py`
 - `src/modules/telemetry/application/ports/config_plantao_port.py`
 - `src/modules/telemetry/application/ports/telemetry_cache_port.py`
-- `src/core/notifications.py`
+- `src/modules/queue/infrastructure/notifications/`
 - `tach.toml`
+
 
 ## 5. Verificação
 

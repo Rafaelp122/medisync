@@ -83,6 +83,7 @@ No nível global, `src/main.py` é o **Composition Root enxuto** da aplicação:
 - Impl consultation composition: `src/modules/consultation/composition.py:get_pep_service`
 - Impl identity composition: `src/modules/identity/composition.py:get_onboarding_service`
 - Impl queue composition: `src/modules/queue/composition.py:get_fila_service`
+- Impl queue notification adapter: `src/modules/queue/composition.py:get_notification_adapter`
 - Impl queue startup hook: `src/modules/queue/composition.py:on_startup`
 - Impl telemetry composition: `src/modules/telemetry/composition.py:get_telemetry_service`
 - Impl global composition root: `src/main.py:create_app`
@@ -92,6 +93,7 @@ No nível global, `src/main.py` é o **Composition Root enxuto** da aplicação:
 - Prova viva AST routers: `tests/architecture/test_routers_are_thin.py:test_routers_do_not_instantiate_services`
 - Prova viva AST main composition root: `tests/architecture/test_main_composition_root.py:test_main_does_not_import_infrastructure`
 - Prova viva wiring: `tests/unit/test_composition_wiring.py:test_auth_rate_limiter_resolution`
+- Prova viva queue wiring: `tests/unit/test_composition_wiring.py:test_queue_notification_adapter_resolution_with_rate_limiter`
 - Ver: `rg -n "build_.*_for_session|get_.*_service" src/modules/*/composition.py`
 
 ## Verificação

@@ -3,11 +3,9 @@
 import asyncio
 
 import pytest
-from src.core.notifications import (
-    ConsoleNotificationAdapter,
-    FakeNotificationAdapter,
+from src.modules.queue.application.ports.notification_port import NotificationPort
+from src.modules.queue.infrastructure.notifications import (
     LoggingNotificationAdapter,
-    NotificationPort,
     NotificationRateLimiter,
     RateLimitedNotificationAdapter,
 )
@@ -17,8 +15,6 @@ def test_logging_notification_adapter_protocol_compliance() -> None:
     """Validate that LoggingNotificationAdapter conforms to NotificationPort."""
     adapter = LoggingNotificationAdapter()
     assert isinstance(adapter, NotificationPort)
-    assert isinstance(ConsoleNotificationAdapter(), NotificationPort)
-    assert isinstance(FakeNotificationAdapter(), NotificationPort)
 
 
 @pytest.mark.asyncio
