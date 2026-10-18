@@ -18,7 +18,12 @@ def create_access_token(
     algorithm: str | None = None,
     expire_minutes: int | None = None,
 ) -> str:
-    """Generate a signed JWT access token adhering to AuthenticatedUser claims."""
+    """Gera token JWT com claims de autorização e tenant isolation (ADR-003).
+
+    Assegura vinculação criptográfica do usuário ao tenant (LGPD Art. 11).
+    Decisões: docs/adrs/ADR-003-Multi-Tenancy-Logico-Postgres-RLS.md
+    Regras: docs/explanation/architecture/security-and-authorization.md
+    """
     settings = get_settings()
     key = secret_key or settings.JWT_SECRET_KEY
     algo = algorithm or settings.JWT_ALGORITHM
@@ -49,11 +54,11 @@ def decode_access_token(
     secret_key: str | None = None,
     algorithm: str | None = None,
 ) -> AuthenticatedUser:
-    """Decode and validate a JWT access token into an AuthenticatedUser principal.
+    """Decodifica e valida token JWT com verificação estrita de claims (ADR-003).
 
-    Raises:
-        UnauthorizedError: If the token is expired, tampered, invalid,
-            or is a refresh token.
+    Garante integridade criptográfica e tenant principal (LGPD Art. 11).
+    Decisões: docs/adrs/ADR-003-Multi-Tenancy-Logico-Postgres-RLS.md
+    Regras: docs/explanation/architecture/security-and-authorization.md
     """
     settings = get_settings()
     key = secret_key or settings.JWT_SECRET_KEY
@@ -70,14 +75,20 @@ def decode_access_token(
             },
         )
     except jwt.ExpiredSignatureError as exc:
-        raise UnauthorizedError("Token de acesso expirado.") from exc
+        raise UnauthorizedError(
+            f"Token de acesso expirado ({exc}). Realize novo login."
+        ) from exc
     except jwt.InvalidTokenError as exc:
-        raise UnauthorizedError("Token de acesso inválido ou malformado.") from exc
+        preview = f"{token[:12]}..." if len(token) > 12 else token
+        raise UnauthorizedError(
+            f"Token de acesso inválido ou malformado ('{preview}'): {exc}."
+        ) from exc
 
     token_type = payload.get("type")
     if token_type != "access":  # noqa: S105
         raise UnauthorizedError(
-            "Tipo de token inválido para autorização. Esperado token de acesso."
+            f"Tipo de token '{token_type}' inválido. "
+            "Esperado token de acesso ('access')."
         )
 
     try:
@@ -86,7 +97,10 @@ def decode_access_token(
         papel = str(payload["papel"])
         token_id = UUID(str(payload["jti"]))
     except (ValueError, KeyError, TypeError) as exc:
-        raise UnauthorizedError("Claims do token de acesso malformadas.") from exc
+        err_type = type(exc).__name__
+        raise UnauthorizedError(
+            f"Claims do token de acesso inválidas ({err_type}: {exc})."
+        ) from exc
 
     return AuthenticatedUser(
         usuario_id=usuario_id,

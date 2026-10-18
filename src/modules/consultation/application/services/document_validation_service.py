@@ -53,7 +53,11 @@ class DocumentValidationService:
 
     @staticmethod
     def parse_token(token_validacao: str) -> UUID:
-        """Parse validation token or raise 404 NotFoundError."""
+        """Converte token de validação pública em identificador UUID canônico.
+
+        Garante validação estrita sob o padrão ITI e CFM nº 2.314/2022.
+        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
         try:
             return UUID(token_validacao.strip())
         except (ValueError, AttributeError) as err:
@@ -65,7 +69,11 @@ class DocumentValidationService:
 
     @staticmethod
     def build_s3_key(organizacao_id: int, atendimento_id: UUID, doc_id: UUID) -> str:
-        """Canonical signed-document S3 key (single source of truth)."""
+        """Constrói a chave canônica de storage S3 para o documento assinado.
+
+        Assegura isolamento multi-tenant sob o padrão de armazenamento da ADR-006.
+        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
         return build_signed_document_key(organizacao_id, atendimento_id, doc_id)
 
     async def _carregar_documento(self, doc_id: UUID) -> DocumentoClinico:
@@ -156,7 +164,11 @@ class DocumentValidationService:
     async def gerar_url_download(
         self, token: str, expiracao_segundos: int = 300
     ) -> DownloadResult:
-        """Generate short-lived presigned URL, ensuring storage on demand."""
+        """Gera URL pré-assinada de curta duração para download do PDF validado.
+
+        Garante acesso seguro e temporário ao documento clínico sob CFM nº 2.314/2022.
+        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
         doc_id = self.parse_token(token)
         stmt = select(DocumentoClinico).where(DocumentoClinico.id == doc_id)
         res = await self._session.execute(stmt)

@@ -113,20 +113,31 @@ class LuaScriptManager:
         try:
             return await client.evalsha(sha, numkeys, *keys_and_args)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
         except (NoScriptError, ResponseError) as exc:
-            # Self-healing: if Valkey flushed script cache (SCRIPT FLUSH / restart)
             if isinstance(exc, NoScriptError) or "NOSCRIPT" in str(exc):
-                # Reload script on the fly
-                reloaded_sha = await client.script_load(script_content)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
-                sha = str(reloaded_sha)
-                self._sha_cache[script_name] = sha
-                try:
-                    return await client.evalsha(sha, numkeys, *keys_and_args)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
-                except Exception:
-                    # Final resilient fallback directly evaluating the Lua script
-                    return await client.eval(script_content, numkeys, *keys_and_args)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
+                return await self._handle_noscript_fallback(
+                    client, script_name, script_content, numkeys, keys_and_args
+                )
             raise LuaScriptError(
                 f"Failed to execute Lua script '{script_name}': {exc}"
             ) from exc
+
+    async def _handle_noscript_fallback(
+        self,
+        client: Redis,
+        script_name: str,
+        script_content: str,
+        numkeys: int,
+        keys_and_args: list[Any],
+    ) -> Any:
+        # Reload script on the fly
+        reloaded_sha = await client.script_load(script_content)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
+        sha = str(reloaded_sha)
+        self._sha_cache[script_name] = sha
+        try:
+            return await client.evalsha(sha, numkeys, *keys_and_args)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
+        except Exception:
+            # Final resilient fallback directly evaluating the Lua script
+            return await client.eval(script_content, numkeys, *keys_and_args)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
 
     async def alocar_chamada(
         self, client: Redis, keys: Sequence[str], args: Sequence[Any]

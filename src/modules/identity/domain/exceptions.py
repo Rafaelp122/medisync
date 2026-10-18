@@ -1,5 +1,7 @@
 """Domain exceptions for the identity and onboarding module."""
 
+from uuid import UUID
+
 from src.core.errors import (
     BadRequestError,
     ConflictError,
@@ -28,8 +30,19 @@ class DependenteAutoReferenciaError(BadRequestError):
     code = "DEPENDENTE_AUTO_REFERENCIA"
 
     def __init__(
-        self, detail: str = "Paciente não pode ser dependente de si mesmo."
+        self,
+        detail: str | None = None,
+        titular_id: UUID | str | None = None,
+        dependente_id: UUID | str | None = None,
     ) -> None:
+        if detail is None:
+            if titular_id is not None and dependente_id is not None:
+                detail = (
+                    f"Paciente titular '{titular_id}' e dependente '{dependente_id}' "
+                    "não podem ser a mesma pessoa; esperado dependente distinto."
+                )
+            else:
+                detail = "Paciente não pode ser dependente de si mesmo."
         super().__init__(detail, title=self.title, code=self.code)
 
 

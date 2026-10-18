@@ -42,7 +42,11 @@ _VALID_MODOS: frozenset[str] = frozenset(
 
 
 class ConfiguracaoPlantao(Base):
-    """Rich domain entity governing shift configuration and telemetry SLAs."""
+    """Configuração operacional do plantão de telemedicina por organização de saúde.
+
+    Modela capacidade médica, tolerância a ring, metas de TMA e SLAs clínicos.
+    Regras: RN06 (Ato Médico) e docs/explanation/domains/telemetry-domain.md.
+    """
 
     __tablename__ = "configuracoes_plantao"
     __table_args__ = (
@@ -201,12 +205,14 @@ class ConfiguracaoPlantao(Base):
     ) -> None:
         if organizacao_id <= 0:
             raise ValidationError(
-                "organizacao_id inválido: deve ser um identificador positivo."
+                f"organizacao_id inválido: {organizacao_id}; "
+                "deve ser um identificador positivo (> 0)."
             )
 
         if medicos_ativos_planejados < 1:
             raise ValidationError(
-                "medicos_ativos_planejados inválido: deve ser no mínimo 1."
+                f"medicos_ativos_planejados inválido: {medicos_ativos_planejados}; "
+                "deve ser no mínimo 1."
             )
 
         try:
@@ -225,7 +231,8 @@ class ConfiguracaoPlantao(Base):
 
         if cota_diaria_maxima is not None and cota_diaria_maxima <= 0:
             raise ValidationError(
-                "cota_diaria_maxima inválida: deve ser maior que zero quando definida."
+                f"cota_diaria_maxima inválida: {cota_diaria_maxima}; "
+                "deve ser maior que zero quando definida (> 0)."
             )
 
         if tma_padrao_segundos < _MIN_TMA:
@@ -277,7 +284,11 @@ class ConfiguracaoPlantao(Base):
         sla_minutos_nivel_5: int | None = None,
         atualizado_por_id: UUID | None = None,
     ) -> None:
-        """Update operational parameters while strictly enforcing domain invariants."""
+        """Atualiza parâmetros operacionais com invariantes estritas.
+
+        Ajusta capacidade teórica e políticas de backpressure da telemedicina.
+        Regras: docs/explanation/domains/telemetry-domain.md.
+        """
         novo_medicos = (
             medicos_ativos_planejados
             if medicos_ativos_planejados is not None
@@ -362,7 +373,11 @@ class ConfiguracaoPlantao(Base):
         self.atualizado_em = datetime.now(UTC)
 
     def obter_sla_minutos(self, prioridade: int) -> int:
-        """Return the target SLA in minutes for a clinical priority level (1 to 5)."""
+        """Retorna o SLA alvo em minutos para o nível de prioridade clínica de 1 a 5.
+
+        Define tempo máximo de espera de acordo com o protocolo de classificação.
+        Regras: docs/explanation/domains/telemetry-domain.md.
+        """
         match prioridade:
             case 1:
                 return self.sla_minutos_nivel_1
@@ -380,11 +395,19 @@ class ConfiguracaoPlantao(Base):
                 )
 
     def obter_sla_segundos(self, prioridade: int) -> int:
-        """Return the target SLA in seconds for a clinical priority level (1 to 5)."""
+        """Retorna o SLA alvo em segundos para o nível de prioridade clínica de 1 a 5.
+
+        Converte a meta de tempo para unidades de telemetria em tempo real.
+        Regras: docs/explanation/domains/telemetry-domain.md.
+        """
         return self.obter_sla_minutos(prioridade) * 60
 
     def capacidade_atendimento_hora(self) -> float:
-        """Calculate theoretical hourly attendance throughput capacity."""
+        """Calcula a capacidade teórica de atendimentos por hora com base no TMA padrão.
+
+        Determina o throughput projetado do plantão para dimensionamento de escala.
+        Regras: docs/explanation/domains/telemetry-domain.md.
+        """
         return (self.medicos_ativos_planejados * 3600.0) / float(
             self.tma_padrao_segundos
         )

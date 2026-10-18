@@ -83,21 +83,34 @@ class DocumentoService:
 
     @property
     def storage(self) -> StoragePort:
-        """Return the injected storage port instance."""
+        """Instância do StoragePort para persistência de documentos clínicos.
+
+        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
         return self._storage
 
     @property
     def cache(self) -> SignedCachePort:
-        """Return the injected signed-document cache."""
+        """Porta de cache para status de assinatura digital ICP-Brasil.
+
+        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
         return self._cache
 
     @property
     def directory(self) -> DocumentDirectoryPort | None:
-        """Return the injected document directory port."""
+        """Porta de diretório para dados de cabeçalho sob CFM nº 2.314/2022.
+
+        Regras: docs/explanation/domains/consultation-domain.md.
+        """
         return self._directory
 
     async def is_assinado(self, doc: DocumentoClinico) -> bool:
-        """Check SignedCachePort only; key prefix matches unsigned docs too."""
+        """Verifica se o documento possui assinatura digital ICP-Brasil ativa no cache.
+
+        Consulta o SignedCachePort para assegurar integridade PAdES sob ADR-006.
+        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
         return await self._cache.is_assinado(doc.id)
 
     async def _verificar_atendimento_finalizado(self, atendimento_id: UUID) -> bool:
@@ -107,14 +120,19 @@ class DocumentoService:
     async def emitir_documento(
         self, command: EmitirDocumentoClinicoCommand
     ) -> DocumentoClinico:
-        """Issue clinical document with prescription items enforcing Portaria 344/98."""
+        """Emite documento clínico validando substâncias da Portaria 344/98.
+
+        Bloqueia receitas proibidas na telemedicina e valida estado terminal.
+        Regras: Portaria 344/98 e ADR-006.
+        """
         tipo_str = str(command.tipo_documento).strip().upper()
         if tipo_str in _PROHIBITED_DOC_TYPES:
             raise PrescricaoFisicaObrigatoriaError(
                 f"O tipo de documento '{command.tipo_documento}' exige talonário "
                 "físico impresso de segurança (Notificação de Receita Amarela/Azul) "
                 "conforme a Portaria SVS/MS nº 344/98 e a Resolução CFM nº 2.314/2022. "
-                "Sua emissão por telemedicina é expressamente vedada."
+                "Sua emissão por telemedicina é expressamente vedada "
+                f"(tipos restritos: {sorted(_PROHIBITED_DOC_TYPES)})."
             )
 
         # Check if consultation is already finalized
@@ -128,8 +146,10 @@ class DocumentoService:
         if (evolucao is not None and evolucao.is_finalizado) or is_term:
             if evolucao is not None:
                 evolucao.marcar_finalizado()
+            status_desc = "terminal" if is_term else "evolucao_finalizada"
             raise ConsultaFinalizadaError(
-                "Não é permitido emitir documentos clínicos de consulta finalizada."
+                "Não é permitido emitir documentos de consulta finalizada "
+                f"(status atual: '{status_desc}')."
             )
 
         # Pre-validate all items before persistence
@@ -197,7 +217,11 @@ class DocumentoService:
         return reloaded
 
     async def compilar_pdf(self, documento_id: UUID) -> bytes:
-        """Compile PDF/A binary with ITI verification QR Code."""
+        """Compila binário PDF/A-1b com QR Code de validação pública ITI.
+
+        Garante conformidade com PAdES e padrões de telemedicina do CFM nº 2.314/2022.
+        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
         stmt = (
             select(DocumentoClinico)
             .where(DocumentoClinico.id == documento_id)
@@ -298,7 +322,11 @@ class DocumentoService:
         atendimento_id: UUID,
         credenciais: DoctorCertificateCredentials,
     ) -> DocumentoAssinadoResult:
-        """Sign clinical document with ICP-Brasil PAdES standard via Cloud PSC."""
+        """Assina digitalmente documento no padrão ICP-Brasil via Cloud PSC.
+
+        Envia hash para assinatura e persiste artefato no Object Storage.
+        Regras: MP nº 2.200-2/2001 e ADR-006.
+        """
         stmt = (
             select(DocumentoClinico)
             .where(DocumentoClinico.id == documento_id)
@@ -317,9 +345,10 @@ class DocumentoService:
 
         is_term = await self._verificar_atendimento_finalizado(doc.atendimento_id)
         if doc.is_finalizado or is_term:
+            status_desc = "terminal" if is_term else "documento_finalizado"
             raise ConsultaFinalizadaError(
-                "Não é permitido alterar ou assinar documento de "
-                "consulta já finalizada."
+                f"Não é permitido alterar ou assinar documento '{documento_id}' de "
+                f"consulta já finalizada (status atual: '{status_desc}')."
             )
 
         pdf_bytes = await self.compilar_pdf(documento_id)

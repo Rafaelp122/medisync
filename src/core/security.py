@@ -13,12 +13,18 @@ _password_hash = PasswordHash.recommended()
 
 
 def hash_password(password: str) -> str:
-    """Generate an Argon2id cryptographic hash for the given plain text password."""
+    """Gera hash criptográfico Argon2id para credencial de acesso (LGPD Art. 11).
+
+    Regras: docs/explanation/architecture/security-and-authorization.md
+    """
     return _password_hash.hash(password)
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    """Verify whether a plain text password matches an Argon2id hash."""
+    """Verifica senha em texto plano contra hash Argon2id (LGPD Art. 11).
+
+    Regras: docs/explanation/architecture/security-and-authorization.md
+    """
     if not hashed_password:
         return False
     try:
@@ -42,7 +48,10 @@ def create_intake_token(
     secret_key: str,
     expires_in_seconds: int = 7200,
 ) -> str:
-    """Generate a tamper-proof HMAC-SHA256 provisional intake token for onboarding."""
+    """Gera token provisório HMAC-SHA256 para sessão de acolhimento (US-01, ADR-001).
+
+    Regras: docs/user-stories/US-01-acolhimento-triagem-tcle.md
+    """
     now = int(time.time())
     payload = {
         "paciente_id": str(paciente_id),
@@ -65,14 +74,17 @@ def create_intake_token(
 
 
 def verify_intake_token(token: str, secret_key: str) -> dict[str, Any]:
-    """Verify and decode a provisional intake token.
+    """Valida e decodifica token provisório HMAC-SHA256 de acolhimento (US-01, ADR-001).
 
-    Raises:
-        ValueError: If token signature is invalid, payload is malformed or expired.
+    Assegura integridade criptográfica e validade temporal no onboarding do paciente.
+    Regras: docs/user-stories/US-01-acolhimento-triagem-tcle.md
     """
     parts = token.split(".")
     if len(parts) != 2:
-        raise ValueError("Token de acolhimento em formato inválido.")
+        raise ValueError(
+            f"Token de acolhimento em formato inválido: possui {len(parts)} parte(s); "
+            "esperadas exatamente 2 partes no formato 'payload.assinatura'."
+        )
 
     payload_b64, sig_b64 = parts
     try:
@@ -81,25 +93,40 @@ def verify_intake_token(token: str, secret_key: str) -> dict[str, Any]:
         ).digest()
         provided_sig = _b64url_decode(sig_b64)
     except Exception as exc:
-        raise ValueError("Token de acolhimento adulterado ou inválido.") from exc
+        raise ValueError(
+            f"Token de acolhimento adulterado ou inválido (sig={sig_b64[:8]}...): {exc}"
+        ) from exc
 
     if not hmac.compare_digest(expected_sig, provided_sig):
-        raise ValueError("Assinatura do token de acolhimento inválida.")
+        raise ValueError(
+            f"Assinatura do token de acolhimento inválida: "
+            f"assinatura ('{sig_b64[:12]}...') não confere com segredo."
+        )
 
     try:
         payload_bytes = _b64url_decode(payload_b64)
         payload = json.loads(payload_bytes.decode("utf-8"))
     except Exception as exc:
-        raise ValueError("Payload do token de acolhimento malformado.") from exc
+        tam = len(payload_b64)
+        raise ValueError(
+            f"Payload do token de acolhimento malformado (len={tam}): {exc}"
+        ) from exc
 
     if not isinstance(payload, dict):
-        raise ValueError("Payload do token de acolhimento inválido.")
+        tipo_rec = type(payload).__name__
+        raise ValueError(
+            f"Payload do token de acolhimento inválido: tipo '{tipo_rec}'; "
+            "esperado dicionário JSON com claims da sessão."
+        )
 
     raw_dict: dict[object, object] = payload  # type: ignore[assignment]
     payload_dict: dict[str, Any] = {str(k): v for k, v in raw_dict.items()}
 
     exp = payload_dict.get("exp")
     if not isinstance(exp, (int, float)) or time.time() > exp:
-        raise ValueError("Token de acolhimento expirado.")
+        agora = int(time.time())
+        raise ValueError(
+            f"Token de acolhimento expirado: expiração={exp}; tempo atual={agora}."
+        )
 
     return payload_dict

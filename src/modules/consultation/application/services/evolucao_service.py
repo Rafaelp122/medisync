@@ -37,10 +37,41 @@ class EvolucaoService:
         """Return True when queue-owned attendance reached terminal status."""
         return await is_atendimento_terminal(self._reader, atendimento_id)
 
+    def _validar_campos_evolucao(
+        self, command: RegistrarEvolucaoSOAPCommand
+    ) -> str | None:
+        """Valida campos obrigatórios e formato de CID-10 para evolução SOAP."""
+        if not command.anamnese or not command.anamnese.strip():
+            raise ConsultaInvalidaError(
+                f"Anamnese clínica é obrigatória e não pode ser vazia: "
+                f"{command.anamnese!r}."
+            )
+        if not command.conduta or not command.conduta.strip():
+            raise ConsultaInvalidaError(
+                f"Conduta clínica é obrigatória e não pode ser vazia: "
+                f"{command.conduta!r}."
+            )
+
+        if not (command.cid10_principal and command.cid10_principal.strip()):
+            return None
+
+        c = command.cid10_principal.strip().upper()
+        if not _CID10_REGEX.match(c):
+            raise ConsultaInvalidaError(
+                f"Código CID-10 inválido: '{command.cid10_principal}'. "
+                "Formato esperado: letra maiúscula seguida de 2 dígitos "
+                "e subcategoria opcional (ex.: J00, J02.9, A09.0)."
+            )
+        return c
+
     async def salvar_evolucao_soap(
         self, command: RegistrarEvolucaoSOAPCommand
     ) -> EvolucaoClinica:
-        """Record or update SOAP clinical notes for an attendance."""
+        """Registra ou atualiza evolução SOAP com validação clínica.
+
+        Garante conformidade com CFM nº 1.821/2007 e CFM nº 2.314/2022.
+        Regras: RN06 (Ato Médico) e docs/explanation/domains/consultation-domain.md.
+        """
         stmt = select(EvolucaoClinica).where(
             EvolucaoClinica.atendimento_id == command.atendimento_id
         )
@@ -52,30 +83,13 @@ class EvolucaoService:
         if existing is not None:
             if existing.is_finalizado or is_term:
                 existing.marcar_finalizado()
+                status_desc = "terminal" if is_term else "evolucao_finalizada"
                 raise ConsultaFinalizadaError(
-                    "Não é permitido alterar evolução de consulta finalizada."
+                    "Não é permitido alterar evolução de consulta finalizada "
+                    f"(status atual: '{status_desc}')."
                 )
 
-            # Validate fields on update
-            if not command.anamnese or not command.anamnese.strip():
-                raise ConsultaInvalidaError(
-                    "Anamnese clínica é obrigatória e não pode ser vazia."
-                )
-            if not command.conduta or not command.conduta.strip():
-                raise ConsultaInvalidaError(
-                    "Conduta clínica é obrigatória e não pode ser vazia."
-                )
-
-            clean_cid10: str | None = None
-            if command.cid10_principal and command.cid10_principal.strip():
-                c = command.cid10_principal.strip().upper()
-                if not _CID10_REGEX.match(c):
-                    raise ConsultaInvalidaError(
-                        f"Código CID-10 inválido: '{command.cid10_principal}'. "
-                        "Formato esperado: letra maiúscula seguida de 2 dígitos "
-                        "e subcategoria opcional (ex.: J00, J02.9, A09.0)."
-                    )
-                clean_cid10 = c
+            clean_cid10 = self._validar_campos_evolucao(command)
 
             existing.anamnese = command.anamnese.strip()
             existing.conduta = command.conduta.strip()
@@ -93,7 +107,8 @@ class EvolucaoService:
 
         if is_term:
             raise ConsultaFinalizadaError(
-                "Não é permitido criar evolução de consulta já finalizada."
+                "Não é permitido criar evolução de consulta já finalizada "
+                f"(atendimento '{command.atendimento_id}')."
             )
 
         evolucao = EvolucaoClinica(
@@ -111,7 +126,11 @@ class EvolucaoService:
         return evolucao
 
     async def obter_evolucao(self, atendimento_id: UUID) -> EvolucaoClinica:
-        """Return SOAP evolution or raise 404 EvolucaoNaoEncontradaError."""
+        """Recupera evolução clínica SOAP persistida para o atendimento.
+
+        Garante integridade e rastreabilidade conforme CFM nº 1.821/2007.
+        Regras: RN06 e docs/explanation/domains/consultation-domain.md.
+        """
         stmt = select(EvolucaoClinica).where(
             EvolucaoClinica.atendimento_id == atendimento_id
         )
@@ -119,6 +138,7 @@ class EvolucaoService:
         evolucao = res.scalar_one_or_none()
         if evolucao is None:
             raise EvolucaoNaoEncontradaError(
-                "Nenhuma evolução clínica registrada para este atendimento."
+                f"Nenhuma evolução clínica registrada para o atendimento "
+                f"'{atendimento_id}'."
             )
         return evolucao

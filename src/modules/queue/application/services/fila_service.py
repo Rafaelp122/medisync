@@ -58,7 +58,13 @@ logger = logging.getLogger("medisync.queue.fila")
 
 
 class FilaService:
-    """Manages queue admission, FIFO ordering, and next patient acquisition."""
+    """Gerencia admissão com backpressure, ordenação e aquisição de pacientes.
+
+    Aplica score 64-bit (RN01), lock duplo 45s (RN02) e backpressure (RN05).
+    Regras: docs/explanation/domains/queue-domain.md
+    ADR: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
+    História: docs/user-stories/US-07-alocacao-chamada-medica.md
+    """
 
     def __init__(
         self,
@@ -100,12 +106,21 @@ class FilaService:
         *,
         raise_on_emergency: bool = True,
     ) -> AdmissaoAtendimentoResult:
-        """Executes full clinical admission workflow (RN01, RN04, RN05, RN07)."""
+        """Executa fluxo completo de admissão clínica (RN01, RN04, RN05, RN07).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         if command.organizacao_id <= 0:
-            raise ValidationError("organizacao_id deve ser positivo.")
+            raise ValidationError(
+                "organizacao_id deve ser positivo (> 0); "
+                f"recebido '{command.organizacao_id}'."
+            )
 
         if self._triage_port is None:
-            raise RuntimeError("TriagePort não configurado no FilaService.")
+            raise RuntimeError(
+                "TriagePort não configurado no FilaService para admissão "
+                f"na organização {command.organizacao_id}."
+            )
 
         # 1. Clinical risk assessment and SAMU 192 safeguard
         # via TriagePort (RN01, RN04, RN07)
@@ -550,14 +565,74 @@ class FilaService:
             atendimento.concluir_atendimento()
             await self._db_session.commit()
 
+    async def _medico_tem_bloqueio_ativo(
+        self,
+        organizacao_id: int,
+        medico_id: UUID,
+        atendimento_id_str: str,
+    ) -> bool:
+        med_id_str = str(medico_id)
+        k_medico_ring = f"lock:{organizacao_id}:medico:{med_id_str}"
+        k_medico_active = f"lock:{organizacao_id}:consulta_ativa:medico:{med_id_str}"
+        med_ring_val = await self._valkey.get(k_medico_ring)  # pyright: ignore[reportUnknownMemberType]
+        med_active_val = await self._valkey.get(k_medico_active)  # pyright: ignore[reportUnknownMemberType]
+        return (
+            med_ring_val == atendimento_id_str.encode()
+            or med_ring_val == atendimento_id_str
+            or med_active_val == atendimento_id_str.encode()
+            or med_active_val == atendimento_id_str
+        )
+
+    async def _reconciliar_item_orfao(
+        self,
+        atend: Atendimento,
+        organizacao_id: int,
+        k_fila: str,
+    ) -> str | None:
+        atend_id_str = str(atend.id)
+
+        # 1. Check if already present in Valkey ZSET
+        existing_score = await self._valkey.zscore(  # pyright: ignore[reportUnknownMemberType]
+            k_fila, atend_id_str
+        )
+        if existing_score is not None:
+            return None
+
+        # 2. Check if active ring lock exists
+        k_atend_ring = f"lock:{organizacao_id}:atendimento:{atend_id_str}"
+        has_ring_lock = bool(
+            await self._valkey.exists(k_atend_ring)  # pyright: ignore[reportUnknownMemberType]
+        )
+        if has_ring_lock:
+            return None
+
+        # 3. Check if active consultation lock exists for assigned doctor
+        if atend.medico_id is not None and await self._medico_tem_bloqueio_ativo(
+            organizacao_id, atend.medico_id, atend_id_str
+        ):
+            return None
+
+        # 4. Truly orphaned -> recalculate score and reinject into ZSET
+        ts_base = atend.data_entrada_fila or atend.criado_em
+        score = calcular_score(atend.prioridade_clinica, ts_base)
+        await self._valkey.zadd(k_fila, {atend_id_str: score})  # pyright: ignore[reportUnknownMemberType]
+        logger.warning(
+            "Sweeper restored orphan attendance %s to %s with score=%d",
+            atend_id_str,
+            k_fila,
+            score,
+        )
+        return atend_id_str
+
     async def reconciliar_fila_orfaos(
         self,
         organizacao_id: int,
         cutoff_em: datetime,
     ) -> tuple[int, list[str]]:
-        """Find orphan APTO attendances missing in Valkey and reinject them into ZSET.
+        """Reinsere atendimentos APTO ausentes no Valkey ZSET (RN01, RN02).
 
-        Returns (scanned_count, reconciled_ids).
+        Regras: docs/explanation/domains/queue-domain.md
+        ADR: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
         """
         k_fila = f"fila:{organizacao_id}:aptos"
         stmt = (
@@ -575,51 +650,13 @@ class FilaService:
         total_scanned = len(candidates)
         reconciled_ids: list[str] = []
         for atend in candidates:
-            atend_id_str = str(atend.id)
-
-            # 1. Check if already present in Valkey ZSET
-            existing_score = await self._valkey.zscore(  # pyright: ignore[reportUnknownMemberType]
-                k_fila, atend_id_str
+            reconciled_id = await self._reconciliar_item_orfao(
+                atend=atend,
+                organizacao_id=organizacao_id,
+                k_fila=k_fila,
             )
-            if existing_score is not None:
-                continue
-
-            # 2. Check if active ring lock exists
-            k_atend_ring = f"lock:{organizacao_id}:atendimento:{atend_id_str}"
-            has_ring_lock = bool(
-                await self._valkey.exists(k_atend_ring)  # pyright: ignore[reportUnknownMemberType]
-            )
-            if has_ring_lock:
-                continue
-
-            # 3. Check if active consultation lock exists for assigned doctor
-            if atend.medico_id is not None:
-                med_id_str = str(atend.medico_id)
-                k_medico_ring = f"lock:{organizacao_id}:medico:{med_id_str}"
-                k_medico_active = (
-                    f"lock:{organizacao_id}:consulta_ativa:medico:{med_id_str}"
-                )
-                med_ring_val = await self._valkey.get(k_medico_ring)  # pyright: ignore[reportUnknownMemberType]
-                med_active_val = await self._valkey.get(k_medico_active)  # pyright: ignore[reportUnknownMemberType]
-                if (
-                    med_ring_val == atend_id_str.encode()
-                    or med_ring_val == atend_id_str
-                    or med_active_val == atend_id_str.encode()
-                    or med_active_val == atend_id_str
-                ):
-                    continue
-
-            # 4. Truly orphaned -> recalculate score and reinject into ZSET
-            ts_base = atend.data_entrada_fila or atend.criado_em
-            score = calcular_score(atend.prioridade_clinica, ts_base)
-            await self._valkey.zadd(k_fila, {atend_id_str: score})  # pyright: ignore[reportUnknownMemberType]
-            reconciled_ids.append(atend_id_str)
-            logger.warning(
-                "Sweeper restored orphan attendance %s to %s with score=%d",
-                atend_id_str,
-                k_fila,
-                score,
-            )
+            if reconciled_id is not None:
+                reconciled_ids.append(reconciled_id)
 
         return total_scanned, reconciled_ids
 
@@ -748,7 +785,10 @@ class FilaService:
     ) -> PioraClinicaResult:
         """Re-evaluates symptoms upon patient clinical deterioration report (RF-06)."""
         if self._triage_port is None:
-            raise RuntimeError("TriagePort não configurado no FilaService.")
+            raise RuntimeError(
+                "TriagePort não configurado no FilaService para "
+                f"atendimento '{command.atendimento_id}'."
+            )
 
         atendimento = await self._db_session.get(Atendimento, command.atendimento_id)
         if atendimento is None or atendimento.organizacao_id != command.organizacao_id:

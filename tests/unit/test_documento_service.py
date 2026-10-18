@@ -1,7 +1,6 @@
 """Unit tests for DocumentoService (canonical keys, SignedCachePort, no fallback)."""
 
 from typing import TYPE_CHECKING, Any, cast
-from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
@@ -17,6 +16,7 @@ from src.modules.consultation.application.ports.document_directory_port import (
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
 )
+from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.application.services.document_validation_service import (
     DocumentValidationService,
 )
@@ -31,12 +31,18 @@ from src.modules.consultation.domain.s3_keys import build_signed_document_key
 from src.modules.consultation.infrastructure.memory_signed_cache import (
     MemorySignedCache,
 )
-from src.modules.consultation.infrastructure.s3_storage import FakeStorageAdapter
+
+from tests.doubles import (
+    FakeAddedResult,
+    FakeAsyncSession,
+    FakeICPBrasilSigner,
+    FakeMemoryStorage,
+    FakePDFGenerator,
+    FakeResult,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-from tests.doubles import FakeAddedResult, FakeAsyncSession, FakeResult
 
 _ORG_ID = 7
 _SHA_FIXO = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -76,14 +82,14 @@ def _make_doc(atendimento_id: UUID, medico_id: UUID, doc_id: UUID) -> DocumentoC
 
 def _service(
     session: FakeAsyncSession,
-    storage: Any | None = None,
+    storage: StoragePort | None = None,
     cache: MemorySignedCache | None = None,
 ) -> DocumentoService:
     return DocumentoService(
         session=cast("AsyncSession", session),
-        pdf_generator=cast("Any", MagicMock()),
-        signer=cast("Any", AsyncMock()),
-        storage=storage if storage is not None else cast("Any", AsyncMock()),
+        pdf_generator=FakePDFGenerator(),
+        signer=FakeICPBrasilSigner(),
+        storage=storage if storage is not None else FakeMemoryStorage(),
         cache=cache if cache is not None else MemorySignedCache(),
     )
 
@@ -141,6 +147,16 @@ async def test_emitir_tipo_proibido_portaria_344() -> None:
     assert session.commits == 0
 
 
+class _StaticSigner(FakeICPBrasilSigner):
+    async def assinar_pdf(
+        self,
+        pdf_bytes: bytes,
+        credenciais: Any,
+        metadata: Any = None,
+    ) -> bytes:
+        return b"%PDF-signed-bytes%"
+
+
 @pytest.mark.asyncio
 async def test_compilar_storage_hit_nao_recompila() -> None:
     """Storage hit must return bytes without touching pdf generator or SQL blocks."""
@@ -148,21 +164,21 @@ async def test_compilar_storage_hit_nao_recompila() -> None:
     med_id = uuid7()
     doc_id = uuid7()
     doc = _make_doc(atend_id, med_id, doc_id)
-    storage = FakeStorageAdapter()
+    storage = FakeMemoryStorage()
     await storage.salvar_documento(doc.chave_s3, b"%PDF-armazenado%")
-    pdf_generator: Any = MagicMock()
-    pdf_generator.gerar_pdf.side_effect = AssertionError("não deve recompilar")
+    pdf_generator = FakePDFGenerator()
     session = FakeAsyncSession([FakeResult(doc)])
     svc = DocumentoService(
         session=cast("AsyncSession", session),
         pdf_generator=pdf_generator,
-        signer=cast("Any", AsyncMock()),
+        signer=FakeICPBrasilSigner(),
         storage=storage,
         cache=MemorySignedCache(),
     )
 
     assert await svc.compilar_pdf(doc_id) == b"%PDF-armazenado%"
     assert session.executes == 1
+    assert pdf_generator.calls == 0
 
 
 @pytest.mark.asyncio
@@ -172,9 +188,8 @@ async def test_compilar_storage_miss_compila_4_blocos() -> None:
     med_id = uuid7()
     doc_id = uuid7()
     doc = _make_doc(atend_id, med_id, doc_id)
-    storage = FakeStorageAdapter()
-    pdf_generator: Any = MagicMock()
-    pdf_generator.gerar_pdf.return_value = b"%PDF-compilado%"
+    storage = FakeMemoryStorage()
+    pdf_generator = FakePDFGenerator(content=b"%PDF-compilado%")
     # doc load + org + medico + paciente + cid10 (all empty -> defaults).
     session = FakeAsyncSession(
         [
@@ -188,13 +203,13 @@ async def test_compilar_storage_miss_compila_4_blocos() -> None:
     svc = DocumentoService(
         session=cast("AsyncSession", session),
         pdf_generator=pdf_generator,
-        signer=cast("Any", AsyncMock()),
+        signer=FakeICPBrasilSigner(),
         storage=storage,
         cache=MemorySignedCache(),
     )
 
     assert await svc.compilar_pdf(doc_id) == b"%PDF-compilado%"
-    pdf_generator.gerar_pdf.assert_called_once()
+    assert pdf_generator.calls == 1
 
 
 @pytest.mark.asyncio
@@ -205,16 +220,15 @@ async def test_assinar_persiste_chave_canonica_e_marca_cache() -> None:
     doc_id = uuid7()
     doc = _make_doc(atend_id, med_id, doc_id)
     original_hash = doc.sha256_hash
-    storage = FakeStorageAdapter()
+    storage = FakeMemoryStorage()
     await storage.salvar_documento(doc.chave_s3, b"%PDF-nao-assinado%")
-    signer: Any = AsyncMock()
-    signer.assinar_pdf.return_value = b"%PDF-signed-bytes%"
+    signer = _StaticSigner()
     cache = MemorySignedCache()
     # ownership load + compilar reload.
     session = FakeAsyncSession([FakeResult(doc), FakeResult(doc)])
     svc = DocumentoService(
         session=cast("AsyncSession", session),
-        pdf_generator=cast("Any", MagicMock()),
+        pdf_generator=FakePDFGenerator(),
         signer=signer,
         storage=storage,
         cache=cache,
@@ -293,7 +307,7 @@ async def test_validacao_usa_cache_port_para_status_assinado() -> None:
     svc = DocumentValidationService(
         session=cast("AsyncSession", FakeAsyncSession([FakeResult(doc)])),
         directory=_StubDirectory(),
-        storage=FakeStorageAdapter(),
+        storage=FakeMemoryStorage(),
         compilador_pdf=_compiler,
         cache=cache,
     )
@@ -304,7 +318,7 @@ async def test_validacao_usa_cache_port_para_status_assinado() -> None:
     svc2 = DocumentValidationService(
         session=cast("AsyncSession", FakeAsyncSession([FakeResult(doc)])),
         directory=_StubDirectory(),
-        storage=FakeStorageAdapter(),
+        storage=FakeMemoryStorage(),
         compilador_pdf=_compiler,
         cache=cache,
     )

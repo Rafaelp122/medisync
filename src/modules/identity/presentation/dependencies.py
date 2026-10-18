@@ -17,6 +17,72 @@ from src.core.security import verify_intake_token
 from src.modules.identity.presentation.schemas import Fase2Request
 
 
+def _validar_intake_token(
+    token: str,
+    expected_paciente_id: UUID,
+    tenant_id: int,
+    tipo_paciente: str = "paciente",
+) -> None:
+    """Validate 2-part HMAC provisional intake token claims."""
+    settings = get_settings()
+    try:
+        claims = verify_intake_token(token, settings.SECRET_KEY)
+    except ValueError as exc:
+        raise UnauthorizedError(str(exc)) from exc
+
+    token_paciente_id = str(claims.get("paciente_id", ""))
+    if token_paciente_id != str(expected_paciente_id):
+        raise ForbiddenError(
+            f"Acesso negado: o token de acolhimento não confere posse sobre o "
+            f"{tipo_paciente} informado (token pertence a '{token_paciente_id}', "
+            f"esperado '{expected_paciente_id}')."
+        )
+
+    token_org_id = int(claims.get("organizacao_id", 0))
+    if token_org_id != tenant_id:
+        raise ForbiddenError(
+            f"Acesso negado: o token pertence à organização {token_org_id}, "
+            f"mas o contexto solicitado é da organização {tenant_id}."
+        )
+
+
+async def _validar_jwt_token(
+    token: str,
+    expected_paciente_id: UUID,
+    tenant_id: int,
+    acao_permissao: str,
+    tipo_paciente: str = "paciente",
+) -> None:
+    """Validate 3-part corporate or patient JWT access token claims."""
+    user = decode_access_token(token)
+
+    if await is_token_revoked(user.token_id):
+        raise TokenRevogadoError(
+            f"Token de acesso com id '{user.token_id}' revogado. Realize novo login."
+        )
+
+    if user.papel != Role.ADMIN_GLOBAL and user.organizacao_id != tenant_id:
+        raise ForbiddenError(
+            f"Acesso negado: o token pertence à organização {user.organizacao_id}, "
+            f"mas o contexto solicitado é da organização {tenant_id}."
+        )
+
+    if user.papel in (Role.ADMIN_GLOBAL, Role.GESTOR_UNIDADE):
+        return
+
+    if user.papel != Role.PACIENTE:
+        raise ForbiddenError(
+            f"Acesso negado: o papel '{user.papel}' não possui permissão "
+            f"para {acao_permissao}."
+        )
+
+    if user.usuario_id != expected_paciente_id:
+        raise ForbiddenError(
+            f"Acesso negado: o usuário autenticado não é o {tipo_paciente} informado "
+            f"(usuário '{user.usuario_id}', esperado '{expected_paciente_id}')."
+        )
+
+
 async def validar_intake_fase2(
     body: Fase2Request,
     tenant_id: TenantDep,
@@ -51,53 +117,19 @@ async def validar_intake_fase2(
 
     token_parts = token.split(".")
     if len(token_parts) == 2:
-        settings = get_settings()
-        try:
-            claims = verify_intake_token(token, settings.SECRET_KEY)
-        except ValueError as exc:
-            raise UnauthorizedError(str(exc)) from exc
+        _validar_intake_token(token, body.paciente_id, tenant_id)
+        return
 
-        token_paciente_id = str(claims.get("paciente_id", ""))
-        if token_paciente_id != str(body.paciente_id):
-            raise ForbiddenError(
-                "Acesso negado: o token de acolhimento não confere posse "
-                "sobre o paciente informado."
-            )
+    if len(token_parts) == 3:
+        await _validar_jwt_token(
+            token, body.paciente_id, tenant_id, "onboarding de paciente"
+        )
+        return
 
-        token_org_id = int(claims.get("organizacao_id", 0))
-        if token_org_id != tenant_id:
-            raise ForbiddenError(
-                f"Acesso negado: o token pertence à organização {token_org_id}, "
-                f"mas o contexto solicitado é da organização {tenant_id}."
-            )
-
-    elif len(token_parts) == 3:
-        user = decode_access_token(token)
-
-        if await is_token_revoked(user.token_id):
-            raise TokenRevogadoError("Token de acesso revogado. Realize novo login.")
-
-        if user.papel != Role.ADMIN_GLOBAL and user.organizacao_id != tenant_id:
-            raise ForbiddenError(
-                f"Acesso negado: o token pertence à organização {user.organizacao_id}, "
-                f"mas o contexto solicitado é da organização {tenant_id}."
-            )
-
-        if user.papel in (Role.ADMIN_GLOBAL, Role.GESTOR_UNIDADE):
-            return
-
-        if user.papel == Role.PACIENTE:
-            if user.usuario_id != body.paciente_id:
-                raise ForbiddenError(
-                    "Acesso negado: o usuário autenticado não é o paciente informado."
-                )
-        else:
-            raise ForbiddenError(
-                f"Acesso negado: o papel '{user.papel}' não possui permissão "
-                "para onboarding de paciente."
-            )
-    else:
-        raise UnauthorizedError("Token fornecido em formato inválido.")
+    raise UnauthorizedError(
+        "Token fornecido em formato inválido: esperado 2 ou 3 segmentos "
+        f"separados por '.', recebido {len(token_parts)} segmento(s)."
+    )
 
 
 async def validar_posse_titular(
@@ -134,57 +166,20 @@ async def validar_posse_titular(
         )
 
     token_parts = raw_token.split(".")
-
     if len(token_parts) == 2:
-        # Provisional intake token (HMAC-SHA256)
-        settings = get_settings()
-        try:
-            claims = verify_intake_token(raw_token, settings.SECRET_KEY)
-        except ValueError as exc:
-            raise UnauthorizedError(str(exc)) from exc
+        _validar_intake_token(raw_token, id, tenant_id, tipo_paciente="titular")
+        return
 
-        token_paciente_id = str(claims.get("paciente_id", ""))
-        if token_paciente_id != str(id):
-            raise ForbiddenError(
-                "Acesso negado: o token de acolhimento não confere posse "
-                "sobre o titular informado."
-            )
+    if len(token_parts) == 3:
+        await _validar_jwt_token(
+            raw_token, id, tenant_id, "gerenciar dependentes", tipo_paciente="titular"
+        )
+        return
 
-        token_org_id = int(claims.get("organizacao_id", 0))
-        if token_org_id != tenant_id:
-            raise ForbiddenError(
-                f"Acesso negado: o token pertence à organização {token_org_id}, "
-                f"mas o contexto solicitado é da organização {tenant_id}."
-            )
-
-    elif len(token_parts) == 3:
-        # Corporate or patient JWT access token
-        user = decode_access_token(raw_token)
-
-        if await is_token_revoked(user.token_id):
-            raise TokenRevogadoError("Token de acesso revogado. Realize novo login.")
-
-        if user.papel != Role.ADMIN_GLOBAL and user.organizacao_id != tenant_id:
-            raise ForbiddenError(
-                f"Acesso negado: o token pertence à organização {user.organizacao_id}, "
-                f"mas o contexto solicitado é da organização {tenant_id}."
-            )
-
-        if user.papel in (Role.ADMIN_GLOBAL, Role.GESTOR_UNIDADE):
-            return
-
-        if user.papel == Role.PACIENTE:
-            if user.usuario_id != id:
-                raise ForbiddenError(
-                    "Acesso negado: o usuário autenticado não é o titular informado."
-                )
-        else:
-            raise ForbiddenError(
-                f"Acesso negado: o papel '{user.papel}' não possui permissão "
-                "para gerenciar dependentes."
-            )
-    else:
-        raise UnauthorizedError("Token fornecido em formato inválido.")
+    raise UnauthorizedError(
+        "Token fornecido em formato inválido: esperado 2 ou 3 segmentos "
+        f"separados por '.', recebido {len(token_parts)} segmento(s)."
+    )
 
 
 ValidarIntakeFase2Dep = Annotated[None, Security(validar_intake_fase2)]

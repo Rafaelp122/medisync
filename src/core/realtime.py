@@ -33,9 +33,10 @@ async def publish_realtime_event(
     channel: str,
     payload: dict[str, Any],
 ) -> int:
-    """Publish a JSON payload to a Valkey Pub/Sub channel.
+    """Dispara evento JSON em canal Valkey Pub/Sub para clientes conectados (ADR-002).
 
-    Returns the number of clients that received the message.
+    Retorna a contagem de clientes receptores ativos no canal.
+    Decisões: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
     """
     json_data = json.dumps(payload, ensure_ascii=False)
     subscribers_count: Any = await cast(
@@ -57,7 +58,11 @@ async def stream_channel(
     event: str,
     **ids: str,
 ) -> None:
-    """Accept WS, send initial {event, timestamp, **ids}, bridge Pub/Sub."""
+    """Aceita WebSocket e ponteia canal Pub/Sub com payload inicial (ADR-002).
+
+    Mantém streaming contínuo de atualizações clínicas em tempo real.
+    Decisões: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
+    """
     await websocket.accept()
     payload: dict[str, Any] = {
         "event": event,
@@ -72,15 +77,36 @@ async def stream_channel(
     )
 
 
+def _formatar_dados_pubsub(raw_data: object) -> str:
+    if isinstance(raw_data, (bytes, bytearray)):
+        return raw_data.decode("utf-8")
+    return str(raw_data)
+
+
+async def _aguardar_desconexao_cliente(ws: WebSocket) -> None:
+    while True:
+        msg = await ws.receive()
+        if msg.get("type") == "websocket.disconnect":
+            return
+
+
+async def _cancelar_tarefas_pendentes(tasks: set[asyncio.Task[Any]]) -> None:
+    for task in tasks:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect):
+            await task
+
+
 async def forward_pubsub_to_websocket(
     valkey: "Redis",
     channel: str,
     websocket: WebSocket,
     initial_payload: dict[str, Any] | None = None,
 ) -> None:
-    """Bridge a Valkey Pub/Sub channel to a WebSocket connection.
+    """Encaminha mensagens Pub/Sub para WebSocket com encerramento gracioso (ADR-002).
 
-    Detects client disconnect immediately and unsubscribes cleanly without leaks.
+    Garante desinscrição e ausência de vazamento de conexões assíncronas.
+    Decisões: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
     """
     pubsub = valkey.pubsub()  # pyright: ignore[reportUnknownMemberType]
     await pubsub.subscribe(channel)  # pyright: ignore[reportUnknownMemberType]
@@ -91,21 +117,14 @@ async def forward_pubsub_to_websocket(
     async def _pubsub_listener() -> None:
         async for raw_message in pubsub.listen():  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
             message = cast("dict[str, object]", raw_message)
-            msg_type = message.get("type")
-            if msg_type == "message":
-                raw_data = message.get("data")
-                if isinstance(raw_data, (bytes, bytearray)):
-                    text_data = raw_data.decode("utf-8")
-                else:
-                    text_data = str(raw_data)
-                await websocket.send_text(text_data)
+            if message.get("type") != "message":
+                continue
+            text_data = _formatar_dados_pubsub(message.get("data"))
+            await websocket.send_text(text_data)
 
     async def _client_reader() -> None:
         with contextlib.suppress(WebSocketDisconnect):
-            while True:
-                msg = await websocket.receive()
-                if msg.get("type") == "websocket.disconnect":
-                    break
+            await _aguardar_desconexao_cliente(websocket)
 
     async def _heartbeat_worker() -> None:
         with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect):
@@ -122,10 +141,7 @@ async def forward_pubsub_to_websocket(
             [listener_task, reader_task, heartbeat_task],
             return_when=asyncio.FIRST_COMPLETED,
         )
-        for task in pending:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect):
-                await task
+        await _cancelar_tarefas_pendentes(pending)
     finally:
         with contextlib.suppress(Exception):
             await pubsub.unsubscribe(channel)  # pyright: ignore[reportUnknownMemberType]

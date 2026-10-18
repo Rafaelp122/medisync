@@ -43,9 +43,17 @@ class _LocalMemoryRevocation:
         self._revoked: set[str] = set()
 
     async def revogar(self, jti: str, exp_segundos: int = 86400 * 7) -> None:
+        """Revoga identificador de token jti em memória local (fallback).
+
+        Regras: RN-AUT-05 (auth-domain.md).
+        """
         self._revoked.add(jti)
 
     async def is_revogado(self, jti: str) -> bool:
+        """Verifica se jti está na lista de revogação local.
+
+        Regras: RN-AUT-05 (auth-domain.md).
+        """
         return jti in self._revoked
 
 
@@ -74,7 +82,11 @@ class AuthService:
     async def cadastrar_credencial(
         self, command: CadastrarCredencialCommand
     ) -> UsuarioCredencial:
-        """Register or provision initial credentials for an authorized staff member."""
+        """Provisiona credenciais com hash seguro Argon2id e identificador canônico.
+
+        Regras: RN-AUT-01 (auth-domain.md), ADR-007, RF-01.
+        Raises: ConflictError.
+        """
         clean_ident = command.identificador.strip().lower()
         stmt = select(UsuarioCredencial).where(
             UsuarioCredencial.organizacao_id == command.organizacao_id,
@@ -100,7 +112,11 @@ class AuthService:
         return cred
 
     async def autenticar(self, command: LoginCommand) -> TokenPairDTO:
-        """Authenticate user credentials with rate limiting and constant-time check."""
+        """Autentica com rate limiting anti-brute force e checagem constant-time.
+
+        Regras: RN-AUT-02, RN-AUT-03, RN-AUT-04 (auth-domain.md), ADR-007, RF-01.
+        Raises: ContaBloqueadaError, CredenciaisInvalidasError.
+        """
         clean_ident = command.identificador.strip().lower()
         ip_key = f"ip:{command.client_ip}"
         account_key = f"acc:{command.organizacao_id}:{clean_ident}"
@@ -183,7 +199,11 @@ class AuthService:
         )
 
     async def rotacionar_refresh_token(self, refresh_token: str) -> TokenPairDTO:
-        """Rotate refresh token: invalidate presented token and issue a fresh pair."""
+        """Rotaciona refresh token de uso único com revogação distribuída imediata.
+
+        Regras: RN-AUT-05 (auth-domain.md), ADR-007, RF-01.
+        Raises: TokenRevogadoError, CredenciaisInvalidasError.
+        """
         payload: TokenPayloadDTO = self._token_service.validar_refresh_token(
             refresh_token
         )
@@ -219,7 +239,11 @@ class AuthService:
         )
 
     async def validar_access_token(self, token: str) -> TokenPayloadDTO:
-        """Validate access token via configured token service and check revocation."""
+        """Valida assinatura do access token JWT e consulta blacklist de revogação.
+
+        Regras: RN-AUT-05 (auth-domain.md), ADR-007, RF-01.
+        Raises: TokenRevogadoError, TokenInvalidoError.
+        """
         payload = self._token_service.validar_access_token(token)
         if await self._revocation.is_revogado(payload.jti):
             raise TokenRevogadoError("O token de acesso apresentado foi revogado.")
@@ -228,7 +252,10 @@ class AuthService:
     async def revogar_sessao(
         self, refresh_token: str, access_token: str | None = None
     ) -> None:
-        """Revoke a refresh token (and optionally access token) on user logout."""
+        """Revoga tokens de refresh e access na blacklist distribuída Valkey.
+
+        Regras: RN-AUT-05 (auth-domain.md), ADR-007, RF-01.
+        """
         now = datetime.now(UTC)
         with contextlib.suppress(Exception):
             payload = self._token_service.validar_refresh_token(refresh_token)
@@ -246,7 +273,10 @@ class AuthService:
     async def obter_usuario_por_id(
         self, usuario_id: UUID, organizacao_id: int
     ) -> UsuarioCredencial | None:
-        """Retrieve user credentials entity by identity ID and tenant."""
+        """Recupera entidade de credenciais respeitando o isolamento multi-tenant.
+
+        Regras: RN-AUT-01 (auth-domain.md), ADR-001, RF-01.
+        """
         stmt = select(UsuarioCredencial).where(
             UsuarioCredencial.organizacao_id == organizacao_id,
             UsuarioCredencial.usuario_id == usuario_id,

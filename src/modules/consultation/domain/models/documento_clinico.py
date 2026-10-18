@@ -44,7 +44,11 @@ class TipoDocumentoClinico(StrEnum):
 
 
 class DocumentoClinico(Base):
-    """Clinical document aggregate entity storing issued records."""
+    """Entidade agregadora de documentos clínicos da telemedicina.
+
+    Emite receitas e atestados sob ICP-Brasil e Portaria SVS/MS nº 344/98.
+    Regras: Portaria 344/98, MP 2.200-2/2001 e ADR-006.
+    """
 
     __tablename__ = "documentos_clinicos"
     __table_args__ = (
@@ -115,17 +119,20 @@ class DocumentoClinico(Base):
     ) -> None:
         if organizacao_id <= 0:
             raise ConsultaInvalidaError(
-                "organizacao_id inválido: deve ser um identificador positivo."
+                f"organizacao_id inválido: {organizacao_id}; "
+                "deve ser um identificador positivo (> 0)."
             )
 
         if not chave_s3 or not chave_s3.strip():
-            raise ConsultaInvalidaError("chave_s3 é obrigatória e não pode ser vazia.")
+            raise ConsultaInvalidaError(
+                f"chave_s3 inválida: {chave_s3!r}; esperado caminho não vazio."
+            )
 
         clean_hash = sha256_hash.strip().lower() if sha256_hash else ""
         if len(clean_hash) != 64 or not _SHA256_HEX_REGEX.match(clean_hash):
             raise ConsultaInvalidaError(
                 f"Hash SHA-256 inválido: '{sha256_hash}'. "
-                "Deve conter exatamente 64 caracteres hexadecimais."
+                "Deve conter 64 caracteres hexadecimais (regex: ^[a-fA-F0-9]{64}$)."
             )
 
         try:
@@ -136,7 +143,8 @@ class DocumentoClinico(Base):
             )
         except ValueError as err:
             raise ConsultaInvalidaError(
-                f"Tipo de documento clínico inválido: '{tipo_documento}'."
+                f"Tipo de documento clínico inválido: '{tipo_documento}'; "
+                f"esperados: {[t.value for t in TipoDocumentoClinico]}."
             ) from err
 
         super().__init__(
@@ -153,15 +161,27 @@ class DocumentoClinico(Base):
 
     @property
     def is_finalizado(self) -> bool:
-        """Indicate whether the clinical document was locked upon finalization."""
+        """Indica se o documento clínico foi congelado após finalização da consulta.
+
+        Garante imutabilidade do prontuário eletrônico conforme CFM nº 1.821/2007.
+        Regras: docs/explanation/domains/consultation-domain.md.
+        """
         return getattr(self, "_is_finalizado", False)
 
     def marcar_finalizado(self) -> None:
-        """Lock the clinical document preventing modifications or deletion."""
+        """Bloqueia o documento clínico contra alterações ou exclusões posteriores.
+
+        Assegura integridade forense sob CFM nº 1.821/2007 e CFM nº 2.314/2022.
+        Regras: docs/explanation/domains/consultation-domain.md.
+        """
         self._is_finalizado = True
 
     def adicionar_item(self, item: DocumentoItem) -> None:
-        """Add a prescription item ensuring multi-tenant isolation and sanity checks."""
+        """Adiciona item prescrito validando substâncias restritas da Portaria 344/98.
+
+        Bloqueia substâncias das Listas A/B e marca controle especial C1.
+        Regras: Portaria 344/98 e docs/explanation/domains/consultation-domain.md.
+        """
         if item.organizacao_id != self.organizacao_id:
             raise ConsultaInvalidaError(
                 "Violação de isolamento multi-tenant: organizacao_id do item "
@@ -179,18 +199,24 @@ class DocumentoClinico(Base):
         item.documento = self
 
     def validar_pode_excluir(self, status_atendimento: str | None = None) -> None:
-        """Check if deletion is permitted based on consultation status."""
+        """Valida se a exclusão é permitida no estado atual do atendimento.
+
+        Impede exclusão após encerramento clínico sob CFM nº 1.821/2007 e RN06.
+        Regras: docs/explanation/domains/consultation-domain.md.
+        """
         if self.is_finalizado:
             raise ConsultaFinalizadaError(
-                "Não é permitido excluir documento clínico de consulta finalizada."
+                f"Não é permitido excluir documento clínico '{self.id}' "
+                "de consulta finalizada (is_finalizado=True)."
             )
 
         if status_atendimento is not None:
             status_clean = str(status_atendimento).strip().upper()
             if status_clean in _STATUS_TERMINAIS:
                 raise ConsultaFinalizadaError(
-                    "Não é permitido excluir documento de consulta finalizada "
-                    f"(status terminal '{status_clean}')."
+                    f"Não é permitido excluir documento '{self.id}' de consulta "
+                    f"finalizada (status terminal atual: '{status_clean}'; "
+                    f"terminais: {sorted(_STATUS_TERMINAIS)})."
                 )
 
 
@@ -198,7 +224,13 @@ class DocumentoClinico(Base):
 def impedir_exclusao_documento_finalizado(
     _mapper: Any, _connection: Any, target: DocumentoClinico
 ) -> None:
+    """Impede deleção física de documentos de consultas finalizadas via SQLAlchemy.
+
+    Assegura inviolabilidade do PEP sob CFM nº 1.821/2007 e LGPD Art. 16.
+    Regras: docs/explanation/domains/consultation-domain.md.
+    """
     if target.is_finalizado:
         raise ConsultaFinalizadaError(
-            "Não é permitido excluir documento clínico de consulta finalizada."
+            f"Não é permitido excluir documento clínico '{target.id}' "
+            "de consulta finalizada (is_finalizado=True)."
         )

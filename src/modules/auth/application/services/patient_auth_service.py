@@ -42,8 +42,20 @@ OTP_MAX_REQUESTS_PER_WINDOW = 3
 OTP_MAX_VERIFY_ATTEMPTS = 3
 
 
+def _mascarar_telefone(clean_telefone: str) -> str:
+    """Mask phone number for safe exception display without leaking PII."""
+    if len(clean_telefone) >= 8:
+        return f"{clean_telefone[:4]}****{clean_telefone[-4:]}"
+    return "****"
+
+
 class PatientAuthService:
-    """Service handling passwordless patient authentication via 6-digit SMS OTP."""
+    """Autenticação sem senha de pacientes via código OTP de 6 dígitos por SMS.
+
+    Regras: ADR-005 (Passwordless + Argon2id/OTP), RF-01.
+    Documentação: docs/explanation/domains/auth-domain.md e
+    docs/adrs/ADR-005-Autenticacao-Passwordless-Argon2id.md
+    """
 
     def __init__(
         self,
@@ -69,61 +81,84 @@ class PatientAuthService:
         self._memory_otp: dict[str, dict[str, Any]] = {}
         self._memory_ratelimit: dict[str, list[float]] = {}
 
-    async def _check_rate_limit(self, clean_telefone: str) -> None:
-        """Enforce maximum 3 OTP requests per 15-minute window."""
-        now = time.time()
-        window_start = now - OTP_RATE_LIMIT_WINDOW
+    async def _calculate_valkey_retry_after(self, redis_key: str, now: float) -> int:
+        """Calculate seconds remaining until the oldest entry slides out of window."""
+        if self._valkey is None:
+            return OTP_RATE_LIMIT_WINDOW
+        oldest_entries: list[Any] = await self._valkey.zrange(  # pyright: ignore[reportUnknownMemberType]
+            redis_key, 0, 0, withscores=True
+        )
+        if not oldest_entries:
+            return OTP_RATE_LIMIT_WINDOW
+        oldest_time = float(oldest_entries[0][1])
+        return max(1, int(oldest_time + OTP_RATE_LIMIT_WINDOW - now))
 
-        if self._valkey is not None:
-            redis_key = f"ratelimit:otp:request:{clean_telefone}"
-            try:
-                async with self._valkey.pipeline(transaction=True) as pipe:
-                    await pipe.zremrangebyscore(redis_key, 0, window_start)  # pyright: ignore[reportUnknownMemberType]
-                    await pipe.zcard(redis_key)  # pyright: ignore[reportUnknownMemberType]
-                    results: list[Any] = await pipe.execute()  # pyright: ignore[reportUnknownMemberType]
+    async def _check_valkey_rate_limit(
+        self, redis_key: str, clean_telefone: str, now: float, window_start: float
+    ) -> bool:
+        """Evaluate rate limit via Valkey sliding window.
 
-                current_count = int(results[1])
-                if current_count >= OTP_MAX_REQUESTS_PER_WINDOW:
-                    oldest_entries: list[Any] = await self._valkey.zrange(  # pyright: ignore[reportUnknownMemberType]
-                        redis_key, 0, 0, withscores=True
-                    )
-                    retry_after = OTP_RATE_LIMIT_WINDOW
-                    if oldest_entries:
-                        oldest_time = float(oldest_entries[0][1])
-                        retry_after = max(
-                            1, int(oldest_time + OTP_RATE_LIMIT_WINDOW - now)
-                        )
-                    raise OtpRateLimitExcedidoError(
-                        "Limite de solicitações de OTP excedido. "
-                        f"Tente novamente em {retry_after} segundos."
-                    )
+        Returns True if handled, False on fallback.
+        """
+        if self._valkey is None:
+            return False
 
-                # Record attempt
-                attempt_id = str(uuid7())
-                async with self._valkey.pipeline(transaction=True) as pipe:
-                    await pipe.zadd(redis_key, {attempt_id: now})  # pyright: ignore[reportUnknownMemberType]
-                    await pipe.expire(redis_key, OTP_RATE_LIMIT_WINDOW + 60)  # pyright: ignore[reportUnknownMemberType]
-                    await pipe.execute()  # pyright: ignore[reportUnknownMemberType]
-                return
-            except OtpRateLimitExcedidoError:
-                raise
-            except Exception as exc:
-                logger.warning(
-                    "Valkey rate limit failed, falling back to memory: %s", exc
+        try:
+            async with self._valkey.pipeline(transaction=True) as pipe:
+                await pipe.zremrangebyscore(redis_key, 0, window_start)  # pyright: ignore[reportUnknownMemberType]
+                await pipe.zcard(redis_key)  # pyright: ignore[reportUnknownMemberType]
+                results: list[Any] = await pipe.execute()  # pyright: ignore[reportUnknownMemberType]
+
+            current_count = int(results[1])
+            if current_count >= OTP_MAX_REQUESTS_PER_WINDOW:
+                retry_after = await self._calculate_valkey_retry_after(redis_key, now)
+                tel_mask = _mascarar_telefone(clean_telefone)
+                raise OtpRateLimitExcedidoError(
+                    f"Limite de solicitações de OTP excedido para o "
+                    f"telefone '{tel_mask}'. Tente novamente em {retry_after}s."
                 )
 
-        # In-memory fallback
+            attempt_id = str(uuid7())
+            async with self._valkey.pipeline(transaction=True) as pipe:
+                await pipe.zadd(redis_key, {attempt_id: now})  # pyright: ignore[reportUnknownMemberType]
+                await pipe.expire(redis_key, OTP_RATE_LIMIT_WINDOW + 60)  # pyright: ignore[reportUnknownMemberType]
+                await pipe.execute()  # pyright: ignore[reportUnknownMemberType]
+            return True
+        except OtpRateLimitExcedidoError:
+            raise
+        except Exception as exc:
+            logger.warning("Valkey rate limit failed, falling back to memory: %s", exc)
+            return False
+
+    def _check_memory_rate_limit(
+        self, clean_telefone: str, now: float, window_start: float
+    ) -> None:
+        """In-memory rate limit check for unit test fallback."""
         timestamps = self._memory_ratelimit.get(clean_telefone, [])
         valid_timestamps = [ts for ts in timestamps if ts > window_start]
         if len(valid_timestamps) >= OTP_MAX_REQUESTS_PER_WINDOW:
             oldest_ts = valid_timestamps[0]
             retry_after = max(1, int(oldest_ts + OTP_RATE_LIMIT_WINDOW - now))
+            tel_mask = _mascarar_telefone(clean_telefone)
             raise OtpRateLimitExcedidoError(
-                "Limite de solicitações de OTP excedido. "
+                f"Limite de solicitações de OTP excedido para o telefone '{tel_mask}'. "
                 f"Tente novamente em {retry_after} segundos."
             )
         valid_timestamps.append(now)
         self._memory_ratelimit[clean_telefone] = valid_timestamps
+
+    async def _check_rate_limit(self, clean_telefone: str) -> None:
+        """Enforce maximum 3 OTP requests per 15-minute window."""
+        now = time.time()
+        window_start = now - OTP_RATE_LIMIT_WINDOW
+        redis_key = f"ratelimit:otp:request:{clean_telefone}"
+
+        if await self._check_valkey_rate_limit(
+            redis_key, clean_telefone, now, window_start
+        ):
+            return
+
+        self._check_memory_rate_limit(clean_telefone, now, window_start)
 
     async def _save_otp(
         self,
@@ -155,48 +190,62 @@ class PatientAuthService:
 
         self._memory_otp[clean_telefone] = data
 
+    async def _get_valkey_otp(self, clean_telefone: str) -> dict[str, Any] | None:
+        if self._valkey is None:
+            return None
+        try:
+            raw: bytes | str | None = await self._valkey.get(f"otp:{clean_telefone}")  # pyright: ignore[reportUnknownMemberType]
+            if raw is None:
+                return None
+            raw_str = (
+                raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else raw
+            )
+            return json.loads(raw_str)  # type: ignore[no-any-return]
+        except Exception as exc:
+            logger.warning(
+                "Valkey get failed, falling back to in-memory store: %s", exc
+            )
+            return None
+
     async def _get_otp(self, clean_telefone: str) -> dict[str, Any] | None:
         """Retrieve stored OTP state if not expired."""
         if self._valkey is not None:
-            try:
-                raw: bytes | str | None = await self._valkey.get(
-                    f"otp:{clean_telefone}"
-                )  # pyright: ignore[reportUnknownMemberType]
-                if raw is not None:
-                    raw_str = (
-                        raw.decode("utf-8")
-                        if isinstance(raw, (bytes, bytearray))
-                        else raw
-                    )
-                    return json.loads(raw_str)  # type: ignore[no-any-return]
-                return None
-            except Exception as exc:
-                logger.warning(
-                    "Valkey get failed, falling back to in-memory store: %s", exc
-                )
+            valkey_data = await self._get_valkey_otp(clean_telefone)
+            if valkey_data is not None:
+                return valkey_data
 
         item = self._memory_otp.get(clean_telefone)
-        if item is not None:
-            if time.time() > float(item.get("expires_at", 0)):
-                self._memory_otp.pop(clean_telefone, None)
-                return None
-            return item
-        return None
+        if item is None:
+            return None
+        if time.time() > float(item.get("expires_at", 0)):
+            self._memory_otp.pop(clean_telefone, None)
+            return None
+        return item
+
+    async def _update_valkey_attempts(
+        self, clean_telefone: str, data: dict[str, Any]
+    ) -> bool:
+        if self._valkey is None:
+            return False
+        try:
+            ttl = await self._valkey.ttl(f"otp:{clean_telefone}")  # pyright: ignore[reportUnknownMemberType]
+            if ttl > 0:
+                await self._valkey.set(  # pyright: ignore[reportUnknownMemberType]
+                    f"otp:{clean_telefone}",
+                    json.dumps(data),
+                    ex=ttl,
+                )
+            return True
+        except Exception as exc:
+            logger.warning("Valkey attempt update failed: %s", exc)
+            return False
 
     async def _update_attempts(self, clean_telefone: str, data: dict[str, Any]) -> None:
         """Increment failed attempts count while preserving remaining TTL."""
         if self._valkey is not None:
-            try:
-                ttl = await self._valkey.ttl(f"otp:{clean_telefone}")  # pyright: ignore[reportUnknownMemberType]
-                if ttl > 0:
-                    await self._valkey.set(  # pyright: ignore[reportUnknownMemberType]
-                        f"otp:{clean_telefone}",
-                        json.dumps(data),
-                        ex=ttl,
-                    )
+            updated = await self._update_valkey_attempts(clean_telefone, data)
+            if updated:
                 return
-            except Exception as exc:
-                logger.warning("Valkey attempt update failed: %s", exc)
 
         if clean_telefone in self._memory_otp:
             self._memory_otp[clean_telefone] = data
@@ -216,13 +265,20 @@ class PatientAuthService:
         organizacao_id: int,
         dados: SolicitarOtpInputDTO,
     ) -> SolicitarOtpOutputDTO:
-        """Execute request OTP use-case with rate limiting and patient lookup."""
+        """Emite código OTP de 6 dígitos com rate limiting por telefone (janela 15m).
+
+        Regras: ADR-005 (Passwordless SMS OTP), RF-01.
+        Documentação: docs/explanation/domains/auth-domain.md
+        """
         if self._identity_reader is None:
             raise ValueError(
                 "IdentityReaderPort não configurado no PatientAuthService."
             )
         if organizacao_id <= 0:
-            raise TenantInvalidoError("Identificador da organização deve ser positivo.")
+            raise TenantInvalidoError(
+                f"Identificador da organização '{organizacao_id}' deve ser "
+                "positivo; esperado valor > 0."
+            )
 
         clean_telefone = validate_telefone(dados.telefone)
         clean_cpf = validate_cpf(dados.cpf) if dados.cpf else None
@@ -237,9 +293,11 @@ class PatientAuthService:
             cpf=clean_cpf,
         )
         if paciente is None:
+            tel_mask = _mascarar_telefone(clean_telefone)
             raise PacienteNaoEncontradoError(
-                "Paciente com o telefone informado não encontrado nesta organização. "
-                "Inicie o acolhimento para cadastrar-se."
+                f"Paciente com telefone '{tel_mask}' não encontrado na "
+                f"organização '{organizacao_id}'. Inicie o acolhimento para "
+                "cadastrar-se."
             )
 
         # 3. Generate cryptographically secure 6-digit OTP
@@ -271,31 +329,47 @@ class PatientAuthService:
         organizacao_id: int,
         dados: VerificarOtpInputDTO,
     ) -> VerificarOtpOutputDTO:
-        """Verify 6-digit OTP code and issue patient JWT."""
+        """Valida OTP em tempo constante e emite JWT de paciente (Role.PACIENTE).
+
+        Regras: ADR-005 (Passwordless SMS OTP), RF-01.
+        Documentação: docs/explanation/domains/auth-domain.md
+        """
         if organizacao_id <= 0:
-            raise TenantInvalidoError("Identificador da organização deve ser positivo.")
+            raise TenantInvalidoError(
+                f"Identificador da organização '{organizacao_id}' deve ser "
+                "positivo; esperado valor > 0."
+            )
 
         clean_telefone = validate_telefone(dados.telefone)
+        tel_mask = _mascarar_telefone(clean_telefone)
         codigo = dados.codigo.strip()
         if len(codigo) != 6 or not codigo.isdigit():
             raise OtpInvalidoOuExpiradoError(
-                "Código OTP deve conter exatamente 6 dígitos numéricos."
+                f"Código OTP '{codigo}' deve conter exatamente 6 dígitos numéricos."
             )
 
         # 1. Retrieve OTP state
         stored = await self._get_otp(clean_telefone)
         if stored is None:
-            raise OtpInvalidoOuExpiradoError("Código OTP incorreto ou expirado.")
+            raise OtpInvalidoOuExpiradoError(
+                f"Código OTP incorreto ou expirado para o telefone '{tel_mask}'."
+            )
 
-        if int(stored.get("organizacao_id", 0)) != organizacao_id:
-            raise OtpInvalidoOuExpiradoError("Código OTP incorreto ou expirado.")
+        stored_org_id = int(stored.get("organizacao_id", 0))
+        if stored_org_id != organizacao_id:
+            raise OtpInvalidoOuExpiradoError(
+                f"Código OTP incorreto ou expirado: pertence à organização "
+                f"'{stored_org_id}', mas a requisição é da organização "
+                f"'{organizacao_id}'."
+            )
 
         # 2. Check failed attempts count to mitigate brute-force guessing
         attempts = int(stored.get("attempts", 0))
         if attempts >= OTP_MAX_VERIFY_ATTEMPTS:
             await self._delete_otp(clean_telefone)
             raise OtpInvalidoOuExpiradoError(
-                "Número máximo de tentativas excedido. Solicite um novo código."
+                f"Número máximo de {OTP_MAX_VERIFY_ATTEMPTS} tentativas excedido "
+                f"para o telefone '{tel_mask}'. Solicite um novo código."
             )
 
         # 3. Compare hash in constant time
@@ -303,14 +377,20 @@ class PatientAuthService:
         input_hash = hashlib.sha256(codigo.encode("utf-8")).hexdigest()
 
         if not hmac.compare_digest(expected_hash, input_hash):
-            stored["attempts"] = attempts + 1
-            if stored["attempts"] >= OTP_MAX_VERIFY_ATTEMPTS:
+            nova_tentativa = attempts + 1
+            stored["attempts"] = nova_tentativa
+            if nova_tentativa >= OTP_MAX_VERIFY_ATTEMPTS:
                 await self._delete_otp(clean_telefone)
                 raise OtpInvalidoOuExpiradoError(
-                    "Número máximo de tentativas excedido. Solicite um novo código."
+                    f"Número máximo de {OTP_MAX_VERIFY_ATTEMPTS} tentativas excedido "
+                    f"para o telefone '{tel_mask}'. Solicite um novo código."
                 )
             await self._update_attempts(clean_telefone, stored)
-            raise OtpInvalidoOuExpiradoError("Código OTP incorreto ou expirado.")
+            tentativas_restantes = max(0, OTP_MAX_VERIFY_ATTEMPTS - nova_tentativa)
+            raise OtpInvalidoOuExpiradoError(
+                f"Código OTP incorreto para o telefone '{tel_mask}'. "
+                f"Restam {tentativas_restantes} tentativa(s) antes do bloqueio."
+            )
 
         # 4. Successful verification: remove OTP immediately to prevent replay
         await self._delete_otp(clean_telefone)

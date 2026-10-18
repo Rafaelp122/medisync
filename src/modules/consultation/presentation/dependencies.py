@@ -37,6 +37,7 @@ from src.modules.consultation.application.policies.clinical_access_policy import
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
+    AtendimentoResumoDTO,
 )
 from src.modules.consultation.application.ports.validation_rate_limiter_port import (
     ValidationRateLimiterPort,
@@ -132,6 +133,120 @@ async def exigir_rate_limit(
         )
 
 
+async def _autenticar_chamador_medico(raw_token: str) -> tuple[UUID, int, bool]:
+    """Valida token JWT de médico e retorna (usuario_id, org_id, is_admin)."""
+    try:
+        user = decode_access_token(raw_token)
+    except Exception as exc:
+        raise UnauthorizedError(
+            f"Token de acesso inválido ou expirado: {exc}."
+        ) from exc
+
+    if await is_token_revoked(user.token_id):
+        raise TokenRevogadoError(
+            f"Token de acesso '{user.token_id}' revogado. Realize novo login."
+        )
+
+    if user.papel not in (Role.MEDICO, Role.ADMIN_GLOBAL):
+        raise ForbiddenError(
+            f"Acesso negado: papel '{user.papel}' sem permissão para sala "
+            f"como médico (esperados: {[Role.MEDICO.value, Role.ADMIN_GLOBAL.value]})."
+        )
+
+    return user.usuario_id, user.organizacao_id, user.papel == Role.ADMIN_GLOBAL
+
+
+def _autenticar_chamador_paciente_intake(raw_token: str) -> tuple[UUID, int, bool]:
+    """Valida token HMAC de acolhimento do paciente (2 partes)."""
+    settings = get_settings()
+    try:
+        claims = verify_intake_token(raw_token, settings.SECRET_KEY)
+    except ValueError as exc:
+        raise UnauthorizedError(
+            f"Token de acolhimento em formato inválido: {exc}."
+        ) from exc
+
+    return UUID(str(claims["paciente_id"])), int(claims["organizacao_id"]), False
+
+
+async def _autenticar_chamador_paciente_jwt(raw_token: str) -> tuple[UUID, int, bool]:
+    """Valida token JWT do paciente (3 partes)."""
+    try:
+        user = decode_access_token(raw_token)
+    except Exception as exc:
+        raise UnauthorizedError(
+            f"Token de acesso inválido ou expirado: {exc}."
+        ) from exc
+
+    if await is_token_revoked(user.token_id):
+        raise TokenRevogadoError(
+            f"Token de acesso '{user.token_id}' revogado. Realize novo login."
+        )
+
+    if user.papel not in (Role.PACIENTE, Role.ADMIN_GLOBAL):
+        raise ForbiddenError(
+            f"Acesso negado: papel '{user.papel}' sem permissão para sala "
+            "como paciente "
+            f"(esperados: {[Role.PACIENTE.value, Role.ADMIN_GLOBAL.value]})."
+        )
+
+    return user.usuario_id, user.organizacao_id, user.papel == Role.ADMIN_GLOBAL
+
+
+async def _autenticar_chamador_paciente(raw_token: str) -> tuple[UUID, int, bool]:
+    """Autentica chamador paciente via token de acolhimento ou JWT completo."""
+    token_parts = raw_token.split(".")
+    if len(token_parts) == 2:
+        return _autenticar_chamador_paciente_intake(raw_token)
+    if len(token_parts) == 3:
+        return await _autenticar_chamador_paciente_jwt(raw_token)
+    raise UnauthorizedError(
+        f"Token em formato inválido ({len(token_parts)} partes; esperados: 2 ou 3)."
+    )
+
+
+def _validar_permissao_sala_livekit(
+    role: str,
+    participant_id: UUID,
+    is_admin: bool,
+    caller_id: UUID,
+    caller_org_id: int,
+    atendimento: AtendimentoResumoDTO,
+) -> None:
+    """Verifica micro-autorização ReBAC/ABAC para entrada em sala virtual."""
+    if is_admin:
+        return
+
+    if role == "medico":
+        if atendimento.medico_id is None or str(atendimento.medico_id) != str(
+            caller_id
+        ):
+            raise ForbiddenError(
+                f"Acesso negado: médico '{caller_id}' não alocado ao "
+                f"atendimento (alocado: '{atendimento.medico_id}')."
+            )
+    else:
+        if atendimento.paciente_id is None or str(atendimento.paciente_id) != str(
+            caller_id
+        ):
+            raise ForbiddenError(
+                f"Acesso negado: o paciente autenticado '{caller_id}' não é o titular "
+                f"deste atendimento (titular: '{atendimento.paciente_id}')."
+            )
+
+    if str(participant_id) != str(caller_id):
+        raise ForbiddenError(
+            f"Acesso negado: participant_id '{participant_id}' diverge "
+            f"do usuário autenticado '{caller_id}'."
+        )
+
+    if atendimento.organizacao_id != caller_org_id:
+        raise ForbiddenError(
+            f"Acesso negado: o token pertence à organização {caller_org_id}, "
+            f"mas o atendimento é da organização {atendimento.organizacao_id}."
+        )
+
+
 async def validar_acesso_livekit(
     atendimento_id: AtendimentoIdPath,
     request: LiveKitTokenRequest,
@@ -151,74 +266,27 @@ async def validar_acesso_livekit(
     """
     if credentials is None:
         raise UnauthorizedError(
-            "Credencial de autenticação não fornecida. "
-            "Envie o token no cabeçalho Authorization: Bearer <token>."
+            f"Credencial de autenticação não fornecida (recebido: {credentials!r}; "
+            "esperado cabeçalho 'Authorization: Bearer <token>')."
         )
 
     raw_token = credentials.credentials
 
     # 1. Autenticação e extração de identidade do chamador (401 se credencial inválida)
     if request.role not in ("medico", "paciente"):
-        raise UnauthorizedError("Papel clínico não suportado.")
-
-    caller_id: UUID
-    caller_org_id: int
-    is_admin: bool
+        raise UnauthorizedError(
+            f"Papel clínico '{request.role}' não suportado; "
+            "esperados: 'medico' ou 'paciente'."
+        )
 
     if request.role == "medico":
-        try:
-            user = decode_access_token(raw_token)
-        except Exception as exc:
-            raise UnauthorizedError("Token de acesso inválido ou expirado.") from exc
-
-        if await is_token_revoked(user.token_id):
-            raise TokenRevogadoError("Token de acesso revogado. Realize novo login.")
-
-        if user.papel not in (Role.MEDICO, Role.ADMIN_GLOBAL):
-            raise ForbiddenError(
-                f"Acesso negado: o papel '{user.papel}' não possui permissão "
-                "para sala de teleconsulta como médico."
-            )
-
-        caller_id = user.usuario_id
-        caller_org_id = user.organizacao_id
-        is_admin = user.papel == Role.ADMIN_GLOBAL
-
+        caller_id, caller_org_id, is_admin = await _autenticar_chamador_medico(
+            raw_token
+        )
     else:
-        token_parts = raw_token.split(".")
-        if len(token_parts) == 2:
-            settings = get_settings()
-            try:
-                claims = verify_intake_token(raw_token, settings.SECRET_KEY)
-            except ValueError as exc:
-                raise UnauthorizedError(str(exc)) from exc
-
-            caller_id = UUID(str(claims["paciente_id"]))
-            caller_org_id = int(claims["organizacao_id"])
-            is_admin = False
-        elif len(token_parts) == 3:
-            try:
-                user = decode_access_token(raw_token)
-            except Exception as exc:
-                raise UnauthorizedError(
-                    "Token de acesso inválido ou expirado."
-                ) from exc
-
-            if await is_token_revoked(user.token_id):
-                raise TokenRevogadoError(
-                    "Token de acesso revogado. Realize novo login."
-                )
-
-            if user.papel not in (Role.PACIENTE, Role.ADMIN_GLOBAL):
-                raise ForbiddenError(
-                    f"Acesso negado: o papel '{user.papel}' não possui permissão "
-                    "para sala de teleconsulta como paciente."
-                )
-            caller_id = user.usuario_id
-            caller_org_id = user.organizacao_id
-            is_admin = user.papel == Role.ADMIN_GLOBAL
-        else:
-            raise UnauthorizedError("Token fornecido em formato inválido.")
+        caller_id, caller_org_id, is_admin = await _autenticar_chamador_paciente(
+            raw_token
+        )
 
     # 2. Busca do atendimento via reader (404 se não existir)
     atendimento = await reader.obter_resumo(atendimento_id)
@@ -227,48 +295,19 @@ async def validar_acesso_livekit(
 
     if atendimento.is_terminal:
         raise ForbiddenError(
-            "Acesso negado: atendimento já finalizado com status "
+            f"Acesso negado: atendimento '{atendimento_id}' já finalizado com status "
             f"'{atendimento.status}'."
         )
 
     # 3. Micro-autorização ReBAC/ABAC
-    if request.role == "medico":
-        if not is_admin:
-            if atendimento.medico_id is None or str(atendimento.medico_id) != str(
-                caller_id
-            ):
-                raise ForbiddenError(
-                    "Acesso negado: o médico autenticado não é o profissional "
-                    "alocado a este atendimento ativo."
-                )
-            if str(request.participant_id) != str(caller_id):
-                raise ForbiddenError(
-                    "Acesso negado: participant_id diverge do médico autenticado."
-                )
-            if atendimento.organizacao_id != caller_org_id:
-                raise ForbiddenError(
-                    f"Acesso negado: o token pertence à organização {caller_org_id}, "
-                    f"mas o atendimento é da organização {atendimento.organizacao_id}."
-                )
-
-    else:
-        if not is_admin:
-            if atendimento.paciente_id is None or str(atendimento.paciente_id) != str(
-                caller_id
-            ):
-                raise ForbiddenError(
-                    "Acesso negado: o paciente autenticado não é o titular "
-                    "deste atendimento."
-                )
-            if str(request.participant_id) != str(caller_id):
-                raise ForbiddenError(
-                    "Acesso negado: participant_id diverge do paciente autenticado."
-                )
-            if atendimento.organizacao_id != caller_org_id:
-                raise ForbiddenError(
-                    f"Acesso negado: o token pertence à organização {caller_org_id}, "
-                    f"mas o atendimento é da organização {atendimento.organizacao_id}."
-                )
+    _validar_permissao_sala_livekit(
+        role=request.role,
+        participant_id=request.participant_id,
+        is_admin=is_admin,
+        caller_id=caller_id,
+        caller_org_id=caller_org_id,
+        atendimento=atendimento,
+    )
 
     if request.organizacao_id != atendimento.organizacao_id:
         raise ForbiddenError(
@@ -295,7 +334,7 @@ async def validar_ws_doctor_token(
     if not token:
         raise WebSocketException(
             code=4401,
-            reason="Credencial de autenticação não fornecida.",
+            reason=f"Credencial não fornecida na query string: {token!r}.",
         )
 
     try:
@@ -303,25 +342,31 @@ async def validar_ws_doctor_token(
     except Exception as exc:
         raise WebSocketException(
             code=4401,
-            reason="Token de autenticação inválido ou expirado.",
+            reason=f"Token de autenticação inválido ou expirado: {exc}.",
         ) from exc
 
     if await is_token_revoked(user.token_id):
         raise WebSocketException(
             code=4401,
-            reason="Token de autenticação revogado.",
+            reason=f"Token de autenticação '{user.token_id}' revogado.",
         )
 
     if user.papel not in (Role.MEDICO, Role.ADMIN_GLOBAL):
         raise WebSocketException(
             code=4403,
-            reason="Acesso negado: o usuário não possui papel de médico.",
+            reason=(
+                f"Acesso negado: usuário possui papel '{user.papel}'; "
+                "esperado papel médico."
+            ),
         )
 
     if user.papel != Role.ADMIN_GLOBAL and user.usuario_id != medico_id:
         raise WebSocketException(
             code=4403,
-            reason="Acesso negado: o token não confere com o médico solicitado.",
+            reason=(
+                f"Acesso negado: token pertence ao médico '{user.usuario_id}', "
+                f"divergindo de '{medico_id}'."
+            ),
         )
 
 

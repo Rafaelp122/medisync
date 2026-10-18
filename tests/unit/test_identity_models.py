@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 from src.core.errors import ValidationError
+from src.modules.identity.domain.exceptions import DependenteAutoReferenciaError
 from src.modules.identity.domain.models import (
     Dependente,
     Organizacao,
@@ -195,6 +196,14 @@ def test_dependente_self_reference_raises_validation_error():
             dependente_id=same_id,
             grau_parentesco="FILHO",
         )
+
+
+def test_dependente_auto_referencia_error_interpolates_ids():
+    titular_id = uuid4()
+    err = DependenteAutoReferenciaError(titular_id=titular_id, dependente_id=titular_id)
+    assert str(titular_id) in err.detail
+    assert "titular" in err.detail
+    assert "dependente" in err.detail
 
 
 def test_dependente_creation_succeeds():

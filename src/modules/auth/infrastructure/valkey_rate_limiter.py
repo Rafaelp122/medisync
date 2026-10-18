@@ -25,6 +25,18 @@ class ValkeyAuthRateLimiter(AuthRateLimiterPort):
             return self._client
         return Redis(connection_pool=get_valkey_pool())
 
+    async def _calculate_retry_after(
+        self, client: Redis, redis_key: str, janela_segundos: int, now: float
+    ) -> int:
+        """Calculate retry after seconds based on the oldest entry in the window."""
+        oldest_entries: list[Any] = await client.zrange(  # pyright: ignore[reportUnknownMemberType]
+            redis_key, 0, 0, withscores=True
+        )
+        if not oldest_entries:
+            return janela_segundos
+        oldest_time = float(oldest_entries[0][1])
+        return max(1, int(oldest_time + janela_segundos - now))
+
     async def verificar_e_incrementar(
         self,
         chave: str,
@@ -45,13 +57,9 @@ class ValkeyAuthRateLimiter(AuthRateLimiterPort):
 
             current_count = int(results[1])
             if current_count >= limite:
-                oldest_entries: list[Any] = await client.zrange(  # pyright: ignore[reportUnknownMemberType]
-                    redis_key, 0, 0, withscores=True
+                retry_after = await self._calculate_retry_after(
+                    client, redis_key, janela_segundos, now
                 )
-                retry_after = janela_segundos
-                if oldest_entries:
-                    oldest_time = float(oldest_entries[0][1])
-                    retry_after = max(1, int(oldest_time + janela_segundos - now))
                 return RateLimitResultDTO(
                     permitido=False,
                     tentativas_restantes=0,

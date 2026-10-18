@@ -8,14 +8,16 @@ import httpx
 import pytest
 from src.modules.billing import (
     ElegibilidadeFalhaEvent,
-    ElegibilidadeNotifierPort,
     ElegibilidadeService,
     LoggingElegibilidadeNotifier,
     PrivateInsuranceGatewayAdapter,
     RequisicaoElegibilidade,
+    ResultadoElegibilidade,
     StatusElegibilidade,
     SusEligibilityAdapter,
 )
+
+from tests.doubles import FakeElegibilidadeNotifier, FakeEligibilityProvider
 
 
 @pytest.mark.asyncio
@@ -142,17 +144,18 @@ async def test_private_gateway_adapter_http_error() -> None:
 @pytest.mark.asyncio
 async def test_elegibilidade_service_emits_failure_event_on_rejection() -> None:
     """ElegibilidadeService dispatches failure event to waiting room on rejection."""
-    mock_provider = AsyncMock()
-    mock_provider.verificar_elegibilidade.return_value = MagicMock(
-        aprovado=False,
-        status=StatusElegibilidade.REJEITADO,
-        motivo="Plano suspenso",
+    provider = FakeEligibilityProvider(
+        ResultadoElegibilidade(
+            aprovado=False,
+            status=StatusElegibilidade.REJEITADO,
+            motivo="Plano suspenso",
+        )
     )
-    mock_notifier = AsyncMock(spec=ElegibilidadeNotifierPort)
+    notifier = FakeElegibilidadeNotifier()
 
     service = ElegibilidadeService(
-        provider=mock_provider,
-        notifier=mock_notifier,
+        provider=provider,
+        notifier=notifier,
     )
     atend_id = uuid4()
     pac_id = uuid4()
@@ -165,8 +168,8 @@ async def test_elegibilidade_service_emits_failure_event_on_rejection() -> None:
     resultado = await service.avaliar_elegibilidade(req)
 
     assert resultado.aprovado is False
-    mock_notifier.notificar_falha.assert_awaited_once()
-    evento: ElegibilidadeFalhaEvent = mock_notifier.notificar_falha.call_args[0][0]
+    assert len(notifier.eventos_falha) == 1
+    evento = notifier.eventos_falha[0]
     assert evento.atendimento_id == atend_id
     assert evento.paciente_id == pac_id
     assert evento.motivo == "Plano suspenso"
@@ -176,17 +179,18 @@ async def test_elegibilidade_service_emits_failure_event_on_rejection() -> None:
 @pytest.mark.asyncio
 async def test_elegibilidade_service_does_not_notify_on_approval() -> None:
     """ElegibilidadeService does not dispatch failure event when approved."""
-    mock_provider = AsyncMock()
-    mock_provider.verificar_elegibilidade.return_value = MagicMock(
-        aprovado=True,
-        status=StatusElegibilidade.APROVADO,
-        codigo_autorizacao="AUTH-OK",
+    provider = FakeEligibilityProvider(
+        ResultadoElegibilidade(
+            aprovado=True,
+            status=StatusElegibilidade.APROVADO,
+            codigo_autorizacao="AUTH-OK",
+        )
     )
-    mock_notifier = AsyncMock(spec=ElegibilidadeNotifierPort)
+    notifier = FakeElegibilidadeNotifier()
 
     service = ElegibilidadeService(
-        provider=mock_provider,
-        notifier=mock_notifier,
+        provider=provider,
+        notifier=notifier,
     )
     req = RequisicaoElegibilidade(
         organizacao_id=1,
@@ -197,7 +201,7 @@ async def test_elegibilidade_service_does_not_notify_on_approval() -> None:
     resultado = await service.avaliar_elegibilidade(req)
 
     assert resultado.aprovado is True
-    mock_notifier.notificar_falha.assert_not_awaited()
+    assert len(notifier.eventos_falha) == 0
 
 
 @pytest.mark.asyncio
@@ -219,3 +223,74 @@ async def test_logging_elegibilidade_notifier() -> None:
 
     mock_log.assert_called_once()
     assert "Event ELEGIBILIDADE_FALHA" in str(mock_log.call_args[0][0])
+
+
+@pytest.mark.asyncio
+async def test_elegibilidade_service_tenant_invalido_raises() -> None:
+    service = ElegibilidadeService(provider=AsyncMock())
+    req = RequisicaoElegibilidade(
+        organizacao_id=0,
+        atendimento_id=uuid4(),
+        paciente_id=uuid4(),
+    )
+    match_msg = "Identificador da organização '0' deve ser positivo"
+    with pytest.raises(Exception, match=match_msg):
+        await service.avaliar_elegibilidade(req)
+
+
+@pytest.mark.asyncio
+async def test_elegibilidade_service_operadora_vazia_raises() -> None:
+    service = ElegibilidadeService(provider=AsyncMock())
+    req = RequisicaoElegibilidade(
+        organizacao_id=1,
+        atendimento_id=uuid4(),
+        paciente_id=uuid4(),
+        operadora_id="   ",
+    )
+    with pytest.raises(Exception, match="Identificador de operadora '   ' inválido"):
+        await service.avaliar_elegibilidade(req)
+
+
+@pytest.mark.asyncio
+async def test_elegibilidade_service_carteirinha_vazia_raises() -> None:
+    service = ElegibilidadeService(
+        provider=FakeEligibilityProvider(
+            ResultadoElegibilidade(aprovado=True, status=StatusElegibilidade.APROVADO)
+        )
+    )
+    req = RequisicaoElegibilidade(
+        organizacao_id=1,
+        atendimento_id=uuid4(),
+        paciente_id=uuid4(),
+        operadora_id="UNIMED",
+        numero_carteirinha="   ",
+    )
+    match_cart = "Número de carteirinha '   ' inválido para a operadora 'UNIMED'"
+    with pytest.raises(Exception, match=match_cart):
+        await service.avaliar_elegibilidade(req)
+
+
+@pytest.mark.asyncio
+async def test_elegibilidade_service_falha_com_motivo_interpolando() -> None:
+    provider = FakeEligibilityProvider(
+        ResultadoElegibilidade(
+            aprovado=False,
+            status=StatusElegibilidade.REJEITADO,
+            motivo=None,
+        )
+    )
+    notifier = FakeElegibilidadeNotifier()
+    service = ElegibilidadeService(provider=provider, notifier=notifier)
+    req = RequisicaoElegibilidade(
+        organizacao_id=1,
+        atendimento_id=uuid4(),
+        paciente_id=uuid4(),
+        operadora_id="BRADESCO",
+        numero_carteirinha="123456",
+    )
+    resultado = await service.avaliar_elegibilidade(req)
+    assert resultado.aprovado is False
+    assert len(notifier.eventos_falha) == 1
+    evento = notifier.eventos_falha[0]
+    assert "operadora 'BRADESCO'" in evento.motivo
+    assert "carteirinha '123456'" in evento.motivo

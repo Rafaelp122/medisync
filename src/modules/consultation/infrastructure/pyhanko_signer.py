@@ -92,6 +92,17 @@ class CloudPSCOAuth2Client:
                 f"Falha de comunicação com o provedor PSC '{provider}': {err}"
             ) from err
 
+    @staticmethod
+    def _extrair_primeira_assinatura(result: object) -> str | None:
+        """Extrai a primeira assinatura da resposta CSC signHash."""
+        if not isinstance(result, dict):
+            return None
+        res_dict = cast("dict[str, Any]", result)
+        sigs: object = res_dict.get("signatures")
+        if not isinstance(sigs, list) or not sigs or not isinstance(sigs[0], str):
+            return None
+        return sigs[0]
+
     async def assinar_hash(
         self,
         provider: str,
@@ -122,12 +133,9 @@ class CloudPSCOAuth2Client:
                         f"Acesso negado pelo PSC '{provider}' ao assinar documento."
                     )
                 resp.raise_for_status()
-                result: object = resp.json()
-                if isinstance(result, dict):
-                    res_dict = cast("dict[str, Any]", result)
-                    sigs: object = res_dict.get("signatures")
-                    if isinstance(sigs, list) and sigs and isinstance(sigs[0], str):
-                        return sigs[0]
+                assinatura = self._extrair_primeira_assinatura(resp.json())
+                if assinatura is not None:
+                    return assinatura
                 raise AssinaturaDigitalInvalidaError(
                     f"Resposta inválida do PSC '{provider}': formato inesperado."
                 )

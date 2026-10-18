@@ -24,7 +24,11 @@ from src.modules.identity.domain.models._helpers import clean_digits
 
 
 class Paciente(Base):
-    """Patient model supporting adult and pediatric two-phase onboarding."""
+    """Modelo clínico de paciente para acolhimento progressivo em 2 fases.
+
+    Regras: RN07 (TCLE), LGPD Art. 11 (dados sensíveis), CFM 1.821/2007 (prontuário).
+    Documentação: docs/explanation/domains/identity-domain.md
+    """
 
     __tablename__ = "pacientes"
     __table_args__ = (

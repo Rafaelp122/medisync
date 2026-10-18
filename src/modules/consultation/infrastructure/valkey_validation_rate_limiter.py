@@ -14,6 +14,19 @@ from src.modules.consultation.application.ports.validation_rate_limiter_port imp
 )
 
 
+def _calcular_retry_after(oldest: list[Any], janela_segundos: int, now: float) -> int:
+    """Calcula tempo de espera restante a partir do registro mais antigo."""
+    if not oldest:
+        return janela_segundos
+    first: Any = oldest[0]
+    if not (isinstance(first, (list, tuple)) and len(first) == 2):  # pyright: ignore[reportUnknownArgumentType]
+        return janela_segundos
+    second: Any = first[1]  # pyright: ignore[reportUnknownVariableType]
+    if not isinstance(second, (int, float)):
+        return janela_segundos
+    return max(1, int(float(second) + janela_segundos - now))
+
+
 class ValkeyValidationRateLimiter(ValidationRateLimiterPort):
     """Sliding-window limiter using Valkey ZSET (same pattern as auth)."""
 
@@ -45,16 +58,7 @@ class ValkeyValidationRateLimiter(ValidationRateLimiterPort):
                 oldest: list[Any] = await client.zrange(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
                     redis_key, 0, 0, withscores=True
                 )
-                retry_after = janela_segundos
-                if oldest:
-                    first: Any = oldest[0]
-                    if isinstance(first, (list, tuple)) and len(first) == 2:  # pyright: ignore[reportUnknownArgumentType]
-                        second: Any = first[1]  # pyright: ignore[reportUnknownVariableType]
-                        if isinstance(second, (int, float)):
-                            oldest_time = float(second)
-                            retry_after = max(
-                                1, int(oldest_time + janela_segundos - now)
-                            )
+                retry_after = _calcular_retry_after(oldest, janela_segundos, now)
                 return ValidationRateLimitResult(
                     permitido=False,
                     tentativas_restantes=0,

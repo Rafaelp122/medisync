@@ -33,7 +33,13 @@ logger = logging.getLogger("medisync.queue.alocacao")
 
 
 class AlocacaoChamadaService:
-    """Coordinates atomic queue allocation via Valkey Lua script and DB persistence."""
+    """Coordena alocação atômica médico-paciente via Lua no Valkey e DB.
+
+    Garante score 64-bit (RN01), lock 45s (RN02) e backpressure (RN05).
+    Regras: docs/explanation/domains/queue-domain.md
+    ADR: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
+    História: docs/user-stories/US-07-alocacao-chamada-medica.md.
+    """
 
     def __init__(
         self,
