@@ -9,7 +9,8 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
 * **Gerenciador de Pacotes:** `uv`. Nunca use `pip install` global.
 * **Automação:** Sempre utilize os comandos do `justfile`:
   * `just install` — Sincroniza ambiente e dependências com `uv` (`uv sync`).
-  * `just check` — Executa o portão de qualidade completo (fmt, lint, typecheck, tach, test-unit, test-integration).
+  * `just check` — Executa o portão de qualidade completo e unificado com Fail-Fast estrito (scan-secrets, docs-check, audit-ai-code, fmt, lint, typecheck, tach, test-unit, test-integration).
+  * `just check-fast` — Executa a validação rápida completa em memória (zero Docker: scan-secrets, docs-check, audit-ai-code, fmt, lint, typecheck, tach, test-fast).
   * `just fmt` — Formata o código com `ruff`.
   * `just lint` — Executa lint com autofix seguro (`ruff check . --fix`).
   * `just typecheck` — Executa checagem estrita de tipos com `basedpyright`.
@@ -91,6 +92,4 @@ Antes de finalizar qualquer tarefa ou abrir PR:
 - [ ] Aninhamento de controle de fluxo respeita o teto de 2 níveis.
 - [ ] Docstrings de regras de negócio contêm links atômicos de proveniência para `docs/`.
 - [ ] Documentação correspondente atualizada sob o padrão Diátaxis (sem código colado >5 linhas).
-- [ ] `just scan-secrets` foi executado com zero detecções de segredos expostos.
-- [ ] `just docs-check` foi executado e passou com código de retorno 0.
-- [ ] `just check` foi executado e passou com código de retorno 0.
+- [ ] `just check` (ou `just check-fast` em validações locais sem Docker) foi executado e passou com código de retorno 0 (cobrindo segredos, documentação, clean code, linters, tipos, fronteiras modulares e testes).

@@ -44,8 +44,11 @@ test:
 test-parallel:
     uv run pytest -n auto
 
-# Portão de qualidade completo com Fail-Fast estrito (integração por último)
-check: fmt lint typecheck tach test-unit test-integration
+# Portão de qualidade completo com Fail-Fast estrito (segurança, docs, clean code, tipos, arquitetura e testes)
+check: scan-secrets docs-check audit-ai-code fmt lint typecheck tach test-unit test-integration
+
+# Validação rápida de alta velocidade (100% em memória, zero Docker, ~15 segundos)
+check-fast: scan-secrets docs-check audit-ai-code fmt lint typecheck tach test-fast
 
 # Inicia o background worker assíncrono ARQ sobre Valkey
 worker:

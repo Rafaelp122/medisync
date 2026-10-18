@@ -93,7 +93,7 @@ Consequências: sem assinatura dinâmica, sem roteamento implícito, sem ordem g
 
 Teste de alocação mostra a filosofia: `tests/unit/test_alocacao_service_notifications.py` usa adaptador de log ou mock, falha de rede nunca reverte commit.
 
-Notificação genérica segue o mesmo desenho em `src/core/notifications.py`, reexportada por `src/modules/queue/application/ports/notification_port.py`.
+Notificação genérica segue o mesmo desenho em `src/modules/queue/application/ports/notification_port.py` com implementações em `src/modules/queue/infrastructure/notifications/`.
 
 Quando precisar de novo evento: criar dto imutável mais port no módulo produtor, default de log, injetar no serviço, nunca importar modelo alheio.
 

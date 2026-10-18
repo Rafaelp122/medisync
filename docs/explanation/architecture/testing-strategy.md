@@ -63,15 +63,20 @@ No MediSync, a infraestrutura de banco de teste é gerenciada canonicamente:
 
 ## 4. O Portão de Qualidade `just check`
 
-O comando `just check` implementa a ordem estrita **Fail-Fast**:
+O comando `just check` implementa a ordem estrita **Fail-Fast** unificada:
 
 ```
-fmt -> lint -> typecheck -> tach -> test-unit -> test-integration
+scan-secrets -> docs-check -> audit-ai-code -> fmt -> lint -> typecheck -> tach -> test-unit -> test-integration
 ```
 
-1. **`just fmt` (Ruff):** Valida e formata o estilo do código em <1s.
-2. **`just lint` (Ruff):** Detecta problemas estáticos e aplica correções seguras em <1s.
-3. **`just typecheck` (Basedpyright):** Validação estrita de tipos (`typeCheckingMode = "strict"` tanto em `src/` quanto em `tests/`).
-4. **`just tach` (Tach):** Validação estrita de fronteiras modulares hexagonais.
-5. **`just test-unit` (Pytest + Cov):** 423 testes unitários com checagem de cobertura (mínimo de 85%).
-6. **`just test-integration` (Pytest):** Testes ponta a ponta sobre contêineres reais.
+1. **`just scan-secrets` (Gitleaks):** Audita o repositório prevenindo vazamento de credenciais e chaves (~1.2s).
+2. **`just docs-check` (Python AST/Markdown):** Valida links relativos, referências de símbolos e limites Diátaxis (<1s).
+3. **`just audit-ai-code` (Python AST):** Audita teto de aninhamento ($\le 2$), exceções com offending values e proveniência (~1s).
+4. **`just fmt` (Ruff):** Valida e formata o estilo do código em <1s.
+5. **`just lint` (Ruff):** Detecta problemas estáticos e aplica correções seguras em <1s.
+6. **`just typecheck` (Basedpyright):** Validação estrita de tipos (`typeCheckingMode = "strict"` em `src/` e `tests/`).
+7. **`just tach` (Tach):** Validação estrita de fronteiras modulares hexagonais.
+8. **`just test-unit` (Pytest + Cov):** 611 testes unitários e de arquitetura com checagem de cobertura (mínimo de 85%).
+9. **`just test-integration` (Pytest):** Testes ponta a ponta sobre contêineres reais (Postgres, Valkey, LiveKit, MinIO).
+
+> **Dica de DX:** Em desenvolvimento ativo sem Docker local, utilize `just check-fast`, que executa as etapas 1 a 7 e roda `test-fast` (100% em memória, zero Docker) em ~15 segundos.

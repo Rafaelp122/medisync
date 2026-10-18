@@ -6,8 +6,8 @@ from uuid import uuid4
 
 import pytest
 from redis.asyncio import Redis
-from src.core.notifications import NotificationRateLimiter
 from src.core.valkey import close_valkey_pool, get_valkey_pool
+from src.modules.queue.infrastructure.notifications import NotificationRateLimiter
 
 
 @pytest.fixture(autouse=True)

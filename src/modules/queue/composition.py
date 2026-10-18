@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.core.dependencies import ValkeyDep
-from src.core.notifications import LoggingNotificationAdapter
 from src.core.valkey import get_arq_pool, get_valkey_pool
 from src.modules.queue.application.ports.allocation_port import AllocationPort
 from src.modules.queue.application.ports.notification_port import NotificationPort
@@ -30,6 +29,7 @@ from src.modules.queue.application.services.controle_admissao_service import (
 )
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
+from src.modules.queue.infrastructure.notifications import LoggingNotificationAdapter
 from src.modules.triage.composition import (
     TriageServiceDep,
     build_triage_service_for_session,

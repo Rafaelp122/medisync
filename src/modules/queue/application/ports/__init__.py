@@ -4,13 +4,7 @@ from src.modules.queue.application.ports.allocation_port import (
 )
 from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
 from src.modules.queue.application.ports.notification_port import (
-    ConsoleNotificationAdapter,
-    FakeNotificationAdapter,
-    LoggingNotificationAdapter,
     NotificationPort,
-    NotificationRateLimiter,
-    RateLimitedNotificationAdapter,
-    RateLimitResult,
 )
 from src.modules.queue.application.ports.paciente_ausente_notifier import (
     LoggingPacienteAusenteNotifier,
@@ -37,21 +31,15 @@ __all__ = [
     "AllocationPort",
     "AlocacaoCodigo",
     "AtendimentoSnapshotDTO",
-    "ConsoleNotificationAdapter",
-    "FakeNotificationAdapter",
-    "LoggingNotificationAdapter",
     "LoggingPacienteAusenteNotifier",
     "LoggingQueueOverflowNotifier",
     "LuaScriptPort",
     "NotificationPort",
-    "NotificationRateLimiter",
     "PacienteAusenteEvent",
     "PacienteAusenteNotifierPort",
     "QueueOverflowEvent",
     "QueueOverflowNotifierPort",
     "QueueStorePort",
-    "RateLimitResult",
-    "RateLimitedNotificationAdapter",
     "TriageEvaluationDTO",
     "TriagePort",
 ]

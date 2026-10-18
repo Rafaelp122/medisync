@@ -120,19 +120,25 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `src/modules/queue/application/services/alocacao_service.py`
 - `src/modules/queue/application/services/controle_admissao_service.py`
 - `src/modules/queue/application/ports/allocation_port.py`
+- `src/modules/queue/application/ports/notification_port.py`
 - `src/modules/queue/application/ports/queue_overflow_notifier.py`
+- `src/modules/queue/infrastructure/notifications/`
 - `src/modules/billing/application/ports/eligibility_provider.py`
 - `tests/unit/test_queue_store.py`
 - `tests/unit/test_admissao_service.py`
 - `tests/unit/test_alocacao_service.py`
+- `tests/unit/test_alocacao_service_notifications.py`
 - `tests/unit/test_atendimento_model.py`
 - `tests/unit/test_controle_admissao.py`
 - `tests/unit/test_fila_service.py`
+- `tests/unit/test_notifications.py`
 - `tests/unit/test_queue_cota_diaria.py`
 - `tests/unit/test_fila_service_operacoes.py`
 - `tests/unit/test_alocacao_router.py`
 - `tests/unit/test_fila_router.py`
 - `tests/integration/test_admissao_integrada_flow.py`
+- `tests/integration/test_valkey_rate_limiter.py`
+
 
 Prova viva:
 

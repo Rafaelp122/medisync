@@ -1,18 +1,16 @@
-"""Core notification protocols, rate limiting, and adapters."""
+"""Atomic token bucket rate limiter for notifications backed by Valkey 8.0."""
 
 import logging
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
 
     from redis.asyncio import Redis
 
-
-logger: logging.Logger = logging.getLogger("medisync.notifications")
+logger: logging.Logger = logging.getLogger("medisync.queue.notifications.rate_limiter")
 
 _RATE_LIMIT_LUA_SCRIPT = """
 local key = KEYS[1]
@@ -55,24 +53,6 @@ end
 """
 
 
-@runtime_checkable
-class NotificationPort(Protocol):
-    """Abstract port for dispatching SMS and WhatsApp notifications."""
-
-    async def send_sms(self, to: str, message: str) -> bool:
-        """Send an SMS text message to the given destination phone number."""
-        ...
-
-    async def send_whatsapp(
-        self,
-        to: str,
-        template: str,
-        params: dict[str, str] | None = None,
-    ) -> bool:
-        """Send a WhatsApp notification based on template and variable params."""
-        ...
-
-
 @dataclass(frozen=True)
 class RateLimitResult:
     """Outcome of a token bucket rate limit evaluation."""
@@ -80,64 +60,6 @@ class RateLimitResult:
     allowed: bool
     remaining_tokens: float
     retry_after_seconds: float
-
-
-class LoggingNotificationAdapter:
-    """Console/logger notification adapter for local testing and open-source deploys.
-
-    Operates without requiring third-party API credentials (e.g. Twilio, Meta, Z-API).
-    Maintains an in-memory buffer of dispatched messages for test inspections.
-    """
-
-    def __init__(self) -> None:
-        self.sent_sms: list[dict[str, Any]] = []
-        self.sent_whatsapp: list[dict[str, Any]] = []
-
-    async def send_sms(self, to: str, message: str) -> bool:
-        """Log SMS dispatch and record in memory buffer."""
-        logger.info("Notification [SMS] sent to %s: %s", to, message)
-        self.sent_sms.append(
-            {
-                "to": to,
-                "message": message,
-                "sent_at": datetime.now(UTC),
-            }
-        )
-        return True
-
-    async def send_whatsapp(
-        self,
-        to: str,
-        template: str,
-        params: dict[str, str] | None = None,
-    ) -> bool:
-        """Log WhatsApp dispatch and record in memory buffer."""
-        effective_params = params or {}
-        logger.info(
-            "Notification [WhatsApp] sent to %s [template=%s, params=%s]",
-            to,
-            template,
-            effective_params,
-        )
-        self.sent_whatsapp.append(
-            {
-                "to": to,
-                "template": template,
-                "params": effective_params,
-                "sent_at": datetime.now(UTC),
-            }
-        )
-        return True
-
-    def clear(self) -> None:
-        """Clear recorded in-memory messages."""
-        self.sent_sms.clear()
-        self.sent_whatsapp.clear()
-
-
-# Aliases for configuration and readability
-ConsoleNotificationAdapter = LoggingNotificationAdapter
-FakeNotificationAdapter = LoggingNotificationAdapter
 
 
 class NotificationRateLimiter:
@@ -268,44 +190,3 @@ class NotificationRateLimiter:
         else:
             key = f"{self._key_prefix}{destination}"
             self._memory_store.pop(key, None)
-
-
-class RateLimitedNotificationAdapter:
-    """Decorator wrapping any NotificationPort with token bucket rate limiting."""
-
-    def __init__(
-        self,
-        delegate: NotificationPort,
-        rate_limiter: NotificationRateLimiter,
-    ) -> None:
-        self._delegate = delegate
-        self._rate_limiter = rate_limiter
-
-    async def send_sms(self, to: str, message: str) -> bool:
-        """Send SMS if not restricted by rate limiter."""
-        res = await self._rate_limiter.check_rate_limit(to, cost=1)
-        if not res.allowed:
-            logger.warning(
-                "SMS to %s rate-limited. Retry after %.2fs",
-                to,
-                res.retry_after_seconds,
-            )
-            return False
-        return await self._delegate.send_sms(to, message)
-
-    async def send_whatsapp(
-        self,
-        to: str,
-        template: str,
-        params: dict[str, str] | None = None,
-    ) -> bool:
-        """Send WhatsApp if not restricted by rate limiter."""
-        res = await self._rate_limiter.check_rate_limit(to, cost=1)
-        if not res.allowed:
-            logger.warning(
-                "WhatsApp to %s rate-limited. Retry after %.2fs",
-                to,
-                res.retry_after_seconds,
-            )
-            return False
-        return await self._delegate.send_whatsapp(to, template, params)
