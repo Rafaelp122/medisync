@@ -80,6 +80,7 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - Notifica transbordo via porta abstrata. `QueueOverflowNotifierPort.emitir_transbordo` recebe `QueueOverflowEvent` imutável com motivo, carga e alpha; default loga, regulação externa pluga.
 - Publica ausência via `paciente_ausente_notifier`. Timeout vira evento de domínio, não só mudança de coluna; painel e métricas reagem sem polling.
 - Orquestra concorrência conforme desenho de filas e locks. [Concorrência](../architecture/concurrency-and-queues.md)
+- Notifica convocação médica protegida por taxa. Alocação despacha convocação ao paciente via porta `NotificationPort`, decorada na raiz de composição por `RateLimitedNotificationAdapter` sobre o cliente Valkey ativo (ou fallback em memória).
 - Worker de elegibilidade roda fora do request. `src/worker/tasks/eligibility.py` consome `EligibilityProviderPort` em background e devolve resultado; fila nunca bloqueia HTTP esperando convênio.
 - `FilaService` compõe admissão + alocação. `ingressar_fila` calcula score e insere no ZSET; `adquirir_proximo` puxa cabeça e delega lock ao `AlocacaoChamadaService`; backpressure avaliado antes de inserir com leitura e incremento da cota diária atômica no Valkey (`queue:admissoes:{org}:{today}`, TTL 48h).
 - Routers REST finos expõem as operações centrais da fila clínica em conformidade com ADR-001/ADR-008:
@@ -95,6 +96,7 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - Prioridade multiplica por `10^12`, epoch soma segundos Unix. Nível urgente jamais perde para eletivo antigo; invariante de prevalência clínica vira aritmética.
 - Double-lock previne overbooking nos dois sentidos. Médico ocupado retorna `0` (HTTP 409), atendimento capturado retorna `-1` (retry); nunca meio-estado.
 - TTL de 45s é deadlock breaker, não SLA clínico. Expirou sem conexão, lock some sozinho; fila nunca trava por crash de worker.
+- Despacho de notificação não-bloqueante (best-effort). Falha de rede ou exaustão de cota no rate limiter de notificações nunca aborta nem dá rollback na transação de alocação da fila nem no ring do médico.
 - `calcular_score_fila` no agregado exige `data_entrada_fila` presente. Sem carimbo de entrada, sem score; `ValidationError` em vez de zero silencioso.
 - Ato médico nunca cortado — ponte RN06. Nenhum timer, quota ou backpressure transiciona EM_ATENDIMENTO para fora; TMA gera só sinal visual discreto. [Fonte](../product-specification.md) (RN06)
 - Admissão suspensa protege quem já entrou. Transbordo fecha a porta, nunca despeja a sala; contingência vira evento externo, não cancelamento interno.
@@ -122,12 +124,16 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `src/modules/queue/application/ports/allocation_port.py`
 - `src/modules/queue/application/ports/notification_port.py`
 - `src/modules/queue/application/ports/queue_overflow_notifier.py`
-- `src/modules/queue/infrastructure/notifications/`
+- `src/modules/queue/composition.py:get_notification_adapter`
+- `src/modules/queue/infrastructure/notifications/rate_limited_adapter.py`
+- `src/modules/queue/infrastructure/notifications/rate_limiter.py`
+- `src/modules/queue/infrastructure/notifications/logging_adapter.py`
 - `src/modules/billing/application/ports/eligibility_provider.py`
 - `tests/unit/test_queue_store.py`
 - `tests/unit/test_admissao_service.py`
 - `tests/unit/test_alocacao_service.py`
 - `tests/unit/test_alocacao_service_notifications.py`
+- `tests/unit/test_composition_wiring.py`
 - `tests/unit/test_atendimento_model.py`
 - `tests/unit/test_controle_admissao.py`
 - `tests/unit/test_fila_service.py`

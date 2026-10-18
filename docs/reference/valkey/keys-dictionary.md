@@ -31,6 +31,7 @@ Princípios pétreos de governança de chaves:
 | `telemetry:painel:{tenant_id}` | `telemetry` | `STRING` | 60 | Volátil (`EX 60`); cache com auto-invalidação | Cache volátil de payload JSON com dados consolidados do dashboard (`PainelTelemetriaDTO`). |
 | `queue:admissoes:{tenant_id}:{data}` | `queue` | `STRING` | 172800 | Volátil (`EX 172800` - 48h); contador numérico | Contador de admissões do dia (`YYYY-MM-DD`) via `INCR` para fiscalização de cota diária contratual (RN05). |
 | `auth:revoked:{token_id}` | `auth` | `STRING` | Dinâmico | Volátil (`EX exp_restante`); máximo 3600 | Blacklist de revogação explícita de identificadores JWT (`jti`) persistidos até a expiração original do token. |
+| `ratelimit:notif:{destination}` | `queue` | `HASH` | 3600 | Volátil (`EXPIRE`); token bucket atômico | Rate limiting anti-spam de notificações (WhatsApp/SMS) por telefone de paciente (E.164). Campos `tokens` e `last_refill`. |
 | `doc:assinado:{documento_id}` | `consultation` | `STRING` | 86400 | Volátil (`EX 86400` - 24h) | Cache de status de conformidade da assinatura digital ICP-Brasil (PAdES) de documento clínico emitido. |
 | `medisync:pubsub:queue:{atendimento_id}` | `core` | `PUBSUB` | N/A | Transitório de streaming em memória | Barramento de publicação e assinatura em tempo real para sinalizar mudanças de estado e toque ao paciente. |
 | `medisync:pubsub:doctor:{medico_id}` | `core` | `PUBSUB` | N/A | Transitório de streaming em memória | Barramento Pub/Sub para sinalização e despacho de eventos operacionais ao painel do médico conectado. |
@@ -48,10 +49,9 @@ Princípios pétreos de governança de chaves:
 - **Fase de Atendimento Ativo**: Ao atender, o lock é promovido para `lock:{tenant_id}:consulta_ativa:medico:{id}` com TTL de 7200s (2 horas), garantindo que o médico permaneça protegido contra dupla alocação durante toda a teleconsulta.
 - **Resolução de No-Show**: Caso o paciente não atenda dentro dos 45s, a tarefa diferida ARQ (`resolver_ring_timeout_task`) desfaz os locks e devolve o médico ao estado disponível.
 
-#### 3. Proteção e Rate Limiting Deslizante (`auth` e `consultation`)
-- **Estrutura**: Sorted Sets onde cada membro possui formato `{timestamp}:{uuid7}` e score igual ao timestamp Unix da tentativa.
-- **Operação Atômica**: Executado em pipeline com `ZREMRANGEBYSCORE` para expurgar registros fora da janela e `ZCARD` para comparar o total acumulado contra o limite estabelecido.
-- **Header Retry-After**: Em caso de esgotamento, calcula o tempo remanescente inspecionando o elemento mais antigo via `ZRANGE 0 0 WITHSCORES`.
+#### 3. Proteção e Rate Limiting Deslizante e Token Bucket (`auth`, `consultation` e `queue`)
+- **Janela Deslizante (`auth` e `consultation`)**: Sorted Sets onde cada membro possui formato `{timestamp}:{uuid7}` e score igual ao timestamp Unix da tentativa. Executado em pipeline com `ZREMRANGEBYSCORE` para expurgar registros fora da janela e `ZCARD` para comparar o total acumulado contra o limite estabelecido. Em caso de esgotamento, calcula o tempo remanescente inspecionando o elemento mais antigo via `ZRANGE 0 0 WITHSCORES`.
+- **Token Bucket Atômico de Notificações (`queue`)**: Chave HASH `ratelimit:notif:{destination}` avaliada via script Lua atômico com campos `tokens` e `last_refill`, TTL renovado via `EXPIRE`. Contém rajadas e mitiga custos de envio de SMS/WhatsApp sem contenção entre pacientes distintos.
 
 #### 4. Métricas e Caches Voláteis (`telemetry` e `consultation`)
 - Payloads JSON com expiração estrita (60s a 86400s). Evitam queries analíticas repetitivas no PostgreSQL, com auto-invalidação imediata quando ocorrem mutações clínicas relevantes.
@@ -65,6 +65,8 @@ Princípios pétreos de governança de chaves:
 - Impl: `src/modules/queue/application/services/alocacao_service.py:AlocacaoChamadaService`
 - Impl: `src/modules/queue/application/services/fila_service.py:FilaService`
 - Impl: `src/modules/queue/application/services/controle_admissao_service.py:ControleAdmissaoService`
+- Impl: `src/modules/queue/infrastructure/notifications/rate_limiter.py:NotificationRateLimiter`
+- Impl: `src/modules/queue/composition.py:get_notification_adapter`
 - Impl: `src/modules/auth/infrastructure/valkey_rate_limiter.py:ValkeyAuthRateLimiter`
 - Impl: `src/modules/telemetry/infrastructure/valkey_telemetry_cache.py:ValkeyTelemetryCache`
 - Impl: `src/modules/consultation/infrastructure/valkey_signed_cache.py:ValkeySignedCache`
@@ -75,6 +77,8 @@ Princípios pétreos de governança de chaves:
 - Prova viva: `tests/integration/test_valkey_pool.py:test_valkey_client_dependency_crud`
 - Prova viva: `tests/integration/test_valkey_rate_limiter.py`
 - Prova viva: `tests/unit/test_valkey_config.py`
+- Prova viva: `tests/unit/test_composition_wiring.py:test_queue_notification_adapter_resolution_with_rate_limiter`
+- Prova viva: `tests/unit/test_notifications.py:test_in_memory_rate_limiter_burst_and_rejection`
 - Ver: `rg -n "fila:" src/modules/queue/application/services/`
 - Ver: `rg -n "lock:" src/modules/queue/application/services/`
 - Ver: `rg -n "auth:ratelimit" src/modules/auth/infrastructure/`

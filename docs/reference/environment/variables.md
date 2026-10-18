@@ -64,7 +64,7 @@ Computados: `async_database_url` monta `postgresql+psycopg://` de partes ou norm
 | `MINIO_USE_SSL` | `src/core/config.py:Settings.MINIO_USE_SSL` | `false` em dev local |
 
 Cobertura: 3 + 6 + 3 + 5 + 8 = 25 vars. Confere com `rg -c "^[A-Z_]+=" .env.example` → `25`.
-Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3_*`, `JWT_*`, `PSC_*`, `NOTIFICATION_*`) usam defaults sem precisar exportar em dev; documentar aqui só quando virarem obrigatórios.
+Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3_*`, `JWT_*`, `PSC_*`) usam defaults sem precisar exportar em dev; documentar aqui só quando virarem obrigatórios.
 
 ### 6. Seletores de Adaptadores e Backends (Opcionais)
 
@@ -75,6 +75,10 @@ Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3
 | `VALIDATION_RATE_LIMIT_BACKEND` | `src/core/config.py:CommonSettings.VALIDATION_RATE_LIMIT_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona validador na consulta |
 | `TELEMETRY_CACHE_BACKEND` | `src/core/config.py:CommonSettings.TELEMETRY_CACHE_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona cache na telemetria |
 | `SAMU_WEBHOOK_URL` | `src/core/config.py:CommonSettings.SAMU_WEBHOOK_URL` | URL HTTP(S) | `""` | Despacho de emergência 192 em triagem |
+| `NOTIFICATION_PROVIDER` | `src/core/config.py:CommonSettings.NOTIFICATION_PROVIDER` | `console`, `fake`, `noop` | `console` | Adaptador concreto de mensageria SMS/WhatsApp |
+| `NOTIFICATION_RATE_LIMIT_CAPACITY` | `src/core/config.py:CommonSettings.NOTIFICATION_RATE_LIMIT_CAPACITY` | Inteiro $\ge 1$ | `5` | Capacidade máxima de tokens (burst) por telefone |
+| `NOTIFICATION_RATE_LIMIT_REFILL_RATE` | `src/core/config.py:CommonSettings.NOTIFICATION_RATE_LIMIT_REFILL_RATE` | Float $\ge 0.0$ | `0.05` | Reposição de tokens por segundo (~1 a cada 20s) |
+| `NOTIFICATION_RATE_LIMIT_TTL_SECONDS` | `src/core/config.py:CommonSettings.NOTIFICATION_RATE_LIMIT_TTL_SECONDS` | Inteiro $\ge 1$ | `3600` | Expiração da chave hash do token bucket no Valkey |
 
 ### 7. Perfis Polimórficos de Ambiente
 
@@ -98,8 +102,10 @@ cp .env.example .env
 - Impl: `src/core/config.py:get_settings`
 - Impl: `src/core/config.py:async_database_url`
 - Impl: `src/core/config.py:async_valkey_url`
+- Impl queue composition: `src/modules/queue/composition.py:get_notification_adapter`
 - Spec: `.env.example`
 - Prova viva: `tests/unit/test_config_profiles.py`
+- Prova viva wiring: `tests/unit/test_composition_wiring.py:test_queue_notification_adapter_resolution_with_rate_limiter`
 - Ver: `rg -c "^[A-Z_]+=" .env.example`
 - Ver: `rg -n "^[A-Z_]+=" .env.example`
 

@@ -29,7 +29,11 @@ from src.modules.queue.application.services.controle_admissao_service import (
 )
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
-from src.modules.queue.infrastructure.notifications import LoggingNotificationAdapter
+from src.modules.queue.infrastructure.notifications import (
+    LoggingNotificationAdapter,
+    NotificationRateLimiter,
+    RateLimitedNotificationAdapter,
+)
 from src.modules.triage.composition import (
     TriageServiceDep,
     build_triage_service_for_session,
@@ -41,12 +45,35 @@ def get_lua_manager() -> AllocationPort:
     return get_lua_script_manager()
 
 
-def get_notification_adapter() -> NotificationPort | None:
-    """Provide notification adapter per NOTIFICATION_PROVIDER (None for noop)."""
+def get_notification_rate_limiter(
+    valkey: Redis | None = None,
+) -> NotificationRateLimiter:
+    """Instancia o rate limiter de notificações a partir das variáveis de ambiente.
+
+    Regras: ADR-009 e docs/reference/environment/variables.md.
+    Protege provedores contra picos de tráfego e custos por telefone.
+    """
+    settings = get_settings()
+    return NotificationRateLimiter(
+        valkey_client=valkey,
+        capacity=settings.NOTIFICATION_RATE_LIMIT_CAPACITY,
+        refill_rate_per_second=settings.NOTIFICATION_RATE_LIMIT_REFILL_RATE,
+        ttl_seconds=settings.NOTIFICATION_RATE_LIMIT_TTL_SECONDS,
+    )
+
+
+def get_notification_adapter(valkey: Redis | None = None) -> NotificationPort | None:
+    """Resolve o adaptador de notificações decorado com rate limiting por chamada.
+
+    Regras: ADR-001, ADR-009 e docs/reference/environment/variables.md.
+    Retorna None quando configurado como noop ou decora o logger com token bucket.
+    """
     settings = get_settings()
     if settings.NOTIFICATION_PROVIDER == "noop":
         return None
-    return LoggingNotificationAdapter()
+    delegate = LoggingNotificationAdapter()
+    rate_limiter = get_notification_rate_limiter(valkey=valkey)
+    return RateLimitedNotificationAdapter(delegate=delegate, rate_limiter=rate_limiter)
 
 
 logger = logging.getLogger("medisync.queue.composition")
@@ -89,7 +116,7 @@ def build_alocacao_service_for_session(
         db_session=session,
         lua_manager=get_lua_manager(),
         arq_pool=arq_pool,
-        notification_adapter=get_notification_adapter(),
+        notification_adapter=get_notification_adapter(valkey=valkey),
     )
 
 
