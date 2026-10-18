@@ -8,10 +8,14 @@ from uuid import uuid4
 import pytest
 from fastapi import WebSocketDisconnect
 from src.core.realtime import (
-    channel_doctor_calls,
-    channel_queue_patient,
     forward_pubsub_to_websocket,
     publish_realtime_event,
+)
+from src.modules.consultation.application.realtime_channels import (
+    channel_doctor_calls,
+)
+from src.modules.queue.application.realtime_channels import (
+    channel_queue_patient,
 )
 
 
@@ -147,3 +151,36 @@ async def test_forward_pubsub_to_websocket_heartbeat(
     )
 
     assert heartbeat_triggered.is_set()
+
+
+def test_core_realtime_does_not_export_channels() -> None:
+    """Core realtime module must not export domain-specific channel generators."""
+    import src.core.realtime as rt
+
+    assert hasattr(rt, "channel_queue_patient") is False
+    assert hasattr(rt, "channel_doctor_calls") is False
+    assert hasattr(rt, "publish_realtime_event") is True
+    assert hasattr(rt, "stream_channel") is True
+    assert hasattr(rt, "forward_pubsub_to_websocket") is True
+
+
+def test_queue_channel_patient_generation() -> None:
+    """Queue module must define its canonical queue patient channel generator."""
+    from src.modules.queue.application.realtime_channels import (
+        channel_queue_patient,
+    )
+
+    uid = uuid4()
+    assert channel_queue_patient(uid) == f"medisync:pubsub:queue:{uid}"
+    assert channel_queue_patient(str(uid)) == f"medisync:pubsub:queue:{uid}"
+
+
+def test_consultation_channel_doctor_calls_generation() -> None:
+    """Consultation module must define its canonical doctor calls channel generator."""
+    from src.modules.consultation.application.realtime_channels import (
+        channel_doctor_calls,
+    )
+
+    uid = uuid4()
+    assert channel_doctor_calls(uid) == f"medisync:pubsub:doctor:{uid}"
+    assert channel_doctor_calls(str(uid)) == f"medisync:pubsub:doctor:{uid}"

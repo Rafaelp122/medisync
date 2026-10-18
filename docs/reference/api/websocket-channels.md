@@ -71,8 +71,10 @@ Campos obrigatórios e opcionais do envelope:
 
 ## Onde no código
 
-- Impl: `src/core/realtime.py:channel_queue_patient`
-- Impl: `src/core/realtime.py:channel_doctor_calls`
+- Impl: `src/modules/queue/application/realtime_channels.py:channel_queue_patient`
+- Impl: `src/modules/consultation/application/realtime_channels.py:channel_doctor_calls`
+- Impl: `src/modules/queue/application/ports/doctor_call_notifier_port.py:DoctorCallNotifierPort`
+- Impl: `src/modules/queue/composition.py:ValkeyDoctorCallNotifier`
 - Impl: `src/core/realtime.py:stream_channel`
 - Impl: `src/core/realtime.py:forward_pubsub_to_websocket`
 - Impl: `src/core/realtime.py:publish_realtime_event`

@@ -131,6 +131,7 @@ depends_on = ["src.core", "src.modules.queue.application", "src.modules.queue.do
 path = "src.modules.queue.composition"
 depends_on = [
     "src.core",
+    "src.modules.consultation.application",
     "src.modules.queue.application",
     "src.modules.queue.domain",
     "src.modules.queue.infrastructure",

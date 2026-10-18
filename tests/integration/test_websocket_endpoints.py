@@ -8,11 +8,16 @@ from uuid import UUID, uuid4
 from fastapi.testclient import TestClient
 from redis.asyncio import Redis
 from src.core.config import get_settings
-from src.core.realtime import channel_doctor_calls, channel_queue_patient
 from src.core.security import create_intake_token
 from src.core.valkey import get_valkey_pool
 from src.main import create_app
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
+from src.modules.consultation.application.realtime_channels import (
+    channel_doctor_calls,
+)
+from src.modules.queue.application.realtime_channels import (
+    channel_queue_patient,
+)
 from src.modules.queue.composition import get_patient_queue_ownership_checker
 
 

@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+import pytest
 from src.core.config import CommonSettings
 from src.modules.auth.composition import get_rate_limiter, get_token_revocation
 from src.modules.auth.infrastructure.valkey_rate_limiter import (
@@ -209,6 +210,12 @@ def test_queue_alocacao_service_build_wiring_with_valkey() -> None:
         service._notification_adapter._rate_limiter._valkey  # pyright: ignore[reportPrivateUsage]
         is mock_valkey
     )
+    from src.modules.queue.composition import ValkeyDoctorCallNotifier
+
+    assert isinstance(
+        service._doctor_notifier,  # pyright: ignore[reportPrivateUsage]
+        ValkeyDoctorCallNotifier,
+    )
 
 
 def test_queue_notification_rate_limiter_in_memory_fallback() -> None:
@@ -243,3 +250,29 @@ def test_auth_and_identity_session_factories() -> None:
 
     dep_srv = build_dependente_service_for_session(session=mock_session)
     assert dep_srv._session is mock_session  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.asyncio
+async def test_valkey_doctor_call_notifier_dispatches_event() -> None:
+    from unittest.mock import AsyncMock
+    from uuid import uuid4
+
+    from src.modules.queue.composition import ValkeyDoctorCallNotifier
+
+    mock_valkey = AsyncMock()
+    notifier = ValkeyDoctorCallNotifier(valkey=mock_valkey)
+    med_id = uuid4()
+    atend_id = uuid4()
+
+    await notifier.notificar_chamada_iniciada(
+        medico_id=med_id,
+        atendimento_id=atend_id,
+        ttl_segundos=45,
+        chamada_iniciada_em="2026-10-18T00:00:00Z",
+    )
+
+    mock_valkey.publish.assert_called_once()
+    call_args = mock_valkey.publish.call_args[0]
+    assert call_args[0] == f"medisync:pubsub:doctor:{med_id}"
+    assert '"event": "INCOMING_CALL"' in call_args[1]
+    assert str(atend_id) in call_args[1]

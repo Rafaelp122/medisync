@@ -6,7 +6,10 @@ from uuid import UUID
 from fastapi import APIRouter, Path, WebSocket
 
 from src.core.dependencies import ValkeyDep
-from src.core.realtime import channel_doctor_calls, stream_channel
+from src.core.realtime import stream_channel
+from src.modules.consultation.application.realtime_channels import (
+    channel_doctor_calls,
+)
 from src.modules.consultation.presentation.dependencies import DoctorWsAuthDep
 
 doctor_ws_router = APIRouter(tags=["doctor-realtime"])

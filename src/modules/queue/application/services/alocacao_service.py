@@ -8,11 +8,7 @@ from arq.connections import ArqRedis
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.realtime import (
-    channel_doctor_calls,
-    channel_queue_patient,
-    publish_realtime_event,
-)
+from src.core.realtime import publish_realtime_event
 from src.modules.queue.application.dtos import (
     AlocacaoChamadaResult,
     AlocarChamadaCommand,
@@ -21,7 +17,11 @@ from src.modules.queue.application.ports.allocation_port import (
     AllocationPort,
     AlocacaoCodigo,
 )
+from src.modules.queue.application.ports.doctor_call_notifier_port import (
+    DoctorCallNotifierPort,
+)
 from src.modules.queue.application.ports.notification_port import NotificationPort
+from src.modules.queue.application.realtime_channels import channel_queue_patient
 from src.modules.queue.domain.exceptions import (
     AtendimentoNaoDisponivelError,
     AtendimentoNaoEncontradoError,
@@ -48,12 +48,14 @@ class AlocacaoChamadaService:
         lua_manager: AllocationPort,
         arq_pool: ArqRedis | None = None,
         notification_adapter: NotificationPort | None = None,
+        doctor_notifier: DoctorCallNotifierPort | None = None,
     ) -> None:
         self._valkey = valkey
         self._db_session = db_session
         self._lua_manager = lua_manager
         self._arq_pool = arq_pool
         self._notification_adapter = notification_adapter
+        self._doctor_notifier = doctor_notifier
 
     async def alocar_chamada(
         self,
@@ -164,17 +166,13 @@ class AlocacaoChamadaService:
             chamada_ts = (
                 atendimento.chamada_iniciada_em or datetime.now(UTC)
             ).isoformat()
-            await publish_realtime_event(
-                valkey=self._valkey,
-                channel=channel_doctor_calls(command.medico_id),
-                payload={
-                    "event": "INCOMING_CALL",
-                    "atendimento_id": str(atendimento.id),
-                    "medico_id": str(command.medico_id),
-                    "ttl_segundos": command.ttl_segundos,
-                    "chamada_iniciada_em": chamada_ts,
-                },
-            )
+            if self._doctor_notifier is not None:
+                await self._doctor_notifier.notificar_chamada_iniciada(
+                    medico_id=command.medico_id,
+                    atendimento_id=command.atendimento_id,
+                    ttl_segundos=command.ttl_segundos,
+                    chamada_iniciada_em=chamada_ts,
+                )
             await publish_realtime_event(
                 valkey=self._valkey,
                 channel=channel_queue_patient(command.atendimento_id),
