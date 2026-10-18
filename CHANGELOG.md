@@ -1,3 +1,13 @@
+## v0.3.0 (2026-10-18)
+
+### Feat
+
+- **tooling/skills**: adicionar gerador de módulos hexagonal e triunvirato de skills de governança
+
+### Refactor
+
+- **core/modules**: incorporar 5 princípios de clean code para agentes de ia e fakes tipados
+
 ## v0.2.1 (2026-10-17)
 
 ### Fix

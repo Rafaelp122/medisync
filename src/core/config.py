@@ -20,7 +20,7 @@ class CommonSettings(BaseSettings):
     )
 
     APP_NAME: str = "MediSync Express"
-    APP_VERSION: str = "0.2.1"
+    APP_VERSION: str = "0.3.0"
     ENVIRONMENT: EnvironmentType = "development"
     DEBUG: bool = False
     SECRET_KEY: str = "dev-insecure-secret-key-change-in-production-min-32-chars"
