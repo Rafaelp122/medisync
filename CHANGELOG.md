@@ -1,3 +1,13 @@
+## v0.4.0 (2026-10-18)
+
+### Feat
+
+- **queue**: conectar rate limiter de notificações na composition
+
+### Refactor
+
+- **core**: mover notificações do core para o módulo queue
+
 ## v0.3.0 (2026-10-18)
 
 ### Feat
