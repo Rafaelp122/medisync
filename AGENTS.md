@@ -9,6 +9,7 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
 * **Gerenciador de Pacotes:** `uv`. Nunca use `pip install` global.
 * **Automação:** Sempre utilize os comandos do `justfile`:
   * `just install` — Sincroniza ambiente e dependências com `uv` (`uv sync`).
+  * `just setup-dev` — Inicializa o ambiente de desenvolvimento completo (infra Docker, deps, migrações e validação rápida).
   * `just check` — Executa o portão de qualidade completo e unificado com Fail-Fast estrito (scan-secrets, docs-check, audit-ai-code, fmt, lint, typecheck, tach, test-unit, test-integration).
   * `just check-fast` — Executa a validação rápida completa em memória (zero Docker: scan-secrets, docs-check, audit-ai-code, fmt, lint, typecheck, tach, test-fast).
   * `just fmt` — Formata o código com `ruff`.

@@ -4,7 +4,7 @@
 
 | Metadado | Detalhamento |
 | :--- | :--- |
-| **Componentes Centrais** | Valkey 7+, Scripts Lua Atômicos, Sorted Sets (ZSET), ARQ Task Worker |
+| **Componentes Centrais** | Valkey 8.0, Scripts Lua Atômicos, Sorted Sets (ZSET), ARQ Task Worker |
 | **Padrão de Concorrência** | Alocação Atômica por Script Lua com Lock Duplo Temporizado (45 segundos) |
 | **Identificadores de Fila** | UUIDv7 (RFC 9562) com Desempate Determinístico FIFO Sub-Milissegundo |
 | **Resolução de No-Show** | Ring Timeout Determinístico via Jobs Diferidos (`_defer_by=45`) no ARQ |

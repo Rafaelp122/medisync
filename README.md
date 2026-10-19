@@ -52,19 +52,20 @@ flowchart TD
     end
 
     subgraph CoreBackend["Backend Modular (FastAPI + Python 3.12+)"]
+        Auth["modules/auth<br/>(Argon2id, OTP & RBAC)"]
         Triage["modules/triage<br/>(Acolhimento & TCLE)"]
         Queue["modules/queue<br/>(Fila Dinâmica & Lua)"]
-        Identity["modules/identity<br/>(Multi-Tenancy & Auth)"]
+        Identity["modules/identity<br/>(Multi-Tenancy & Organizações)"]
         Consultation["modules/consultation<br/>(PEP & LiveKit Tokens)"]
         Billing["modules/billing<br/>(Elegibilidade & SUS)"]
+        Telemetry["modules/telemetry<br/>(Painel CQRS & Métricas)"]
 
-        EventBus["In-Memory Event Bus<br/>(Domain Events)"]
-        Protocols["typing.Protocol (PEP 544)<br/>(Inter-Module Ports)"]
+        Protocols["typing.Protocol (PEP 544)<br/>(Portas de Entrada e Notificadores Ponto a Ponto)"]
     end
 
     subgraph Infra["Infraestrutura Dedicada"]
-        Postgres[(PostgreSQL 16<br/>Modelos Ricos + RLS Nativo)]
-        Valkey[(Valkey 7+<br/>ZSET + Script Lua + Pub/Sub)]
+        Postgres[(PostgreSQL 17<br/>Modelos Ricos + RLS Nativo)]
+        Valkey[(Valkey 8.0<br/>ZSET + Script Lua + Pub/Sub)]
         LiveKitSFU["LiveKit SFU (Go)<br/>(Streaming WebRTC SRTP)"]
         ARQWorker["ARQ Task Worker<br/>(Jobs Diferidos Ring Timeout)"]
         S3Storage[(MinIO / S3<br/>PDFs de Prescrições PAdES)]
@@ -88,10 +89,10 @@ flowchart TD
 * **Subtipagem Estrutural com `typing.Protocol` (PEP 544)**: Portas de saída para componentes voláteis (Valkey, LiveKit, certificadoras ICP-Brasil e MinIO/S3) operam via *static duck typing*, sem herança rígida de `abc.ABC`.
 
 ### 2. Comunicação Inter-Módulos em Duas Vias
-* **Síncrona (Comandos / Consultas)**: Módulos expõem contratos via `typing.Protocol`. Nenhum módulo importa modelos internos ou repositórios de outro.
-* **Assíncrona (Notificações de Estado)**: Eventos de domínio desacoplados (ex.: `AtendimentoTriadoEvent`, `ConsultaFinalizadaEvent`) trafegam por um *Event Bus* em memória com despacho concorrente não-bloqueante.
+* **Síncrona (Comandos / Consultas)**: Módulos expõem contratos via `typing.Protocol`. Nenhum módulo importa modelos internos ou repositórios de outro context.
+* **Assíncrona (Notificações Ponto a Ponto)**: Notificadores desacoplados via ports (`PacienteAusenteNotifierPort`, `QueueOverflowNotifierPort`, `ElegibilidadeNotifierPort`) com DTOs imutáveis, sem barramento central ou acoplamento relacional.
 
-### 3. Concorrência Atômica de Fila em $\le 200\text{ ms}$ (Valkey 7+ & Lua)
+### 3. Concorrência Atômica de Fila em $\le 200\text{ ms}$ (Valkey 8.0 & Lua)
 * Fila indexada em **Sorted Sets (ZSET)** com pontuação determinística de 64 bits e identificadores em **UUIDv7**:
   $$\text{Score} = (\text{prioridade\_clinica} \times 10^{12}) + \text{timestamp\_entrada\_epoch}$$
 * **Desempate Determinístico FIFO via UUIDv7 (RN01)**: Membros com o mesmo score são desempatados nativamente por ordem lexicográfica no Valkey. Como o UUIDv7 embute timestamp de milissegundos em seus primeiros dígitos, a cronologia de entrada é preservada com precisão absoluta.
@@ -103,7 +104,7 @@ flowchart TD
 
 ### 5. Multi-Tenancy com Defesa em Profundidade no PostgreSQL (RLS)
 * Segregação lógica de dados entre municípios e operadoras orientada por `organizacao_id`.
-* O tenant ativo é isolado via `ContextVar` assíncrona por requisição e forçado nativamente no motor do PostgreSQL 16 via **Row-Level Security (RLS)** (`SET LOCAL app.current_tenant_id`), impedindo vazamento de dados mesmo em caso de falha de filtro no código de aplicação.
+* O tenant ativo é isolado via `ContextVar` assíncrona por requisição e forçado nativamente no motor do PostgreSQL 17 via **Row-Level Security (RLS)** (`SET LOCAL app.current_tenant_id`), impedindo vazamento de dados mesmo em caso de falha de filtro no código de aplicação.
 
 ### 6. Isolamento e Governança Modular com Tach
 * Controle contínuo de dependências auditado pelo **[Tach](https://github.com/gauge-sh/tach)** (escrito em Rust).
@@ -116,37 +117,20 @@ flowchart TD
 ```plaintext
 src/
 ├── core/                              # Fundações transversais da aplicação
+│   ├── audit/                         # Trilha de auditoria imutável append-only
 │   ├── config.py                      # Configurações tipadas (Pydantic BaseSettings)
 │   ├── database.py                    # Engine assíncrona SQLAlchemy e sessionmaker
 │   ├── valkey.py                      # Pool de conexões assíncronas do Valkey
-│   ├── event_bus.py                   # In-Memory Event Bus assíncrono para Domain Events
 │   └── telemetry.py                   # Instrumentação Prometheus e métricas operacionais
 │
 └── modules/
-    ├── identity/                      # Bounded Context de Identidade, Autenticação e Multi-Tenancy
-    │   ├── domain/                    # Modelos ricos: Organizacao, Usuario, Profissional (CRM/UF)
-    │   ├── application/               # Autenticação JWT, Argon2id, RBAC e propagação de tenant
-    │   └── infrastructure/            # Repositórios SQLAlchemy e políticas Postgres RLS
-    │
-    ├── triage/                        # Módulo de Acolhimento, Triagem e TCLE Digital
-    │   ├── domain/                    # Modelos ricos: Triagem, TCLE, Invariantes (RN01, RN04)
-    │   ├── application/               # Casos de uso de acolhimento e emissão de eventos
-    │   └── infrastructure/            # Adaptador PostgreSQL e carga de terminologias abertas
-    │
-    ├── queue/                         # Módulo de Fila Dinâmica e Controle de Admissão
-    │   ├── domain/                    # Invariantes de Alocação e Backpressure (RN02, RN05), Ports
-    │   ├── application/               # Casos de uso (CallNext, ResolveTimeout)
-    │   └── infrastructure/            # Adaptador Valkey (Lua scripts) e agendador ARQ
-    │
-    ├── consultation/                  # Módulo de Teleconsulta, PEP e Prescrição Digital
-    │   ├── domain/                    # Agregado Atendimento, PEP, Invariante do Ato Médico (RN06)
-    │   ├── application/               # Casos de uso de evolução clínica e conclusão
-    │   └── infrastructure/            # Adaptador LiveKit SFU e Adaptador PyHanko/PSC ICP-Brasil
-    │
-    └── billing/                       # Módulo de Elegibilidade e Liquidação
-        ├── domain/                    # Regras de cobertura e máquina de estados (RN03)
-        ├── application/               # Validação assíncrona e contingência assistencial
-        └── infrastructure/            # Adaptador SUS (no-op) e adaptadores de operadoras
+    ├── auth/                          # Autenticação Argon2id, lockout, OTP passwordless e revogação
+    ├── billing/                       # Elegibilidade assíncrona e modo SUS no-op
+    ├── consultation/                  # PEP SOAP, LiveKit WebRTC e assinatura digital ICP-Brasil
+    ├── identity/                      # Cadastro bifásico, dependentes e isolamento de tenant
+    ├── queue/                         # Fila dinâmica ZSET 64-bit, scripts Lua e ring timeout 45s
+    ├── telemetry/                     # Painel analítico CQRS, cache volátil 5s e governança estocástica
+    └── triage/                        # Acolhimento ágil, TCLE hash e rota SAMU 192
 ```
 
 ---
@@ -185,14 +169,13 @@ A governança do repositório é estritamente segregada em três pilares ortogon
 
 ---
 
-### Mudanças de contrato (routers finos)
-- Prefixo único `/api/v1` para todo HTTP; WS fora (`/ws/queue/{id}`, `/ws/doctor/{id}`).
-- Alias `GET /atendimentos/{id}/prontuario` removido; usar `GET /api/v1/consultations/{id}/prontuario`.
-- Tenant ausente → `400 TENANT_INVALIDO`.
-- Login sem tenant → `422`.
-- Validação pública órfã → `500 DOCUMENTO_INTEGRIDADE` (sem dados fabricados).
-- Rate limit por IP: `validate` 30/min, `download` 20/min → `429` + `Retry-After`.
-- Novos codes: `EVOLUCAO_NAO_ENCONTRADA` / `DOCUMENTO_CLINICO_NAO_ENCONTRADO` → `404`.
+### 🛡️ Governança de Routers Finos e Envelope RFC 7807 (ADR-001 / ADR-008)
+
+A camada de apresentação do MediSync Express opera sob o padrão estrito de **Routers Finos**, auditado no CI por testes de AST:
+* **Zero Lógica de Negócio em Routers**: Routers nunca importam SQLAlchemy, repositórios ou modelos internos; serviços são injetados exclusivamente via dependências tipadas (`*Dep`) resolvidas no composition root (`composition.py`).
+* **Prefixo Único e Segregação**: Toda a API HTTP pública e autenticada reside sob o prefixo `/api/v1`. WebSockets operam sob rotas dedicadas `/ws`.
+* **Envelope Canônico de Erros RFC 7807**: Falhas clínicas e operacionais (`NotFoundError`, `ConflictError`, `ValidationError`) são traduzidas deterministicamente pelo middleware de exceções no padrão RFC 7807 Problem Details (detalhado em [Error Envelope](docs/reference/api/error-envelope.md)).
+* **Proteção por Rate Limit**: Endpoints sensíveis (validação pública de documentos e download de prescrições) possuem controle de vazão atômico por IP no Valkey com headers padronizados de `Retry-After`.
 
 ---
 
@@ -200,46 +183,37 @@ A governança do repositório é estritamente segregada em três pilares ortogon
 
 ### Pré-requisitos
 * Python 3.12 ou superior instalado;
-* Gerenciador de pacotes [`uv`](https://github.com/astral-sh/uv) (recomendado) ou `pip`;
+* Gerenciador de pacotes [`uv`](https://github.com/astral-sh/uv);
 * Docker e Docker Compose instalados na máquina.
 
-### 1. Clonar o Repositório
+### 1. Inicialização Completa do Ambiente (Setup Dev)
+Clone o repositório e execute a receita consolidada para provisionar o ambiente local em um único comando:
 ```bash
 git clone https://github.com/Rafaelp122/medisync.git
 cd medisync
+just setup-dev
+```
+*O comando `just setup-dev` cria o arquivo `.env` a partir de `.env.example`, sobe os contêineres Docker saudáveis, sincroniza dependências com `uv`, aplica migrações do banco com Alembic e executa o portão rápido em memória.*
+
+### 2. Validação Rápida em Memória (Zero Docker, ~15 segundos)
+Para avaliadores técnicos que desejam validar o código imediatamente sem iniciar serviços Docker:
+```bash
+just check-fast
+```
+*Executa estaticamente: varredura de segredos (Gitleaks), linter de docs, auditoria de clean code para IA, formatação (Ruff), tipagem estrita (basedpyright), fronteiras modulares (Tach) e suíte unitária/arquitetural paralela.*
+
+### 3. Execução dos Serviços Locais
+```bash
+# Iniciar o servidor HTTP ASGI de alta performance (Granian)
+uv run granian --interface asgi --reload src.main:app
+
+# Em outro terminal: iniciar o background worker ARQ para ring timeout de 45s
+just worker
 ```
 
-### 2. Subir a Infraestrutura Auxiliar via Docker
+### 4. Portão de Qualidade Completo (com Infraestrutura Real)
 ```bash
-docker compose up -d postgres valkey minio livekit
-```
-
-### 3. Configurar o Ambiente Python
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install -e ".[dev]"
-```
-
-### 4. Executar Verificações Arquiteturais e de Qualidade
-```bash
-# 1. Auditoria de fronteiras modulares com Tach
-tach check
-
-# 2. Verificação estrita de tipagem estática
-basedpyright
-
-# 3. Linter e formatação de código
-ruff check .
-
-# 4. Execução da suíte de testes automatizados
-pytest
-
-# 5. Auditoria de segredos e credenciais (Gitleaks - ADR-010)
-just scan-secrets
-
-# (Opcional) Instalar hooks locais de pré-commit
-just pre-commit-install
+just check
 ```
 
 ---

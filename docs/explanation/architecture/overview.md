@@ -23,7 +23,7 @@ Para evitar a complexidade prematura de microsserviços distribuídos sem abrir 
 O núcleo da aplicação reside em modelos de domínio ricos e serviços de aplicação, isolando tecnologias voláteis atrás de adaptadores:
 - **Driving Adapters (Entrada)**: FastAPI (HTTP / REST APIs), WebSockets (sinalização de fila e chamadas, veja [WebSocket Channels](../../reference/api/websocket-channels.md)) e ARQ Workers (tarefas em segundo plano, veja [ARQ Background Tasks](../../reference/worker/arq-tasks.md)).
 - **Core Modular**: Entidades persistidas com SQLAlchemy 2.0 (`Mapped[...]`) encapsulam validações e invariantes clínicas, sem duplicar DTOs espelho manuais (veja [Hexagonal Pragmático](../concepts/hexagonal-pragmatico.md)).
-- **Driven Adapters (Saída)**: PostgreSQL 17 (persistência relacional com RLS, veja [Database Schema & RLS](../../reference/database/schema-and-rls.md)), Valkey 7+ (fila atômica via Lua e chaves operacionais, veja [Valkey Keys Dictionary](../../reference/valkey/keys-dictionary.md)), LiveKit SFU (WebRTC SRTP), PSC Nuvem (assinatura ICP-Brasil PAdES) e MinIO/S3 (armazenamento perene de PDFs).
+- **Driven Adapters (Saída)**: PostgreSQL 17 (persistência relacional com RLS, veja [Database Schema & RLS](../../reference/database/schema-and-rls.md)), Valkey 8.0 (fila atômica via Lua e chaves operacionais, veja [Valkey Keys Dictionary](../../reference/valkey/keys-dictionary.md)), LiveKit SFU (WebRTC SRTP), PSC Nuvem (assinatura ICP-Brasil PAdES) e MinIO/S3 (armazenamento perene de PDFs).
 - **Comunicação entre Módulos**: Realizada exclusivamente por portas abstratas (`typing.Protocol`) com DTOs imutáveis ou eventos de domínio assíncronos em memória, conforme detalhado em [Inter-Module Protocols](../concepts/inter-module-protocols.md).
 
 ```mermaid
@@ -44,7 +44,7 @@ flowchart TD
 
     subgraph DrivenAdapters["Adaptadores de Saída (Driven Adapters)"]
         Postgres["PostgreSQL 17 (SQLAlchemy 2.0 Async + RLS)"]
-        Valkey["Valkey 7+ (Fila Atômica & Cache via Lua)"]
+        Valkey["Valkey 8.0 (Fila Atômica & Cache via Lua)"]
         LiveKit["LiveKit SFU (Mídia WebRTC SRTP)"]
         S3["MinIO / S3 (Guarda Perene de PDFs)"]
     end
@@ -97,7 +97,7 @@ flowchart TD
 
     subgraph DataLayer["Camada de Persistência & Mensageria"]
         DB[(PostgreSQL 17<br/>Dados Clínicos, RLS & Auditoria)]
-        Cache[(Valkey 7+ / 8.0<br/>Fila em Memória, Locks & Pub/Sub)]
+        Cache[(Valkey 8.0<br/>Fila em Memória, Locks & Pub/Sub)]
         Storage[(MinIO / S3<br/>PDFs de Prontuários e Prescrições)]
     end
 
@@ -125,8 +125,7 @@ src/
 │   ├── audit/                         # Trilha de auditoria imutável append-only
 │   ├── config.py                      # Configurações tipadas (Pydantic BaseSettings)
 │   ├── database.py                    # Engine assíncrona SQLAlchemy e sessionmaker
-│   ├── valkey.py                      # Pool assíncrono do Valkey
-│   └── event_bus.py                   # In-memory Event Bus assíncrono
+│   └── valkey.py                      # Pool assíncrono do Valkey
 │
 └── modules/
     ├── auth/                          # Autenticação JWT, Argon2id, RBAC e lockout OWASP

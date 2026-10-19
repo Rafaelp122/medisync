@@ -8,6 +8,14 @@ default:
 install:
     uv sync
 
+# Inicializa o ambiente de desenvolvimento completo (infra Docker, deps, migrações e validação rápida)
+setup-dev:
+    @test -f .env || cp .env.example .env
+    just up
+    just install
+    just migrate
+    just check-fast
+
 # Formata o código usando ruff
 fmt:
     uv run ruff format .

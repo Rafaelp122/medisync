@@ -20,7 +20,7 @@ A estratégia de testes adota dois pilares fundamentais:
         / \
        /   \
       /  I  \    Testes de Integração (tests/integration/)
-     /------- \   - PostgreSQL 16 com RLS ativo
+     /------- \   - PostgreSQL 17 com RLS ativo
     /    A    \   - Valkey 8.0 (Lua scripts atômicos)
    / ----------\  - MinIO S3 & LiveKit
   /      U      \ Testes Unitários & Arquiteturais (tests/unit/ & tests/architecture/)

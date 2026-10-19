@@ -34,7 +34,7 @@ O **MediSync Express** opera em modelo multi-tenant atendendo simultaneamente mu
 * *Contras*: Execução de migrações do Alembic repetida em loops lentos sobre centenas de schemas; problemas de *search_path*.
 
 ### Opção 3: Tabela Compartilhada com Defesa em Profundidade (ContextVar + Postgres RLS) (Adotada)
-* *Prós*: Coluna discriminadora `organizacao_id` combinada com **Row-Level Security (RLS)** nativo do PostgreSQL 16. O middleware HTTP injeta o tenant em um `ContextVar` e a sessão assíncrona executa `SET LOCAL app.current_tenant_id = X`. Caso o código da aplicação execute um `SELECT * FROM pacientes` sem cláusula `WHERE`, o kernel do PostgreSQL filtra automaticamente apenas as linhas da organização ativa.
+* *Prós*: Coluna discriminadora `organizacao_id` combinada com **Row-Level Security (RLS)** nativo do PostgreSQL 17. O middleware HTTP injeta o tenant em um `ContextVar` e a sessão assíncrona executa `SET LOCAL app.current_tenant_id = X`. Caso o código da aplicação execute um `SELECT * FROM pacientes` sem cláusula `WHERE`, o kernel do PostgreSQL filtra automaticamente apenas as linhas da organização ativa.
 * *Contras*: Exige configuração explícita de políticas de RLS e suporte a superusuário/bypass restrito em scripts de migração.
 
 ---

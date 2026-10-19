@@ -44,7 +44,7 @@ Em pronto-atendimento virtual com múltiplos médicos chamando pacientes simulta
 
 ## 4. Decisão
 
-Adotamos a **Opção 3: Valkey 7+ com ZSET e Script Lua Atômico (`alocar_chamada.lua`)**.
+Adotamos a **Opção 3: Valkey 8.0 com ZSET e Script Lua Atômico (`alocar_chamada.lua`)**.
 
 ### Diretrizes de Execução:
 1. Fila indexada no ZSET com chave `fila:{organizacao_id}:aptos`, score ponderado de 64 bits e membros em string UUIDv7.
