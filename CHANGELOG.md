@@ -1,3 +1,9 @@
+## v0.4.2 (2026-10-19)
+
+### Fix
+
+- **queue**: preservar timestamp original na regularização da fila e adicionar endpoint REST (US-05 / NC-QUE-04)
+
 ## v0.4.1 (2026-10-19)
 
 ### Refactor
