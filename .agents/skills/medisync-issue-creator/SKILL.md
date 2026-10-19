@@ -37,21 +37,32 @@ Classifique a demanda em uma das tipologias canônicas:
 
 ### Fase 2: Disparo de Subagentes Paralelos (Os Dois Eixos)
 
-Dispare dois subagentes concorrentes em modo *read-only*:
+Dispare dois subagentes concorrentes em modo *read-only* utilizando `invoke_subagent` com `TypeName="research"`:
 
 #### 🅰️ Subagente 1 — Eixo Diagnóstico & Blast Radius
+Configuração: `TypeName="research"`, `Role="Diagnóstico & Blast Radius"`
 Prompt do subagente:
-- Investigar o contexto do problema, sintomas, logs ou motivação funcional.
-- Mapear quais regras canônicas (`RNxx`), User Stories (`docs/user-stories/`) e normas (CFM nº 2.314/2022, LGPD Art. 11) são afetadas.
-- Mapear o *Blast Radius* no código: quais bounded contexts em `src/modules/` e quais ADRs (`docs/adrs/`) são impactados.
-- Relatório esperado: Dor raiz, valor gerado e módulos afetados.
+- Investigar o contexto do problema, sintomas, logs ou motivação funcional respondendo:
+  - *Qual a dor ou oportunidade real?* (Evitar soluções antes de entender a causa raiz).
+  - *Qual o valor gerado?* (Elimina débito técnico? Reduz latência? Cumpre requisito legal?).
+  - *Qual o comportamento atual vs. comportamento esperado?*
+- Mapear quais regras canônicas (`RNxx`), User Stories (`docs/user-stories/`) e normas regulatórias (CFM nº 2.314/2022, LGPD Art. 11) são afetadas.
+- Mapear o *Blast Radius* no código: quais bounded contexts em `src/modules/` e quais ADRs (`docs/adrs/`) são impactados:
+  - *ADR-001 / ADR-008:* A demanda impacta o modelo hexagonal sem mapper hell?
+  - *ADR-002:* Envolve concorrência de fila, pontuação Valkey ZSET ou locks atômicos?
+  - *ADR-003:* Toca em persistência, dados sensíveis com isolamento multi-tenant (RLS/OrgID)?
+  - *ADR-004:* Exige processamento assíncrono em segundo plano via worker ARQ?
+  - *ADR-006:* Envolve assinatura digital de prontuário/receita médica?
+- Relatório esperado: Dor raiz, valor gerado, regras canônicas e módulos/ADRs afetados.
 
 #### 🅱️ Subagente 2 — Eixo Cético YAGNI & Anti-Scope-Creep
+Configuração: `TypeName="research"`, `Role="Cético YAGNI & Guardrails"`
 Prompt do subagente:
-- Atuar como "advogado do diabo" contra expansão descontrolada de escopo.
-- Identificar e listar explicitamente tudo o que **NÃO DEVE** ser feito nesta issue (refatorações oportunistas, abstrações prematuras, telas desnecessárias).
-- Delimitar os critérios de aceitação mínimos, objetivos e verificáveis (DoD preliminar).
-- Relatório esperado: Lista estrita de *Out of Scope* e critérios de aceitação.
+- Atuar como "advogado do diabo" contra expansão descontrolada de escopo sob a premissa de *The Smallest Complete Change*:
+  - Identificar e listar explicitamente tudo o que **NÃO DEVE** ser feito nesta issue (refatorações oportunistas, abstrações prematuras, telas desnecessárias, DTOs espelho intermediários).
+  - **Zero Speculative Code na Origem:** Se a issue exigir novo endpoint HTTP/WS, definir o caminho canônico único (ex: `POST /api/v1/modulo/recurso`). Proibir títulos de issue que usem termos alternativos divergentes do path canônico para prevenir a criação de rotas defensivas ou aliases.
+  - Delimitar os critérios de aceitação mínimos, objetivos e verificáveis (DoD preliminar).
+- Relatório esperado: Lista estrita de *Out of Scope*, endpoint canônico único e critérios de aceitação.
 
 ---
 
@@ -60,7 +71,7 @@ Prompt do subagente:
 O orquestrador sintetiza os relatórios no template oficial:
 
 ```markdown
-# [TIPO]: Título Descritivo, Conciso e Greppável
+# [TIPO]: Título Descritivo, Conciso e Greppável (Sem termos ambíguos)
 
 ## 1. Contexto e Motivação
 Explicação clara do problema observado, oportunidade identificada ou necessidade técnica/clínica. Descrever o comportamento atual e por que a intervenção é necessária agora.
@@ -69,27 +80,29 @@ Explicação clara do problema observado, oportunidade identificada ou necessida
 Resumo conciso da abordagem recomendada para resolver a questão, sem descer prematuramente a detalhes triviais de implementação.
 
 ## 3. Módulos & Camadas Impactadas
-- **Módulos:** (ex: `src/modules/identity`, `src/core/security`)
+- **Módulos:** (ex: `src/modules/queue`, `src/core/security`)
 - **Camadas Hexagonais:** (ex: `domain`, `application/services`, `infrastructure`, `presentation/routers`)
-- **ADRs Aplicáveis:** (ex: ADR-001, ADR-003, ADR-008)
+- **ADRs Aplicáveis:** (ex: ADR-001, ADR-002, ADR-008)
 - **Impacto em Banco de Dados / Migrações:** (Sim/Não - Descrever brevemente)
 
 ## 4. Escopo & Não-Escopo (Guardrails Anti-Scope-Creep)
 ### O que FAZ parte desta issue (In Scope):
-- [ ] Item 1 específico e delimitado
-- [ ] Item 2 específico e delimitado
+- [ ] Endpoint canônico único: `MÉTODO /api/v1/<modulo>/<recurso>` (se aplicável, com zero rotas alternativas)
+- [ ] Comportamento essencial e delimitado
+- [ ] Atualização da documentação Diátaxis correspondente
 
 ### O que NÃO faz parte desta issue (Out of Scope):
-- 🚫 Excluir expressamente refatorações oportunistas não relacionadas
+- 🚫 Excluir expressamente rotas defensivas, aliases ou query params especulativos
+- 🚫 Excluir refatorações oportunistas não relacionadas
 - 🚫 Excluir funcionalidades futuras secundárias (deixar para próxima issue)
-- 🚫 Excluir abstrações prematuras ou antecipações de requisitos
+- 🚫 Excluir abstrações prematuras, builders ou DTOs manuais intermediários
 
 ## 5. Critérios de Aceitação (DoD Preliminar)
 - [ ] O comportamento X foi implementado/corrigido conforme especificação.
 - [ ] Erros lançados contêm offending value e expected shape (Clean Code IA).
 - [ ] Aninhamento de controle de fluxo respeita o teto de 2 níveis.
 - [ ] Testes unitários novos adicionados cobrindo cenários de sucesso e erro.
-- [ ] Portão completo passa com código 0 (`just check`).
+- [ ] Portão completo passa com código 0 (`just check` ou `just check-fast`).
 
 ## 6. Documentação a Atualizar (Governança Diátaxis)
 - [ ] `docs/explanation/domains/<contexto>-domain.md` (se envolver regras clínicas)
@@ -102,8 +115,12 @@ Resumo conciso da abordagem recomendada para resolver a questão, sem descer pre
 ### Fase 4: Registro da Issue & Transição
 
 1. Apresentar o conteúdo formatado para aprovação do desenvolvedor.
-2. Criar a issue oficial via GitHub CLI:
-   ```bash
-   gh issue create --title "[TIPO]: Título" --body-file /tmp/issue.md
-   ```
-3. **Transição Automática:** Acionar imediatamente a skill [`.agents/skills/medisync-issue-planner`](../medisync-issue-planner/SKILL.md) para planejar o fatiamento TDD Inside-Out da nova issue registrada.
+2. Salvar o conteúdo aprovado em arquivo local temporário (ex: `issue_draft.md`).
+3. Registrar a issue no repositório:
+   - Se o GitHub CLI (`gh`) estiver disponível e autenticado:
+     ```bash
+     gh issue create --title "[TIPO]: Título" --body-file issue_draft.md
+     ```
+   - **Fallback Manual:** Caso o `gh` não esteja autenticado ou falhe, fornecer o markdown formatado para criação manual na interface do GitHub.
+4. Remover o arquivo temporário `issue_draft.md`.
+5. **Transição Automática:** Acionar imediatamente a skill [`.agents/skills/medisync-issue-planner`](../medisync-issue-planner/SKILL.md) para planejar o fatiamento TDD Inside-Out da nova issue registrada.
