@@ -122,3 +122,22 @@ def test_database_url_computes_psycopg_schema() -> None:
 
     override = CommonSettings(DATABASE_URL="postgresql://u:p@h:5432/custom_db")
     assert override.async_database_url == "postgresql+psycopg://u:p@h:5432/custom_db"
+
+
+def test_settings_does_not_have_minio_attributes() -> None:
+    """Valida que CommonSettings não possui atributos ou campos do MinIO (Issue #72)."""
+    settings = CommonSettings()
+    minio_keys = [k for k in CommonSettings.model_fields if k.startswith("MINIO_")]
+    assert not minio_keys
+    assert hasattr(settings, "MINIO_ROOT_USER") is False
+    assert hasattr(settings, "MINIO_ENDPOINT") is False
+
+
+def test_settings_loads_with_minio_env_vars_ignored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Valida que variáveis MINIO_* no ambiente são ignoradas sem erro (Issue #72)."""
+    monkeypatch.setenv("MINIO_ROOT_USER", "test_user")
+    monkeypatch.setenv("MINIO_ENDPOINT", "http://test:9000")
+    settings = CommonSettings()
+    assert getattr(settings, "MINIO_ROOT_USER", None) is None

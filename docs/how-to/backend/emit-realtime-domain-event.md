@@ -14,7 +14,7 @@ A transmissão de eventos em tempo real obedece a um fluxo em quatro etapas:
 
 ### 1. Obter o canal canônico de mensageria
 
-Sempre utilize as funções auxiliares em `src/core/realtime.py` para construir nomes determinísticos de tópicos:
+Sempre utilize as funções auxiliares em `src/modules/queue/application/realtime_channels.py` e `src/modules/consultation/application/realtime_channels.py` para construir nomes determinísticos de tópicos:
 
 ```python
 channel_paciente = channel_queue_patient(atendimento_id)
@@ -61,7 +61,7 @@ O utilitário `forward_pubsub_to_websocket` mantém a subscrição ativa e cance
 Verifique os canais Pub/Sub e utilitários de streaming:
 
 ```bash
-rg -n "def channel_" src/core/realtime.py
+rg -n "def channel_" src/modules/*/application/realtime_channels.py
 ```
 
 Inspecione pontos de emissão de eventos em tempo real no módulo de fila:

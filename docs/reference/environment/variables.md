@@ -50,20 +50,22 @@ Computados: `async_database_url` monta `postgresql+psycopg://` de partes ou norm
 | `LIVEKIT_API_KEY` | `src/core/config.py:Settings.LIVEKIT_API_KEY` | `devkey` em dev |
 | `LIVEKIT_API_SECRET` | `src/core/config.py:Settings.LIVEKIT_API_SECRET` | Secret; não colar valor aqui |
 
-### 5. MinIO S3-compatível (8 vars)
+### 5. Infraestrutura Local: MinIO (Docker Compose) vs Contrato da Aplicação (S3_*) (8 vars)
+
+As variáveis `MINIO_*` pertencem exclusivamente à infraestrutura de desenvolvimento local orquestrada pelo `docker-compose.yml` (`services.minio` e `services.minio-init`). Elas não são atributos de `Settings` nem lidas pela aplicação Python (`pydantic-settings` as ignora via `extra="ignore"`). A aplicação interage com qualquer storage compatível com S3 exclusivamente por meio das variáveis `S3_*` definidas em `src/core/config.py:CommonSettings` (cujos defaults de desenvolvimento apontam para o MinIO local).
 
 | Var | Lida em | Notas |
 |---|---|---|
-| `MINIO_ROOT_USER` | `src/core/config.py:Settings.MINIO_ROOT_USER` | Root do MinIO local |
-| `MINIO_ROOT_PASSWORD` | `src/core/config.py:Settings.MINIO_ROOT_PASSWORD` | Secret; mínimo 8 chars no MinIO |
-| `MINIO_HOST` | `src/core/config.py:Settings.MINIO_HOST` | `localhost` fora do compose |
-| `MINIO_PORT` | `src/core/config.py:Settings.MINIO_PORT` | `9000` API S3 |
-| `MINIO_CONSOLE_PORT` | `src/core/config.py:Settings.MINIO_CONSOLE_PORT` | `9001` console web |
-| `MINIO_ENDPOINT` | `src/core/config.py:Settings.MINIO_ENDPOINT` | Endpoint S3 lido pelo storage |
-| `MINIO_DEFAULT_BUCKET` | `src/core/config.py:Settings.MINIO_DEFAULT_BUCKET` | Bucket de documentos |
-| `MINIO_USE_SSL` | `src/core/config.py:Settings.MINIO_USE_SSL` | `false` em dev local |
+| `MINIO_ROOT_USER` | `docker-compose.yml:minio` | Root do MinIO local no compose |
+| `MINIO_ROOT_PASSWORD` | `docker-compose.yml:minio` | Secret; mínimo 8 chars no MinIO |
+| `MINIO_HOST` | `docker-compose.yml` | `localhost` fora do compose |
+| `MINIO_PORT` | `docker-compose.yml:minio` | `9000` API S3 local |
+| `MINIO_CONSOLE_PORT` | `docker-compose.yml:minio` | `9001` console web de administração |
+| `MINIO_ENDPOINT` | `docker-compose.yml` | Endpoint S3 local do container |
+| `MINIO_DEFAULT_BUCKET` | `docker-compose.yml:minio-init` | Bucket padrão (`medisync-docs`) criado pelo mc |
+| `MINIO_USE_SSL` | `docker-compose.yml` | `false` em dev local |
 
-Cobertura: 3 + 6 + 3 + 5 + 8 = 25 vars. Confere com `rg -c "^[A-Z_]+=" .env.example` → `25`.
+Cobertura do `.env.example`: 3 (core) + 6 (postgres) + 3 (valkey) + 5 (livekit) + 8 (minio compose) = 25 vars. 17 são lidas pelo `CommonSettings` da aplicação; as 8 de MinIO são consumidas exclusivamente pelo Docker Compose local.
 Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3_*`, `JWT_*`, `PSC_*`) usam defaults sem precisar exportar em dev; documentar aqui só quando virarem obrigatórios.
 
 ### 6. Seletores de Adaptadores e Backends (Opcionais)
@@ -113,12 +115,12 @@ cp .env.example .env
 
 ```bash
 rg -c "^[A-Z_]+=" .env.example
-rg -n "^(ENVIRONMENT|DATABASE_URL|VALKEY_URL|LIVEKIT_URL|MINIO_ENDPOINT)" .env.example src/core/config.py
+rg -n "^(ENVIRONMENT|DATABASE_URL|VALKEY_URL|LIVEKIT_URL)" .env.example src/core/config.py
 cp .env.example .env && uv run python -c "from src.core.config import get_settings; s=get_settings(); print(s.ENVIRONMENT, s.async_database_url[:20])"
 uv run pytest tests/unit/test_config_profiles.py -v --no-cov
 ```
 
-Esperado: `25`, 5 matches no `.env.example` batendo com campos em `config.py`, bootstrap sem erro e testes de perfil verdes.
+Esperado: `25`, matches no `.env.example` batendo com campos em `config.py`, bootstrap sem erro e testes de perfil verdes.
 
 ## Ver também
 

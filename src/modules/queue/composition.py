@@ -17,8 +17,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.core.dependencies import ValkeyDep
+from src.core.realtime import publish_realtime_event
 from src.core.valkey import get_arq_pool, get_valkey_pool
+from src.modules.consultation.application.realtime_channels import (
+    channel_doctor_calls,
+)
 from src.modules.queue.application.ports.allocation_port import AllocationPort
+from src.modules.queue.application.ports.doctor_call_notifier_port import (
+    DoctorCallNotifierPort,
+)
 from src.modules.queue.application.ports.notification_port import NotificationPort
 from src.modules.queue.application.ports.triage_port import TriagePort
 from src.modules.queue.application.services.alocacao_service import (
@@ -105,18 +112,51 @@ async def get_arq_pool_dep() -> ArqRedis | None:
 ArqPoolDep = Annotated[ArqRedis | None, Depends(get_arq_pool_dep)]
 
 
+class ValkeyDoctorCallNotifier(DoctorCallNotifierPort):
+    """Adaptador concreto para notificação realtime via Valkey Pub/Sub.
+
+    Regras: ADR-001, ADR-002 e docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md.
+    """
+
+    def __init__(self, valkey: Redis) -> None:
+        self._valkey = valkey
+
+    async def notificar_chamada_iniciada(
+        self,
+        medico_id: UUID,
+        atendimento_id: UUID,
+        ttl_segundos: int,
+        chamada_iniciada_em: str,
+    ) -> None:
+        """Dispara evento INCOMING_CALL para o canal Pub/Sub do médico."""
+        await publish_realtime_event(
+            valkey=self._valkey,
+            channel=channel_doctor_calls(medico_id),
+            payload={
+                "event": "INCOMING_CALL",
+                "atendimento_id": str(atendimento_id),
+                "medico_id": str(medico_id),
+                "ttl_segundos": ttl_segundos,
+                "chamada_iniciada_em": chamada_iniciada_em,
+            },
+        )
+
+
 def build_alocacao_service_for_session(
     valkey: Redis,
     session: AsyncSession,
     arq_pool: ArqRedis | None = None,
+    doctor_notifier: DoctorCallNotifierPort | None = None,
 ) -> AlocacaoChamadaService:
     """Build allocation service outside request scope (tests/worker tooling)."""
+    notifier = doctor_notifier or ValkeyDoctorCallNotifier(valkey=valkey)
     return AlocacaoChamadaService(
         valkey=valkey,
         db_session=session,
         lua_manager=get_lua_manager(),
         arq_pool=arq_pool,
         notification_adapter=get_notification_adapter(valkey=valkey),
+        doctor_notifier=notifier,
     )
 
 

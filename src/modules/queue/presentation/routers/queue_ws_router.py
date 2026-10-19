@@ -6,7 +6,8 @@ from uuid import UUID
 from fastapi import APIRouter, Path, WebSocket
 
 from src.core.dependencies import ValkeyDep
-from src.core.realtime import channel_queue_patient, stream_channel
+from src.core.realtime import stream_channel
+from src.modules.queue.application.realtime_channels import channel_queue_patient
 from src.modules.queue.presentation.dependencies import QueueWsAuthDep
 
 queue_ws_router = APIRouter(tags=["queue-realtime"])

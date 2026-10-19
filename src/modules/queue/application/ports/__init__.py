@@ -2,6 +2,9 @@ from src.modules.queue.application.ports.allocation_port import (
     AllocationPort,
     AlocacaoCodigo,
 )
+from src.modules.queue.application.ports.doctor_call_notifier_port import (
+    DoctorCallNotifierPort,
+)
 from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
 from src.modules.queue.application.ports.notification_port import (
     NotificationPort,
@@ -31,6 +34,7 @@ __all__ = [
     "AllocationPort",
     "AlocacaoCodigo",
     "AtendimentoSnapshotDTO",
+    "DoctorCallNotifierPort",
     "LoggingPacienteAusenteNotifier",
     "LoggingQueueOverflowNotifier",
     "LuaScriptPort",

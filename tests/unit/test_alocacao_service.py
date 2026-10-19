@@ -209,3 +209,47 @@ async def test_liberar_e_verificar_locks(
     mock_valkey.get.return_value = str(atend_id)
     retrieved = await service.obter_lock_medico_atendimento_id(1, med_id)
     assert retrieved == str(atend_id)
+
+
+@pytest.mark.asyncio
+async def test_alocar_chamada_dispatches_doctor_notifier(
+    mock_valkey: AsyncMock,
+    mock_db_session: AsyncMock,
+    mock_lua_manager: AsyncMock,
+) -> None:
+    """Verify code 1 invokes doctor_notifier.notificar_chamada_iniciada."""
+    mock_lua_manager.alocar_chamada.return_value = AlocacaoCodigo.SUCESSO
+
+    atend_id = uuid7()
+    med_id = uuid4()
+    mock_atendimento = AsyncMock(spec=Atendimento)
+    mock_atendimento.id = atend_id
+    mock_atendimento.status = StatusAtendimento.CHAMANDO_PACIENTE.value
+    mock_atendimento.chamada_iniciada_em = datetime.now(UTC)
+
+    mock_db_session.get.return_value = mock_atendimento
+
+    mock_notifier = AsyncMock()
+
+    service_with_notifier = AlocacaoChamadaService(
+        valkey=mock_valkey,
+        db_session=mock_db_session,
+        lua_manager=mock_lua_manager,
+        doctor_notifier=mock_notifier,
+    )
+
+    cmd = AlocarChamadaCommand(
+        organizacao_id=1,
+        medico_id=med_id,
+        atendimento_id=atend_id,
+        ttl_segundos=45,
+    )
+
+    await service_with_notifier.alocar_chamada(cmd)
+
+    mock_notifier.notificar_chamada_iniciada.assert_called_once_with(
+        medico_id=med_id,
+        atendimento_id=atend_id,
+        ttl_segundos=45,
+        chamada_iniciada_em=mock_atendimento.chamada_iniciada_em.isoformat(),
+    )

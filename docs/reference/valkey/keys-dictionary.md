@@ -33,8 +33,8 @@ Princípios pétreos de governança de chaves:
 | `auth:revoked:{token_id}` | `auth` | `STRING` | Dinâmico | Volátil (`EX exp_restante`); máximo 3600 | Blacklist de revogação explícita de identificadores JWT (`jti`) persistidos até a expiração original do token. |
 | `ratelimit:notif:{destination}` | `queue` | `HASH` | 3600 | Volátil (`EXPIRE`); token bucket atômico | Rate limiting anti-spam de notificações (WhatsApp/SMS) por telefone de paciente (E.164). Campos `tokens` e `last_refill`. |
 | `doc:assinado:{documento_id}` | `consultation` | `STRING` | 86400 | Volátil (`EX 86400` - 24h) | Cache de status de conformidade da assinatura digital ICP-Brasil (PAdES) de documento clínico emitido. |
-| `medisync:pubsub:queue:{atendimento_id}` | `core` | `PUBSUB` | N/A | Transitório de streaming em memória | Barramento de publicação e assinatura em tempo real para sinalizar mudanças de estado e toque ao paciente. |
-| `medisync:pubsub:doctor:{medico_id}` | `core` | `PUBSUB` | N/A | Transitório de streaming em memória | Barramento Pub/Sub para sinalização e despacho de eventos operacionais ao painel do médico conectado. |
+| `medisync:pubsub:queue:{atendimento_id}` | `queue` | `PUBSUB` | N/A | Transitório de streaming em memória | Barramento de publicação e assinatura em tempo real para sinalizar mudanças de estado e toque ao paciente. |
+| `medisync:pubsub:doctor:{medico_id}` | `consultation` | `PUBSUB` | N/A | Transitório de streaming em memória | Barramento Pub/Sub para sinalização e despacho de eventos operacionais ao painel do médico conectado. |
 
 ### Detalhamento Estrutural e Semântica por Família
 
@@ -72,7 +72,8 @@ Princípios pétreos de governança de chaves:
 - Impl: `src/modules/consultation/infrastructure/valkey_signed_cache.py:ValkeySignedCache`
 - Impl: `src/modules/consultation/infrastructure/valkey_validation_rate_limiter.py:ValkeyValidationRateLimiter`
 - Impl: `src/core/authz/revocation.py:token_revocation_key`
-- Impl: `src/core/realtime.py:queue_channel`
+- Impl: `src/modules/queue/application/realtime_channels.py:channel_queue_patient`
+- Impl: `src/modules/consultation/application/realtime_channels.py:channel_doctor_calls`
 - Spec: `docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md`
 - Prova viva: `tests/integration/test_valkey_pool.py:test_valkey_client_dependency_crud`
 - Prova viva: `tests/integration/test_valkey_rate_limiter.py`

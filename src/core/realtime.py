@@ -6,7 +6,6 @@ import json
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
-from uuid import UUID
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -16,16 +15,6 @@ if TYPE_CHECKING:
     from redis.asyncio import Redis
 
 logger: logging.Logger = logging.getLogger("medisync.realtime")
-
-
-def channel_queue_patient(atendimento_id: UUID | str) -> str:
-    """Return canonical Valkey Pub/Sub channel for patient queue updates."""
-    return f"medisync:pubsub:queue:{atendimento_id}"
-
-
-def channel_doctor_calls(medico_id: UUID | str) -> str:
-    """Return canonical Valkey Pub/Sub channel for doctor incoming calls."""
-    return f"medisync:pubsub:doctor:{medico_id}"
 
 
 async def publish_realtime_event(
