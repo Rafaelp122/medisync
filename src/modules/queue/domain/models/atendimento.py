@@ -155,6 +155,8 @@ class Atendimento(Base):
         data_entrada_fila: datetime | None = None,
         chamada_iniciada_em: datetime | None = None,
         chamada_finalizada_em: datetime | None = None,
+        criado_em: datetime | None = None,
+        atualizado_em: datetime | None = None,
         id: UUID | None = None,
     ) -> None:
         if organizacao_id <= 0:
@@ -176,18 +178,24 @@ class Atendimento(Base):
 
         status_str = str(status)
 
-        super().__init__(
-            id=id or uuid7(),
-            organizacao_id=organizacao_id,
-            paciente_id=paciente_id,
-            medico_id=medico_id,
-            status=status_str,
-            prioridade_clinica=prioridade_int,
-            tcle_hash=clean_tcle,
-            data_entrada_fila=data_entrada_fila,
-            chamada_iniciada_em=chamada_iniciada_em,
-            chamada_finalizada_em=chamada_finalizada_em,
-        )
+        super_kwargs: dict[str, object] = {
+            "id": id or uuid7(),
+            "organizacao_id": organizacao_id,
+            "paciente_id": paciente_id,
+            "medico_id": medico_id,
+            "status": status_str,
+            "prioridade_clinica": prioridade_int,
+            "tcle_hash": clean_tcle,
+            "data_entrada_fila": data_entrada_fila,
+            "chamada_iniciada_em": chamada_iniciada_em,
+            "chamada_finalizada_em": chamada_finalizada_em,
+        }
+        if criado_em is not None:
+            super_kwargs["criado_em"] = criado_em
+        if atualizado_em is not None:
+            super_kwargs["atualizado_em"] = atualizado_em
+
+        super().__init__(**super_kwargs)
 
     # -------------------------------------------------------------------------
     # Regras e Invariantes do TCLE (RN07, LGPD Art. 11)
@@ -222,9 +230,11 @@ class Atendimento(Base):
     # -------------------------------------------------------------------------
 
     def promover_para_apto(self) -> None:
-        """Transiciona de TRIADO para APTO_PARA_CHAMADA na fila (RN03, RN07).
+        """Transiciona para APTO_PARA_CHAMADA preservando antiguidade na fila.
 
+        Regras: RN01 (Score Imutável de Antiguidade), RN03 (Transição Apto), NC-QUE-04.
         Regras: docs/explanation/domains/queue-domain.md
+        História: docs/user-stories/US-05-regularizacao-elegibilidade-fila.md
         """
         self._assegurar_nao_finalizado()
         if self.status != StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE:
@@ -242,8 +252,9 @@ class Atendimento(Base):
 
         now = datetime.now(UTC)
         self.status = StatusAtendimento.APTO_PARA_CHAMADA.value
-        if self.data_entrada_fila is None:
-            self.data_entrada_fila = now
+        self.data_entrada_fila = (
+            self.data_entrada_fila or getattr(self, "criado_em", None) or now
+        )
         self.atualizado_em = now
 
     def iniciar_chamada(self, medico_id: UUID) -> None:

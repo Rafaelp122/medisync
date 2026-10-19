@@ -24,6 +24,8 @@ from src.modules.queue.application.dtos import (
     PioraClinicaCommand,
     PioraClinicaResult,
     PosicaoFilaResult,
+    RegularizacaoFilaCommand,
+    RegularizacaoFilaResult,
 )
 from src.modules.queue.application.ports.paciente_ausente_notifier import (
     LoggingPacienteAusenteNotifier,
@@ -882,4 +884,120 @@ class FilaService:
             redirecionado_emergencia=False,
             nova_posicao=nova_pos,
             instrucoes="Prioridade recalculada com sucesso na fila de espera.",
+        )
+
+    async def regularizar_atendimento(
+        self, cmd: RegularizacaoFilaCommand
+    ) -> RegularizacaoFilaResult:
+        """Regulariza atendimento retido por elegibilidade ou contingência assistencial.
+
+        Regras: RN01 (Score de Antiguidade), RN03 (Transição para Apto), RF-05.
+        Regras: docs/explanation/domains/queue-domain.md
+        História: docs/user-stories/US-05-regularizacao-elegibilidade-fila.md
+        """
+        motivo_limpo = cmd.motivo.strip() if cmd.motivo else ""
+        if len(motivo_limpo) < 3:
+            raise ValidationError(
+                f"Motivo da regularização '{cmd.motivo}' inválido; "
+                "esperado texto com no mínimo 3 caracteres."
+            )
+
+        atendimento = await self._db_session.get(Atendimento, cmd.atendimento_id)
+        if atendimento is None or atendimento.organizacao_id != cmd.organizacao_id:
+            raise NotFoundError(
+                f"Atendimento '{cmd.atendimento_id}' não encontrado na "
+                f"organização {cmd.organizacao_id}."
+            )
+
+        if atendimento.is_finalizado or atendimento.status not in (
+            StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value,
+            StatusAtendimento.APTO_PARA_CHAMADA.value,
+        ):
+            permitidos = (
+                f"['{StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value}', "
+                f"'{StatusAtendimento.APTO_PARA_CHAMADA.value}']"
+            )
+            raise TransicaoEstadoInvalidaError(
+                f"Não é possível regularizar atendimento no status "
+                f"'{atendimento.status}'; esperados: {permitidos}."
+            )
+
+        ts_base = atendimento.data_entrada_fila or atendimento.criado_em
+        score = calcular_score(atendimento.prioridade_clinica, ts_base)
+
+        if atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA.value:
+            return RegularizacaoFilaResult(
+                atendimento_id=atendimento.id,
+                promovido=False,
+                status="already_promoted",
+                score=score,
+                tipo_contingencia=cmd.tipo_contingencia,
+                mensagem="Atendimento já está apto para chamada na fila virtual.",
+            )
+
+        # 1. Se o paciente optou por reenviar dados de convênio para revalidação externa
+        if cmd.tipo_contingencia in ("CONVENIO_REAPRESENTADO", "REVALIDAR_CONVENIO"):
+            if (
+                self._arq_pool is not None
+                and cmd.operadora_id
+                and cmd.numero_carteirinha
+            ):
+                ts_now = int(datetime.now(UTC).timestamp())
+                await self._arq_pool.enqueue_job(
+                    "validar_elegibilidade_task",
+                    organizacao_id=cmd.organizacao_id,
+                    atendimento_id=str(atendimento.id),
+                    paciente_id=str(atendimento.paciente_id),
+                    operadora_id=cmd.operadora_id,
+                    numero_carteirinha=cmd.numero_carteirinha,
+                    _job_id=f"elegibilidade:{atendimento.id}:{ts_now}",
+                )
+            return RegularizacaoFilaResult(
+                atendimento_id=atendimento.id,
+                promovido=False,
+                status=atendimento.status,
+                score=score,
+                tipo_contingencia=cmd.tipo_contingencia,
+                mensagem="Revalidação de convênio enfileirada para processamento.",
+            )
+
+        # 2. Contingência assistencial (ou liberação administrativa imediata)
+        if self._arq_pool is not None and cmd.operadora_id and cmd.numero_carteirinha:
+            ts_now = int(datetime.now(UTC).timestamp())
+            await self._arq_pool.enqueue_job(
+                "validar_elegibilidade_task",
+                organizacao_id=cmd.organizacao_id,
+                atendimento_id=str(atendimento.id),
+                paciente_id=str(atendimento.paciente_id),
+                operadora_id=cmd.operadora_id,
+                numero_carteirinha=cmd.numero_carteirinha,
+                _job_id=f"elegibilidade:{atendimento.id}:{ts_now}",
+            )
+
+        atendimento.promover_para_apto()
+        await self._db_session.commit()
+        await self._db_session.refresh(atendimento)
+
+        ts_promovido = atendimento.data_entrada_fila or atendimento.criado_em
+        score_promovido = calcular_score(atendimento.prioridade_clinica, ts_promovido)
+
+        k_fila = f"fila:{cmd.organizacao_id}:aptos"
+        await self._valkey.zadd(k_fila, {str(atendimento.id): score_promovido})  # pyright: ignore[reportUnknownMemberType]
+
+        logger.info(
+            "Attendance %s regularized (contingency=%s) and promoted to "
+            "APTO in %s with score=%d",
+            atendimento.id,
+            cmd.tipo_contingencia,
+            k_fila,
+            score_promovido,
+        )
+
+        return RegularizacaoFilaResult(
+            atendimento_id=atendimento.id,
+            promovido=True,
+            status=StatusAtendimento.APTO_PARA_CHAMADA.value,
+            score=score_promovido,
+            tipo_contingencia=cmd.tipo_contingencia,
+            mensagem="Atendimento regularizado com sucesso e promovido para apto.",
         )

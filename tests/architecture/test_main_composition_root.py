@@ -46,6 +46,7 @@ def test_openapi_routes_exact_baseline() -> None:
         "/api/v1/documents/download/{token_validacao}",
         "/api/v1/documents/validate/{token_validacao}",
         "/api/v1/fila/admissao",
+        "/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
         "/api/v1/fila/cancelar/{atendimento_id}",
         "/api/v1/fila/chamar-proximo",
         "/api/v1/fila/piora",

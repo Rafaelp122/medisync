@@ -181,3 +181,47 @@ class PioraClinicaResult:
     redirecionado_emergencia: bool
     nova_posicao: int | None
     instrucoes: str | None = None
+
+
+@dataclass(frozen=True)
+class RegularizacaoFilaCommand:
+    """Comando para regularização de atendimento retido ou contingência assistencial."""
+
+    organizacao_id: int
+    atendimento_id: UUID
+    motivo: str
+    tipo_contingencia: str = "CONTINGENCIA_ASSISTENCIAL"
+    operadora_id: str | None = None
+    numero_carteirinha: str | None = None
+
+
+@dataclass(frozen=True)
+class RegularizacaoFilaResult:
+    """Resultado da regularização ou promoção por contingência na fila."""
+
+    atendimento_id: UUID
+    promovido: bool
+    status: str
+    score: int
+    tipo_contingencia: str
+    mensagem: str
+
+
+__all__ = [
+    "AdmissaoAtendimentoCommand",
+    "AdmissaoAtendimentoResult",
+    "AdquirirProximoPacienteCommand",
+    "AlocacaoChamadaResult",
+    "AlocarChamadaCommand",
+    "AvaliacaoAdmissaoResult",
+    "AvaliarAdmissaoCommand",
+    "CancelarAtendimentoResult",
+    "IngressarFilaComBackpressureCommand",
+    "IngressarFilaCommand",
+    "IngressarFilaResult",
+    "PioraClinicaCommand",
+    "PioraClinicaResult",
+    "PosicaoFilaResult",
+    "RegularizacaoFilaCommand",
+    "RegularizacaoFilaResult",
+]

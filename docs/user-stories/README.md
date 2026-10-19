@@ -53,7 +53,7 @@ O catálogo é estruturado entre **Jornadas Assistenciais e Operacionais Primár
 | ID | Arquivo da Story | Requisito Base | Invariantes | Jornada Vinculada | Status | Função no Sistema |
 | :---: | :--- | :---: | :---: | :--- | :---: | :--- |
 | **US-04** | [`US-04-controle-admissao-backpressure.md`](./US-04-controle-admissao-backpressure.md) | RF-04 | RN05 | **US-01** (Admissão) & **US-12** (Gestão) | 🟢 **Conforme** | Salvaguarda estocástica ($\alpha$) e cota diária máxima impedindo superlotação da unidade. |
-| **US-05** | [`US-05-regularizacao-elegibilidade-fila.md`](./US-05-regularizacao-elegibilidade-fila.md) | RF-05 | RN01, RN03 | **US-03** (Elegibilidade) | 🔴 **Não Conforme** | Fluxo de contingência. *Gaps:* perda de timestamp original ao regularizar e ausência de endpoint REST de regularização. |
+| **US-05** | [`US-05-regularizacao-elegibilidade-fila.md`](./US-05-regularizacao-elegibilidade-fila.md) | RF-05 | RN01, RN03 | **US-03** (Elegibilidade) | 🟢 **Conforme** | Fluxo de contingência assistencial e regularização preservando antiguidade na fila (NC-QUE-04). |
 
 ---
 

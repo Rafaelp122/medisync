@@ -386,3 +386,63 @@ def test_helpers_de_duracao_e_espera() -> None:
 
     assert atendimento.tempo_espera_segundos == pytest.approx(120.0, 0.1)
     assert atendimento.duracao_chamada_segundos == pytest.approx(600.0, 0.1)
+
+
+def test_promover_para_apto_preserva_data_entrada_fila_quando_ja_existente() -> None:
+    past_time = datetime.now(UTC) - timedelta(minutes=25)
+    atendimento = Atendimento(
+        organizacao_id=1,
+        paciente_id=uuid7(),
+        tcle_hash=SAMPLE_TCLE_HASH,
+        data_entrada_fila=past_time,
+    )
+
+    atendimento.promover_para_apto()
+
+    assert atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA
+    assert atendimento.data_entrada_fila == past_time
+
+
+def test_promover_para_apto_usa_criado_em_como_fallback_de_antiguidade() -> None:
+    past_time = datetime.now(UTC) - timedelta(minutes=20)
+    atendimento = Atendimento(
+        organizacao_id=1,
+        paciente_id=uuid7(),
+        tcle_hash=SAMPLE_TCLE_HASH,
+        data_entrada_fila=None,
+    )
+    atendimento.criado_em = past_time
+
+    atendimento.promover_para_apto()
+
+    assert atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA
+    assert atendimento.data_entrada_fila == past_time
+
+
+def test_promover_para_apto_em_status_invalido_lanca_excecao_com_offending_value() -> (
+    None
+):
+    atendimento = Atendimento(
+        organizacao_id=1,
+        paciente_id=uuid7(),
+        tcle_hash=SAMPLE_TCLE_HASH,
+        status=StatusAtendimento.EM_ATENDIMENTO,
+    )
+
+    with pytest.raises(TransicaoEstadoInvalidaError) as exc_info:
+        atendimento.promover_para_apto()
+
+    err_msg = str(exc_info.value)
+    assert StatusAtendimento.EM_ATENDIMENTO in err_msg
+    assert StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE in err_msg
+
+
+def test_promover_para_apto_sem_tcle_hash_rejeita_com_offending_value() -> None:
+    atendimento = Atendimento(organizacao_id=1, paciente_id=uuid7())
+
+    with pytest.raises(ValidationError) as exc_info:
+        atendimento.promover_para_apto()
+
+    err_msg = str(exc_info.value)
+    assert str(atendimento.id) in err_msg
+    assert "tcle_hash ausente" in err_msg

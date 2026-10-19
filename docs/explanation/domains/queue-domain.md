@@ -19,12 +19,12 @@ Defaults operacionais: TMA estimado 600s, alpha 1,25, cota diária 300. Deploy S
 ## 2. Regras
 
 - **RN01 — Score 64 bits: prioridade domina, tempo desempata.** `calcular_score` devolve `prioridade * 10^12 + epoch`; menor inteiro chama primeiro dentro do nível, FIFO cronológico puro. [Fonte](../product-specification.md) (RN01)
-- **RN01 (bis) — Identidade FIFO via UUIDv7.** `Atendimento` usa `uuid7()` como PK; ordenação temporal embutida no id elimina disputa de desempate. [Fonte](../product-specification.md) (RN01)
+- **RN01 (bis) — Identidade FIFO via UUIDv7 e Preservação de Antiguidade ($T_0$).** `Atendimento` usa `uuid7()` como PK. Na regularização ou promoção para `APTO_PARA_CHAMADA`, o timestamp original de acolhimento (`data_entrada_fila` ou `criado_em`) é rigorosamente preservado (NC-QUE-04 / US-05). [Fonte](../product-specification.md) (RN01, RN03)
 - **RN02 — Double-lock atômico com ring de 45s.** `alocar_chamada.lua` trava médico + atendimento, remove do ZSET, expira em TTL; `0` médico ocupado, `-1` atendimento indisponível, `1` sucesso. [Fonte](../product-specification.md) (RN02)
 - **RN02 (bis) — No-show determinístico.** `iniciar_chamada` abre janela CHAMANDO; sem resposta em 45s, `registrar_ausencia_paciente` fecha em PACIENTE_AUSENTE e libera médico. [Fonte](../product-specification.md) (RN02)
 - **RN05 — Backpressure com α e transbordo.** `avaliar_capacidade_admissao` suspende entrada por cota diária ou carga `(aguardando * TMA * alpha) / medicos > restante`; bloqueio emite `QUEUE_OVERFLOW_TRANSIT`. [Fonte](../product-specification.md) (RN05)
 
-Guardiões: `promover_para_apto` exige TCLE prévio; `iniciar_chamada` exige médico não vazio; `cancelar_pelo_paciente` bloqueado em EM_ATENDIMENTO; `atualizar_prioridade` preserva soberania diagnóstica do assistente.
+Guardiões: `promover_para_apto` exige TCLE prévio e preserva timestamp $T_0$; `iniciar_chamada` exige médico não vazio; `cancelar_pelo_paciente` bloqueado em EM_ATENDIMENTO; `atualizar_prioridade` preserva soberania diagnóstica do assistente.
 
 Alpha fora de `1,20–1,30` é erro de configuração, não de domínio: função valida `alpha > 0` e TMA positivo, resto é política de deploy.
 
@@ -86,6 +86,7 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - Routers REST finos expõem as operações centrais da fila clínica em conformidade com ADR-001/ADR-008:
   - `POST /api/v1/fila/chamar-proximo`: Médico adquire atomicamente o próximo paciente via script Lua com retry automático e double-lock (RF-03).
   - `GET /api/v1/fila/posicao/{atendimento_id}`: Consulta posição 1-based no ZSET e tempo estimado via TMA com guarda Anti-IDOR.
+  - `POST /api/v1/fila/atendimentos/{atendimento_id}/regularizar`: Regularização de pendência de convênio ou contingência assistencial com preservação de antiguidade original (RN01, RN03, US-05, NC-QUE-04).
   - `POST /api/v1/fila/cancelar/{atendimento_id}`: Cancelamento voluntário com remoção atômica da fila e transição no banco (RN06).
   - `POST /api/v1/fila/piora`: Salvaguarda clínica para relato de piora de sintomas, reavaliando risco via `TriagePort`, recalculando score na fila ou disparando alerta SAMU 192 (RF-06).
 - Transmite posição e avanço em tempo real via WebSocket (`/ws/queue/{atendimento_id}`). O handshake exige autenticação via `?token=` (HMAC ou JWT) com checagem de posse ReBAC em sessão de banco efêmera (código WS 4401/4403 pré-accept) para evitar esgotamento de conexões durante o streaming via Valkey Pub/Sub (Issue #42).
@@ -116,7 +117,7 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `src/modules/queue/application/ports/triage_port.py` (TriagePort e TriageEvaluationDTO para isolamento de Bounded Context)
 - `src/modules/queue/presentation/routers/admissao_router.py` (POST /api/v1/fila/admissao)
 - `src/modules/queue/presentation/routers/alocacao_router.py` (POST /api/v1/fila/chamar-proximo)
-- `src/modules/queue/presentation/routers/fila_router.py` (GET /api/v1/fila/posicao/{id}, POST /api/v1/fila/cancelar/{id}, POST /api/v1/fila/piora)
+- `src/modules/queue/presentation/routers/fila_router.py` (GET /api/v1/fila/posicao/{id}, POST /api/v1/fila/cancelar/{id}, POST /api/v1/fila/piora, POST /api/v1/fila/atendimentos/{id}/regularizar)
 - `src/modules/queue/presentation/routers/queue_ws_router.py` (WebSocket de avanço da fila do paciente: /ws/queue/{atendimento_id})
 - `src/modules/queue/presentation/dependencies.py` (Guards de autenticação, posse Anti-IDOR e autorização de médico plantonista)
 - `src/modules/queue/application/services/alocacao_service.py`
@@ -137,6 +138,7 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `tests/unit/test_atendimento_model.py`
 - `tests/unit/test_controle_admissao.py`
 - `tests/unit/test_fila_service.py`
+- `tests/unit/test_fila_regularizacao.py`
 - `tests/unit/test_notifications.py`
 - `tests/unit/test_queue_cota_diaria.py`
 - `tests/unit/test_fila_service_operacoes.py`
@@ -144,6 +146,7 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `tests/unit/test_fila_router.py`
 - `tests/integration/test_admissao_integrada_flow.py`
 - `tests/integration/test_valkey_rate_limiter.py`
+- `tests/integration/test_regularizacao_flow.py`
 
 
 Prova viva:
