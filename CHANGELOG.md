@@ -1,3 +1,9 @@
+## v0.4.1 (2026-10-19)
+
+### Refactor
+
+- **core**: mover nomes de canais realtime para os módulos donos
+
 ## v0.4.0 (2026-10-18)
 
 ### Feat
