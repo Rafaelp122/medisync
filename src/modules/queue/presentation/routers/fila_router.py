@@ -17,6 +17,8 @@ from src.modules.queue.presentation.schemas import (
     PioraClinicaRequest,
     PioraClinicaResponse,
     PosicaoFilaResponse,
+    RegularizacaoFilaRequest,
+    RegularizacaoFilaResponse,
 )
 
 fila_router = APIRouter(
@@ -95,3 +97,30 @@ async def comunicar_piora_clinica(
     cmd = body.to_command(organizacao_id=tenant_id)
     result = await fila_service.processar_piora_clinica(cmd)
     return PioraClinicaResponse.model_validate(result)
+
+
+@fila_router.post(
+    "/atendimentos/{atendimento_id}/regularizar",
+    status_code=status.HTTP_200_OK,
+    summary="Regularização de atendimento na fila (US-05)",
+    description=(
+        "Permite a regularização de atendimento retido ou em contingência na fila "
+        "virtual. Transiciona o status para APTO_PARA_CHAMADA e calcula o score ZSET."
+    ),
+)
+async def regularizar_atendimento_fila(
+    atendimento_id: Annotated[UUID, Path(description="ID do atendimento")],
+    body: Annotated[RegularizacaoFilaRequest, Body()],
+    tenant_id: TenantDep,
+    fila_service: FilaServiceDep,
+    _auth: PosseAtendimentoPathAuthDep,
+) -> RegularizacaoFilaResponse:
+    """Regulariza atendimento retido por elegibilidade ou contingência assistencial.
+
+    Regras: RN01 (Score de Antiguidade), RN03 (Transição para Apto), RF-05.
+    Regras: docs/explanation/domains/queue-domain.md
+    História: docs/user-stories/US-05-regularizacao-elegibilidade-fila.md
+    """
+    cmd = body.to_command(organizacao_id=tenant_id, atendimento_id=atendimento_id)
+    result = await fila_service.regularizar_atendimento(cmd)
+    return RegularizacaoFilaResponse.model_validate(result)

@@ -49,12 +49,26 @@ class FakeAsyncSession:
     """Scripted in-memory async session with ordered execute results."""
 
     def __init__(
-        self, results: list[Any] | None = None, added: list[Any] | None = None
+        self,
+        results: list[Any] | None = None,
+        added: list[Any] | None = None,
+        entities: dict[Any, Any] | None = None,
     ) -> None:
         self._results: list[Any] = list(results) if results is not None else []
         self.added: list[Any] = added if added is not None else []
+        self._entities: dict[Any, Any] = dict(entities) if entities is not None else {}
         self.commits: int = 0
         self.executes: int = 0
+
+    async def get(self, entity_cls: Any, ident: Any) -> Any:
+        if ident in self._entities:
+            return self._entities[ident]
+        if (entity_cls, ident) in self._entities:
+            return self._entities[(entity_cls, ident)]
+        for obj in self.added:
+            if getattr(obj, "id", None) == ident:
+                return obj
+        return None
 
     async def execute(self, *args: Any, **kwargs: Any) -> Any:
         self.executes += 1
@@ -64,9 +78,12 @@ class FakeAsyncSession:
 
     def add(self, obj: Any) -> None:
         self.added.append(obj)
+        if hasattr(obj, "id"):
+            self._entities[obj.id] = obj
 
     def add_all(self, objs: list[Any]) -> None:
-        self.added.extend(objs)
+        for obj in objs:
+            self.add(obj)
 
     async def flush(self) -> None:
         return None
@@ -113,10 +130,11 @@ class FakePubSub:
 
 
 class FakeValkey:
-    """Minimal Valkey double supporting publish/pubsub for in-memory tests."""
+    """Minimal Valkey double supporting pubsub and sorted sets for in-memory tests."""
 
     def __init__(self) -> None:
         self._queues: dict[str, queue_module.Queue[str]] = {}
+        self._zsets: dict[str, dict[str, float]] = {}
 
     def pubsub(self) -> FakePubSub:
         return FakePubSub(self._queues)
@@ -126,6 +144,53 @@ class FakeValkey:
             self._queues[channel] = queue_module.Queue()
         self._queues[channel].put(message)
         return 1
+
+    async def zadd(
+        self,
+        name: str,
+        mapping: dict[str, float | int],
+        *args: Any,
+        **kwargs: Any,
+    ) -> int:
+        if name not in self._zsets:
+            self._zsets[name] = {}
+        added = 0
+        for member, score in mapping.items():
+            if member not in self._zsets[name]:
+                added += 1
+            self._zsets[name][member] = float(score)
+        return added
+
+    async def zscore(self, name: str, member: str) -> float | None:
+        if name not in self._zsets:
+            return None
+        return self._zsets[name].get(member)
+
+    async def zrank(self, name: str, member: str) -> int | None:
+        if name not in self._zsets or member not in self._zsets[name]:
+            return None
+        sorted_members = sorted(
+            self._zsets[name].items(), key=lambda item: (item[1], item[0])
+        )
+        for rank, (m, _) in enumerate(sorted_members):
+            if m == member:
+                return rank
+        return None
+
+    async def zcard(self, name: str) -> int:
+        if name not in self._zsets:
+            return 0
+        return len(self._zsets[name])
+
+    async def zrem(self, name: str, *members: str) -> int:
+        if name not in self._zsets:
+            return 0
+        removed = 0
+        for m in members:
+            if m in self._zsets[name]:
+                del self._zsets[name][m]
+                removed += 1
+        return removed
 
 
 class FakePDFGenerator:

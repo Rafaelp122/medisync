@@ -37,7 +37,7 @@ flowchart LR
 
 ### 🏛️ Dualidade Operacional Nativa (SUS vs. Saúde Privada)
 * **Atenção Pública (SUS)**: Entrada universal via CPF ou Cartão Nacional de Saúde (CNS). A validação de cobertura opera como instrução nula (*no-op*), inserindo o cidadão imediatamente na esteira de atendimento médico com custo de infraestrutura reduzido para municípios.
-* **Saúde Suplementar / Particular**: Pacientes ingressam na fila sem paywalls obstrutivos na tela inicial. A validação de elegibilidade de convênio ocorre de forma concorrente em segundo plano enquanto o paciente aguarda; em caso de pendência, ele é alertado com antecedência sem ser expulso de sua posição clínica.
+* **Saúde Suplementar / Particular**: Pacientes ingressam na fila sem paywalls obstrutivos na tela inicial. A validação de elegibilidade de convênio ocorre de forma concorrente em segundo plano enquanto o paciente aguarda; em caso de pendência ou rejeição temporária, o paciente é alertado e pode optar por contingência assistencial imediata ou reenvio de dados (`POST /api/v1/fila/atendimentos/{id}/regularizar`), preservando rigorosamente seu tempo de espera original na fila virtual ($T_0$ / NC-QUE-04).
 
 ---
 

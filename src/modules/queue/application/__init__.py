@@ -9,6 +9,8 @@ from src.modules.queue.application.dtos import (
     IngressarFilaComBackpressureCommand,
     IngressarFilaCommand,
     IngressarFilaResult,
+    RegularizacaoFilaCommand,
+    RegularizacaoFilaResult,
 )
 from src.modules.queue.application.ports import (
     LoggingQueueOverflowNotifier,
@@ -37,5 +39,7 @@ __all__ = [
     "LoggingQueueOverflowNotifier",
     "QueueOverflowEvent",
     "QueueOverflowNotifierPort",
+    "RegularizacaoFilaCommand",
+    "RegularizacaoFilaResult",
     "avaliar_capacidade_admissao",
 ]

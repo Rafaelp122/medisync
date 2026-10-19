@@ -17,12 +17,14 @@ from src.modules.queue.application.dtos import (
     CancelarAtendimentoResult,
     PioraClinicaResult,
     PosicaoFilaResult,
+    RegularizacaoFilaResult,
 )
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.composition import (
     get_fila_service,
     get_patient_queue_ownership_checker,
 )
+from src.modules.queue.domain.exceptions import TransicaoEstadoInvalidaError
 
 
 def _make_intake_token(paciente_id: UUID, org_id: int) -> str:
@@ -350,5 +352,238 @@ async def test_admissao_paciente_unificada_no_fila_router() -> None:
             assert data["triagem_id"] == str(triagem_id)
             assert data["prioridade_clinica"] == 3
             mock_service.admitir_paciente.assert_awaited_once()
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_post_regularizar_sucesso_com_token_intake() -> None:
+    """Verifica regularização de atendimento na fila com token de intake (US-05)."""
+    app = create_app()
+    paciente_id = uuid4()
+    atendimento_id = uuid4()
+    org_id = 42
+
+    mock_service = MagicMock(spec=FilaService)
+    mock_service.regularizar_atendimento = AsyncMock(
+        return_value=RegularizacaoFilaResult(
+            atendimento_id=atendimento_id,
+            promovido=True,
+            status="APTO_PARA_CHAMADA",
+            score=3000000000000,
+            tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
+            mensagem="Atendimento regularizado com sucesso.",
+        )
+    )
+    mock_checker = AsyncMock(return_value=True)
+
+    app.dependency_overrides[get_fila_service] = lambda: mock_service
+    app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
+
+    try:
+        token = _make_intake_token(paciente_id, org_id)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
+                headers={
+                    "X-Tenant-ID": str(org_id),
+                    "Authorization": f"Bearer {token}",
+                },
+                json={
+                    "motivo": "Gateway da operadora fora do ar",
+                    "tipo_contingencia": "CONTINGENCIA_ASSISTENCIAL",
+                },
+            )
+            assert resp.status_code == 200
+            data = cast("dict[str, object]", resp.json())
+            assert data["atendimento_id"] == str(atendimento_id)
+            assert data["promovido"] is True
+            assert data["status"] == "APTO_PARA_CHAMADA"
+            assert data["score"] == 3000000000000
+            assert data["tipo_contingencia"] == "CONTINGENCIA_ASSISTENCIAL"
+            assert data["mensagem"] == "Atendimento regularizado com sucesso."
+            mock_service.regularizar_atendimento.assert_awaited_once()
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_post_regularizar_sucesso_com_jwt_paciente() -> None:
+    """Verifica regularização de atendimento com JWT de paciente autenticado."""
+    app = create_app()
+    paciente_id = uuid4()
+    atendimento_id = uuid4()
+    org_id = 42
+
+    mock_service = MagicMock(spec=FilaService)
+    mock_service.regularizar_atendimento = AsyncMock(
+        return_value=RegularizacaoFilaResult(
+            atendimento_id=atendimento_id,
+            promovido=True,
+            status="APTO_PARA_CHAMADA",
+            score=3000000000000,
+            tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
+            mensagem="Atendimento regularizado com sucesso.",
+        )
+    )
+    mock_checker = AsyncMock(return_value=True)
+
+    app.dependency_overrides[get_fila_service] = lambda: mock_service
+    app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
+
+    try:
+        token = _make_jwt_token(paciente_id, org_id, papel="PACIENTE")
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
+                headers={
+                    "X-Tenant-ID": str(org_id),
+                    "Authorization": f"Bearer {token}",
+                },
+                json={
+                    "motivo": "Gateway da operadora fora do ar",
+                    "tipo_contingencia": "CONTINGENCIA_ASSISTENCIAL",
+                },
+            )
+            assert resp.status_code == 200
+            data = cast("dict[str, object]", resp.json())
+            assert data["atendimento_id"] == str(atendimento_id)
+            assert data["promovido"] is True
+            mock_service.regularizar_atendimento.assert_awaited_once()
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_post_regularizar_bloqueio_anti_idor_sem_posse() -> None:
+    """Verifica bloqueio 403 Forbidden quando token não confere posse sobre
+    o atendimento (Anti-IDOR).
+    """
+    app = create_app()
+    paciente_id = uuid4()
+    atendimento_id = uuid4()
+    org_id = 42
+
+    mock_checker = AsyncMock(return_value=False)
+    app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
+
+    try:
+        token = _make_intake_token(paciente_id, org_id)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
+                headers={
+                    "X-Tenant-ID": str(org_id),
+                    "Authorization": f"Bearer {token}",
+                },
+                json={
+                    "motivo": "Gateway da operadora fora do ar",
+                    "tipo_contingencia": "CONTINGENCIA_ASSISTENCIAL",
+                },
+            )
+            assert resp.status_code == 403
+            data = cast("dict[str, object]", resp.json())
+            assert data["code"] == "FORBIDDEN"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_post_regularizar_sem_autenticacao_retorna_401() -> None:
+    """Verifica retorno 401 Unauthorized na ausência de cabeçalho de autenticação."""
+    app = create_app()
+    atendimento_id = uuid4()
+    org_id = 42
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
+                headers={
+                    "X-Tenant-ID": str(org_id),
+                },
+                json={
+                    "motivo": "Gateway da operadora fora do ar",
+                    "tipo_contingencia": "CONTINGENCIA_ASSISTENCIAL",
+                },
+            )
+            assert resp.status_code == 401
+            data = cast("dict[str, object]", resp.json())
+            assert data["code"] == "UNAUTHORIZED"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_post_regularizar_conflito_estado_retorna_409() -> None:
+    """Verifica retorno 409 Conflict quando atendimento está em estado incompatível."""
+    app = create_app()
+    paciente_id = uuid4()
+    atendimento_id = uuid4()
+    org_id = 42
+
+    mock_service = MagicMock(spec=FilaService)
+    mock_service.regularizar_atendimento = AsyncMock(
+        side_effect=TransicaoEstadoInvalidaError(
+            "Não é possível regularizar atendimento no status 'EM_CONSULTA'."
+        )
+    )
+    mock_checker = AsyncMock(return_value=True)
+
+    app.dependency_overrides[get_fila_service] = lambda: mock_service
+    app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
+
+    try:
+        token = _make_intake_token(paciente_id, org_id)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
+                headers={
+                    "X-Tenant-ID": str(org_id),
+                    "Authorization": f"Bearer {token}",
+                },
+                json={
+                    "motivo": "Gateway da operadora fora do ar",
+                    "tipo_contingencia": "CONTINGENCIA_ASSISTENCIAL",
+                },
+            )
+            assert resp.status_code == 409
+            data = cast("dict[str, object]", resp.json())
+            assert data["code"] == "TRANSICAO_ESTADO_INVALIDA"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_post_regularizar_payload_invalido_retorna_422() -> None:
+    """Verifica validação de payload (422) quando motivo for curto demais
+    (< 3 caracteres).
+    """
+    app = create_app()
+    paciente_id = uuid4()
+    atendimento_id = uuid4()
+    org_id = 42
+
+    mock_checker = AsyncMock(return_value=True)
+    app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
+
+    try:
+        token = _make_intake_token(paciente_id, org_id)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
+                headers={
+                    "X-Tenant-ID": str(org_id),
+                    "Authorization": f"Bearer {token}",
+                },
+                json={"motivo": "ab"},
+            )
+            assert resp.status_code == 422
     finally:
         app.dependency_overrides.clear()

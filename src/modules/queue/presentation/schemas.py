@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoCommand,
     PioraClinicaCommand,
+    RegularizacaoFilaCommand,
 )
 
 
@@ -197,3 +198,73 @@ class PioraClinicaResponse(BaseModel):
         default=None,
         description="Instruções de redirecionamento ou emergência imediata",
     )
+
+
+class RegularizacaoFilaRequest(BaseModel):
+    """Payload para regularização de atendimento retido ou contingência assistencial."""
+
+    model_config = ConfigDict(frozen=True)
+
+    motivo: str = Field(
+        min_length=3,
+        max_length=500,
+        description="Motivo da regularização ou contingência assistencial",
+    )
+    tipo_contingencia: str = Field(
+        default="CONTINGENCIA_ASSISTENCIAL",
+        description="Tipo de contingência assistencial acionada",
+    )
+    operadora_id: str | None = Field(
+        default=None,
+        description="Código da operadora de saúde (opcional)",
+    )
+    numero_carteirinha: str | None = Field(
+        default=None,
+        description="Número da carteirinha do plano (opcional)",
+    )
+
+    def to_command(
+        self, organizacao_id: int, atendimento_id: UUID
+    ) -> RegularizacaoFilaCommand:
+        """Converte a requisição em comando da camada de aplicação."""
+        return RegularizacaoFilaCommand(
+            organizacao_id=organizacao_id,
+            atendimento_id=atendimento_id,
+            motivo=self.motivo,
+            tipo_contingencia=self.tipo_contingencia,
+            operadora_id=self.operadora_id,
+            numero_carteirinha=self.numero_carteirinha,
+        )
+
+
+class RegularizacaoFilaResponse(BaseModel):
+    """Resposta com resultado da regularização ou promoção por contingência na fila."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    atendimento_id: UUID = Field(description="ID do atendimento regularizado")
+    promovido: bool = Field(
+        description="Indica se o atendimento foi promovido para apto"
+    )
+    status: str = Field(description="Novo status do atendimento após regularização")
+    score: int = Field(
+        description="Score ordinal de antiguidade e prioridade na fila virtual"
+    )
+    tipo_contingencia: str = Field(
+        description="Tipo de contingência registrado na regularização"
+    )
+    mensagem: str = Field(description="Mensagem descritiva do resultado da operação")
+
+
+__all__ = [
+    "AdmissaoRequest",
+    "AdmissaoResponse",
+    "CancelarFilaRequest",
+    "CancelarFilaResponse",
+    "ChamarProximoResponse",
+    "PioraClinicaRequest",
+    "PioraClinicaResponse",
+    "PosicaoFilaResponse",
+    "RegularizacaoFilaRequest",
+    "RegularizacaoFilaResponse",
+]

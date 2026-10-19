@@ -6,7 +6,7 @@
 > **Invariantes Relacionadas:** RN01 (Prevalência Clínica), RN03 (Desvio Temporário e Preservação de Antiguidade)  
 > **Personas:** Juliana Silva (Paciente) e Patrícia Mendes (Faturamento)  
 > **Módulos:** `queue`, `billing`  
-> **Status de Qualidade:** 🔴 **Não Conforme** *(Gap crítico NC-QUE-04: `promover_para_apto()` grava `data_entrada_fila = now` tardio violando antiguidade RN01/RN03 e ausência de rota REST de regularização)*
+> **Status de Qualidade:** 🟢 **Conforme** *(Resolução NC-QUE-04: preservação de timestamp de acolhimento original e endpoint REST de regularização/contingência)*
 
 ---
 
@@ -41,15 +41,25 @@
 * **Cálculo de Priorização Dinâmica (RN01):**
   $$\text{Prioridade Efetiva} = (\text{Nível Clínico} \times 10^{12}) + \text{Timestamp}(\text{Momento do Acolhimento})$$
 * A regularização promove o atendimento na fila de aptos preservando integralmente o timestamp original de entrada.
+* **Endpoint de Regularização:**
+  - `POST /api/v1/fila/atendimentos/{atendimento_id}/regularizar`
+  - Headers: `X-Tenant-ID: <org_id>`, `Authorization: Bearer <token_intake_ou_jwt>`
+  - Request: `src/modules/queue/presentation/schemas.py:RegularizacaoFilaRequest`
+  - Response: `src/modules/queue/presentation/schemas.py:RegularizacaoFilaResponse`
+  - **Prevalência Assistencial e Desacoplamento da Fase 2 (CFM 2.314/2022 / RN-NEG-01):** A contingência assistencial promove imediatamente o atendimento com base no TCLE forense (RN07), assegurando o acesso médico sem paywall burocrático. O preenchimento da Fase 2 (CFM 1.821/2007) corre em paralelo e é exigido para o fechamento do prontuário eletrônico e emissão de receitas médicas.
 
 ---
 
 ## 4. Checklist de Inspeção de Código
 
-- [ ] **Preservação de Antiguidade:** Gap crítico NC-QUE-04: `promover_para_apto()` grava `data_entrada_fila = now` tardio violando antiguidade RN01/RN03 (`src/modules/queue/application/services/fila_service.py`).
-- [ ] **Rota REST de Regularização:** Ausência de rota REST dedicada para regularização de elegibilidade.
+- [x] **Preservação de Antiguidade:** Gap crítico NC-QUE-04 resolvido em `Atendimento.promover_para_apto()` e `FilaService.regularizar_atendimento()` (`src/modules/queue/application/services/fila_service.py`).
+- [x] **Rota REST de Regularização:** Endpoint dedicado `POST /api/v1/fila/atendimentos/{atendimento_id}/regularizar` em `src/modules/queue/presentation/routers/fila_router.py`.
 - [x] **Desvio Temporário:** Médico consome exclusivamente o conjunto de aptos, ignorando atendimentos retidos (`src/modules/queue/infrastructure/lua/alocar_chamada.lua`).
 - [x] **Testes Automatizados:**
   - `tests/unit/test_queue_scoring.py`
+  - `tests/unit/test_atendimento_model.py`
+  - `tests/unit/test_fila_regularizacao.py`
+  - `tests/unit/test_fila_router.py`
   - `tests/integration/test_eligibility_flow.py`
   - `tests/integration/test_queue_ingestion_and_fifo.py`
+  - `tests/integration/test_regularizacao_flow.py`
