@@ -9,6 +9,11 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.audit import (
+    AtorPapel,
+    AtorTipo,
+    AuditTrailPort,
+)
 from src.core.errors import NotFoundError, ValidationError
 from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoCommand,
@@ -59,6 +64,11 @@ from src.modules.queue.domain.scoring import calcular_score
 logger = logging.getLogger("medisync.queue.fila")
 
 
+def _safe_tcle_hash(atendimento: Atendimento) -> str | None:
+    val = getattr(atendimento, "tcle_hash", None)
+    return val if isinstance(val, str) else None
+
+
 class FilaService:
     """Gerencia admissão com backpressure, ordenação e aquisição de pacientes.
 
@@ -72,10 +82,11 @@ class FilaService:
         self,
         valkey: Redis,
         db_session: AsyncSession,
-        alocacao_service: AlocacaoChamadaService,
+        alocacao_service: AlocacaoChamadaService | None = None,
         controle_admissao: ControleAdmissaoService | None = None,
         triage_port: TriagePort | None = None,
         arq_pool: ArqRedis | None = None,
+        audit_trail: AuditTrailPort | None = None,
     ) -> None:
         self._valkey = valkey
         self._db_session = db_session
@@ -86,6 +97,7 @@ class FilaService:
         )
         self._triage_port = triage_port
         self._arq_pool = arq_pool
+        self._audit_trail: AuditTrailPort | None = audit_trail
 
     @property
     def controle_admissao(self) -> ControleAdmissaoService:
@@ -178,6 +190,23 @@ class FilaService:
             prioridade_calculada=triage_eval.prioridade_clinica,
             alerta_samu_disparado=triage_eval.alerta_samu_disparado,
         )
+
+        if self._audit_trail is not None:
+            await self._audit_trail.record_event(
+                organizacao_id=command.organizacao_id,
+                atendimento_id=atendimento.id,
+                ator_tipo=AtorTipo.PACIENTE,
+                ator_papel=AtorPapel.PACIENTE,
+                tipo_evento="ADMISSAO_PACIENTE",
+                ator_id=command.paciente_id,
+                estado_anterior=None,
+                novo_estado=str(atendimento.status),
+                tcle_hash=triage_eval.tcle_hash,
+                payload={
+                    "prioridade_clinica": triage_eval.prioridade_clinica,
+                    "triagem_id": str(triagem_id),
+                },
+            )
 
         await self._db_session.commit()
         await self._db_session.refresh(atendimento)
@@ -321,6 +350,11 @@ class FilaService:
                     atendimento_id=candidate_uuid,
                     ttl_segundos=command.ttl_segundos,
                 )
+                if self._alocacao_service is None:
+                    raise RuntimeError(
+                        "AlocacaoChamadaService não configurado para "
+                        "aquisição de pacientes."
+                    )
                 return await self._alocacao_service.alocar_chamada(alocar_cmd)
             except MedicoOcupadoError:
                 # Doctor is already locked with an active call -> fail immediately
@@ -411,7 +445,21 @@ class FilaService:
             atendimento.status
             == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
         ):
+            estado_anterior = str(atendimento.status)
             atendimento.promover_para_apto()
+            if self._audit_trail is not None:
+                await self._audit_trail.record_event(
+                    organizacao_id=organizacao_id,
+                    atendimento_id=atendimento_id,
+                    ator_tipo=AtorTipo.SISTEMA,
+                    ator_papel=AtorPapel.WORKER_ARQ,
+                    tipo_evento="ELEGIBILIDADE_CONFIRMADA",
+                    ator_id=None,
+                    estado_anterior=estado_anterior,
+                    novo_estado=str(atendimento.status),
+                    tcle_hash=_safe_tcle_hash(atendimento),
+                    payload={"canal": "ARQ_WORKER"},
+                )
             await self._db_session.commit()
             await self._db_session.refresh(atendimento)
 
@@ -462,6 +510,19 @@ class FilaService:
 
         if current_status == StatusAtendimento.CHAMANDO_PACIENTE.value:
             atendimento.registrar_ausencia_paciente()
+            if self._audit_trail is not None:
+                await self._audit_trail.record_event(
+                    organizacao_id=organizacao_id,
+                    atendimento_id=atendimento_id,
+                    ator_tipo=AtorTipo.SISTEMA,
+                    ator_papel=AtorPapel.WORKER_ARQ,
+                    tipo_evento="TIMEOUT_CHAMADA_NO_SHOW",
+                    ator_id=None,
+                    estado_anterior=current_status,
+                    novo_estado=str(atendimento.status),
+                    tcle_hash=_safe_tcle_hash(atendimento),
+                    payload={"medico_id": med_id_str, "tempo_toque_segundos": 45},
+                )
             await self._db_session.commit()
 
             async with self._valkey.pipeline(transaction=True) as pipe:
@@ -534,7 +595,23 @@ class FilaService:
                 f"podem ser atendidos. Estado atual: '{atendimento.status}'."
             )
 
+        estado_anterior = str(atendimento.status)
         atendimento.atender_chamada()
+        if self._audit_trail is not None:
+            await self._audit_trail.record_event(
+                organizacao_id=atendimento.organizacao_id,
+                atendimento_id=atendimento.id,
+                ator_tipo=AtorTipo.PACIENTE,
+                ator_papel=AtorPapel.PACIENTE,
+                tipo_evento="CHAMADA_ATENDIDA",
+                ator_id=atendimento.paciente_id,
+                estado_anterior=estado_anterior,
+                novo_estado=str(atendimento.status),
+                tcle_hash=_safe_tcle_hash(atendimento),
+                payload={"medico_id": str(atendimento.medico_id)}
+                if atendimento.medico_id
+                else {},
+            )
         await self._db_session.commit()
 
         if atendimento.medico_id is not None:
@@ -755,13 +832,28 @@ class FilaService:
                 f"organização {organizacao_id}."
             )
 
+        estado_anterior = str(atendimento.status)
         atendimento.cancelar_pelo_paciente(motivo)
         await self.remover_da_fila(organizacao_id, atendimento_id)
-        if atendimento.medico_id:
+        if atendimento.medico_id and self._alocacao_service is not None:
             await self._alocacao_service.liberar_locks(
                 organizacao_id=organizacao_id,
                 medico_id=atendimento.medico_id,
                 atendimento_id=atendimento_id,
+            )
+
+        if self._audit_trail is not None:
+            await self._audit_trail.record_event(
+                organizacao_id=organizacao_id,
+                atendimento_id=atendimento_id,
+                ator_tipo=AtorTipo.PACIENTE,
+                ator_papel=AtorPapel.PACIENTE,
+                tipo_evento="ATENDIMENTO_CANCELADO_PACIENTE",
+                ator_id=atendimento.paciente_id,
+                estado_anterior=estado_anterior,
+                novo_estado=str(atendimento.status),
+                tcle_hash=_safe_tcle_hash(atendimento),
+                payload={"motivo": motivo} if motivo else {},
             )
 
         await self._db_session.commit()
@@ -814,20 +906,37 @@ class FilaService:
             or "Piora de sintomas na fila virtual",
             sintomas=command.novos_sintomas,
             escala_dor=command.escala_dor,
-            tcle_hash=atendimento.tcle_hash,
+            tcle_hash=_safe_tcle_hash(atendimento),
             raise_on_emergency=False,
             atendimento_id=atendimento.id,
         )
 
         if triage_eval.alerta_samu_disparado or triage_eval.prioridade_clinica == 1:
-            # Escape emergencial SAMU 192 (RF-06 / RN04)
+            estado_anterior = str(atendimento.status)
             atendimento.cancelar_pelo_paciente("ENCAMINHADO_SAMU_PIORA_CLINICA")
             await self.remover_da_fila(command.organizacao_id, command.atendimento_id)
-            if atendimento.medico_id:
+            if atendimento.medico_id and self._alocacao_service is not None:
                 await self._alocacao_service.liberar_locks(
                     organizacao_id=command.organizacao_id,
                     medico_id=atendimento.medico_id,
                     atendimento_id=command.atendimento_id,
+                )
+            if self._audit_trail is not None:
+                await self._audit_trail.record_event(
+                    organizacao_id=command.organizacao_id,
+                    atendimento_id=command.atendimento_id,
+                    ator_tipo=AtorTipo.PACIENTE,
+                    ator_papel=AtorPapel.PACIENTE,
+                    tipo_evento="PIORA_CLINICA_REGISTRADA",
+                    ator_id=atendimento.paciente_id,
+                    estado_anterior=estado_anterior,
+                    novo_estado=str(atendimento.status),
+                    tcle_hash=_safe_tcle_hash(atendimento),
+                    payload={
+                        "alerta_samu": True,
+                        "motivo": "ENCAMINHADO_SAMU_PIORA_CLINICA",
+                        "prioridade": 1,
+                    },
                 )
             await self._db_session.commit()
             await self._db_session.refresh(atendimento)
@@ -866,6 +975,20 @@ class FilaService:
             await self._valkey.zadd(k_fila, {str(command.atendimento_id): score})  # pyright: ignore[reportUnknownMemberType]
             nova_pos = await self.obter_posicao_fila(
                 command.organizacao_id, command.atendimento_id
+            )
+
+        if self._audit_trail is not None:
+            await self._audit_trail.record_event(
+                organizacao_id=command.organizacao_id,
+                atendimento_id=command.atendimento_id,
+                ator_tipo=AtorTipo.PACIENTE,
+                ator_papel=AtorPapel.PACIENTE,
+                tipo_evento="PIORA_CLINICA_REGISTRADA",
+                ator_id=atendimento.paciente_id,
+                estado_anterior=str(atendimento.status),
+                novo_estado=str(atendimento.status),
+                tcle_hash=_safe_tcle_hash(atendimento),
+                payload={"nova_prioridade": nova_prioridade},
             )
 
         await self._db_session.commit()

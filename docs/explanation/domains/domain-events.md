@@ -69,13 +69,13 @@ Consumidores lógicos: paciente regulariza pagamento ou dado, painel acompanha p
 
 ## 5. AuditEvent — caso à parte
 
-Modelo append-only para conformidade cfm e lgpd, definido em `src/core/audit/models.py`.
+Modelo append-only para conformidade cfm e lgpd, definido em `src/core/audit/models.py`, acessado através da porta transversal `src/core/audit/ports.py` (`AuditTrailPort`) e adaptador `src/core/audit/adapter.py` (`SqlAuditTrailAdapter`).
 
 Não é notifier port, não circula ponto a ponto, não admite replay ou reemissão.
 
-Toda transição relevante grava registro com ator, papel, tipo de evento, estados anterior e novo, hash de tcle e payload.
+Toda transição clínica relevante dos módulos `queue` e `consultation` grava registro na mesma transação SQLAlchemy antes do commit, com ator, papel, tipo de evento, estados anterior e novo, hash de tcle e payload. Catálogo completo dos 11 eventos: [Catálogo de Eventos de Auditoria Clínica](../../reference/audit/event-catalog.md).
 
-Imutabilidade garantida por listeners que vetam update e delete, qualquer tentativa levanta erro de domínio.
+Imutabilidade garantida no PostgreSQL por trigger `trg_prevent_audit_mutation` e listeners de ORM que vetam update e delete, qualquer tentativa levanta erro de domínio. Provas vivas: `tests/integration/test_clinical_audit_integration.py` e `tests/unit/test_audit_port_adapter.py`.
 
 Uso: perícia reconstrói jornada por atendimento, auditoria prova consentimento, lgpd rastreia acesso a dado sensível.
 

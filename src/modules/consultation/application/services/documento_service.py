@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
 from src.core.errors import NotFoundError
 from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
@@ -72,6 +73,7 @@ class DocumentoService:
         cache: SignedCachePort,
         atendimento_reader: AtendimentoReaderPort | None = None,
         directory: DocumentDirectoryPort | None = None,
+        audit_trail: AuditTrailPort | None = None,
     ) -> None:
         self._session = session
         self._pdf_generator = pdf_generator
@@ -80,6 +82,7 @@ class DocumentoService:
         self._cache = cache
         self._atendimento_reader = atendimento_reader
         self._directory = directory
+        self._audit_trail = audit_trail
 
     @property
     def storage(self) -> StoragePort:
@@ -204,6 +207,20 @@ class DocumentoService:
             self._session.add(item_entity)
 
         await self._session.flush()
+        if self._audit_trail is not None:
+            await self._audit_trail.record_event(
+                organizacao_id=command.organizacao_id,
+                tipo_evento="DOCUMENTO_CLINICO_EMITIDO",
+                ator_tipo=AtorTipo.PROFISSIONAL.value,
+                ator_papel=AtorPapel.MEDICO.value,
+                ator_id=command.medico_id,
+                atendimento_id=command.atendimento_id,
+                payload={
+                    "documento_id": str(doc.id),
+                    "tipo_documento": str(doc.tipo_documento),
+                    "itens_qtd": len(command.itens),
+                },
+            )
         await self._session.commit()
         # Reload with itens eagerly (selectin) so Pydantic model_validate
         # stays sync-safe; expire_on_commit=False keeps columns, no refresh.
@@ -365,6 +382,21 @@ class DocumentoService:
         doc.chave_s3 = s3_key
         await self._cache.marcar_assinado(doc.id)
         await self._session.flush()
+        if self._audit_trail is not None:
+            await self._audit_trail.record_event(
+                organizacao_id=doc.organizacao_id,
+                tipo_evento="DOCUMENTO_CLINICO_ASSINADO",
+                ator_tipo=AtorTipo.PROFISSIONAL.value,
+                ator_papel=AtorPapel.MEDICO.value,
+                ator_id=doc.medico_id,
+                atendimento_id=doc.atendimento_id,
+                payload={
+                    "documento_id": str(doc.id),
+                    "tipo_documento": str(doc.tipo_documento),
+                    "sha256_hash": doc.sha256_hash,
+                    "chave_s3": doc.chave_s3,
+                },
+            )
         await self._session.commit()
 
         assinado_em = doc.assinado_em or datetime.now(UTC)

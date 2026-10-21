@@ -23,6 +23,7 @@
 - **Quando** a paciente clica em entrar na consulta e solicita o token de acesso à sala em `POST /api/v1/consultations/{atendimento_id}/livekit/token`,
 - **Então** o sistema valida que o atendimento está aguardando o ingresso da paciente,
 - **E** transiciona o atendimento para `EM_ATENDIMENTO`,
+- **E** persiste atomicamente o evento auditável 'CHAMADA_ATENDIDA' na trilha append-only (ADR-007),
 - **E** cancela e neutraliza a contagem regressiva de no-show de 45 segundos,
 - **E** promove o lock temporário de chamada em lock de consulta médica ativa,
 - **E** retorna o token assinado e metadados de conexão à sala de videoconferência (HTTP 200 OK).
@@ -32,6 +33,7 @@
 - **Quando** a rotina assíncrona de timeout de chamada é acionada,
 - **E** verifica que o atendimento ainda permanece no status `CHAMANDO_PACIENTE`,
 - **Então** o sistema marca o atendimento como `PACIENTE_AUSENTE`,
+- **E** persiste atomicamente o evento auditável 'TIMEOUT_CHAMADA_NO_SHOW' na trilha append-only (ADR-007),
 - **E** desfaz a reserva temporária do médico e do atendimento,
 - **E** notifica o médico via canal em tempo real de que a paciente não compareceu,
 - **E** libera imediatamente o painel do médico para convocar o próximo paciente da fila.

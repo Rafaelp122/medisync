@@ -8,6 +8,11 @@ from arq.connections import ArqRedis
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.audit import (
+    AtorPapel,
+    AtorTipo,
+    AuditTrailPort,
+)
 from src.core.realtime import publish_realtime_event
 from src.modules.queue.application.dtos import (
     AlocacaoChamadaResult,
@@ -49,6 +54,7 @@ class AlocacaoChamadaService:
         arq_pool: ArqRedis | None = None,
         notification_adapter: NotificationPort | None = None,
         doctor_notifier: DoctorCallNotifierPort | None = None,
+        audit_trail: AuditTrailPort | None = None,
     ) -> None:
         self._valkey = valkey
         self._db_session = db_session
@@ -56,18 +62,17 @@ class AlocacaoChamadaService:
         self._arq_pool = arq_pool
         self._notification_adapter = notification_adapter
         self._doctor_notifier = doctor_notifier
+        self._audit_trail: AuditTrailPort | None = audit_trail
 
     async def alocar_chamada(
         self,
         command: AlocarChamadaCommand,
     ) -> AlocacaoChamadaResult:
-        """Atomically match doctor with patient via Lua, setting 45s locks.
+        """Executa alocação atômica em Lua e registra evento (ADR-002, ADR-007).
 
-        Return codes from alocar_chamada.lua:
-        - 1: Success -> dual locks created, patient popped from queue.
-        - 0: Doctor busy -> raises MedicoOcupadoError (HTTP 409).
-        - -1: Patient snatched or unavailable ->
-          raises AtendimentoNaoDisponivelError (HTTP 409).
+        Decisões: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
+        Regras: docs/explanation/domains/queue-domain.md
+        Auditoria: docs/reference/audit/event-catalog.md
         """
         k_medico = f"lock:{command.organizacao_id}:medico:{command.medico_id}"
         k_atend = f"lock:{command.organizacao_id}:atendimento:{command.atendimento_id}"
@@ -117,9 +122,26 @@ class AlocacaoChamadaService:
                     "não foi encontrado no banco."
                 )
 
+            estado_anterior = str(atendimento.status)
             atendimento.iniciar_chamada(command.medico_id)
+            if self._audit_trail is not None:
+                await self._audit_trail.record_event(
+                    organizacao_id=command.organizacao_id,
+                    atendimento_id=command.atendimento_id,
+                    ator_tipo=AtorTipo.PROFISSIONAL,
+                    ator_papel=AtorPapel.MEDICO,
+                    tipo_evento="CHAMADA_INICIADA",
+                    ator_id=command.medico_id,
+                    estado_anterior=estado_anterior,
+                    novo_estado=str(atendimento.status),
+                    tcle_hash=atendimento.tcle_hash
+                    if isinstance(atendimento.tcle_hash, str)
+                    else None,
+                    payload={"ring_timeout_segundos": command.ttl_segundos},
+                )
             await self._db_session.commit()
             await self._db_session.refresh(atendimento)
+
         except Exception:
             # On any DB failure or state exception, rollback Valkey locks
             await self.liberar_locks(

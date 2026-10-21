@@ -4,6 +4,7 @@
 
 ## 1. Persistência & Isolamento de Dados
 - [Database Schema & Row-Level Security (RLS)](database/schema-and-rls.md) — Catálogo físico das 12 tabelas, chaves primárias UUIDv7, índices B-Tree e políticas RLS de tenant.
+- [Catálogo de Eventos de Auditoria Clínica](audit/event-catalog.md) — Taxonomia dos 11 eventos auditáveis append-only sob ADR-007, CFM nº 2.314/2022 e LGPD.
 
 ## 2. Cache, Concorrência & Atomicidade
 - [Valkey Keys Dictionary](valkey/keys-dictionary.md) — Namespaces de chaves, tipos de dados (ZSET/HASH/STRING), TTLs e políticas de evicção.

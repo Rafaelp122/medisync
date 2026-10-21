@@ -13,6 +13,7 @@ from uuid import UUID
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.audit import AuditTrailPort, SqlAuditTrailAdapter
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.modules.consultation.application.ports.atendimento_reader_port import (
@@ -234,6 +235,7 @@ def get_documento_service(session: DbSessionDep) -> DocumentoService:
         cache=get_signed_cache(),
         atendimento_reader=get_atendimento_reader(session),
         directory=get_document_directory(session),
+        audit_trail=SqlAuditTrailAdapter(session),
     )
 
 
@@ -245,6 +247,7 @@ def get_evolucao_service(
     return EvolucaoService(
         session=session,
         reader=reader if reader is not None else get_atendimento_reader(session),
+        audit_trail=SqlAuditTrailAdapter(session),
     )
 
 
@@ -261,6 +264,7 @@ def build_pep_service_for_session(
     signed_cache: SignedCachePort | None = None,
     evolucao_service: EvolucaoService | None = None,
     documento_service: DocumentoService | None = None,
+    audit_trail: AuditTrailPort | None = None,
 ) -> PEPService:
     """Build PEPService with all mandatory ports wired (outside request scope)."""
     reader = (
@@ -277,6 +281,7 @@ def build_pep_service_for_session(
     sig = signer if signer is not None else get_signer()
     stor = storage if storage is not None else get_storage()
     cache = signed_cache if signed_cache is not None else get_signed_cache()
+    audit = audit_trail if audit_trail is not None else SqlAuditTrailAdapter(session)
 
     doc_svc = (
         documento_service
@@ -289,12 +294,17 @@ def build_pep_service_for_session(
             cache=cache,
             atendimento_reader=reader,
             directory=directory,
+            audit_trail=audit,
         )
     )
     ev_svc = (
         evolucao_service
         if evolucao_service is not None
-        else get_evolucao_service(session, reader)
+        else EvolucaoService(
+            session=session,
+            reader=reader,
+            audit_trail=audit,
+        )
     )
     return PEPService(
         session=session,
@@ -304,6 +314,7 @@ def build_pep_service_for_session(
         documento_service=doc_svc,
         atendimento_reader=reader,
         evolucao_service=ev_svc,
+        audit_trail=audit,
     )
 
 

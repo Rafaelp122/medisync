@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
 from src.modules.consultation.application.dtos import RegistrarEvolucaoSOAPCommand
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
@@ -29,9 +30,11 @@ class EvolucaoService:
         self,
         session: AsyncSession,
         reader: AtendimentoReaderPort | None = None,
+        audit_trail: AuditTrailPort | None = None,
     ) -> None:
         self._session = session
         self._reader = reader
+        self._audit_trail = audit_trail
 
     async def _is_terminal(self, atendimento_id: UUID) -> bool:
         """Return True when queue-owned attendance reached terminal status."""
@@ -102,6 +105,19 @@ class EvolucaoService:
             existing.registrado_em = datetime.now(UTC)
 
             await self._session.flush()
+            if self._audit_trail is not None:
+                await self._audit_trail.record_event(
+                    organizacao_id=command.organizacao_id,
+                    tipo_evento="EVOLUCAO_SOAP_REGISTRADA",
+                    ator_tipo=AtorTipo.PROFISSIONAL.value,
+                    ator_papel=AtorPapel.MEDICO.value,
+                    ator_id=command.medico_id,
+                    atendimento_id=command.atendimento_id,
+                    payload={
+                        "evolucao_id": str(existing.id),
+                        "cid10": clean_cid10,
+                    },
+                )
             await self._session.commit()
             return existing
 
@@ -122,6 +138,19 @@ class EvolucaoService:
         )
         self._session.add(evolucao)
         await self._session.flush()
+        if self._audit_trail is not None:
+            await self._audit_trail.record_event(
+                organizacao_id=command.organizacao_id,
+                tipo_evento="EVOLUCAO_SOAP_REGISTRADA",
+                ator_tipo=AtorTipo.PROFISSIONAL.value,
+                ator_papel=AtorPapel.MEDICO.value,
+                ator_id=command.medico_id,
+                atendimento_id=command.atendimento_id,
+                payload={
+                    "evolucao_id": str(evolucao.id),
+                    "cid10": command.cid10_principal,
+                },
+            )
         await self._session.commit()
         return evolucao
 

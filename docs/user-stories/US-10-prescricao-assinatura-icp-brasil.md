@@ -24,6 +24,7 @@
 - **Então** o sistema gera automaticamente o documento em formato de preservação digital PDF/A contendo a 1ª via (Farmácia) e a 2ª via (Paciente),
 - **E** inclui o código QR Code apontando para o canal oficial de validação pública da assinatura digital,
 - **E** aplica a assinatura digital ICP-Brasil com carimbo de tempo oficial,
+- **E** persiste atomicamente os eventos auditáveis 'DOCUMENTO_CLINICO_EMITIDO' e 'DOCUMENTO_CLINICO_ASSINADO' com hash SHA-256 e chave S3 (ADR-007),
 - **E** disponibiliza o token seguro de validação pública e download (HTTP 200 OK).
 
 ### Cenário 2: Bloqueio estrito de substâncias proibidas em telemedicina (Fatia de Salvaguarda)

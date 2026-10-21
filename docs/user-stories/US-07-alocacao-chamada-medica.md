@@ -26,6 +26,7 @@
 - **E** reserva mutuamente o médico e o paciente por 45 segundos, impedindo que outro profissional o convoque,
 - **E** remove o paciente da lista de espera de novos atendimentos,
 - **E** transiciona o atendimento para em chamada (`CHAMANDO_PACIENTE`),
+- **E** persiste atomicamente o evento auditável 'CHAMADA_INICIADA' na trilha append-only (ADR-007),
 - **E** inicia o timer de 45 segundos para resposta do paciente,
 - **E** retorna HTTP 200 OK com os dados do atendimento alocado em menos de 20 milissegundos.
 

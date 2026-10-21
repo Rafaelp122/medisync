@@ -25,6 +25,7 @@
 - **Então** o sistema registra a comprovação imutável do consentimento com carimbo de data/hora oficial UTC,
 - **E** estratifica o risco clínico preliminar segundo a taxonomia aberta ACR em 5 níveis (ex: Nível 3 - Urgente),
 - **E** admite o atendimento na unidade aguardando a validação de elegibilidade,
+- **E** persiste atomicamente o evento auditável 'ADMISSAO_PACIENTE' na trilha append-only (ADR-007 / CFM nº 2.314/2022),
 - **E** inicia a verificação assíncrona de cobertura em segundo plano sem bloquear a paciente,
 - **E** retorna confirmação de admissão (HTTP 201 Created) com identificador do atendimento e credencial provisória de acesso.
 
