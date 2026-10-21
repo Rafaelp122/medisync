@@ -1,3 +1,9 @@
+## v0.5.0 (2026-10-21)
+
+### Feat
+
+- **audit**: integrar AuditTrailPort aos casos de uso clínicos (ADR-007)
+
 ## v0.4.2 (2026-10-19)
 
 ### Fix
