@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
 from src.modules.consultation.application.dtos import (
     DocumentoAssinadoResult,
     EmitirDocumentoClinicoCommand,
@@ -59,6 +60,7 @@ class PEPService:
         documento_service: DocumentoService,
         atendimento_reader: AtendimentoReaderPort | None = None,
         evolucao_service: EvolucaoService | None = None,
+        audit_trail: AuditTrailPort | None = None,
     ) -> None:
         self._session = session
         self._pdf_generator = pdf_generator
@@ -66,8 +68,9 @@ class PEPService:
         self._storage = storage
         self._reader = atendimento_reader
         self._documentos = documento_service
+        self._audit_trail = audit_trail
         self._evolucao = evolucao_service or EvolucaoService(
-            session=session, reader=atendimento_reader
+            session=session, reader=atendimento_reader, audit_trail=audit_trail
         )
 
     @property
@@ -204,6 +207,18 @@ class PEPService:
                 await self._reader.concluir_atendimento(command.atendimento_id)
 
         await self._session.flush()
+        if self._audit_trail is not None:
+            await self._audit_trail.record_event(
+                organizacao_id=command.organizacao_id,
+                tipo_evento="CONSULTA_FINALIZADA",
+                ator_tipo=AtorTipo.PROFISSIONAL.value,
+                ator_papel=AtorPapel.MEDICO.value,
+                ator_id=command.medico_id,
+                atendimento_id=command.atendimento_id,
+                estado_anterior="EM_ATENDIMENTO",
+                novo_estado="CONCLUIDO",
+                payload={"evolucao_id": str(evolucao.id)},
+            )
         await self._session.commit()
         return evolucao
 

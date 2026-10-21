@@ -24,6 +24,7 @@
 - **Então** o sistema reclassifica o risco clínico para Nível 1 (Vermelho - Emergência),
 - **E** remove imediatamente o paciente da fila de espera virtual,
 - **E** encerra o atendimento com justificativa de emergência médica pré-hospitalar,
+- **E** persiste atomicamente o evento auditável 'PIORA_CLINICA_REGISTRADA' na trilha append-only (ADR-007),
 - **E** dispara notificação de alerta para o serviço de emergência,
 - **E** retorna confirmação imediata (HTTP 200 OK) com `alerta_samu_disparado = true` e orientações de socorro pelo SAMU 192.
 

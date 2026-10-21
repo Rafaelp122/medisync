@@ -4,7 +4,11 @@ import asyncio
 import queue as queue_module
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
+from uuid import UUID
+
+from src.core.audit import AtorPapel, AtorTipo
+from src.core.uuid7 import uuid7
 
 
 class FakeNoneMappings:
@@ -12,6 +16,32 @@ class FakeNoneMappings:
 
     def first(self) -> None:
         return None
+
+
+class FakeScalarResult:
+    """Scripted scalar result supporting all(), first(), and one_or_none()."""
+
+    def __init__(self, value: Any) -> None:
+        self._value: Any = value
+
+    def all(self) -> list[Any]:
+        if isinstance(self._value, list):
+            return list(cast("list[Any]", self._value))
+        if self._value is None:
+            return []
+        return [self._value]
+
+    def first(self) -> Any:
+        if isinstance(self._value, list):
+            items = cast("list[Any]", self._value)
+            return items[0] if items else None
+        return self._value
+
+    def one_or_none(self) -> Any:
+        if isinstance(self._value, list):
+            items = cast("list[Any]", self._value)
+            return items[0] if items else None
+        return self._value
 
 
 class FakeResult:
@@ -26,6 +56,9 @@ class FakeResult:
     def scalar_one(self) -> Any:
         assert self._value is not None
         return self._value
+
+    def scalars(self) -> FakeScalarResult:
+        return FakeScalarResult(self._value)
 
     def mappings(self) -> FakeNoneMappings:
         return FakeNoneMappings()
@@ -44,6 +77,9 @@ class FakeAddedResult:
         assert self._added
         return self._added[0]
 
+    def scalars(self) -> FakeScalarResult:
+        return FakeScalarResult(self._added)
+
 
 class FakeAsyncSession:
     """Scripted in-memory async session with ordered execute results."""
@@ -60,7 +96,7 @@ class FakeAsyncSession:
         self.commits: int = 0
         self.executes: int = 0
 
-    async def get(self, entity_cls: Any, ident: Any) -> Any:
+    async def get(self, entity_cls: Any, ident: Any, *args: Any, **kwargs: Any) -> Any:
         if ident in self._entities:
             return self._entities[ident]
         if (entity_cls, ident) in self._entities:
@@ -129,12 +165,81 @@ class FakePubSub:
         return None
 
 
+class FakePipeline:
+    """In-memory Redis pipeline double for atomic operations."""
+
+    def __init__(self, valkey: "FakeValkey") -> None:
+        self._valkey = valkey
+
+    async def __aenter__(self) -> "FakePipeline":
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        pass
+
+    def delete(self, *keys: str) -> "FakePipeline":
+        for k in keys:
+            self._valkey.delete_key(k)
+        return self
+
+    def set(self, key: str, value: Any, *args: Any, **kwargs: Any) -> "FakePipeline":
+        self._valkey.set_key(key, value)
+        return self
+
+    async def execute(self) -> list[Any]:
+        return []
+
+
 class FakeValkey:
     """Minimal Valkey double supporting pubsub and sorted sets for in-memory tests."""
 
     def __init__(self) -> None:
         self._queues: dict[str, queue_module.Queue[str]] = {}
         self._zsets: dict[str, dict[str, float]] = {}
+        self._kv: dict[str, Any] = {}
+        self._sets: dict[str, set[str]] = {}
+
+    def delete_key(self, key: str) -> None:
+        self._kv.pop(key, None)
+
+    def set_key(self, key: str, value: Any) -> None:
+        self._kv[key] = value
+
+    def pipeline(self, transaction: bool = True) -> FakePipeline:
+        return FakePipeline(self)
+
+    async def get(self, name: str) -> Any:
+        return self._kv.get(name)
+
+    async def set(self, name: str, value: Any, *args: Any, **kwargs: Any) -> bool:
+        self._kv[name] = value
+        return True
+
+    async def incr(self, name: str, amount: int = 1) -> int:
+        cur = int(self._kv.get(name, 0) or 0)
+        self._kv[name] = cur + amount
+        return cur + amount
+
+    async def expire(self, name: str, time: int) -> bool:
+        return True
+
+    async def sadd(self, name: str, *values: str) -> int:
+        s = self._sets.setdefault(name, set())
+        before = len(s)
+        s.update(values)
+        return len(s) - before
+
+    async def srem(self, name: str, *values: str) -> int:
+        s = self._sets.get(name)
+        if s is not None:
+            before = len(s)
+            s.difference_update(values)
+            return before - len(s)
+        return 0
+
+    async def scard(self, name: str) -> int:
+        s = self._sets.get(name)
+        return len(s) if s is not None else 0
 
     def pubsub(self) -> FakePubSub:
         return FakePubSub(self._queues)
@@ -315,3 +420,58 @@ class FakeEligibilityProvider:
     async def verificar_elegibilidade(self, requisicao: Any) -> Any:
         self.requisicoes.append(requisicao)
         return self.resultado
+
+
+class FakeAuditTrail:
+    """In-memory test double implementing AuditTrailPort (ADR-007)."""
+
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    async def record_event(
+        self,
+        *,
+        organizacao_id: int,
+        atendimento_id: UUID,
+        ator_tipo: AtorTipo | str,
+        ator_papel: AtorPapel | str,
+        tipo_evento: str,
+        ator_id: UUID | None = None,
+        estado_anterior: str | None = None,
+        novo_estado: str | None = None,
+        tcle_hash: str | None = None,
+        payload: dict[str, Any] | None = None,
+        ip_origem: str | None = None,
+    ) -> UUID:
+        event_id = uuid7()
+        raw_tipo: Any = ator_tipo
+        raw_papel: Any = ator_papel
+        tipo_str: str = (
+            str(raw_tipo.value) if hasattr(raw_tipo, "value") else str(raw_tipo)
+        )
+        papel_str: str = (
+            str(raw_papel.value) if hasattr(raw_papel, "value") else str(raw_papel)
+        )
+        self.events.append(
+            {
+                "id": event_id,
+                "organizacao_id": organizacao_id,
+                "atendimento_id": atendimento_id,
+                "ator_tipo": tipo_str,
+                "ator_papel": papel_str,
+                "tipo_evento": tipo_evento,
+                "ator_id": ator_id,
+                "estado_anterior": estado_anterior,
+                "novo_estado": novo_estado,
+                "tcle_hash": tcle_hash,
+                "payload": payload or {},
+                "ip_origem": ip_origem,
+            }
+        )
+        return event_id
+
+    def get_events_by_type(self, tipo_evento: str) -> list[dict[str, Any]]:
+        return [e for e in self.events if e["tipo_evento"] == tipo_evento]
+
+    def clear(self) -> None:
+        self.events.clear()

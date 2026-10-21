@@ -116,6 +116,7 @@ def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
             queue_store: Any = build_fila_service_for_session(session=session)
             atendimento_reader = QueueStoreAtendimentoReaderAdapter(queue_store)
 
+    audit_trail: Any = overrides.get("audit_trail")
     documento_service: Any = overrides.get("documento_service")
     if documento_service is None:
         directory: Any = overrides.get("directory")
@@ -127,10 +128,15 @@ def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
             cache=cache,
             atendimento_reader=atendimento_reader,
             directory=directory,
+            audit_trail=audit_trail,
         )
     evolucao_service: Any = overrides.get("evolucao_service")
     if evolucao_service is None:
-        evolucao_service = EvolucaoService(session=session, reader=atendimento_reader)
+        evolucao_service = EvolucaoService(
+            session=session,
+            reader=atendimento_reader,
+            audit_trail=audit_trail,
+        )
     return PEPService(
         session=session,
         pdf_generator=pdf_generator,
@@ -139,6 +145,7 @@ def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
         documento_service=documento_service,
         atendimento_reader=atendimento_reader,
         evolucao_service=evolucao_service,
+        audit_trail=audit_trail,
     )
 
 

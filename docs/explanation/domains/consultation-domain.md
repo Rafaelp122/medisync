@@ -15,7 +15,7 @@ Escopo termina no registro. Fila decide ordem, triagem decide prioridade, billin
 ## 2. Regras
 
 - **RN06 — Ato médico nunca interrompido por tempo.** `marcar_finalizado`/`validar_pode_excluir` travam registro, nunca derrubam chamada; backend emite JWT através de `TeleconsultaService` desacoplado do SFU. [Fonte](../product-specification.md) (RN06)
-- **RN07 — PEP append-only com UTC e prova criptográfica.** `EvolucaoClinica`/`DocumentoClinico` carimbam `registrado_em`/`assinado_em` em UTC, hash SHA-256 de 64 hex, assinatura PAdES; guarda canônica em `src/modules/consultation/domain/s3_keys.py`. [Fonte](../product-specification.md) (RN07)
+- **RN07 — PEP append-only com UTC e prova criptográfica.** `EvolucaoClinica`/`DocumentoClinico` carimbam `registrado_em`/`assinado_em` em UTC, hash SHA-256 de 64 hex, assinatura PAdES; guarda canônica em `src/modules/consultation/domain/s3_keys.py`. Casos de uso (`salvar_evolucao_soap`, `emitir_documento`, `assinar`, `finalizar_consulta`) persistem atomicamente eventos na tabela `audit_events` via `AuditTrailPort` (`SqlAuditTrailAdapter`) antes do `commit()`. Catálogo canônico: [Catálogo de Eventos](../../reference/audit/event-catalog.md). Provas vivas: `tests/unit/test_consultation_audit_events.py` e `tests/integration/test_clinical_audit_integration.py`. [Fonte](../product-specification.md) (RN07)
 
 Guardiões: `__init__` rejeita `organizacao_id <= 0`, anamnese/conduta vazias, CID-10 fora do padrão, `chave_s3` vazia, hash fora de 64 hex (`ConsultaInvalidaError`).
 

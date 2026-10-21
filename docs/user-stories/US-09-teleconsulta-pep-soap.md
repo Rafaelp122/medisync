@@ -22,6 +22,7 @@
 - **Dado que** estou em atendimento médico ativo (`EM_ATENDIMENTO`) com o paciente,
 - **Quando** submeto as notas de anamnese, exame físico virtual, hipótese diagnóstica CID-10 e conduta em `POST /api/v1/consultations/{id}/soap`,
 - **Então** o registro da evolução clínica é arquivado com sucesso no prontuário,
+- **E** persiste atomicamente o evento auditável 'EVOLUCAO_SOAP_REGISTRADA' na trilha append-only (ADR-007),
 - **E** o sistema permite atualizações e complementações incrementais enquanto a consulta médica permanecer aberta.
 
 ### Cenário 2: Preservação Soberana do Ato Médico (Estouro de TMA sem desconexão forçada)
@@ -32,6 +33,7 @@
 
 ### Cenário 3: Imutabilidade após a finalização da consulta
 - **Dado que** finalizei formalmente o atendimento clínico através do comando de conclusão,
+- **E** o sistema persistiu atomicamente o evento auditável 'CONSULTA_FINALIZADA' com transição de EM_ATENDIMENTO para CONCLUIDO (ADR-007),
 - **Quando** qualquer usuário tenta submeter nova alteração clínica no SOAP desse atendimento encerrado,
 - **Então** o sistema bloqueia a mutação (HTTP 409 Conflict ou 422 Unprocessable Entity), garantindo a imutabilidade do prontuário médico.
 

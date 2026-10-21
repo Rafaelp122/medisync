@@ -14,6 +14,7 @@ from fastapi import Depends
 from redis.asyncio import ConnectionPool, Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.audit import AuditTrailPort, SqlAuditTrailAdapter
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.core.dependencies import ValkeyDep
@@ -147,9 +148,11 @@ def build_alocacao_service_for_session(
     session: AsyncSession,
     arq_pool: ArqRedis | None = None,
     doctor_notifier: DoctorCallNotifierPort | None = None,
+    audit_trail: AuditTrailPort | None = None,
 ) -> AlocacaoChamadaService:
     """Build allocation service outside request scope (tests/worker tooling)."""
     notifier = doctor_notifier or ValkeyDoctorCallNotifier(valkey=valkey)
+    resolved_audit: AuditTrailPort = audit_trail or SqlAuditTrailAdapter(session)
     return AlocacaoChamadaService(
         valkey=valkey,
         db_session=session,
@@ -157,6 +160,7 @@ def build_alocacao_service_for_session(
         arq_pool=arq_pool,
         notification_adapter=get_notification_adapter(valkey=valkey),
         doctor_notifier=notifier,
+        audit_trail=resolved_audit,
     )
 
 
@@ -174,21 +178,24 @@ def build_fila_service_for_session(
     valkey: Redis | None = None,
     triage_port: TriagePort | None = None,
     arq_pool: ArqRedis | None = None,
+    audit_trail: AuditTrailPort | None = None,
 ) -> FilaService:
     """Build queue service outside request scope (tests/worker tooling)."""
     client = valkey if valkey is not None else Redis(connection_pool=get_valkey_pool())
     resolved_triage: TriagePort = triage_port or build_triage_service_for_session(
         session=session
     )
+    resolved_audit: AuditTrailPort = audit_trail or SqlAuditTrailAdapter(session)
     return FilaService(
         valkey=client,
         db_session=session,
         alocacao_service=build_alocacao_service_for_session(
-            client, session, arq_pool=arq_pool
+            client, session, arq_pool=arq_pool, audit_trail=resolved_audit
         ),
         controle_admissao=ControleAdmissaoService(valkey=client),
         triage_port=resolved_triage,
         arq_pool=arq_pool,
+        audit_trail=resolved_audit,
     )
 
 
