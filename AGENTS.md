@@ -78,7 +78,7 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
 
 Consulte e utilize as skills especializadas localizadas em `.agents/skills/`:
 * [`.agents/skills/medisync-issue-creator`](.agents/skills/medisync-issue-creator/SKILL.md): Formalização de necessidades e gestão de escopo em dois eixos ortogonais (Diagnóstico & Impacto vs YAGNI & Guardrails) via subagentes paralelos. Transforma ideias, bugs e débitos em issues canônicas blindadas contra scope creep antes do planejamento.
-* [`.agents/skills/medisync-issue-planner`](.agents/skills/medisync-issue-planner/SKILL.md): Planejamento técnico em dois eixos (Standards & Arquitetura vs Spec & Diátaxis), fatiamento TDD Inside-Out e aplicação da Menor Alteração Completa.
+* [`.agents/skills/medisync-issue-planner`](.agents/skills/medisync-issue-planner/SKILL.md): Planejamento técnico com gate de falsificabilidade prévia, pesquisa em dois eixos (Standards & Arquitetura vs Spec & Diátaxis), fatiamento TDD Inside-Out e aplicação da Menor Alteração Completa.
 * [`.agents/skills/medisync-pr-review`](.agents/skills/medisync-pr-review/SKILL.md): Revisão hostil independente do PR/diff em sessão limpa (Zero-Context / Segregação de Funções) em dois eixos (Standards vs Spec) com inventário mecânico de rotas via shell e achados concretos em 4 partes.
 * [`.agents/skills/medisync-module-audit`](.agents/skills/medisync-module-audit/SKILL.md): Auditoria cirúrgica e aprofundada de um módulo hexagonal (bounded context) em repouso: integridade clínica, routers finos, conformidade Diátaxis/ADRs, concorrência e oportunidades de deleção lean.
 * [`.agents/skills/fastapi`](.agents/skills/fastapi/SKILL.md): Boas práticas com FastAPI, injeção de dependências, routers e Pydantic v2.

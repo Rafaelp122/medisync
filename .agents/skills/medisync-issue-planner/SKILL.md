@@ -1,6 +1,6 @@
 ---
 name: medisync-issue-planner
-description: Planejamento técnico em dois eixos (Standards & Arquitetura vs Spec & Diátaxis), fatiamento TDD Inside-Out e aplicação da Menor Alteração Completa. Use sempre que iniciar a resolução de uma issue.
+description: Planejamento técnico com gate de falsificabilidade prévia, pesquisa em dois eixos (Standards & Arquitetura vs Spec & Diátaxis), fatiamento TDD Inside-Out e aplicação da Menor Alteração Completa. Use sempre que iniciar a resolução de uma issue.
 ---
 
 # MediSync Issue Planner: Planejamento em Dois Eixos & TDD Desacoplado em Pares
@@ -12,33 +12,44 @@ Este procedimento padroniza o ciclo de planejamento de engenharia no MediSync Ex
 ## 1. Princípios Fundamentais
 
 1. **Separação Rígida entre Planejamento e Ação:** Pensar é barato; reescrever código desalinhado custa tokens, tempo e introduz bugs.
-2. **Dois Eixos Ortogonais de Planejamento:**
+2. **Ceticismo Investigativo & Falsificabilidade Prévia:** Nunca assuma a issue como verdade canônica inquestionável (*Zero Sycophancy*). A IA deve confrontar as premissas, sintomas e alegações com a base de código real antes de qualquer plano. Se o bug não existir, já tiver sido corrigido ou a premissa for falsa, a menor alteração completa é **zero código**.
+3. **Dois Eixos Ortogonais de Planejamento:**
    - **Eixo A (Standards & Arquitetura):** Mapeamento de precedentes, Fakes tipados existentes em `tests/doubles.py`, isolamento no `tach.toml`, routers finos e ADRs.
    - **Eixo B (Spec, Diátaxis & Contratos):** Mapeamento das regras canônicas, redação antecipada da documentação viva em `docs/` e definição prévia da matriz de testes.
-3. **Menor Alteração Completa (The Smallest Complete Change):**
+4. **Menor Alteração Completa (The Smallest Complete Change):**
    - O melhor plano é aquele que resolve 100% da issue com o menor diff possível, sem inventar camadas, DTOs espelho manuais (Mapper Hell) ou opções que ninguém pediu.
-4. **Desenvolvimento Desacoplado em Pares (TDD Inside-Out):**
+5. **Desenvolvimento Desacoplado em Pares (TDD Inside-Out):**
    - O teste (Red) é concebido estritamente a partir da Spec; o código (Green) é implementado exclusivamente para satisfazer o teste sem *Speculative Generality*.
-5. **Documentação é Entregável de Primeira Classe:** Nenhuma feature é concluída sem documentação Diátaxis atômica no mesmo ciclo.
+6. **Documentação é Entregável de Primeira Classe:** Nenhuma feature é concluída sem documentação Diátaxis atômica no mesmo ciclo.
 
 ---
 
 ## 2. Processo Operacional em 4 Fases
 
-### Fase 1: Triagem, Fixação da Issue & Grep de Chamadores
+### Fase 1: Triagem, Falsificabilidade da Issue & Grep de Chamadores
 
 1. Obtenha a issue oficial registrada:
    ```bash
    gh issue view <numero> --json title,body
    ```
-2. Isole as restrições:
+2. **Gate de Falsificabilidade & Sanity Check Factual (A Issue é Verídica?):**
+   - Não confie cegamente nas alegações da issue (*Zero Sycophancy*). Antes de despachar subagentes ou desenhar arquiteturas, confronte as afirmações com o código real:
+     - **Existência Factual:** Os arquivos, classes, funções, endpoints e tabelas citados na issue existem no estado atual do branch?
+     - **Verificação da Hipótese / Causa Raiz:**
+       - *Se for `[Bugfix]`*: O comportamento defeituoso alegado realmente ocorre no código atual? Inspecione os guard clauses e testes existentes. O bug já foi corrigido por outro PR recente? O comportamento relatado não é, na verdade, o comportamento clinicamente esperado pelas regras (`RNxx`)?
+       - *Se for `[Feature]` ou `[Refactor]`*: A funcionalidade apontada já não existe implementada total ou parcialmente em outro módulo, service ou sob nomenclatura canônica similar?
+       - *Se for `[Security/Compliance/ADR]`*: A alegada violação de ADR (ex.: router não fino, mapper hell, concorrência de fila) é comprovada no código hoje ou as guardas (`tests/architecture`, `tach check`) já protegem?
+   - **Fail-Fast por Inveracidade (Short-Circuit):** Se a premissa for refutada (problema inexistente, bug fantasma, código já corrigido ou premissa factual incorreta):
+     - **PARADA IMEDIATA:** Não avance para a Fase 2 (não despache subagentes e não gere plano de código fictício).
+     - Emita imediatamente ao usuário um **Relatório de Falsificação** detalhado, apontando arquivo e linhas exatas (`caminho/arquivo.py:Lxx-Lyy`) que refutam a premissa da issue, e aguarde orientações.
+3. Isole as restrições:
    - Quais critérios estão no **In Scope**?
    - Quais comportamentos estão expressamente proibidos no **Out of Scope**?
    - Quais regras clínicas (`RNxx`), normas CFM/LGPD e User Stories governam a demanda?
-3. **Paridade Estrita de Contratos & Zero Speculative Code (Never Code Around Ambiguity):**
+4. **Paridade Estrita de Contratos & Zero Speculative Code (Never Code Around Ambiguity):**
    - Identifique nominalmente cada endpoint HTTP/WS e método de serviço solicitado na Issue.
    - **Proibido:** Propor rotas alternativas, aliases defensivos, parâmetros opcionais redundantes ou fallbacks especulativos para acomodar termos divergentes em narrativas. Toda ação tem exatamente 1 contrato canônico. Em caso de discrepância entre título e corpo da issue, liste em `Open Questions` para aprovação do usuário antes de desenhar o plano.
-4. **Grep Every Caller (Mapeamento de Regressão Silenciosa):**
+5. **Grep Every Caller (Mapeamento de Regressão Silenciosa):**
    - Se a demanda alterar a assinatura, retorno ou comportamento de qualquer função existente, execute uma busca global no terminal (`grep_search` ou `rg`) para mapear previamente todos os pontos de consumo que precisarão ser ajustados.
 
 ---
@@ -79,6 +90,7 @@ O orquestrador sintetiza os dois relatórios no artefato `implementation_plan.md
 Descrição concisa do problema, diagnóstico da causa raiz e solução arquitetural.
 
 ## 1. Alinhamento Arquitetural & Menor Alteração Completa
+- **Diagnóstico de Veracidade & Causa Raiz:** Evidência factual coletada na Fase 1 comprovando a existência real do problema/necessidade no branch atual.
 - A Menor Alteração Completa: o que podemos reutilizar (stdlib, doubles existentes, helpers) em vez de criar código novo?
 - Camadas impactadas e garantia de portas/DTOs imutáveis.
 - Garantia de routers finos (zero DB, zero commit no router).
