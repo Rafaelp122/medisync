@@ -1,3 +1,9 @@
+## v0.5.1 (2026-10-25)
+
+### Fix
+
+- **auth**: retornar HTTP 429 no bloqueio de tentativas OTP e incluir role no payload (#86)
+
 ## v0.5.0 (2026-10-21)
 
 ### Feat
