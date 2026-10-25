@@ -70,6 +70,7 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 422 | `AUDITORIA_INVALIDA` | Inconsistência nos atributos do evento forense (`AuditoriaInvalidaError`) |
 | 423 | `CONTA_BLOQUEADA` | Bloqueio temporário por tentativas falhas consecutivas (`ContaBloqueadaError`) |
 | 429 | `OTP_RATE_LIMIT_EXCEEDED` | Limite de requisições de OTP excedido (`OtpRateLimitExcedidoError`) |
+| 429 | `OTP_TENTATIVAS_EXCEDIDAS` | Máximo de 3 tentativas falhas de OTP excedido (`OtpTentativasExcedidasError`) |
 | 429 | sem `code` | Rate limit de rede por IP (`Retry-After` obrigatório via `exigir_rate_limit`) |
 | 500 | `DOCUMENTO_INTEGRIDADE` | Metadados de médico/paciente ausentes (`DocumentoIntegridadeError`) |
 | 500 | `INTERNAL_SERVER_ERROR` | Fallback genérico para erros internos não tratados |
@@ -81,7 +82,7 @@ Notas de semântica:
 - 404 carrega `code` discriminado para o cliente diferenciar recursos clínicos sem inspecionar `detail`.
 - 409 protege concorrência de alocação médica e imutabilidade de prontuário e registros forenses.
 - 423 (Locked): formalmente mapeado para contas bloqueadas temporariamente por proteção contra força bruta.
-- 429 (Too Many Requests): suporta tanto `DomainError` com código `OTP_RATE_LIMIT_EXCEEDED` quanto `HTTPException` com header `Retry-After`.
+- 429 (Too Many Requests): suporta tanto `DomainError` com códigos `OTP_RATE_LIMIT_EXCEEDED` e `OTP_TENTATIVAS_EXCEDIDAS` quanto `HTTPException` com header `Retry-After`.
 - 503 (Service Unavailable): formalmente mapeado para suspensão de admissão por backpressure ou cota saturada.
 - 500: falha de integridade documental ou fallback interno; jamais vaza stack traces.
 
@@ -95,6 +96,7 @@ Notas de semântica:
 - Impl: `src/core/audit/exceptions.py:AuditoriaImutavelError`
 - Impl: `src/modules/auth/domain/exceptions.py:ContaBloqueadaError`
 - Impl: `src/modules/auth/domain/exceptions.py:OtpRateLimitExcedidoError`
+- Impl: `src/modules/auth/domain/exceptions.py:OtpTentativasExcedidasError`
 - Impl: `src/modules/identity/domain/exceptions.py:IdentificacaoObrigatoriaError`
 - Impl: `src/modules/queue/domain/exceptions.py:AdmissaoFilaSuspensaError`
 - Impl: `src/modules/queue/domain/exceptions.py:MedicoOcupadoError`
@@ -107,7 +109,7 @@ Notas de semântica:
 ```bash
 rg -n "code = |class \w+Error|status_code" src/core/errors.py | head -15
 rg -n "status_code = (423|429|503)" src/
-rg -n "ADMISSAO_FILA_SUSPENSA|CONTA_BLOQUEADA|OTP_RATE_LIMIT_EXCEEDED" src/
+rg -n "ADMISSAO_FILA_SUSPENSA|CONTA_BLOQUEADA|OTP_RATE_LIMIT_EXCEEDED|OTP_TENTATIVAS_EXCEDIDAS" src/
 ```
 
 ## Ver também

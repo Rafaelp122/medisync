@@ -801,3 +801,54 @@ async def test_tenant_isolation_onboarding_and_dependents(
         },
     )
     assert res_dep_t2.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_onboarding_fase_2_aceita_sexo_biologico_textual_normalizado(
+    async_client: AsyncClient,
+    test_orgs: tuple[Organizacao, Organizacao],
+) -> None:
+    """Validate Phase 2 accepts 'FEMININO'/'MASCULINO' and normalizes to 'F'/'M'."""
+    org1, _ = test_orgs
+
+    intake_res = await async_client.post(
+        "/api/v1/onboarding/fase-1",
+        json={
+            "nome_completo": "Patricia Pillar",
+            "data_nascimento": "1964-01-11",
+            "telefone": "11981112233",
+            "queixa_principal": "Check-up clinico e dor lombar",
+            "tcle_hash": SAMPLE_TCLE_HASH,
+            "cpf": "11144477735",
+        },
+        headers={"X-Tenant-ID": str(org1.id)},
+    )
+    assert intake_res.status_code == 201
+    intake_data = cast("dict[str, object]", intake_res.json())
+    paciente_id = cast("str", intake_data["paciente_id"])
+    token = cast("str", intake_data["token"])
+
+    fase2_payload: dict[str, object] = {
+        "paciente_id": paciente_id,
+        "nome_mae": "Lucy Gadelha",
+        "sexo_biologico": "FEMININO",
+        "cep": "01310-100",
+        "logradouro": "Avenida Paulista",
+        "numero": "1578",
+        "bairro": "Bela Vista",
+        "cidade": "São Paulo",
+        "estado": "SP",
+        "alergias": cast("list[str]", []),
+    }
+    res2 = await async_client.post(
+        "/api/v1/onboarding/fase-2",
+        json=fase2_payload,
+        headers={
+            "X-Tenant-ID": str(org1.id),
+            "Authorization": f"Bearer {token}",
+        },
+    )
+    assert res2.status_code == 200
+    data2 = cast("dict[str, object]", res2.json())
+    assert data2["sexo_biologico"] == "F"
+    assert data2["status"] == "DADOS_COMPLETOS"

@@ -132,3 +132,8 @@ class VerificarOtpResponse(BaseModel):
     token_type: str = "bearer"  # noqa: S105
     expires_in: int
     paciente_id: UUID
+    role: str = Field(
+        default="PACIENTE",
+        description="Papel do usuário autenticado no sistema",
+        examples=["PACIENTE"],
+    )

@@ -4,7 +4,10 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from src.core.errors import ValidationError
+from src.modules.identity.domain.validators import validate_sexo_biologico
 
 
 class Fase1InputDTO(BaseModel):
@@ -51,6 +54,16 @@ class Fase2InputDTO(BaseModel):
     nome_social: str | None = None
     alergias: list[str] = Field(default_factory=list)
     token: str | None = None
+
+    @field_validator("sexo_biologico", mode="before")
+    @classmethod
+    def _normalizar_sexo(cls, valor: object) -> str:
+        if not isinstance(valor, str):
+            raise ValueError(f"Sexo biológico deve ser string; recebido: '{valor}'.")
+        try:
+            return validate_sexo_biologico(valor)
+        except ValidationError as exc:
+            raise ValueError(exc.detail) from exc
 
 
 class Fase2OutputDTO(BaseModel):
@@ -114,42 +127,3 @@ class DependenteDetalheDTO(BaseModel):
     cpf: str | None
     cns: str | None
     vinculado_em: datetime
-
-
-class SolicitarOtpInputDTO(BaseModel):
-    """Input parameters for patient OTP request."""
-
-    model_config = ConfigDict(frozen=True, str_strip_whitespace=True)
-
-    telefone: str
-    cpf: str | None = None
-
-
-class SolicitarOtpOutputDTO(BaseModel):
-    """Output results for patient OTP request."""
-
-    model_config = ConfigDict(frozen=True)
-
-    mensagem: str
-    expira_em_segundos: int
-    codigo_debug: str | None = None
-
-
-class VerificarOtpInputDTO(BaseModel):
-    """Input parameters for patient OTP code verification."""
-
-    model_config = ConfigDict(frozen=True, str_strip_whitespace=True)
-
-    telefone: str
-    codigo: str
-
-
-class VerificarOtpOutputDTO(BaseModel):
-    """Output results containing issued patient JWT access token."""
-
-    model_config = ConfigDict(frozen=True)
-
-    access_token: str
-    token_type: str = "bearer"  # noqa: S105
-    expires_in: int
-    paciente_id: UUID

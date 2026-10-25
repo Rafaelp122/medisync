@@ -114,6 +114,38 @@ def test_fase_2_request_invalid_sexo() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("input_sexo", "expected_sexo"),
+    [
+        ("MASCULINO", "M"),
+        ("masculino", "M"),
+        ("  Masculino  ", "M"),
+        ("M", "M"),
+        ("m", "M"),
+        ("FEMININO", "F"),
+        ("feminino", "F"),
+        ("  Feminino  ", "F"),
+        ("F", "F"),
+        ("f", "F"),
+    ],
+)
+def test_fase_2_request_normaliza_sexo_textual(
+    input_sexo: str, expected_sexo: str
+) -> None:
+    req = Fase2Request(
+        paciente_id=uuid7(),
+        nome_mae="Maria Aparecida",
+        sexo_biologico=input_sexo,  # type: ignore[arg-type]
+        cep="01310-100",
+        logradouro="Avenida Paulista",
+        numero="1000",
+        bairro="Bela Vista",
+        cidade="São Paulo",
+        estado="SP",
+    )
+    assert req.sexo_biologico == expected_sexo
+
+
 def test_fase_2_response_serialization() -> None:
     paciente_id = uuid7()
     resp = Fase2Response(

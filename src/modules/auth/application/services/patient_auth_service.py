@@ -30,6 +30,7 @@ from src.modules.auth.application.ports.sms_sender_port import (
 from src.modules.auth.domain.exceptions import (
     OtpInvalidoOuExpiradoError,
     OtpRateLimitExcedidoError,
+    OtpTentativasExcedidasError,
     PacienteNaoEncontradoError,
 )
 from src.modules.auth.domain.validators import validate_cpf, validate_telefone
@@ -115,7 +116,8 @@ class PatientAuthService:
                 tel_mask = _mascarar_telefone(clean_telefone)
                 raise OtpRateLimitExcedidoError(
                     f"Limite de solicitações de OTP excedido para o "
-                    f"telefone '{tel_mask}'. Tente novamente em {retry_after}s."
+                    f"telefone '{tel_mask}'. Tente novamente em {retry_after}s.",
+                    retry_after_segundos=retry_after,
                 )
 
             attempt_id = str(uuid7())
@@ -142,7 +144,8 @@ class PatientAuthService:
             tel_mask = _mascarar_telefone(clean_telefone)
             raise OtpRateLimitExcedidoError(
                 f"Limite de solicitações de OTP excedido para o telefone '{tel_mask}'. "
-                f"Tente novamente em {retry_after} segundos."
+                f"Tente novamente em {retry_after} segundos.",
+                retry_after_segundos=retry_after,
             )
         valid_timestamps.append(now)
         self._memory_ratelimit[clean_telefone] = valid_timestamps
@@ -367,9 +370,11 @@ class PatientAuthService:
         attempts = int(stored.get("attempts", 0))
         if attempts >= OTP_MAX_VERIFY_ATTEMPTS:
             await self._delete_otp(clean_telefone)
-            raise OtpInvalidoOuExpiradoError(
-                f"Número máximo de {OTP_MAX_VERIFY_ATTEMPTS} tentativas excedido "
-                f"para o telefone '{tel_mask}'. Solicite um novo código."
+            raise OtpTentativasExcedidasError(
+                f"Número máximo de {OTP_MAX_VERIFY_ATTEMPTS} tentativas de "
+                f"validação excedido para o telefone '{tel_mask}'. "
+                f"Código invalidado; tente novamente em {OTP_RATE_LIMIT_WINDOW}s.",
+                retry_after_segundos=OTP_RATE_LIMIT_WINDOW,
             )
 
         # 3. Compare hash in constant time
@@ -381,9 +386,11 @@ class PatientAuthService:
             stored["attempts"] = nova_tentativa
             if nova_tentativa >= OTP_MAX_VERIFY_ATTEMPTS:
                 await self._delete_otp(clean_telefone)
-                raise OtpInvalidoOuExpiradoError(
-                    f"Número máximo de {OTP_MAX_VERIFY_ATTEMPTS} tentativas excedido "
-                    f"para o telefone '{tel_mask}'. Solicite um novo código."
+                raise OtpTentativasExcedidasError(
+                    f"Número máximo de {OTP_MAX_VERIFY_ATTEMPTS} tentativas de "
+                    f"validação excedido para o telefone '{tel_mask}'. "
+                    f"Código invalidado; tente novamente em {OTP_RATE_LIMIT_WINDOW}s.",
+                    retry_after_segundos=OTP_RATE_LIMIT_WINDOW,
                 )
             await self._update_attempts(clean_telefone, stored)
             tentativas_restantes = max(0, OTP_MAX_VERIFY_ATTEMPTS - nova_tentativa)
@@ -411,4 +418,5 @@ class PatientAuthService:
             token_type="bearer",  # noqa: S106
             expires_in=self._access_token_expire_minutes * 60,
             paciente_id=paciente_id,
+            role=Role.PACIENTE.value,
         )

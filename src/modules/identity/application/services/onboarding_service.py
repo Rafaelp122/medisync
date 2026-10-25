@@ -24,6 +24,7 @@ from src.modules.identity.domain.validators import (
     validate_cns,
     validate_cpf,
     validate_nome_mae,
+    validate_sexo_biologico,
     validate_tcle_hash,
     validate_telefone,
 )
@@ -172,13 +173,7 @@ class OnboardingService:
         # 1. Regulatory validations
         clean_nome_mae = validate_nome_mae(dados.nome_mae)
         clean_cep = validate_cep(dados.cep)
-
-        sexo = dados.sexo_biologico.strip().upper()
-        if sexo not in ("M", "F"):
-            raise ValidationError(
-                f"Sexo biológico '{dados.sexo_biologico}' inválido: deve ser 'M' "
-                "ou 'F' (Feminino)."
-            )
+        clean_sexo = validate_sexo_biologico(dados.sexo_biologico)
 
         logradouro = dados.logradouro.strip()
         numero = dados.numero.strip()
@@ -216,7 +211,7 @@ class OnboardingService:
         if dados.nome_social:
             paciente.nome_social = dados.nome_social.strip()
         paciente.nome_mae = clean_nome_mae
-        paciente.sexo_biologico = sexo
+        paciente.sexo_biologico = clean_sexo
         paciente.cep = clean_cep
         paciente.logradouro = logradouro
         paciente.numero = numero
@@ -236,7 +231,7 @@ class OnboardingService:
             nome_completo=paciente.nome_completo,
             nome_social=paciente.nome_social,
             nome_mae=clean_nome_mae,
-            sexo_biologico=sexo,
+            sexo_biologico=clean_sexo,
             cep=clean_cep,
             logradouro=logradouro,
             numero=numero,
