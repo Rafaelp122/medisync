@@ -1,3 +1,9 @@
+## v0.5.3 (2026-10-25)
+
+### Fix
+
+- **presentation**: harmonizar schemas DTO com contratos de User Stories US-01, US-06 e US-07 (#88)
+
 ## v0.5.2 (2026-10-25)
 
 ### Fix
