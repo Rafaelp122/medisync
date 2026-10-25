@@ -48,14 +48,21 @@ Esta skill define o protocolo mandatório de revisão rigorosa para validação 
 3. **Inventário Mecânico de Superfície Pública (Extração via Shell):**
    Antes de despachar os subagentes, execute no terminal os extratores determinísticos:
    ```bash
-   # 1. Rotas HTTP e WebSockets adicionadas no diff (método e path)
+   # 1. Rotas HTTP e WebSockets de Backend adicionadas no diff
    git diff origin/main...HEAD -- "src/modules/*/presentation/routers/*" | grep -A 2 -E "^\+\s*@.*router\.(get|post|put|delete|patch|websocket)"
 
-   # 2. Schemas de Request/Response adicionados
+   # 2. Schemas Pydantic de Request/Response de Backend adicionados
    git diff origin/main...HEAD -- "src/modules/*/presentation/schemas.py" | grep -E "^\+\s*class\s+[A-Za-z0-9_]+"
 
    # 3. Novos métodos públicos de serviço (sync e async)
    git diff origin/main...HEAD -- "src/modules/*/application/services/*" | grep -E "^\+\s*(async\s+)?def\s+[a-zA-Z0-9_]+" | grep -v "^\+\s*(async\s+)?def\s+_"
+
+   # 4. Frontend: Componentes Visuais e Custom Hooks adicionados (se houver alteração em frontend/)
+   git diff origin/main...HEAD -- "frontend/src/features/*/components/*" | grep -E "^\+\s*export\s+(function|const)\s+[A-Za-z0-9_]+"
+   git diff origin/main...HEAD -- "frontend/src/features/*/api/*" | grep -E "^\+\s*export\s+function\s+use[A-Za-z0-9_]+"
+
+   # 5. Frontend: Schemas Zod de Formulário adicionados
+   git diff origin/main...HEAD -- "frontend/src/features/*/schemas/*" | grep -E "^\+\s*export\s+const\s+[A-Za-z0-9_]+"
    ```
    *Guarde a lista exata gerada por esses comandos: ela é o contrato físico incontestável do que foi alterado.*
 
@@ -66,11 +73,14 @@ Esta skill define o protocolo mandatório de revisão rigorosa para validação 
 Execute o portão orquestrado no terminal:
 
 ```bash
-just check
+just check-fast
 ```
-*(Em ambiente local de desenvolvimento sem contêineres Docker, execute `just check-fast`).*
+*(Se o diff incluir alterações em `frontend/`, execute também:)*
+```bash
+just frontend-check && just frontend-test
+```
 
-- **Critério de Bloqueio Imediato:** Se `just check` (ou `check-fast`) falhar em qualquer etapa (`scan-secrets`, `docs-check`, `audit-ai-code`, `fmt`, `lint`, `typecheck`, `tach`, `test-unit`, `test-integration`), **REPROVE O PR IMEDIATAMENTE**. Não gaste tokens rodando subagentes se a base não compila, vaza segredos ou quebra testes.
+- **Critério de Bloqueio Imediato:** Se qualquer etapa falhar (`scan-secrets`, `docs-check`, `audit-ai-code`, `fmt`, `lint`, `typecheck`, `tach`, `test-unit`, `test-integration`, `frontend-check`, `frontend-test`), **REPROVE O PR IMEDIATAMENTE**. Não gaste tokens rodando subagentes se a base não compila, vaza segredos ou quebra testes.
 
 ---
 
@@ -83,27 +93,25 @@ Configuração: `TypeName="research"`, `Role="Revisor Standards & Arquitetura"`
 Prompt do subagente:
 - Fornecer o `git diff origin/main...HEAD`.
 - Auditar contra os padrões do repositório (`AGENTS.md` e ADRs):
-  1. **Routers Finos (ADR-001 §6-§7):** Routers nunca chamam banco, `.commit()`, `.refresh()`, `text()` nem importam `infrastructure`.
-  2. **Zero Mapper Hell (ADR-008):** Proibido criar DTOs manuais duplicados com conversores `to_domain`/`to_orm`. Schemas de resposta usam `from_attributes=True`.
-  3. **Testes com Fakes Tipados:** Proibido mocks anônimos (`MagicMock`, `patch`) onde cabem os fakes canônicos de `tests/doubles.py` (`FakeAsyncSession`, `FakeValkey`, `FakeMemoryStorage`, `FakePDFGenerator`, `FakeArqPool`).
-  4. **Docstrings de Proveniência:** Métodos públicos de negócio contêm docstring enxuta (3-5 linhas) apontando para `Regras: docs/...`.
-  5. **Exceções com Offending Value:** Erros interpolam valor recebido com valor esperado e máscara LGPD.
-- **Smell Baseline & Menor Mudança:**
-  - *Speculative Generality:* Criou abstrações, helpers ou parâmetros para necessidades não existentes?
-  - *Middle Man:* Criou classes ou métodos que apenas delegam sem agregar regra?
-  - *Feature Envy / Data Clumps:* Violações de coesão nos serviços e DTOs.
-  - *No Vague Worries:* Apenas reporte problemas com evidência de código e linha exata.
+  1. **Backend - Routers Finos (ADR-001 §6-§7):** Routers nunca chamam banco, `.commit()`, `.refresh()`, `text()` nem importam `infrastructure`.
+  2. **Backend - Zero Mapper Hell (ADR-008):** Proibido criar DTOs manuais duplicados. Schemas de resposta usam `from_attributes=True`.
+  3. **Frontend - Zero DTO Duplication & Anti-Barrel Imports (ADR-011):** Proibido interfaces ou schemas manuais duplicando Pydantic. Proibido barrel imports da raiz `@/api/generated`.
+  4. **Frontend - Componentes Compostos & React 19:** Proibido boolean props para alternar modos (`isDoctor`, `isEmergency`). Proibido `forwardRef` (usar prop `ref`). Contexto via `use(Context)`.
+  5. **Frontend - Performance & View Transitions:** Timers e medidores em `useRef`. Polling em background nunca dispara view transitions (`default="none"`).
+  6. **Testes com Fakes & Sem Fragilidade:** Backend usa doubles tipados de `tests/doubles.py`. Frontend usa MSW v2 (`server.resetHandlers()`), teardown obrigatório de fake timers (`afterEach(() => vi.useRealTimers())`). No Playwright, `page.clock.install()` **antes de `page.goto()`**, proibido `sleep()` / `waitForTimeout()`, encerramento explícito de contextos multi-usuário (`await context.close()`).
+  7. **Docstrings de Proveniência & Erros com Offending Value:** Métodos públicos contêm links canônicos `docs/`. Erros interpolam valor ofensivo com máscara LGPD.
+- **Smell Baseline & Menor Mudança:** Reportar apenas problemas com evidência de código e linha exata.
 
 #### 🅱️ Subagente 2 — Eixo Spec & Zero Speculative Code
 Configuração: `TypeName="research"`, `Role="Revisor Spec & Escopo"`  
 Prompt do subagente:
 - Fornecer a saída do **Inventário Mecânico de Superfície Pública**, o `git diff origin/main...HEAD` e o corpo da Issue / User Story.
 - Auditar com foco estrito em conformidade:
-  1. **Confronto Mecânico de Rotas & Aliases (FAIL Imediato):** 
-     - Confrontar cada rota extraída no inventário mecânico contra as rotas solicitadas no *In Scope* da issue.
-     - **Regra Zero Speculative Code:** A presença de qualquer rota extra, rota espelho ou alias defensivo (`@router.*` redundante) acarreta **FAIL automático e imediato** no Eixo Spec.
+  1. **Confronto Mecânico de Rotas, Componentes & Aliases (FAIL Imediato):** 
+     - Confrontar cada rota/componente extraído no inventário mecânico contra o *In Scope* da issue.
+     - **Regra Zero Speculative Code:** A presença de qualquer rota extra, componente defensivo ou alias não solicitado acarreta **FAIL automático e imediato** no Eixo Spec.
   2. **Requisitos Faltantes/Parciais:** Requisitos solicitados no *In Scope* ou critérios de aceitação da issue que não foram implementados no diff.
-  3. **Scope Creep Geral:** Métodos públicos, tabelas ou parâmetros não relacionados ao problema da issue.
+  3. **Scope Creep Geral:** Métodos públicos, telas ou parâmetros não relacionados ao problema da issue.
   4. **Divergência Lógica:** Código implementado cuja regra diverge do comportamento esperado descrito na issue ou User Story canônica.
 
 ---

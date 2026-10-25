@@ -74,3 +74,29 @@
 - [x] **Testes Automatizados:**
   - `tests/unit/test_patient_auth_service.py`
   - `tests/integration/test_patient_auth_endpoints.py`
+
+---
+
+## 5. Critérios de Interface & Experiência (UI/UX, A11y & Troféu de Testes - ADR-011)
+
+### 5.1 Validação e Interação de Tela
+- **Máscara e Validação Client-Side:** Input de telefone com máscara brasileira dinâmica (`(11) 98765-4321`) e validação algorítmica imediata via Zod estendendo `@/api/generated/zod.gen`. Não dispara requisição de rede se o telefone for inválido.
+- **Feedback de Carregamento:** Durante a submissão, o botão de envio exibe indicador de progresso e texto acessível (`aria-busy="true"` e rótulo "Enviando código..."), mantendo-se desabilitado para prevenir double-click.
+- **Cooldown de Reenvio:** Após o envio com sucesso, inicia-se contagem regressiva de 60 segundos bloqueando novas solicitações de OTP para mitigar flooding, exibindo "Reenviar código em 59s...".
+- **Entrada OTP Acessível:** Formulário de 6 dígitos com avanço automático de foco entre campos, suporte a colar código completo via clipboard e foco inicial automático no primeiro dígito.
+- **Envelope de Erro RFC 7807:** Exibição de alertas textuais em português com `role="alert"` para código incorreto e contagem de tentativas restantes; em caso de bloqueio (HTTP 429), exibe banner persistente com tempo de espera restante.
+
+### 5.2 Acessibilidade Clínica (WCAG 2.1 AA)
+- Rótulos semânticos explícitos (`<label htmlFor="...">`) associados aos inputs.
+- Contraste mínimo de 4.5:1 em todos os estados de botão e mensagens de feedback.
+- Conformidade auditada continuamente via `@axe-core/playwright`.
+
+### 5.3 Troféu de Testes do Frontend
+- **Integração de Tela (Vitest + RTL + MSW v2):**
+  - `frontend/src/features/onboarding/tests/solicitar-otp-form.test.tsx`
+  - Simulação HTTP na camada de transporte via factory tipada `solicitarOtpPacienteMock` (`@/api/generated/msw.gen`).
+  - Avanço determinístico do cooldown de 60s via `vi.useFakeTimers()` e `await vi.advanceTimersByTimeAsync(60_000)` com teardown mandatório em `afterEach(() => vi.useRealTimers())`.
+- **E2E e A11y (Playwright):**
+  - `frontend/e2e/auth-otp.spec.ts`
+  - Jornada completa do paciente simulando digitação, recebimento de código e redirecionamento de sessão.
+

@@ -47,22 +47,24 @@ Prompt do subagente:
   - *Qual o valor gerado?* (Elimina débito técnico? Reduz latência? Cumpre requisito legal?).
   - *Qual o comportamento atual vs. comportamento esperado?*
 - Mapear quais regras canônicas (`RNxx`), User Stories (`docs/user-stories/`) e normas regulatórias (CFM nº 2.314/2022, LGPD Art. 11) são afetadas.
-- Mapear o *Blast Radius* no código: quais bounded contexts em `src/modules/` e quais ADRs (`docs/adrs/`) são impactados:
+- Mapear o *Blast Radius* no código: quais bounded contexts em `src/modules/`, fatias em `frontend/src/features/` e quais ADRs (`docs/adrs/`) são impactados:
   - *ADR-001 / ADR-008:* A demanda impacta o modelo hexagonal sem mapper hell?
   - *ADR-002:* Envolve concorrência de fila, pontuação Valkey ZSET ou locks atômicos?
   - *ADR-003:* Toca em persistência, dados sensíveis com isolamento multi-tenant (RLS/OrgID)?
   - *ADR-004:* Exige processamento assíncrono em segundo plano via worker ARQ?
   - *ADR-006:* Envolve assinatura digital de prontuário/receita médica?
-- Relatório esperado: Dor raiz, valor gerado, regras canônicas e módulos/ADRs afetados.
+  - *ADR-011 (Frontend):* Envolve tela de paciente ou médico? Quais contratos `@/api/generated` do Hey API são consumidos? Exige novos componentes `shadcn/ui` ou tokens clínicos?
+- Relatório esperado: Dor raiz, valor gerado, regras canônicas, módulos/features e ADRs afetados.
 
 #### 🅱️ Subagente 2 — Eixo Cético YAGNI & Anti-Scope-Creep
 Configuração: `TypeName="research"`, `Role="Cético YAGNI & Guardrails"`
 Prompt do subagente:
 - Atuar como "advogado do diabo" contra expansão descontrolada de escopo sob a premissa de *The Smallest Complete Change*:
-  - Identificar e listar explicitamente tudo o que **NÃO DEVE** ser feito nesta issue (refatorações oportunistas, abstrações prematuras, telas desnecessárias, DTOs espelho intermediários).
-  - **Zero Speculative Code na Origem:** Se a issue exigir novo endpoint HTTP/WS, definir o caminho canônico único (ex: `POST /api/v1/modulo/recurso`). Proibir títulos de issue que usem termos alternativos divergentes do path canônico para prevenir a criação de rotas defensivas ou aliases.
+  - Identificar e listar explicitamente tudo o que **NÃO DEVE** ser feito nesta issue (refatorações oportunistas, abstrações prematuras, telas secundárias, DTOs manuais intermediários).
+  - **Zero Speculative Code na Origem:** Se a issue exigir novo endpoint HTTP/WS, definir o caminho canônico único (ex: `POST /api/v1/modulo/recurso`). Proibir rotas defensivas ou aliases redundantes.
+  - **Guardrails de Frontend (ADR-011):** Proibir boolean props em componentes visuais (`isDoctor`, `isEmergency`); proibir criação manual de interfaces TypeScript ou schemas Zod duplicados (obrigatório estender `@/api/generated/zod.gen`); proibir barrel imports da raiz `@/api/generated`; proibir `forwardRef` (usar prop `ref` nativa do React 19).
   - Delimitar os critérios de aceitação mínimos, objetivos e verificáveis (DoD preliminar).
-- Relatório esperado: Lista estrita de *Out of Scope*, endpoint canônico único e critérios de aceitação.
+- Relatório esperado: Lista estrita de *Out of Scope*, endpoint/contrato canônico único e critérios de aceitação.
 
 ---
 
@@ -79,35 +81,36 @@ Explicação clara do problema observado, oportunidade identificada ou necessida
 ## 2. Solução Proposta (Visão de Alto Nível)
 Resumo conciso da abordagem recomendada para resolver a questão, sem descer prematuramente a detalhes triviais de implementação.
 
-## 3. Módulos & Camadas Impactadas
-- **Módulos:** (ex: `src/modules/queue`, `src/core/security`)
-- **Camadas Hexagonais:** (ex: `domain`, `application/services`, `infrastructure`, `presentation/routers`)
-- **ADRs Aplicáveis:** (ex: ADR-001, ADR-002, ADR-008)
-- **Impacto em Banco de Dados / Migrações:** (Sim/Não - Descrever brevemente)
+## 3. Módulos, Features & Camadas Impactadas
+- **Backend:** (ex: `src/modules/queue`, `src/core/security` - `domain`, `services`, `routers`)
+- **Frontend:** (ex: `frontend/src/features/onboarding` - `api`, `components`, `schemas`, `tests`)
+- **ADRs Aplicáveis:** (ex: ADR-001, ADR-008, ADR-011)
+- **Impacto em Banco / Contratos OpenAPI:** (Sim/Não - Descrever brevemente)
 
 ## 4. Escopo & Não-Escopo (Guardrails Anti-Scope-Creep)
 ### O que FAZ parte desta issue (In Scope):
-- [ ] Endpoint canônico único: `MÉTODO /api/v1/<modulo>/<recurso>` (se aplicável, com zero rotas alternativas)
-- [ ] Comportamento essencial e delimitado
+- [ ] Endpoint canônico único ou fatia de tela delimitada
+- [ ] Comportamento essencial e contratos tipados (Hey API)
 - [ ] Atualização da documentação Diátaxis correspondente
 
 ### O que NÃO faz parte desta issue (Out of Scope):
 - 🚫 Excluir expressamente rotas defensivas, aliases ou query params especulativos
-- 🚫 Excluir refatorações oportunistas não relacionadas
-- 🚫 Excluir funcionalidades futuras secundárias (deixar para próxima issue)
-- 🚫 Excluir abstrações prematuras, builders ou DTOs manuais intermediários
+- 🚫 Excluir refatorações oportunistas de backend ou mover pastas (`src/` intacto)
+- 🚫 Excluir boolean props para alternar modos visuais (usar Compound Components / variantes explícitas)
+- 🚫 Excluir barrel imports ou DTOs manuais duplicados no frontend
+- 🚫 Excluir telas e fluxos secundários futuros
 
 ## 5. Critérios de Aceitação (DoD Preliminar)
-- [ ] O comportamento X foi implementado/corrigido conforme especificação.
-- [ ] Erros lançados contêm offending value e expected shape (Clean Code IA).
-- [ ] Aninhamento de controle de fluxo respeita o teto de 2 níveis.
-- [ ] Testes unitários novos adicionados cobrindo cenários de sucesso e erro.
-- [ ] Portão completo passa com código 0 (`just check` ou `just check-fast`).
+- [ ] Comportamento implementado conforme especificação e User Story canônica.
+- [ ] No backend: erros com offending value, aninhamento <= 2, commit único no service.
+- [ ] No frontend: validação Zod client-side, custom hooks headless, zero boolean props.
+- [ ] Testes automatizados cobrindo cenários de sucesso, erro e borda (Pytest no backend / Vitest + MSW + Playwright no frontend).
+- [ ] Portão completo passa com código 0 (`just check` / `just check-fast` e `just frontend-check`).
 
 ## 6. Documentação a Atualizar (Governança Diátaxis)
-- [ ] `docs/explanation/domains/<contexto>-domain.md` (se envolver regras clínicas)
-- [ ] `docs/how-to/<categoria>/<documento>.md` (se envolver procedimentos/tooling)
-- [ ] `docs/reference/...` (se envolver novas variáveis de ambiente ou códigos RFC 7807)
+- [ ] `docs/explanation/...` (se envolver regras clínicas ou arquitetura)
+- [ ] `docs/user-stories/US-xx-*.md` (critérios de aceite BDD / UI-UX)
+- [ ] `docs/reference/...` (novas variáveis, chaves ou padrões de teste)
 ```
 
 ---

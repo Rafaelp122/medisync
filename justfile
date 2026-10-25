@@ -138,3 +138,57 @@ docker-build:
 # Compila a imagem Docker de desenvolvimento
 docker-build-dev:
     docker build -t medisync:dev --target development .
+
+# Exporta o schema OpenAPI 3.1 do backend para arquivo estático na raiz
+dump-openapi:
+    uv run python -c "import json; from src.main import app; print(json.dumps(app.openapi(), indent=2))" > openapi.json
+
+# Instala dependências do frontend com pnpm
+frontend-install:
+    @if [ -f frontend/package.json ]; then \
+        pnpm --dir frontend install; \
+    else \
+        echo "Diretório frontend/ ainda não inicializado."; \
+    fi
+
+# Inicia servidor de desenvolvimento Vite
+frontend-dev:
+    @if [ -f frontend/package.json ]; then \
+        pnpm --dir frontend dev; \
+    else \
+        echo "Diretório frontend/ ainda não inicializado." && exit 1; \
+    fi
+
+# Gera contratos tipados TypeScript via Hey API a partir do openapi.json
+frontend-generate: dump-openapi
+    @if [ -f frontend/package.json ]; then \
+        pnpm --dir frontend generate:api; \
+    else \
+        echo "Diretório frontend/ ainda não inicializado."; \
+    fi
+
+# Executa checagem de tipos estrita (tsc), lint (eslint) e testes do frontend
+frontend-check:
+    @if [ -f frontend/package.json ]; then \
+        pnpm --dir frontend run check; \
+    else \
+        echo "Diretório frontend/ ainda não inicializado."; \
+    fi
+
+# Executa a suíte de testes de tela e unitários do frontend com Vitest
+frontend-test:
+    @if [ -f frontend/package.json ]; then \
+        pnpm --dir frontend test; \
+    else \
+        echo "Diretório frontend/ ainda não inicializado."; \
+    fi
+
+# Executa testes ponta a ponta com Playwright
+frontend-test-e2e:
+    @if [ -f frontend/package.json ]; then \
+        pnpm --dir frontend test:e2e; \
+    else \
+        echo "Diretório frontend/ ainda não inicializado."; \
+    fi
+
+

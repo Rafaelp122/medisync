@@ -109,23 +109,54 @@ Listar explicitamente quais arquivos devem ser atualizados/criados:
 - [ ] `test_<cenario_erro_ofensivo>`: Lançamento de exceção rica contendo offending value.
 - [ ] `test_<cenario_borda_ou_concorrencia>`: Idempotência, locks ou race conditions.
 
-## 4. Fatiamento em Tarefas Atômicas (TDD Inside-Out)
+## 4. Fatiamento em Tarefas Atômicas
 
-### Camada 1: Domínio & Validações Puras (Entidades Ricas & Exceptions)
+### 4.1 Fatiamento Backend (TDD Inside-Out Hexagonal)
+#### Camada 1: Domínio & Validações Puras (Entidades Ricas & Exceptions)
 - **Red:** Escrever `tests/unit/test_<modulo>_models.py` validando invariantes e mensagens com offending value. Executar e comprovar FALHA (Red).
 - **Green:** Implementar entidade rica em `domain/models.py` e exceção em `domain/exceptions.py`. Executar `just test-fast` e comprovar SUCESSO (Green).
 
-### Camada 2: Aplicação, Portas & Fakes (Services & Ports)
+#### Camada 2: Aplicação, Portas & Fakes (Services & Ports)
 - **Red:** Escrever `tests/unit/test_<modulo>_service.py` usando `FakeAsyncSession` e Fakes de `tests/doubles.py`. Comprovar FALHA (Red).
 - **Green:** Implementar `application/dtos.py`, `ports/` e `services/` (commit único, docstrings de proveniência 3-5 linhas). Executar `just test-fast` e `just typecheck` e comprovar SUCESSO (Green).
 
-### Camada 3: Apresentação & Router Fino (Routers & Schemas)
+#### Camada 3: Apresentação & Router Fino (Routers & Schemas)
 - **Red:** Escrever `tests/unit/test_<modulo>_router.py` cobrindo endpoints HTTP/WS e status codes. Comprovar FALHA (Red).
 - **Green:** Implementar `presentation/schemas.py`, `presentation/dependencies.py` e `presentation/routers/`. Executar `just test-fast` e `tests/architecture/test_routers_are_thin.py` e comprovar SUCESSO (Green).
 
-### Camada 4: Documentação Diátaxis & Quality Gate
+#### Camada 4: Documentação Diátaxis & Quality Gate
 - Atualizar arquivos de documentação conforme Seção 2.
 - Executar portão unificado: `just check` (ou `just check-fast`).
+
+---
+
+### 4.2 Fatiamento Frontend (Troféu de Testes & Feature-Driven - ADR-011)
+#### Fatia 1: Contratos de API & Schemas de Validação (Hey API + Zod)
+- **Red:** Escrever testes unitários em Vitest para validações algorítmicas (`validators.ts`) e refinamentos de schemas Zod (`<feature>-schema.ts`). Comprovar FALHA.
+- **Green:** Executar `just frontend-generate`. Declarar schema Zod estendendo `@/api/generated/zod.gen`. Executar `just frontend-test` e comprovar SUCESSO.
+
+#### Fatia 2: Lógica Headless & Estado de Servidor (Custom Hooks + MSW v2)
+- **Red:** Escrever teste de hook montando QueryClient e handler MSW via factory tipada de `@/api/generated/msw.gen`. Comprovar FALHA.
+- **Green:** Implementar Custom Hook headless em `api/` consumindo serviço gerado diretamente (sem barrel import). Executar `just frontend-test` e comprovar SUCESSO. Setup global com `server.resetHandlers()`.
+
+#### Fatia 3: Componente Visual Composto & Formulários (`shadcn/ui` + RHF)
+- Implementar componente declarativo em `components/` sem boolean flags de modo (`isEmergency`, `isDoctor`).
+- Integrar com `react-hook-form` + `zodResolver`.
+- Aplicar padrões React 19 (prop `ref` direta, `use(Context)`). Isolar medidores e timers com `useRef`.
+
+#### Fatia 4: Integração de Telas & Acessibilidade (Vitest + RTL + MSW v2)
+- **Red:** Escrever teste de integração em `tests/<feature>.test.tsx` montando a árvore inteira em `jsdom`. Simular digitação e cliques reais com `userEvent.setup()`. Teardown mandatório de fake timers em `afterEach(() => vi.useRealTimers())`.
+- **Green:** Conectar componente visual ao hook. Validar estados visíveis e avanço assíncrono com `await vi.advanceTimersByTimeAsync()`. Comprovar SUCESSO.
+
+#### Fatia 5: Jornadas E2E & Acessibilidade Clínica (Playwright + Axe-Core)
+- Escrever jornada completa em `e2e/<feature>.spec.ts` usando locators por papel/rótulo (`getByRole`, `getByLabel`).
+- Para contagens temporizadas (45s No-Show), instalar `page.clock.install()` **antes de `page.goto()`** e avançar com `await page.clock.fastForward(45_000)`.
+- Encerramento explícito de contextos multi-usuário (`await context.close()`).
+- Auditoria com `AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()`.
+
+#### Fatia 6: Documentação Diátaxis & Quality Gate
+- Atualizar User Story canônica correspondente em `docs/user-stories/US-xx-*.md` com os critérios de tela.
+- Executar portão unificado: `just frontend-check` e `just check-fast`.
 ```
 
 ---

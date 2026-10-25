@@ -80,3 +80,39 @@ scan-secrets -> docs-check -> audit-ai-code -> fmt -> lint -> typecheck -> tach 
 9. **`just test-integration` (Pytest):** Testes ponta a ponta sobre contêineres reais (Postgres, Valkey, LiveKit, MinIO).
 
 > **Dica de DX:** Em desenvolvimento ativo sem Docker local, utilize `just check-fast`, que executa as etapas 1 a 7 e roda `test-fast` (100% em memória, zero Docker) em ~15 segundos.
+
+---
+
+## 5. Estratégia de Testes do Frontend (ADR-011)
+
+No frontend SPA/PWA ([ADR-011](../../adrs/ADR-011-Arquitetura-Frontend-SPA-PWA-e-Estrategia-de-Testes.md)), a suíte adota o **Troféu de Testes** (Testing Trophy) para priorizar testes de integração de tela sobre testes unitários frágeis de componentes:
+
+```
+        / \
+       / E \     E2E & A11y (Playwright + @axe-core/playwright)
+      /-----\    - Jornadas clínicas reais, multi-contexto (Médico + Paciente) e WCAG 2.1 AA
+     /   I   \   Integração de Componentes (Vitest + Testing Library + MSW v2)
+    /---------\  - Telas completas montadas em jsdom com simulação HTTP declarativa
+   /     U     \ Unitários Puros (Vitest)
+  /-------------\ - Algoritmos de CPF/CNS, validadores locais e schemas Zod
+ /       S       \ Análise Estática (TypeScript strict + ESLint)
+/-----------------\ - Contratos tipados e schemas gerados via Hey API (@hey-api/openapi-ts)
+```
+
+### 5.1 Camada de Integração de Telas & Unitários (Vitest + MSW v2)
+
+* **Fidelidade Comportamental**: Proibido mockar componentes React ou hooks de negócio. O teste monta a árvore visual real em ambiente `jsdom` e simula a rede na camada de transporte via **Mock Service Worker (MSW v2)**, utilizando factories tipadas de `@/api/generated/msw.gen`.
+* **Interações Reais do Usuário**: Utilização exclusiva de `@testing-library/user-event` (`userEvent.setup()`) para simular digitação e cliques reais.
+* **Fake Timers**: Contagens regressivas de tela (como cooldown de 60s para reenvio de OTP) utilizam `vi.useFakeTimers()` e `vi.advanceTimersByTime()` para avanço determinístico sem lentidão.
+* **Unitários Puros**: Reservados para funções matemáticas e algoritmos de validação (algoritmo módulo 11 de CPF, CNS brasileiro, máscaras e cálculos de tempo).
+
+### 5.2 Camada E2E, Colaboração e Acessibilidade (Playwright)
+
+* **Locators Acessíveis (User-Facing)**: Seleção de elementos estritamente por papéis semânticos e rótulos (`page.getByRole()`, `page.getByLabel()`), eliminando seletores CSS quebradiços.
+* **Asserções Web-First com Auto-Retry**: Proibição de `page.waitForTimeout()` ou `sleep()`. Toda sincronização baseia-se em asserções reativas do Playwright (`await expect(locator).toBeVisible()`).
+* **Avanço Determinístico de Relógio (`page.clock`)**: Para eventos clínicos temporizados — como o timeout de 45 segundos de No-Show na convocação médica ([US-07](../../user-stories/US-07-alocacao-chamada-medica.md) e [US-08](../../user-stories/US-08-atendimento-chamada-no-show.md)) —, o teste utiliza `page.clock.install()` e `page.clock.fastForward(45_000)` para testar a expiração e o status ausente instantaneamente.
+* **Colaboração Multi-Contexto**: Testes de interação entre médico e paciente em tempo real utilizam múltiplos contextos isolados de navegador (`browser.newContext()`) com sessões pré-autenticadas via `storageState`.
+* **Auditoria de Acessibilidade Clínica (WCAG 2.1 AA)**: Validação automatizada com `@axe-core/playwright` e verificação de desativação de transições de lista sob `@media (prefers-reduced-motion: reduce)`.
+
+Para detalhes operacionais e exemplos de código, consulte o catálogo canônico em [Frontend Testing Patterns](../../reference/testing/frontend-testing-patterns.md).
+

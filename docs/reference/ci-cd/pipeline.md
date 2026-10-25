@@ -18,6 +18,8 @@ O pipeline é acionado nos eventos `push` e `pull_request` direcionados à branc
 | :--- | :--- | :--- | :--- |
 | `code-quality` | Validação estática, formatação, tipos e fronteiras | `uv run ruff format --check .`<br>`uv run ruff check .`<br>`uv run basedpyright`<br>`uv run tach check` | Nenhuma (em memória) |
 | `unit-tests` | Regras clínicas, modelos ricos e AST routers | `uv run pytest tests/unit tests/architecture -n auto --cov=src` | Nenhuma (em memória) |
+| `frontend-quality` | Tipos, linting e paridade de contratos OpenAPI | `pnpm --dir frontend run check`<br>`pnpm --dir frontend generate:api` | Node.js 24 + pnpm 10 (condicional a `frontend/`) |
+| `frontend-tests` | Testes de integração de tela e unitários | `pnpm --dir frontend test` | Vitest + MSW v2 (condicional a `frontend/`) |
 | `docker-build` | Validação de empacotamento OCI multi-stage | `docker buildx build --target production` (cache `gha`) | Docker Buildx |
 
 ### Workflows Complementares de Segurança (DevSecOps)
@@ -54,12 +56,15 @@ A imagem de produção executa o servidor Granian sobre `src.main:app` com supor
 
 ### Estratégia de Cache e Eficiência no CI
 
-O pipeline de CI adota dois mecanismos de cache para minimizar tempo de execução:
+O pipeline de CI adota três mecanismos de cache para minimizar tempo de execução:
 1. **Cache de Dependências uv (`astral-sh/setup-uv@v5`):**
    * Parâmetro: `enable-cache: true`.
    * Chave de cache: hash do arquivo `uv.lock`.
    * Restaura o diretório de cache do `uv` em aproximadamente 2 segundos em cada job independente.
-2. **Cache de Camadas Docker (`docker/build-push-action@v6`):**
+2. **Cache de Dependências pnpm (`actions/setup-node@v4`):**
+   * Parâmetro: `cache: "pnpm"` acoplado a `frontend/pnpm-lock.yaml`.
+   * Restaura a store global do pnpm acelerando a instalação em ambiente virtual.
+3. **Cache de Camadas Docker (`docker/build-push-action@v6`):**
    * Backend de cache: `type=gha` (GitHub Actions Cache API).
    * Modo: `mode=max` (armazena todas as camadas intermediárias dos estágios `base` e `builder`).
    * Permite reuso direto das camadas compilaras em builds subsequentes de Pull Requests.

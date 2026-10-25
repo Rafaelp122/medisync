@@ -82,3 +82,29 @@
   - `tests/unit/test_triage_model.py`
   - `tests/unit/test_admissao_service.py`
   - `tests/integration/test_admissao_integrada_flow.py`
+
+---
+
+## 5. Critérios de Interface & Experiência (UI/UX, A11y & Troféu de Testes - ADR-011)
+
+### 5.1 Validação e Interação de Tela
+- **Formulário Ágil (<45s):** Interface móvel em fluxo progressivo otimizada para o paciente com dor (Juliana Silva), preenchimento sem barreiras ou paywalls.
+- **Termo de Consentimento (TCLE Digital):** Exibição do termo integral em caixa rolável acessível; checkbox explícito de concordância legal (LGPD Art. 11 / CFM nº 2.314/2022) que condiciona o botão de submissão.
+- **Escala Analógica Visual de Dor:** Seletor de 1 a 10 com cores semânticas e labels descritivos ("Sem dor" a "Pior dor imaginável"), totalmente operável por teclado ou toque.
+- **Salvaguarda Imediata SAMU 192 (RN04):** Em caso de classificação Nível 1 (Vermelho / Emergência), o fluxo virtual é imediatamente interrompido, disparando um modal com alerta audiovisual chamativo e botão de discagem rápida (`tel:192`) ou orientação de deslocamento hospitalar imediato.
+
+### 5.2 Acessibilidade Clínica (WCAG 2.1 AA)
+- Rótulos semânticos e tags ARIA (`role="dialog"`, `role="alert"`, `aria-describedby`).
+- Respeito a `@media (prefers-reduced-motion: reduce)`, desativando transições de tela durante o preenchimento.
+- Contraste visual mínimo de 4.5:1 nas cores da escala de dor e avisos clínicos.
+
+### 5.3 Troféu de Testes do Frontend
+- **Integração de Tela (Vitest + RTL + MSW v2):**
+  - `frontend/src/features/onboarding/tests/acolhimento-triagem-form.test.tsx`
+  - Simulação de resposta de admissão via factory `admitirPacienteMock` (`@/api/generated/msw.gen`).
+  - Teste de bloqueio do botão quando o TCLE não estiver marcado.
+  - Teste de renderização do modal de emergência SAMU 192 em resposta de risco Nível 1.
+- **E2E e A11y (Playwright):**
+  - `frontend/e2e/onboarding-acolhimento.spec.ts`
+  - Verificação de conformidade contínua com `@axe-core/playwright`.
+

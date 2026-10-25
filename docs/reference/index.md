@@ -20,6 +20,7 @@
 - [Documentation Standards](architecture-standards/documentation-standards.md) — Padrão atômico-denso (80–250L), 5 seções obrigatórias e regra link-sem-cola.
 - [Test Doubles & Fakes Catalog](testing/test-doubles-catalog.md) — Catálogo dos Fakes tipados em memória (`tests/doubles.py`) e asserções de teste.
 - [Testing Fixtures & Factories](testing/fixtures-and-factories.md) — Fixtures pytest assíncronas, factories e geradores de dados de teste.
+- [Frontend Testing Patterns](testing/frontend-testing-patterns.md) — Padrões e regras de testes com Vitest, React Testing Library, MSW v2, Playwright e Axe-Core (A11y).
 
 ## 5. Ambiente & Infraestrutura de CI/CD
 - [Environment Variables](environment/variables.md) — As 25 variáveis de ambiente, validações Pydantic e perfis de execução.

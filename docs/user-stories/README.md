@@ -36,7 +36,7 @@ O catálogo é estruturado entre **Jornadas Assistenciais e Operacionais Primár
 
 | ID | Arquivo da Story | Requisito Base | Invariantes | Persona | Status de Conformidade no Código |
 | :---: | :--- | :---: | :---: | :--- | :---: |
-| **US-01** | [`US-01-acolhimento-triagem-tcle.md`](./US-01-acolhimento-triagem-tcle.md) | RF-01 | RN07, RN-REG-02 | Juliana Silva | 🟡 **Parcial** *(Omissão de `tcle_hash` no DTO de resposta)* |
+| **US-01** | [`US-01-acolhimento-triagem-tcle.md`](./US-01-acolhimento-triagem-tcle.md) | RF-01 | RN07, RN-REG-02 | Juliana Silva | 🟢 **Conforme** |
 | **US-02** | [`US-02-autenticacao-passwordless-otp.md`](./US-02-autenticacao-passwordless-otp.md) | RF-01 (#44) | RN-REG-02 | Juliana Silva | 🟢 **Conforme** |
 | **US-03** | [`US-03-elegibilidade-onboarding-fase2.md`](./US-03-elegibilidade-onboarding-fase2.md) | RF-02 | RN03, RN-REG-02 | Juliana / Patrícia | 🟢 **Conforme** |
 | **US-06** | [`US-06-deterioracao-clinica-escape-samu.md`](./US-06-deterioracao-clinica-escape-samu.md) | RF-06 | RN04, RN-REG-01 | Juliana Silva | 🟢 **Conforme** |

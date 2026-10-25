@@ -1,0 +1,4569 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MediSync Express",
+    "version": "0.5.3"
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "System Health"
+        ],
+        "summary": "Healthcheck",
+        "description": "Return system health status and Valkey telemetry.",
+        "operationId": "healthcheck_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheckResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "Authentication & Sessions (OWASP)"
+        ],
+        "summary": "Autentica\u00e7\u00e3o com Argon2id e emiss\u00e3o de JWT (Anti-Brute Force)",
+        "description": "Autentica o usu\u00e1rio corporativo emitindo par de tokens de acesso e atualiza\u00e7\u00e3o.\n\nConforme o OWASP Authentication Cheat Sheet, as respostas de erro s\u00e3o\ngen\u00e9ricas (RFC 7807) para prevenir enumera\u00e7\u00e3o de contas, com prote\u00e7\u00e3o de\nfor\u00e7a bruta via contadores Valkey em janela deslizante.",
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "Authentication & Sessions (OWASP)"
+        ],
+        "summary": "Rota\u00e7\u00e3o de refresh token com detec\u00e7\u00e3o de reuso",
+        "description": "Rotaciona o refresh token: invalida o token apresentado e emite um novo par.",
+        "operationId": "refresh_token_api_v1_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "Authentication & Sessions (OWASP)"
+        ],
+        "summary": "Revoga\u00e7\u00e3o de sess\u00e3o e logout de usu\u00e1rio",
+        "description": "Revoga o refresh token fornecido (e access token opcional).\n\nImpede renova\u00e7\u00f5es e acessos subsequentes em toda a malha distribu\u00edda.",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "Authentication & Sessions (OWASP)"
+        ],
+        "summary": "Perfil do usu\u00e1rio autenticado a partir do Bearer JWT",
+        "description": "Retorna perfil do usu\u00e1rio ativo a partir do principal central validado.",
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsuarioPerfilResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/patient/otp/request": {
+      "post": {
+        "tags": [
+          "Auth Paciente"
+        ],
+        "summary": "Solicitar c\u00f3digo OTP para autentica\u00e7\u00e3o passwordless",
+        "description": "Envia um c\u00f3digo OTP de 6 d\u00edgitos via SMS para o telefone informado, com controle de taxa de at\u00e9 3 envios por janela de 15 minutos.",
+        "operationId": "request_otp_api_v1_auth_patient_otp_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolicitarOtpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SolicitarOtpResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/patient/otp/verify": {
+      "post": {
+        "tags": [
+          "Auth Paciente"
+        ],
+        "summary": "Verificar c\u00f3digo OTP e obter token de paciente",
+        "description": "Valida o c\u00f3digo OTP informado e emite um token Bearer JWT leve com claim papel='PACIENTE' para rastreamento de fila e teleconsulta.",
+        "operationId": "verify_otp_api_v1_auth_patient_otp_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerificarOtpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificarOtpResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/onboarding/fase-1": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Acolhimento cl\u00ednico inicial (Fase 1)",
+        "description": "Registra ou identifica o paciente com identificadores preliminares, queixa e hash do TCLE em tempo h\u00e1bil (< 45s - NEC-01), emitindo token provis\u00f3rio.",
+        "operationId": "intake_fase_1_api_v1_onboarding_fase_1_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Fase1Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Fase1Response"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/onboarding/fase-2": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Enriquecimento regulat\u00f3rio de prontu\u00e1rio (Fase 2)",
+        "description": "Completa o cadastro com os requisitos obrigat\u00f3rios do CFM 1.821/2007 (nome da m\u00e3e, sexo biol\u00f3gico, endere\u00e7o completo e alergias).",
+        "operationId": "enrichment_fase_2_api_v1_onboarding_fase_2_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Fase2Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Fase2Response"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/pacientes/{id}/dependentes": {
+      "post": {
+        "tags": [
+          "Pacientes"
+        ],
+        "summary": "Cadastrar ou vincular dependente",
+        "description": "Vincula um dependente legal ou menor ao paciente titular, com valida\u00e7\u00e3o anti-reflexiva.",
+        "operationId": "cadastrar_dependente_api_v1_pacientes__id__dependentes_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "ID do paciente titular",
+              "title": "Id"
+            },
+            "description": "ID do paciente titular"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CriarDependenteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependenteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Pacientes"
+        ],
+        "summary": "Listar dependentes do titular",
+        "description": "Recupera a lista de todos os dependentes vinculados ao paciente titular na organiza\u00e7\u00e3o.",
+        "operationId": "listar_dependentes_api_v1_pacientes__id__dependentes_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "ID do paciente titular",
+              "title": "Id"
+            },
+            "description": "ID do paciente titular"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DependenteDetalheResponse"
+                  },
+                  "title": "Response Listar Dependentes Api V1 Pacientes  Id  Dependentes Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fila/admissao": {
+      "post": {
+        "tags": [
+          "Fila"
+        ],
+        "summary": "Admiss\u00e3o cl\u00ednica e triagem no PA Virtual",
+        "description": "Classifica o risco cl\u00ednico pelo Protocolo Manchester/ACR, valida TCLE e backpressure estoc\u00e1stico, e persiste atomicamente atendimento e triagem. Requer credencial de autentica\u00e7\u00e3o v\u00e1lida (token provis\u00f3rio de acolhimento ou token de acesso) com posse sobre o paciente_id e organiza\u00e7\u00e3o para prevenir inje\u00e7\u00e3o an\u00f4nima (Anti-IDOR).",
+        "operationId": "admitir_paciente_api_v1_fila_admissao_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdmissaoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdmissaoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/fila/chamar-proximo": {
+      "post": {
+        "tags": [
+          "Fila - Aloca\u00e7\u00e3o M\u00e9dica"
+        ],
+        "summary": "Chamar pr\u00f3ximo paciente da fila cl\u00ednica (RF-03)",
+        "description": "Permite ao m\u00e9dico plantonista adquirir e alocar atomicamente via script Lua o pr\u00f3ximo paciente de maior prioridade cl\u00ednica da fila virtual (ZSET), com bloqueio de concorr\u00eancia e TTL de chamada. Retorna 200 com os dados da chamada ou mensagem de fila vazia se n\u00e3o houver pacientes eleg\u00edveis.",
+        "operationId": "chamar_proximo_paciente_api_v1_fila_chamar_proximo_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChamarProximoResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/fila/posicao/{atendimento_id}": {
+      "get": {
+        "tags": [
+          "Fila - Paciente"
+        ],
+        "summary": "Consultar posi\u00e7\u00e3o e tempo estimado na fila virtual",
+        "description": "Retorna a posi\u00e7\u00e3o ordinal do paciente na fila virtual (ZSET) e o tempo de espera estimado baseado no TMA, exigindo token v\u00e1lido com posse sobre o atendimento (Anti-IDOR).",
+        "operationId": "obter_posicao_fila_api_v1_fila_posicao__atendimento_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Atendimento Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PosicaoFilaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fila/cancelar/{atendimento_id}": {
+      "post": {
+        "tags": [
+          "Fila - Paciente"
+        ],
+        "summary": "Cancelamento volunt\u00e1rio de atendimento na fila (RN06)",
+        "description": "Permite ao paciente cancelar voluntariamente seu atendimento na fila. Remove atomicamente do ZSET e transiciona o status para CANCELADO no banco.",
+        "operationId": "cancelar_atendimento_fila_api_v1_fila_cancelar__atendimento_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Atendimento Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CancelarFilaRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelarFilaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fila/piora": {
+      "post": {
+        "tags": [
+          "Fila - Paciente"
+        ],
+        "summary": "Salvaguarda cl\u00ednica: notifica\u00e7\u00e3o de piora cl\u00ednica na fila (RF-06)",
+        "description": "Permite ao paciente comunicar agravamento dos sintomas enquanto aguarda. Reavalia o risco pelo motor de triagem: se emerg\u00eancia (Vermelho), dispara alerta SAMU; caso contr\u00e1rio, recalcula score e reposiciona na fila.",
+        "operationId": "comunicar_piora_clinica_api_v1_fila_piora_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PioraClinicaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PioraClinicaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/fila/atendimentos/{atendimento_id}/regularizar": {
+      "post": {
+        "tags": [
+          "Fila - Paciente"
+        ],
+        "summary": "Regulariza\u00e7\u00e3o de atendimento na fila (US-05)",
+        "description": "Permite a regulariza\u00e7\u00e3o de atendimento retido ou em conting\u00eancia na fila virtual. Transiciona o status para APTO_PARA_CHAMADA e calcula o score ZSET.",
+        "operationId": "regularizar_atendimento_fila_api_v1_fila_atendimentos__atendimento_id__regularizar_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Atendimento Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegularizacaoFilaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegularizacaoFilaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{atendimento_id}/livekit/token": {
+      "post": {
+        "tags": [
+          "teleconsulta-webrtc"
+        ],
+        "summary": "Emite token JWT assinado para sala de teleconsulta no LiveKit SFU",
+        "description": "Gera token ef\u00eamero com Video Grants para m\u00e9dico ou paciente entrar na sala.",
+        "operationId": "generate_teleconsulta_room_token_api_v1_consultations__atendimento_id__livekit_token_post",
+        "security": [
+          {
+            "HTTPBearer": [
+              "livekit:access"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do atendimento",
+              "title": "Atendimento Id"
+            },
+            "description": "Identificador \u00fanico do atendimento"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveKitTokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveKitTokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{atendimento_id}/soap": {
+      "post": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Registra ou atualiza evolu\u00e7\u00e3o cl\u00ednica SOAP no prontu\u00e1rio eletr\u00f4nico (PEP)",
+        "description": "Registra ou atualiza Subjetivo, Objetivo, Avalia\u00e7\u00e3o e Plano no PEP.",
+        "operationId": "salvar_evolucao_soap_api_v1_consultations__atendimento_id__soap_post",
+        "security": [
+          {
+            "HTTPBearer": [
+              "clinical:write",
+              "medico",
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do atendimento",
+              "title": "Atendimento Id"
+            },
+            "description": "Identificador \u00fanico do atendimento"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrarSOAPRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvolucaoSOAPResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Obt\u00e9m a evolu\u00e7\u00e3o cl\u00ednica SOAP registrada para o atendimento",
+        "description": "Retorna as notas SOAP atuais do atendimento.",
+        "operationId": "obter_evolucao_soap_api_v1_consultations__atendimento_id__soap_get",
+        "security": [
+          {
+            "HTTPBearer": [
+              "clinical:read",
+              "medico",
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do atendimento",
+              "title": "Atendimento Id"
+            },
+            "description": "Identificador \u00fanico do atendimento"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvolucaoSOAPResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{atendimento_id}/prontuario": {
+      "get": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Acesso ao prontu\u00e1rio m\u00e9dico protegido por RBAC e ABAC cl\u00ednico",
+        "description": "Retorna o prontu\u00e1rio eletr\u00f4nico mediante verifica\u00e7\u00e3o em 3 camadas:\n1. Camada 1 (Macro RBAC): papel MEDICO.\n2. Camada 2 (RLS): isolamento de tenant.\n3. Camada 3 (ABAC Cl\u00ednico): m\u00e9dico assistente + TCLE assinado + status ativo.",
+        "operationId": "obter_prontuario_protegido_api_v1_consultations__atendimento_id__prontuario_get",
+        "security": [
+          {
+            "HTTPBearer": [
+              "clinical:read",
+              "medico",
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do atendimento",
+              "title": "Atendimento Id"
+            },
+            "description": "Identificador \u00fanico do atendimento"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProntuarioResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{atendimento_id}/prescriptions/validate": {
+      "post": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Valida subst\u00e2ncia medicamentosa contra Portaria SVS/MS n\u00ba 344/98",
+        "description": "Verifica se o medicamento exige talon\u00e1rio f\u00edsico (Listas A/B).",
+        "operationId": "validar_prescricao_medicamento_api_v1_consultations__atendimento_id__prescriptions_validate_post",
+        "security": [
+          {
+            "HTTPBearer": [
+              "clinical:write",
+              "medico",
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do atendimento",
+              "title": "Atendimento Id"
+            },
+            "description": "Identificador \u00fanico do atendimento"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidarPrescricaoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidarPrescricaoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{atendimento_id}/documents": {
+      "post": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Emite documento cl\u00ednico eletr\u00f4nico com itens de prescri\u00e7\u00e3o",
+        "description": "Emite receita ou atestado aplicando salvaguardas da Portaria 344/98.",
+        "operationId": "emitir_documento_clinico_api_v1_consultations__atendimento_id__documents_post",
+        "security": [
+          {
+            "HTTPBearer": [
+              "clinical:write",
+              "medico",
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do atendimento",
+              "title": "Atendimento Id"
+            },
+            "description": "Identificador \u00fanico do atendimento"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmitirDocumentoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentoClinicoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{atendimento_id}/finalize": {
+      "post": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Conclui atendimento e bloqueia registros cl\u00ednicos (Imutabilidade)",
+        "description": "Finaliza teleconsulta travando edi\u00e7\u00e3o e exclus\u00e3o de evolu\u00e7\u00e3o e documentos.",
+        "operationId": "finalizar_consulta_api_v1_consultations__atendimento_id__finalize_post",
+        "security": [
+          {
+            "HTTPBearer": [
+              "clinical:write",
+              "medico",
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do atendimento",
+              "title": "Atendimento Id"
+            },
+            "description": "Identificador \u00fanico do atendimento"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalizarConsultaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalizarConsultaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{atendimento_id}/tma-status": {
+      "get": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Consulta telemetria discreta de TMA sem desconex\u00e3o for\u00e7ada (RN06)",
+        "description": "Calcula telemetria de TMA respeitando a soberania m\u00e9dica (RN06).",
+        "operationId": "obter_tma_status_api_v1_consultations__atendimento_id__tma_status_get",
+        "security": [
+          {
+            "HTTPBearer": [
+              "clinical:read",
+              "medico",
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do atendimento",
+              "title": "Atendimento Id"
+            },
+            "description": "Identificador \u00fanico do atendimento"
+          },
+          {
+            "name": "iniciado_em",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Data e hora de in\u00edcio do atendimento (UTC)",
+              "title": "Iniciado Em"
+            },
+            "description": "Data e hora de in\u00edcio do atendimento (UTC)"
+          },
+          {
+            "name": "tma_planejado_segundos",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 7200,
+              "minimum": 60,
+              "description": "Tempo M\u00e9dio de Atendimento previsto em segundos",
+              "default": 900,
+              "title": "Tma Planejado Segundos"
+            },
+            "description": "Tempo M\u00e9dio de Atendimento previsto em segundos"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TMAStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{atendimento_id}/documents/{documento_id}/pdf": {
+      "get": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Download do documento cl\u00ednico compilado em padr\u00e3o PDF/A com QR Code",
+        "description": "Retorna o documento cl\u00ednico compilado em PDF/A com QR Code de verifica\u00e7\u00e3o.",
+        "operationId": "obter_documento_pdf_api_v1_consultations__atendimento_id__documents__documento_id__pdf_get",
+        "security": [
+          {
+            "HTTPBearer": [
+              "clinical:read",
+              "medico",
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do atendimento",
+              "title": "Atendimento Id"
+            },
+            "description": "Identificador \u00fanico do atendimento"
+          },
+          {
+            "name": "documento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do documento cl\u00ednico",
+              "title": "Documento Id"
+            },
+            "description": "Identificador \u00fanico do documento cl\u00ednico"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Arquivo PDF/A v\u00e1lido com QR Code",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "404": {
+            "description": "Documento n\u00e3o encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{atendimento_id}/documents/{documento_id}/sign": {
+      "post": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Aplica assinatura digital PAdES ICP-Brasil no documento cl\u00ednico via PSC",
+        "description": "Executa a assinatura digital PAdES em nuvem via PSC (CFM 2.314/2022).",
+        "operationId": "assinar_documento_api_v1_consultations__atendimento_id__documents__documento_id__sign_post",
+        "security": [
+          {
+            "HTTPBearer": [
+              "clinical:write",
+              "medico",
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do atendimento",
+              "title": "Atendimento Id"
+            },
+            "description": "Identificador \u00fanico do atendimento"
+          },
+          {
+            "name": "documento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do documento cl\u00ednico",
+              "title": "Documento Id"
+            },
+            "description": "Identificador \u00fanico do documento cl\u00ednico"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssinarDocumentoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssinarDocumentoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents/validate/{token_validacao}": {
+      "get": {
+        "tags": [
+          "Document Validation & Presigned Storage"
+        ],
+        "summary": "Valida\u00e7\u00e3o p\u00fablica de autenticidade de documento cl\u00ednico (QR Code CFM/ITI)",
+        "description": "Consulta p\u00fablica da autenticidade com mascaramento LGPD.",
+        "operationId": "validar_documento_api_v1_documents_validate__token_validacao__get",
+        "parameters": [
+          {
+            "name": "token_validacao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Token de valida\u00e7\u00e3o ou UUID",
+              "title": "Token Validacao"
+            },
+            "description": "Token de valida\u00e7\u00e3o ou UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidarDocumentoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents/download/{token_validacao}": {
+      "get": {
+        "tags": [
+          "Document Validation & Presigned Storage"
+        ],
+        "summary": "Download seguro do documento cl\u00ednico via Presigned URL tempor\u00e1ria",
+        "description": "Gera Presigned URL de curta dura\u00e7\u00e3o para download seguro mediado pelo S3.",
+        "operationId": "download_documento_presigned_api_v1_documents_download__token_validacao__get",
+        "parameters": [
+          {
+            "name": "token_validacao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Token de valida\u00e7\u00e3o ou UUID",
+              "title": "Token Validacao"
+            },
+            "description": "Token de valida\u00e7\u00e3o ou UUID"
+          },
+          {
+            "name": "redirect",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "307 p/ S3 se true, JSON se false",
+              "default": true,
+              "title": "Redirect"
+            },
+            "description": "307 p/ S3 se true, JSON se false"
+          },
+          {
+            "name": "expiracao_segundos",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 3600,
+              "minimum": 60,
+              "default": 300,
+              "title": "Expiracao Segundos"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Redirecionamento tempor\u00e1rio para URL S3 pr\u00e9-assinada"
+          },
+          "200": {
+            "description": "Payload com URL pr\u00e9-assinada (quando redirect=false)"
+          },
+          "404": {
+            "description": "Documento n\u00e3o encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/telemetria/painel": {
+      "get": {
+        "tags": [
+          "Telemetria"
+        ],
+        "summary": "Painel operacional de telemetria em tempo real (RF-10)",
+        "description": "Retorna m\u00e9tricas consolidadas do plant\u00e3o m\u00e9dico (TME por prioridade, TMA m\u00e9dio e por m\u00e9dico, taxa de no-show, evas\u00e3o e conformidade com SLA), com suporte a cache no Valkey e bypass sob demanda.",
+        "operationId": "obter_painel_telemetria_api_v1_telemetria_painel_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "desconsiderar_cache",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "For\u00e7ar rec\u00e1lculo ignorando o cache do Valkey",
+              "default": false,
+              "title": "Desconsiderar Cache"
+            },
+            "description": "For\u00e7ar rec\u00e1lculo ignorando o cache do Valkey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PainelTelemetriaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/telemetria/config-plantao": {
+      "get": {
+        "tags": [
+          "Telemetria"
+        ],
+        "summary": "Consulta parametriza\u00e7\u00e3o de pol\u00edticas do plant\u00e3o (RF-09)",
+        "description": "Consulta os par\u00e2metros ativos do plant\u00e3o para a organiza\u00e7\u00e3o (m\u00e9dicos planejados, fator alpha, cota di\u00e1ria, TMA padr\u00e3o e metas de SLA). Se inexistente, inicializa e persiste a configura\u00e7\u00e3o default.",
+        "operationId": "obter_configuracao_plantao_api_v1_telemetria_config_plantao_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigPlantaoResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Telemetria"
+        ],
+        "summary": "Atualiza parametriza\u00e7\u00e3o de pol\u00edticas do plant\u00e3o (RF-09)",
+        "description": "Atualiza as pol\u00edticas e metas de SLA do plant\u00e3o para a organiza\u00e7\u00e3o, validando limites e invariantes de dom\u00ednio, invalidando o cache do painel e persistindo as altera\u00e7\u00f5es atomicamente.",
+        "operationId": "atualizar_configuracao_plantao_api_v1_telemetria_config_plantao_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigPlantaoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigPlantaoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdmissaoRequest": {
+        "properties": {
+          "paciente_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paciente Id",
+            "description": "ID do paciente acolhido"
+          },
+          "queixa_principal": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Queixa Principal",
+            "description": "Queixa cl\u00ednica principal"
+          },
+          "sintomas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sintomas",
+            "description": "Lista de sintomas relatados"
+          },
+          "escala_dor": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Escala Dor",
+            "description": "Escala de dor (0 a 10)",
+            "default": 0
+          },
+          "tcle_texto": {
+            "type": "string",
+            "title": "Tcle Texto",
+            "description": "Texto do termo de consentimento (opcional se tcle_hash fornecido)",
+            "default": ""
+          },
+          "tcle_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tcle Hash",
+            "description": "Hash SHA-256 do TCLE"
+          },
+          "medicos_ativos": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Medicos Ativos",
+            "description": "M\u00e9dicos ativos no plant\u00e3o para c\u00e1lculo de backpressure",
+            "default": 1
+          },
+          "cpf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpf",
+            "description": "CPF do paciente (opcional)"
+          },
+          "cns": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cns",
+            "description": "Cart\u00e3o Nacional de Sa\u00fade (SUS)"
+          },
+          "operadora_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operadora Id",
+            "description": "C\u00f3digo da operadora de sa\u00fade"
+          },
+          "numero_carteirinha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero Carteirinha",
+            "description": "N\u00famero da carteirinha do plano"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paciente_id",
+          "queixa_principal"
+        ],
+        "title": "AdmissaoRequest",
+        "description": "Payload for patient admission and triage."
+      },
+      "AdmissaoResponse": {
+        "properties": {
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id"
+          },
+          "triagem_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Triagem Id"
+          },
+          "organizacao_id": {
+            "type": "integer",
+            "title": "Organizacao Id"
+          },
+          "paciente_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paciente Id"
+          },
+          "status_atendimento": {
+            "type": "string",
+            "title": "Status Atendimento"
+          },
+          "prioridade_clinica": {
+            "type": "integer",
+            "title": "Prioridade Clinica"
+          },
+          "alerta_samu_disparado": {
+            "type": "boolean",
+            "title": "Alerta Samu Disparado"
+          },
+          "instrucoes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrucoes"
+          },
+          "tcle_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tcle Hash",
+            "description": "Hash SHA-256 do TCLE digital aceito"
+          }
+        },
+        "type": "object",
+        "required": [
+          "atendimento_id",
+          "triagem_id",
+          "organizacao_id",
+          "paciente_id",
+          "status_atendimento",
+          "prioridade_clinica",
+          "alerta_samu_disparado"
+        ],
+        "title": "AdmissaoResponse",
+        "description": "Response payload for patient admission and triage."
+      },
+      "AssinarDocumentoRequest": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token",
+            "description": "Token OAuth2 do m\u00e9dico emitido pelo provedor PSC"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider",
+            "description": "Provedor PSC (birdid, safeid, vidaas, fake)",
+            "default": "birdid"
+          },
+          "certificate_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Certificate Alias",
+            "description": "Alias ou identificador opcional do certificado no PSC"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "AssinarDocumentoRequest",
+        "description": "Payload to authorize digital signature via cloud PSC."
+      },
+      "AssinarDocumentoResponse": {
+        "properties": {
+          "documento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Documento Id"
+          },
+          "tipo_documento": {
+            "type": "string",
+            "title": "Tipo Documento"
+          },
+          "sha256_hash": {
+            "type": "string",
+            "title": "Sha256 Hash"
+          },
+          "assinado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Assinado Em"
+          },
+          "tamanho_bytes": {
+            "type": "integer",
+            "title": "Tamanho Bytes"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ASSINADO"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "documento_id",
+          "tipo_documento",
+          "sha256_hash",
+          "assinado_em",
+          "tamanho_bytes"
+        ],
+        "title": "AssinarDocumentoResponse",
+        "description": "Result of digital signature application."
+      },
+      "CancelarFilaRequest": {
+        "properties": {
+          "motivo": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Motivo",
+            "description": "Motivo do cancelamento",
+            "default": "Desist\u00eancia volunt\u00e1ria pelo paciente"
+          }
+        },
+        "type": "object",
+        "title": "CancelarFilaRequest",
+        "description": "Payload opcional para cancelamento volunt\u00e1rio de atendimento na fila."
+      },
+      "CancelarFilaResponse": {
+        "properties": {
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id",
+            "description": "ID do atendimento cancelado"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Novo status do atendimento"
+          },
+          "cancelado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Cancelado Em",
+            "description": "Data/hora do cancelamento"
+          },
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo",
+            "description": "Motivo registrado para o cancelamento"
+          }
+        },
+        "type": "object",
+        "required": [
+          "atendimento_id",
+          "status",
+          "cancelado_em"
+        ],
+        "title": "CancelarFilaResponse",
+        "description": "Resposta de confirma\u00e7\u00e3o de cancelamento do atendimento na fila."
+      },
+      "ChamarProximoResponse": {
+        "properties": {
+          "alocado": {
+            "type": "boolean",
+            "title": "Alocado",
+            "description": "Indica se um paciente foi alocado com sucesso"
+          },
+          "atendimento_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Atendimento Id",
+            "description": "ID do atendimento alocado"
+          },
+          "medico_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medico Id",
+            "description": "ID do m\u00e9dico que realizou a chamada"
+          },
+          "paciente_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paciente Id",
+            "description": "ID do paciente alocado"
+          },
+          "prioridade_clinica": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prioridade Clinica",
+            "description": "Prioridade cl\u00ednica do atendimento"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "Status do atendimento"
+          },
+          "chamada_iniciada_em": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chamada Iniciada Em",
+            "description": "Data/hora de in\u00edcio da chamada"
+          },
+          "ttl_segundos": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttl Segundos",
+            "description": "Tempo limite em segundos para in\u00edcio do atendimento"
+          },
+          "mensagem": {
+            "type": "string",
+            "title": "Mensagem",
+            "description": "Mensagem descritiva do resultado da aloca\u00e7\u00e3o"
+          }
+        },
+        "type": "object",
+        "required": [
+          "alocado",
+          "mensagem"
+        ],
+        "title": "ChamarProximoResponse",
+        "description": "Resposta para a aquisi\u00e7\u00e3o e chamada do pr\u00f3ximo paciente da fila."
+      },
+      "ConfigPlantaoRequest": {
+        "properties": {
+          "medicos_ativos_planejados": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Medicos Ativos Planejados",
+            "description": "N\u00famero planejado de m\u00e9dicos ativos no plant\u00e3o",
+            "default": 1
+          },
+          "alpha_backpressure": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.3,
+                "minimum": 1.2
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Alpha Backpressure",
+            "description": "Fator de sobrecarga (alpha) do plant\u00e3o (entre 1.20 e 1.30)",
+            "default": "1.25"
+          },
+          "cota_diaria_maxima": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cota Diaria Maxima",
+            "description": "Cota m\u00e1xima di\u00e1ria de atendimentos (ou null para ilimitado)",
+            "default": 300
+          },
+          "tma_padrao_segundos": {
+            "type": "integer",
+            "minimum": 60.0,
+            "title": "Tma Padrao Segundos",
+            "description": "Tempo M\u00e9dio de Atendimento planejado em segundos (m\u00ednimo 60s)",
+            "default": 600
+          },
+          "tempo_tolerancia_ring_segundos": {
+            "type": "integer",
+            "minimum": 10.0,
+            "title": "Tempo Tolerancia Ring Segundos",
+            "description": "Toler\u00e2ncia de ring em segundos antes de timeout (m\u00ednimo 10s)",
+            "default": 45
+          },
+          "modo_operacao": {
+            "type": "string",
+            "enum": [
+              "SUS",
+              "PRIVADO"
+            ],
+            "title": "Modo Operacao",
+            "description": "Modo de opera\u00e7\u00e3o do plant\u00e3o (SUS ou PRIVADO)",
+            "default": "SUS"
+          },
+          "sla_minutos_nivel_1": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sla Minutos Nivel 1",
+            "description": "SLA n\u00edvel 1 (Vermelho - Emerg\u00eancia) em minutos",
+            "default": 0
+          },
+          "sla_minutos_nivel_2": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sla Minutos Nivel 2",
+            "description": "SLA n\u00edvel 2 (Laranja - Muito Urgente) em minutos",
+            "default": 10
+          },
+          "sla_minutos_nivel_3": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sla Minutos Nivel 3",
+            "description": "SLA n\u00edvel 3 (Amarelo - Urgente) em minutos",
+            "default": 60
+          },
+          "sla_minutos_nivel_4": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sla Minutos Nivel 4",
+            "description": "SLA n\u00edvel 4 (Verde - Pouco Urgente) em minutos",
+            "default": 120
+          },
+          "sla_minutos_nivel_5": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sla Minutos Nivel 5",
+            "description": "SLA n\u00edvel 5 (Azul - N\u00e3o Urgente) em minutos",
+            "default": 240
+          }
+        },
+        "type": "object",
+        "title": "ConfigPlantaoRequest",
+        "description": "Request payload for updating shift configuration and SLAs (RF-09)."
+      },
+      "ConfigPlantaoResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "organizacao_id": {
+            "type": "integer",
+            "title": "Organizacao Id"
+          },
+          "medicos_ativos_planejados": {
+            "type": "integer",
+            "title": "Medicos Ativos Planejados"
+          },
+          "alpha_backpressure": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Alpha Backpressure"
+          },
+          "cota_diaria_maxima": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cota Diaria Maxima"
+          },
+          "tma_padrao_segundos": {
+            "type": "integer",
+            "title": "Tma Padrao Segundos"
+          },
+          "tempo_tolerancia_ring_segundos": {
+            "type": "integer",
+            "title": "Tempo Tolerancia Ring Segundos"
+          },
+          "modo_operacao": {
+            "type": "string",
+            "title": "Modo Operacao"
+          },
+          "sla_minutos_nivel_1": {
+            "type": "integer",
+            "title": "Sla Minutos Nivel 1"
+          },
+          "sla_minutos_nivel_2": {
+            "type": "integer",
+            "title": "Sla Minutos Nivel 2"
+          },
+          "sla_minutos_nivel_3": {
+            "type": "integer",
+            "title": "Sla Minutos Nivel 3"
+          },
+          "sla_minutos_nivel_4": {
+            "type": "integer",
+            "title": "Sla Minutos Nivel 4"
+          },
+          "sla_minutos_nivel_5": {
+            "type": "integer",
+            "title": "Sla Minutos Nivel 5"
+          },
+          "criado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Criado Em"
+          },
+          "atualizado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Atualizado Em"
+          },
+          "atualizado_por_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Atualizado Por Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "organizacao_id",
+          "medicos_ativos_planejados",
+          "alpha_backpressure",
+          "cota_diaria_maxima",
+          "tma_padrao_segundos",
+          "tempo_tolerancia_ring_segundos",
+          "modo_operacao",
+          "sla_minutos_nivel_1",
+          "sla_minutos_nivel_2",
+          "sla_minutos_nivel_3",
+          "sla_minutos_nivel_4",
+          "sla_minutos_nivel_5",
+          "criado_em",
+          "atualizado_em",
+          "atualizado_por_id"
+        ],
+        "title": "ConfigPlantaoResponse",
+        "description": "Response representation of shift configuration and operational SLAs (RF-09)."
+      },
+      "CriarDependenteRequest": {
+        "properties": {
+          "grau_parentesco": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Grau Parentesco",
+            "description": "Grau de parentesco (FILHO, FILHA, ENTEADO, TUTELADO, etc.)",
+            "examples": [
+              "FILHO"
+            ]
+          },
+          "dependente_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dependente Id",
+            "description": "ID do paciente dependente caso j\u00e1 possua cadastro"
+          },
+          "nome_completo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nome Completo",
+            "description": "Nome do dependente para cadastro de novo paciente",
+            "examples": [
+              "Jo\u00e3o da Silva"
+            ]
+          },
+          "data_nascimento": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Nascimento",
+            "description": "Data de nascimento do dependente",
+            "examples": [
+              "2020-01-10"
+            ]
+          },
+          "cpf": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 14
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpf",
+            "description": "CPF do dependente",
+            "examples": [
+              "52998224725"
+            ]
+          },
+          "cns": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 18
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cns",
+            "description": "CNS do dependente",
+            "examples": [
+              "700000000000005"
+            ]
+          },
+          "telefone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telefone",
+            "description": "Telefone de contato do dependente (opcional, herda do titular)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "grau_parentesco"
+        ],
+        "title": "CriarDependenteRequest",
+        "description": "Payload for linking or creating a patient dependent."
+      },
+      "DependenteDetalheResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "titular_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Titular Id"
+          },
+          "dependente_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dependente Id"
+          },
+          "grau_parentesco": {
+            "type": "string",
+            "title": "Grau Parentesco"
+          },
+          "nome_completo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nome Completo"
+          },
+          "data_nascimento": {
+            "type": "string",
+            "format": "date",
+            "title": "Data Nascimento"
+          },
+          "cpf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpf"
+          },
+          "cns": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cns"
+          },
+          "vinculado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Vinculado Em"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "titular_id",
+          "dependente_id",
+          "grau_parentesco",
+          "nome_completo",
+          "data_nascimento",
+          "cpf",
+          "cns",
+          "vinculado_em"
+        ],
+        "title": "DependenteDetalheResponse",
+        "description": "Full detail of a dependent including clinical demographics."
+      },
+      "DependenteResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "organizacao_id": {
+            "type": "integer",
+            "title": "Organizacao Id"
+          },
+          "titular_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Titular Id"
+          },
+          "dependente_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dependente Id"
+          },
+          "grau_parentesco": {
+            "type": "string",
+            "title": "Grau Parentesco"
+          },
+          "vinculado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Vinculado Em"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "organizacao_id",
+          "titular_id",
+          "dependente_id",
+          "grau_parentesco",
+          "vinculado_em"
+        ],
+        "title": "DependenteResponse",
+        "description": "Summary of created dependent relationship."
+      },
+      "DocumentoClinicoResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id"
+          },
+          "organizacao_id": {
+            "type": "integer",
+            "title": "Organizacao Id"
+          },
+          "medico_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Medico Id"
+          },
+          "tipo_documento": {
+            "type": "string",
+            "title": "Tipo Documento"
+          },
+          "chave_s3": {
+            "type": "string",
+            "title": "Chave S3"
+          },
+          "sha256_hash": {
+            "type": "string",
+            "title": "Sha256 Hash"
+          },
+          "assinado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Assinado Em"
+          },
+          "is_finalizado": {
+            "type": "boolean",
+            "title": "Is Finalizado"
+          },
+          "itens": {
+            "items": {
+              "$ref": "#/components/schemas/ItemPrescricaoResponse"
+            },
+            "type": "array",
+            "title": "Itens"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "atendimento_id",
+          "organizacao_id",
+          "medico_id",
+          "tipo_documento",
+          "chave_s3",
+          "sha256_hash",
+          "assinado_em",
+          "is_finalizado",
+          "itens"
+        ],
+        "title": "DocumentoClinicoResponse",
+        "description": "Response containing issued clinical document and child items."
+      },
+      "EmitirDocumentoRequest": {
+        "properties": {
+          "tipo_documento": {
+            "type": "string",
+            "title": "Tipo Documento",
+            "description": "Tipo de documento cl\u00ednico (RECEITA_SIMPLES, etc.)"
+          },
+          "itens": {
+            "items": {
+              "$ref": "#/components/schemas/ItemPrescricaoRequest"
+            },
+            "type": "array",
+            "title": "Itens",
+            "description": "Itens de medicamentos a prescrever"
+          },
+          "chave_s3": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chave S3",
+            "description": "Chave de armazenamento S3/MinIO"
+          },
+          "sha256_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256 Hash",
+            "description": "Hash SHA-256 do documento"
+          },
+          "organizacao_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organizacao Id",
+            "description": "Identificador da organiza\u00e7\u00e3o"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tipo_documento"
+        ],
+        "title": "EmitirDocumentoRequest",
+        "description": "Payload to issue a digital clinical document."
+      },
+      "EvolucaoSOAPResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id"
+          },
+          "organizacao_id": {
+            "type": "integer",
+            "title": "Organizacao Id"
+          },
+          "medico_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Medico Id"
+          },
+          "anamnese": {
+            "type": "string",
+            "title": "Anamnese"
+          },
+          "exame_fisico_virtual": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exame Fisico Virtual"
+          },
+          "cid10_principal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cid10 Principal"
+          },
+          "conduta": {
+            "type": "string",
+            "title": "Conduta"
+          },
+          "registrado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Registrado Em"
+          },
+          "is_finalizado": {
+            "type": "boolean",
+            "title": "Is Finalizado"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "atendimento_id",
+          "organizacao_id",
+          "medico_id",
+          "anamnese",
+          "exame_fisico_virtual",
+          "cid10_principal",
+          "conduta",
+          "registrado_em",
+          "is_finalizado"
+        ],
+        "title": "EvolucaoSOAPResponse",
+        "description": "Response containing recorded SOAP clinical evolution notes."
+      },
+      "Fase1Request": {
+        "properties": {
+          "nome_completo": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Nome Completo",
+            "description": "Nome completo do paciente",
+            "examples": [
+              "Maria da Silva"
+            ]
+          },
+          "data_nascimento": {
+            "type": "string",
+            "format": "date",
+            "title": "Data Nascimento",
+            "description": "Data de nascimento do paciente",
+            "examples": [
+              "1985-05-15"
+            ]
+          },
+          "telefone": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 10,
+            "title": "Telefone",
+            "description": "Telefone de contato com DDD",
+            "examples": [
+              "11987654321"
+            ]
+          },
+          "queixa_principal": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 3,
+            "title": "Queixa Principal",
+            "description": "Queixa principal relatada pelo paciente",
+            "examples": [
+              "Dor de cabe\u00e7a intensa e febre h\u00e1 2 dias"
+            ]
+          },
+          "tcle_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Tcle Hash",
+            "description": "Hash SHA-256 do aceite digital do TCLE",
+            "examples": [
+              "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            ]
+          },
+          "nome_social": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nome Social",
+            "description": "Nome social do paciente (CFM 1.821/2007 e SUS)",
+            "examples": [
+              "Carla Silva"
+            ]
+          },
+          "cpf": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 14
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpf",
+            "description": "Cadastro de Pessoas F\u00edsicas (CPF)",
+            "examples": [
+              "11144477735"
+            ]
+          },
+          "cns": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 18
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cns",
+            "description": "Cart\u00e3o Nacional de Sa\u00fade (CNS)",
+            "examples": [
+              "700000000000005"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "nome_completo",
+          "data_nascimento",
+          "telefone",
+          "queixa_principal",
+          "tcle_hash"
+        ],
+        "title": "Fase1Request",
+        "description": "Payload for Phase 1 clinical intake."
+      },
+      "Fase1Response": {
+        "properties": {
+          "paciente_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paciente Id"
+          },
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "TRIADO_AGUARDANDO_ELEGIBILIDADE"
+          },
+          "mensagem": {
+            "type": "string",
+            "title": "Mensagem"
+          },
+          "is_novo_paciente": {
+            "type": "boolean",
+            "title": "Is Novo Paciente"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "paciente_id",
+          "token",
+          "mensagem",
+          "is_novo_paciente"
+        ],
+        "title": "Fase1Response",
+        "description": "Response after Phase 1 intake execution."
+      },
+      "Fase2Request": {
+        "properties": {
+          "paciente_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paciente Id",
+            "description": "ID do paciente obtido na Fase 1"
+          },
+          "nome_mae": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Nome Mae",
+            "description": "Nome completo da m\u00e3e do paciente (CFM 1.821/2007)",
+            "examples": [
+              "Ana L\u00facia da Silva"
+            ]
+          },
+          "sexo_biologico": {
+            "type": "string",
+            "enum": [
+              "M",
+              "F"
+            ],
+            "title": "Sexo Biologico",
+            "description": "Sexo biol\u00f3gico: 'M' (Masculino) ou 'F' (Feminino)",
+            "examples": [
+              "F"
+            ]
+          },
+          "cep": {
+            "type": "string",
+            "maxLength": 9,
+            "minLength": 8,
+            "title": "Cep",
+            "description": "C\u00f3digo de Endere\u00e7amento Postal (CEP)",
+            "examples": [
+              "01310-100"
+            ]
+          },
+          "logradouro": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 2,
+            "title": "Logradouro",
+            "description": "Logradouro / Rua / Avenida",
+            "examples": [
+              "Avenida Paulista"
+            ]
+          },
+          "numero": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Numero",
+            "description": "N\u00famero do im\u00f3vel",
+            "examples": [
+              "1000"
+            ]
+          },
+          "bairro": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 2,
+            "title": "Bairro",
+            "description": "Bairro",
+            "examples": [
+              "Bela Vista"
+            ]
+          },
+          "cidade": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 2,
+            "title": "Cidade",
+            "description": "Cidade / Munic\u00edpio",
+            "examples": [
+              "S\u00e3o Paulo"
+            ]
+          },
+          "estado": {
+            "type": "string",
+            "maxLength": 2,
+            "minLength": 2,
+            "title": "Estado",
+            "description": "Unidade Federativa (UF)",
+            "examples": [
+              "SP"
+            ]
+          },
+          "nome_social": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nome Social",
+            "description": "Nome social do paciente (CFM 1.821/2007 e SUS)",
+            "examples": [
+              "Carla Silva"
+            ]
+          },
+          "alergias": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Alergias",
+            "description": "Lista de alergias medicamentosas declaradas",
+            "examples": [
+              [
+                "Dipirona",
+                "Penicilina"
+              ]
+            ]
+          },
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token",
+            "description": "Token provis\u00f3rio de acolhimento (intake_token) gerado na Fase 1. Alternativamente, pode ser enviado via cabe\u00e7alho Authorization: Bearer <token>.",
+            "examples": [
+              "eyJhbGciOi..."
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "paciente_id",
+          "nome_mae",
+          "sexo_biologico",
+          "cep",
+          "logradouro",
+          "numero",
+          "bairro",
+          "cidade",
+          "estado"
+        ],
+        "title": "Fase2Request",
+        "description": "Payload for Phase 2 CFM regulatory enrichment."
+      },
+      "Fase2Response": {
+        "properties": {
+          "paciente_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paciente Id"
+          },
+          "nome_completo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nome Completo"
+          },
+          "nome_social": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nome Social"
+          },
+          "nome_mae": {
+            "type": "string",
+            "title": "Nome Mae"
+          },
+          "sexo_biologico": {
+            "type": "string",
+            "title": "Sexo Biologico"
+          },
+          "cep": {
+            "type": "string",
+            "title": "Cep"
+          },
+          "logradouro": {
+            "type": "string",
+            "title": "Logradouro"
+          },
+          "numero": {
+            "type": "string",
+            "title": "Numero"
+          },
+          "bairro": {
+            "type": "string",
+            "title": "Bairro"
+          },
+          "cidade": {
+            "type": "string",
+            "title": "Cidade"
+          },
+          "estado": {
+            "type": "string",
+            "title": "Estado"
+          },
+          "alergias": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Alergias"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "paciente_id",
+          "nome_completo",
+          "nome_mae",
+          "sexo_biologico",
+          "cep",
+          "logradouro",
+          "numero",
+          "bairro",
+          "cidade",
+          "estado",
+          "alergias",
+          "status"
+        ],
+        "title": "Fase2Response",
+        "description": "Response after Phase 2 CFM regulatory enrichment."
+      },
+      "FinalizarConsultaRequest": {
+        "properties": {
+          "organizacao_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organizacao Id",
+            "description": "Identificador da organiza\u00e7\u00e3o"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "FinalizarConsultaRequest",
+        "description": "Payload to conclude attendance and lock PEP records."
+      },
+      "FinalizarConsultaResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "FINALIZADO quando travado imut\u00e1vel"
+          },
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id",
+            "description": "Identificador do atendimento"
+          },
+          "is_finalizado": {
+            "type": "boolean",
+            "title": "Is Finalizado",
+            "description": "True quando imut\u00e1vel"
+          },
+          "mensagem": {
+            "type": "string",
+            "title": "Mensagem",
+            "description": "Mensagem de conclus\u00e3o"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "atendimento_id",
+          "is_finalizado",
+          "mensagem"
+        ],
+        "title": "FinalizarConsultaResponse",
+        "description": "Result of consultation finalization (payload preserved)."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthCheckResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "valkey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValkeyHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "version",
+          "tenant_id",
+          "request_id"
+        ],
+        "title": "HealthCheckResponse",
+        "description": "System health check and observability telemetry envelope."
+      },
+      "ItemPrescricaoRequest": {
+        "properties": {
+          "medicamento": {
+            "type": "string",
+            "title": "Medicamento",
+            "description": "Nome do princ\u00edpio ativo ou medicamento comercial"
+          },
+          "dosagem": {
+            "type": "string",
+            "title": "Dosagem",
+            "description": "Dosagem (ex: 500mg, 10mg/ml)"
+          },
+          "posologia": {
+            "type": "string",
+            "title": "Posologia",
+            "description": "Instru\u00e7\u00f5es de uso (ex: 1 cp de 8 em 8 horas)"
+          },
+          "duracao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duracao",
+            "description": "Dura\u00e7\u00e3o do tratamento"
+          },
+          "controle_especial": {
+            "type": "boolean",
+            "title": "Controle Especial",
+            "description": "Indica se \u00e9 subst\u00e2ncia da Lista C1",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "medicamento",
+          "dosagem",
+          "posologia"
+        ],
+        "title": "ItemPrescricaoRequest",
+        "description": "Prescription medication item input."
+      },
+      "ItemPrescricaoResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "medicamento": {
+            "type": "string",
+            "title": "Medicamento"
+          },
+          "dosagem": {
+            "type": "string",
+            "title": "Dosagem"
+          },
+          "posologia": {
+            "type": "string",
+            "title": "Posologia"
+          },
+          "duracao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duracao"
+          },
+          "controle_especial": {
+            "type": "boolean",
+            "title": "Controle Especial"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "medicamento",
+          "dosagem",
+          "posologia",
+          "duracao",
+          "controle_especial"
+        ],
+        "title": "ItemPrescricaoResponse",
+        "description": "Prescription medication item output."
+      },
+      "ItemValidacaoResponse": {
+        "properties": {
+          "medicamento": {
+            "type": "string",
+            "title": "Medicamento"
+          },
+          "dosagem": {
+            "type": "string",
+            "title": "Dosagem"
+          },
+          "posologia": {
+            "type": "string",
+            "title": "Posologia"
+          },
+          "duracao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duracao"
+          },
+          "controle_especial": {
+            "type": "boolean",
+            "title": "Controle Especial",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "medicamento",
+          "dosagem",
+          "posologia"
+        ],
+        "title": "ItemValidacaoResponse",
+        "description": "Prescribed drug item summary for public verification."
+      },
+      "LiveKitTokenRequest": {
+        "properties": {
+          "organizacao_id": {
+            "type": "integer",
+            "title": "Organizacao Id",
+            "description": "Identificador \u00fanico da organiza\u00e7\u00e3o de sa\u00fade"
+          },
+          "participant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Participant Id",
+            "description": "Identificador \u00fanico do usu\u00e1rio (m\u00e9dico ou paciente)"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "medico",
+              "paciente"
+            ],
+            "title": "Role",
+            "description": "Papel cl\u00ednico do participante"
+          },
+          "participant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Participant Name",
+            "description": "Nome de exibi\u00e7\u00e3o opcional para a sala WebRTC"
+          },
+          "is_publisher": {
+            "type": "boolean",
+            "title": "Is Publisher",
+            "description": "Habilita publica\u00e7\u00e3o de trilhas de \u00e1udio/v\u00eddeo",
+            "default": true
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Ttl Seconds",
+            "description": "Tempo de vida \u00fatil do token em segundos",
+            "default": 3600
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "organizacao_id",
+          "participant_id",
+          "role"
+        ],
+        "title": "LiveKitTokenRequest",
+        "description": "Payload to request an authenticated LiveKit room access token."
+      },
+      "LiveKitTokenResponse": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token",
+            "description": "JWT assinado com Video Grants do LiveKit"
+          },
+          "room_name": {
+            "type": "string",
+            "title": "Room Name",
+            "description": "Nome can\u00f4nico da sala org_{org}_atend_{atend}"
+          },
+          "participant_identity": {
+            "type": "string",
+            "title": "Participant Identity",
+            "description": "Identidade particionada (medico_{id} ou paciente_{id})"
+          },
+          "server_url": {
+            "type": "string",
+            "title": "Server Url",
+            "description": "URL can\u00f4nica do servidor SFU LiveKit"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Validade em segundos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token",
+          "room_name",
+          "participant_identity",
+          "server_url",
+          "expires_in"
+        ],
+        "title": "LiveKitTokenResponse",
+        "description": "Response containing signed JWT token and connection metadata."
+      },
+      "LoginRequest": {
+        "properties": {
+          "identificador": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Identificador",
+            "description": "E-mail corporativo ou CPF limpo",
+            "examples": [
+              "dr.roberto@telemed.com.br",
+              "12345678901"
+            ]
+          },
+          "senha": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Senha",
+            "description": "Senha em texto puro"
+          },
+          "organizacao_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organizacao Id",
+            "description": "ID da organiza\u00e7\u00e3o (se omitido, resolvido via cabe\u00e7alho X-Tenant-ID)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "identificador",
+          "senha"
+        ],
+        "title": "LoginRequest",
+        "description": "Payload for user credentials authentication."
+      },
+      "MedicoTMAResponse": {
+        "properties": {
+          "medico_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Medico Id"
+          },
+          "nome": {
+            "type": "string",
+            "title": "Nome"
+          },
+          "total_atendimentos": {
+            "type": "integer",
+            "title": "Total Atendimentos"
+          },
+          "tma_segundos": {
+            "type": "number",
+            "title": "Tma Segundos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "medico_id",
+          "nome",
+          "total_atendimentos",
+          "tma_segundos"
+        ],
+        "title": "MedicoTMAResponse",
+        "description": "Average attendance time metrics per medical professional."
+      },
+      "PainelTelemetriaResponse": {
+        "properties": {
+          "organizacao_id": {
+            "type": "integer",
+            "title": "Organizacao Id"
+          },
+          "gerado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Gerado Em"
+          },
+          "tme_medio_segundos": {
+            "type": "number",
+            "title": "Tme Medio Segundos"
+          },
+          "tme_nivel_1_segundos": {
+            "type": "number",
+            "title": "Tme Nivel 1 Segundos"
+          },
+          "tme_nivel_2_segundos": {
+            "type": "number",
+            "title": "Tme Nivel 2 Segundos"
+          },
+          "tme_nivel_3_segundos": {
+            "type": "number",
+            "title": "Tme Nivel 3 Segundos"
+          },
+          "tme_nivel_4_segundos": {
+            "type": "number",
+            "title": "Tme Nivel 4 Segundos"
+          },
+          "tme_nivel_5_segundos": {
+            "type": "number",
+            "title": "Tme Nivel 5 Segundos"
+          },
+          "tma_medio_segundos": {
+            "type": "number",
+            "title": "Tma Medio Segundos"
+          },
+          "medicos_tma": {
+            "items": {
+              "$ref": "#/components/schemas/MedicoTMAResponse"
+            },
+            "type": "array",
+            "title": "Medicos Tma"
+          },
+          "no_show_rate": {
+            "type": "number",
+            "title": "No Show Rate"
+          },
+          "evasao_rate": {
+            "type": "number",
+            "title": "Evasao Rate"
+          },
+          "sla_compliance_percentual": {
+            "type": "number",
+            "title": "Sla Compliance Percentual"
+          },
+          "sla_em_conformidade": {
+            "type": "boolean",
+            "title": "Sla Em Conformidade"
+          },
+          "medicos_ativos_count": {
+            "type": "integer",
+            "title": "Medicos Ativos Count"
+          },
+          "total_pacientes_fila": {
+            "type": "integer",
+            "title": "Total Pacientes Fila"
+          },
+          "total_atendimentos": {
+            "type": "integer",
+            "title": "Total Atendimentos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "organizacao_id",
+          "gerado_em",
+          "tme_medio_segundos",
+          "tme_nivel_1_segundos",
+          "tme_nivel_2_segundos",
+          "tme_nivel_3_segundos",
+          "tme_nivel_4_segundos",
+          "tme_nivel_5_segundos",
+          "tma_medio_segundos",
+          "medicos_tma",
+          "no_show_rate",
+          "evasao_rate",
+          "sla_compliance_percentual",
+          "sla_em_conformidade",
+          "medicos_ativos_count",
+          "total_pacientes_fila",
+          "total_atendimentos"
+        ],
+        "title": "PainelTelemetriaResponse",
+        "description": "Aggregated operational telemetry dashboard response (RF-10)."
+      },
+      "PioraClinicaRequest": {
+        "properties": {
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id",
+            "description": "ID do atendimento ativo na fila"
+          },
+          "novos_sintomas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Novos Sintomas",
+            "description": "Sintomas novos ou agravados"
+          },
+          "escala_dor": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Escala Dor",
+            "description": "Nova escala de dor relatada (0 a 10)",
+            "default": 0
+          },
+          "queixa_adicional": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Queixa Adicional",
+            "description": "Descri\u00e7\u00e3o dos novos sintomas ou agravamento do quadro cl\u00ednico",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "atendimento_id"
+        ],
+        "title": "PioraClinicaRequest",
+        "description": "Payload para comunica\u00e7\u00e3o de piora cl\u00ednica pelo paciente na fila."
+      },
+      "PioraClinicaResponse": {
+        "properties": {
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id",
+            "description": "ID do atendimento"
+          },
+          "prioridade_clinica": {
+            "type": "integer",
+            "title": "Prioridade Clinica",
+            "description": "Nova prioridade cl\u00ednica p\u00f3s-reavalia\u00e7\u00e3o"
+          },
+          "nova_prioridade": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nova Prioridade",
+            "description": "Nova prioridade cl\u00ednica p\u00f3s-reavalia\u00e7\u00e3o (can\u00f4nico US-06)"
+          },
+          "status_atendimento": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Atendimento",
+            "description": "Status do atendimento ap\u00f3s a reavalia\u00e7\u00e3o de piora"
+          },
+          "alerta_samu_disparado": {
+            "type": "boolean",
+            "title": "Alerta Samu Disparado",
+            "description": "Classificado como emerg\u00eancia m\u00e1xima (Vermelho)"
+          },
+          "redirecionado_emergencia": {
+            "type": "boolean",
+            "title": "Redirecionado Emergencia",
+            "description": "Redirecionamento imediato ao pronto-socorro"
+          },
+          "nova_posicao": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nova Posicao",
+            "description": "Nova posi\u00e7\u00e3o ordinal na fila ap\u00f3s reclassifica\u00e7\u00e3o"
+          },
+          "instrucoes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrucoes",
+            "description": "Instru\u00e7\u00f5es de redirecionamento ou emerg\u00eancia imediata"
+          },
+          "orientacoes_emergencia": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orientacoes Emergencia",
+            "description": "Instru\u00e7\u00f5es de emerg\u00eancia imediata (can\u00f4nico US-06)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "atendimento_id",
+          "prioridade_clinica",
+          "alerta_samu_disparado",
+          "redirecionado_emergencia"
+        ],
+        "title": "PioraClinicaResponse",
+        "description": "Resposta com resultado da reavalia\u00e7\u00e3o de risco e salvaguardas cl\u00ednicas."
+      },
+      "PosicaoFilaResponse": {
+        "properties": {
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id",
+            "description": "ID do atendimento"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Status atual do atendimento"
+          },
+          "posicao": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posicao",
+            "description": "Posi\u00e7\u00e3o 1-based na fila, ou None se n\u00e3o estiver na fila ativa"
+          },
+          "total_aguardando": {
+            "type": "integer",
+            "title": "Total Aguardando",
+            "description": "Total de pacientes aguardando na fila"
+          },
+          "tempo_estimado_segundos": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tempo Estimado Segundos",
+            "description": "Tempo de espera estimado em segundos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "atendimento_id",
+          "status",
+          "posicao",
+          "total_aguardando",
+          "tempo_estimado_segundos"
+        ],
+        "title": "PosicaoFilaResponse",
+        "description": "Resposta com a posi\u00e7\u00e3o ordinal e estimativa de espera na fila."
+      },
+      "ProntuarioResponse": {
+        "properties": {
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id"
+          },
+          "is_finalizado": {
+            "type": "boolean",
+            "title": "Is Finalizado"
+          },
+          "evolucao": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvolucaoSOAPResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "documentos": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentoClinicoResponse"
+            },
+            "type": "array",
+            "title": "Documentos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "atendimento_id",
+          "is_finalizado"
+        ],
+        "title": "ProntuarioResponse",
+        "description": "Aggregated clinical record protected by Tier 1 and Tier 3 authorization."
+      },
+      "RefreshTokenRequest": {
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "minLength": 10,
+            "title": "Refresh Token",
+            "description": "Token de atualiza\u00e7\u00e3o v\u00e1lido emitido no login ou rota\u00e7\u00e3o anterior"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshTokenRequest",
+        "description": "Payload for rotating refresh token."
+      },
+      "RegistrarSOAPRequest": {
+        "properties": {
+          "anamnese": {
+            "type": "string",
+            "title": "Anamnese",
+            "description": "Subjetivo (S): Queixa, anamnese e hist\u00f3ria cl\u00ednica"
+          },
+          "conduta": {
+            "type": "string",
+            "title": "Conduta",
+            "description": "Plano (P): Conduta terap\u00eautica, orienta\u00e7\u00f5es e desfecho"
+          },
+          "exame_fisico_virtual": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exame Fisico Virtual",
+            "description": "Objetivo (O): Exame f\u00edsico por v\u00eddeo e sinais observados"
+          },
+          "cid10_principal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cid10 Principal",
+            "description": "Avalia\u00e7\u00e3o (A): C\u00f3digo CID-10 principal da hip\u00f3tese diagn\u00f3stica"
+          },
+          "organizacao_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organizacao Id",
+            "description": "Identificador da organiza\u00e7\u00e3o de sa\u00fade"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "anamnese",
+          "conduta"
+        ],
+        "title": "RegistrarSOAPRequest",
+        "description": "Payload to record or update SOAP clinical notes."
+      },
+      "RegularizacaoFilaRequest": {
+        "properties": {
+          "motivo": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Motivo",
+            "description": "Motivo da regulariza\u00e7\u00e3o ou conting\u00eancia assistencial"
+          },
+          "tipo_contingencia": {
+            "type": "string",
+            "title": "Tipo Contingencia",
+            "description": "Tipo de conting\u00eancia assistencial acionada",
+            "default": "CONTINGENCIA_ASSISTENCIAL"
+          },
+          "operadora_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operadora Id",
+            "description": "C\u00f3digo da operadora de sa\u00fade (opcional)"
+          },
+          "numero_carteirinha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero Carteirinha",
+            "description": "N\u00famero da carteirinha do plano (opcional)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "motivo"
+        ],
+        "title": "RegularizacaoFilaRequest",
+        "description": "Payload para regulariza\u00e7\u00e3o de atendimento retido ou conting\u00eancia assistencial."
+      },
+      "RegularizacaoFilaResponse": {
+        "properties": {
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id",
+            "description": "ID do atendimento regularizado"
+          },
+          "promovido": {
+            "type": "boolean",
+            "title": "Promovido",
+            "description": "Indica se o atendimento foi promovido para apto"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Novo status do atendimento ap\u00f3s regulariza\u00e7\u00e3o"
+          },
+          "score": {
+            "type": "integer",
+            "title": "Score",
+            "description": "Score ordinal de antiguidade e prioridade na fila virtual"
+          },
+          "tipo_contingencia": {
+            "type": "string",
+            "title": "Tipo Contingencia",
+            "description": "Tipo de conting\u00eancia registrado na regulariza\u00e7\u00e3o"
+          },
+          "mensagem": {
+            "type": "string",
+            "title": "Mensagem",
+            "description": "Mensagem descritiva do resultado da opera\u00e7\u00e3o"
+          }
+        },
+        "type": "object",
+        "required": [
+          "atendimento_id",
+          "promovido",
+          "status",
+          "score",
+          "tipo_contingencia",
+          "mensagem"
+        ],
+        "title": "RegularizacaoFilaResponse",
+        "description": "Resposta com resultado da regulariza\u00e7\u00e3o ou promo\u00e7\u00e3o por conting\u00eancia na fila."
+      },
+      "SolicitarOtpRequest": {
+        "properties": {
+          "telefone": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 10,
+            "title": "Telefone",
+            "description": "Telefone de contato com DDD",
+            "examples": [
+              "11987654321"
+            ]
+          },
+          "cpf": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 14
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpf",
+            "description": "CPF do paciente (opcional, para desambigua\u00e7\u00e3o)",
+            "examples": [
+              "11144477735"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "telefone"
+        ],
+        "title": "SolicitarOtpRequest",
+        "description": "Payload to request an OTP code via SMS."
+      },
+      "SolicitarOtpResponse": {
+        "properties": {
+          "mensagem": {
+            "type": "string",
+            "title": "Mensagem"
+          },
+          "expira_em_segundos": {
+            "type": "integer",
+            "title": "Expira Em Segundos"
+          },
+          "codigo_debug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Debug"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mensagem",
+          "expira_em_segundos"
+        ],
+        "title": "SolicitarOtpResponse",
+        "description": "Response returned upon OTP request dispatch."
+      },
+      "TMAStatusResponse": {
+        "properties": {
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id"
+          },
+          "tempo_decorrido_segundos": {
+            "type": "integer",
+            "title": "Tempo Decorrido Segundos"
+          },
+          "tma_planejado_segundos": {
+            "type": "integer",
+            "title": "Tma Planejado Segundos"
+          },
+          "excedeu_tma": {
+            "type": "boolean",
+            "title": "Excedeu Tma"
+          },
+          "aviso_visual": {
+            "type": "string",
+            "title": "Aviso Visual"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "atendimento_id",
+          "tempo_decorrido_segundos",
+          "tma_planejado_segundos",
+          "excedeu_tma",
+          "aviso_visual"
+        ],
+        "title": "TMAStatusResponse",
+        "description": "Telemetry indicator for Average Consultation Time (TMA), enforcing RN06."
+      },
+      "TokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token",
+            "description": "JWT Bearer token de curta dura\u00e7\u00e3o (15 min)"
+          },
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token",
+            "description": "Token de atualiza\u00e7\u00e3o rotacion\u00e1vel de uso \u00fanico (7 dias)"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "description": "Esquema de autentica\u00e7\u00e3o HTTP",
+            "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Tempo de vida do access token em segundos"
+          },
+          "refresh_expires_in": {
+            "type": "integer",
+            "title": "Refresh Expires In",
+            "description": "Tempo de vida do refresh token em segundos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "access_token",
+          "refresh_token",
+          "expires_in",
+          "refresh_expires_in"
+        ],
+        "title": "TokenResponse",
+        "description": "Access and refresh tokens pair response."
+      },
+      "UsuarioPerfilResponse": {
+        "properties": {
+          "usuario_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Usuario Id"
+          },
+          "organizacao_id": {
+            "type": "integer",
+            "title": "Organizacao Id"
+          },
+          "identificador": {
+            "type": "string",
+            "title": "Identificador"
+          },
+          "papel": {
+            "type": "string",
+            "title": "Papel"
+          },
+          "ativo": {
+            "type": "boolean",
+            "title": "Ativo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "usuario_id",
+          "organizacao_id",
+          "identificador",
+          "papel",
+          "ativo"
+        ],
+        "title": "UsuarioPerfilResponse",
+        "description": "Current authenticated user profile claims."
+      },
+      "ValidarDocumentoResponse": {
+        "properties": {
+          "documento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Documento Id"
+          },
+          "tipo_documento": {
+            "type": "string",
+            "title": "Tipo Documento"
+          },
+          "status_documento": {
+            "type": "string",
+            "title": "Status Documento"
+          },
+          "sha256_hash": {
+            "type": "string",
+            "title": "Sha256 Hash"
+          },
+          "assinado_em": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assinado Em"
+          },
+          "emissor_medico_nome": {
+            "type": "string",
+            "title": "Emissor Medico Nome"
+          },
+          "emissor_medico_crm": {
+            "type": "string",
+            "title": "Emissor Medico Crm"
+          },
+          "emissor_medico_uf": {
+            "type": "string",
+            "title": "Emissor Medico Uf"
+          },
+          "organizacao_nome": {
+            "type": "string",
+            "title": "Organizacao Nome"
+          },
+          "paciente_nome_mascarado": {
+            "type": "string",
+            "title": "Paciente Nome Mascarado"
+          },
+          "paciente_cpf_mascarado": {
+            "type": "string",
+            "title": "Paciente Cpf Mascarado"
+          },
+          "assinatura_digital_valida": {
+            "type": "boolean",
+            "title": "Assinatura Digital Valida"
+          },
+          "conformidade_icp_brasil": {
+            "type": "boolean",
+            "title": "Conformidade Icp Brasil"
+          },
+          "itens": {
+            "items": {
+              "$ref": "#/components/schemas/ItemValidacaoResponse"
+            },
+            "type": "array",
+            "title": "Itens"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "documento_id",
+          "tipo_documento",
+          "status_documento",
+          "sha256_hash",
+          "assinado_em",
+          "emissor_medico_nome",
+          "emissor_medico_crm",
+          "emissor_medico_uf",
+          "organizacao_nome",
+          "paciente_nome_mascarado",
+          "paciente_cpf_mascarado",
+          "assinatura_digital_valida",
+          "conformidade_icp_brasil",
+          "itens"
+        ],
+        "title": "ValidarDocumentoResponse",
+        "description": "Public verification details with masked patient data (LGPD compliant)."
+      },
+      "ValidarPrescricaoRequest": {
+        "properties": {
+          "medicamento": {
+            "type": "string",
+            "title": "Medicamento",
+            "description": "Nome do medicamento a validar"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "medicamento"
+        ],
+        "title": "ValidarPrescricaoRequest",
+        "description": "Payload to pre-validate a medication against controlled substances lists."
+      },
+      "ValidarPrescricaoResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "PERMITIDO quando autorizado p/ telemedicina"
+          },
+          "medicamento": {
+            "type": "string",
+            "title": "Medicamento",
+            "description": "Nome do medicamento validado"
+          },
+          "mensagem": {
+            "type": "string",
+            "title": "Mensagem",
+            "description": "Mensagem autorizativa"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "medicamento",
+          "mensagem"
+        ],
+        "title": "ValidarPrescricaoResponse",
+        "description": "Result of Portaria 344/98 pre-validation (payload preserved)."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "ValkeyHealth": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "ping": {
+            "type": "boolean",
+            "title": "Ping"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "connected_clients": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected Clients"
+          },
+          "used_memory_human": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Memory Human"
+          },
+          "used_memory_peak_human": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Memory Peak Human"
+          },
+          "uptime_in_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uptime In Seconds"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "ping"
+        ],
+        "title": "ValkeyHealth",
+        "description": "Valkey health and operational telemetry data."
+      },
+      "VerificarOtpRequest": {
+        "properties": {
+          "telefone": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 10,
+            "title": "Telefone",
+            "description": "Telefone de contato com DDD",
+            "examples": [
+              "11987654321"
+            ]
+          },
+          "codigo": {
+            "type": "string",
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Codigo",
+            "description": "C\u00f3digo OTP de 6 d\u00edgitos num\u00e9ricos",
+            "examples": [
+              "123456"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "telefone",
+          "codigo"
+        ],
+        "title": "VerificarOtpRequest",
+        "description": "Payload to verify OTP code and obtain patient access token."
+      },
+      "VerificarOtpResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          },
+          "paciente_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paciente Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "description": "Papel do usu\u00e1rio autenticado no sistema",
+            "default": "PACIENTE",
+            "examples": [
+              "PACIENTE"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_in",
+          "paciente_id"
+        ],
+        "title": "VerificarOtpResponse",
+        "description": "Response containing issued patient Bearer JWT token."
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "description": "Token de autentica\u00e7\u00e3o JWT Bearer",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
