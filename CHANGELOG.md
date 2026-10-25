@@ -1,3 +1,9 @@
+## v0.6.0 (2026-10-25)
+
+### Feat
+
+- **architecture**: preparar governanca, CI/CD e automacao para o frontend (ADR-011, #28)
+
 ## v0.5.3 (2026-10-25)
 
 ### Fix
