@@ -1,3 +1,9 @@
+## v0.5.2 (2026-10-25)
+
+### Fix
+
+- **telemetry**: permitir visualização do painel por médicos e incluir configuracoes_plantao em testes RLS (#87)
+
 ## v0.5.1 (2026-10-25)
 
 ### Fix
