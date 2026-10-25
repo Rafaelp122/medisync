@@ -97,3 +97,4 @@ class VerificarOtpOutputDTO(BaseModel):
     token_type: str = "bearer"  # noqa: S105
     expires_in: int
     paciente_id: UUID
+    role: str = "PACIENTE"

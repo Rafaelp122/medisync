@@ -122,10 +122,51 @@ class OtpRateLimitExcedidoError(DomainError):
         detail: str = (
             "Limite de solicitações de OTP excedido. Tente novamente mais tarde."
         ),
+        *,
+        retry_after_segundos: int | None = None,
+    ) -> None:
+        headers = (
+            {"Retry-After": str(retry_after_segundos)}
+            if retry_after_segundos is not None
+            else None
+        )
+        super().__init__(
+            detail,
+            status_code=self.status_code,
+            title=self.title,
+            code=self.code,
+            headers=headers,
+        )
+        self.retry_after_segundos = retry_after_segundos
+
+
+class OtpTentativasExcedidasError(DomainError):
+    """Raised when maximum failed OTP verification attempts (3) are exceeded.
+
+    Regras: RN-AUT-04, US-02 §2.
+    Documentação: docs/explanation/domains/auth-domain.md
+    """
+
+    status_code = 429
+    title = "Tentativas de OTP Excedidas"
+    code = "OTP_TENTATIVAS_EXCEDIDAS"
+
+    def __init__(
+        self,
+        detail: str = (
+            "Número máximo de 3 tentativas excedido. Solicite um novo código."
+        ),
+        *,
+        retry_after_segundos: int = 900,
     ) -> None:
         super().__init__(
-            detail, status_code=self.status_code, title=self.title, code=self.code
+            detail,
+            status_code=self.status_code,
+            title=self.title,
+            code=self.code,
+            headers={"Retry-After": str(retry_after_segundos)},
         )
+        self.retry_after_segundos = retry_after_segundos
 
 
 __all__ = [
@@ -135,6 +176,7 @@ __all__ = [
     "CredenciaisInvalidasError",
     "OtpInvalidoOuExpiradoError",
     "OtpRateLimitExcedidoError",
+    "OtpTentativasExcedidasError",
     "PacienteNaoEncontradoError",
     "TokenExpiradoError",
     "TokenInvalidoError",

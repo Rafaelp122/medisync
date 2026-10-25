@@ -116,3 +116,34 @@ async def test_http_exception_handler_rate_limit_429() -> None:
     data = json.loads(bytes(resp.body).decode("utf-8"))
     assert data["title"] == "Too Many Requests"
     assert data["code"] == "TOO_MANY_REQUESTS"
+
+
+@pytest.mark.asyncio
+async def test_domain_error_handler_repassa_headers_retry_after() -> None:
+    import json
+
+    from src.core.errors import DomainError, domain_error_handler
+    from starlette.requests import Request
+
+    scope: Scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/auth/patient/otp/verify",
+        "headers": [],
+    }
+    req = Request(scope)
+    exc = DomainError(
+        "Tentativas excedidas.",
+        status_code=429,
+        title="Tentativas de OTP Excedidas",
+        code="OTP_TENTATIVAS_EXCEDIDAS",
+        headers={"Retry-After": "900"},
+    )
+    resp = await domain_error_handler(req, exc)
+    assert resp.status_code == 429
+    assert resp.headers.get("retry-after") == "900"
+    data = json.loads(bytes(resp.body).decode("utf-8"))
+    assert data["status"] == 429
+    assert data["title"] == "Tentativas de OTP Excedidas"
+    assert data["code"] == "OTP_TENTATIVAS_EXCEDIDAS"
+    assert data["detail"] == "Tentativas excedidas."

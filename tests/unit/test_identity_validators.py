@@ -7,6 +7,7 @@ from src.modules.identity.domain.validators import (
     validate_cns,
     validate_cpf,
     validate_nome_mae,
+    validate_sexo_biologico,
     validate_tcle_hash,
     validate_telefone,
 )
@@ -97,3 +98,28 @@ def test_validate_tcle_hash_invalid() -> None:
 
     with pytest.raises(ValidationError, match="hexadecimais"):
         validate_tcle_hash("z" * 64)
+
+
+def test_validate_sexo_biologico_valid() -> None:
+    assert validate_sexo_biologico("M") == "M"
+    assert validate_sexo_biologico("F") == "F"
+    assert validate_sexo_biologico("MASCULINO") == "M"
+    assert validate_sexo_biologico("FEMININO") == "F"
+    assert validate_sexo_biologico("masculino") == "M"
+    assert validate_sexo_biologico("feminino") == "F"
+    assert validate_sexo_biologico("  MASCULINO  ") == "M"
+    assert validate_sexo_biologico("  f  ") == "F"
+
+
+def test_validate_sexo_biologico_invalid_offending_value() -> None:
+    with pytest.raises(
+        ValidationError, match=r"Sexo biológico 'X' inválido"
+    ) as exc_info:
+        validate_sexo_biologico("X")
+    assert "esperados" in exc_info.value.detail or "deve ser" in exc_info.value.detail
+
+    with pytest.raises(ValidationError, match=r"Sexo biológico 'OUTRO' inválido"):
+        validate_sexo_biologico("OUTRO")
+
+    with pytest.raises(ValidationError, match=r"Sexo biológico '' inválido"):
+        validate_sexo_biologico("")

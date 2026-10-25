@@ -23,7 +23,7 @@ Multitenancy estrito: credenciais corporativas são isoladas por `organizacao_id
 - **RN-AUT-01 — Credenciais corporativas com Argon2id e dummy verify.** Senhas hasheadas com Argon2id via `PasswordHasherPort` (`Argon2PasswordHasher`). Identificador inexistente ou inativo executa verificação fictícia em tempo constante (`dummy_verify`) para neutralizar timing attacks. Parâmetros desatualizados disparam rehash transparente via `needs_rehash`. [Fonte](../product-specification.md) (RF-01)
 - **RN-AUT-02 — Lockout progressivo de 15 minutos após 5 falhas consecutivas.** `UsuarioCredencial.registrar_falha_login` incrementa contadores e bloqueia a conta ao atingir `max_falhas = 5` por 15 minutos. `is_bloqueado` auto-reseta falhas quando o tempo expira. Autenticação válida executa `registrar_sucesso_login()`, zerando as falhas. [Fonte](../product-specification.md) (RF-01)
 - **RN-AUT-03 — Autenticação passwordless de paciente por OTP SMS (6 dígitos).** `PatientAuthService.solicitar_otp` gera código numérico criptograficamente seguro via `secrets.SystemRandom().randint(100000, 999999)` com TTL de 5 minutos (300s), transmitido via `SmsSenderPort`. [Fonte](../product-specification.md) (RF-01)
-- **RN-AUT-04 — Rate limiting estrito de OTP e contenção de brute-force.** Janela deslizante de 15 minutos (900s) com limite de 3 solicitações de OTP por número telefônico. Máximo de 3 tentativas de validação por código OTP gerado. Violações levantam `OtpRateLimitExcedidoError`, convertida em HTTP 429 Too Many Requests com cabeçalho `Retry-After`. [Fonte](../product-specification.md) (RF-01)
+- **RN-AUT-04 — Rate limiting estrito de OTP e contenção de brute-force.** Janela deslizante de 15 minutos (900s) com limite de 3 solicitações de OTP por número telefônico (`OtpRateLimitExcedidoError`). Máximo de 3 tentativas de validação por código OTP gerado: as 2 primeiras falhas retornam HTTP 401 (`OtpInvalidoOuExpiradoError`); a 3ª falha invalida o OTP e levanta `OtpTentativasExcedidasError` (HTTP 429 Too Many Requests com cabeçalho `Retry-After: 900`). Ambas as violações de limite retornam HTTP 429 com `Retry-After`. [Fonte](../product-specification.md) (RF-01)
 - **RN-AUT-05 — Rotação de refresh token com revogação distribuída de uso único.** Cada refresh token consumido em `AuthService.rotacionar_refresh_token` é marcado como revogado via `TokenRevocationPort.revogar` com chave `auth:revoked:{jti}` pelo TTL restante. Reuso de token já revogado aborta o ciclo com `TokenRevogadoError`. [Fonte](../product-specification.md) (RF-01)
 - **RN-AUT-06 — Logout com revogação síncrona.** `AuthService.revogar_sessao` invalida imediatamente o refresh token e opcionalmente o access token no Valkey, assegurando encerramento instantâneo de sessão em nós concorrentes. [Fonte](../product-specification.md) (RF-01)
 
@@ -50,14 +50,15 @@ Fluxo de autenticação passwordless do paciente por OTP SMS:
 flowchart TD
     Paciente[Paciente] -->|1. Solicitar OTP CPF/Tel| Service[PatientAuthService]
     Service -->|2. Checa Rate Limit Janela 15m| RL{Rate Limit <= 3?}
-    RL -->|Excedido| Err429[HTTP 429 Too Many Requests]
+    RL -->|Excedido| Err429[HTTP 429 OtpRateLimitExcedidoError]
     RL -->|OK| Gen[Gera OTP 6 Dígitos secrets.SystemRandom]
     Gen -->|3. Salva TTL 5m| Valkey[(Valkey OTP Key)]
     Gen -->|4. Envia SMS| SMS[SmsSenderPort]
     Paciente -->|5. Submete Código OTP| Verify[Verificar OTP]
     Verify -->|6. Compara| Valkey
-    Valkey -->|Inválido/Tentativas > 3| Err400[HTTP 400 / 429]
-    Valkey -->|Válido| Token[Emite Token JWT Paciente]
+    Valkey -->|Tentativas >= 3| Err429Lockout[HTTP 429 OtpTentativasExcedidasError Retry-After: 900]
+    Valkey -->|Invalido Tentativas < 3| Err401[HTTP 401 OtpInvalidoOuExpiradoError]
+    Valkey -->|Valido| Token[Emite Token JWT Paciente com role: PACIENTE]
     Token --> Paciente
 ```
 

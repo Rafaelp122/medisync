@@ -52,6 +52,7 @@ class DomainError(Exception):
     title: str = "Bad Request"
     error_type: str = "about:blank"
     code: str = "DOMAIN_ERROR"
+    headers: Mapping[str, str] | None = None
 
     def __init__(
         self,
@@ -61,6 +62,7 @@ class DomainError(Exception):
         title: str | None = None,
         error_type: str | None = None,
         code: str | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(detail)
         self.detail = detail
@@ -72,6 +74,7 @@ class DomainError(Exception):
             self.error_type = error_type
         if code is not None:
             self.code = code
+        self.headers = headers
 
 
 class NotFoundError(DomainError):
@@ -173,6 +176,7 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
     """Convert DomainError into RFC 7807 problem details response."""
     if not isinstance(exc, DomainError):
         return await unhandled_exception_handler(request, exc)
+    headers: Mapping[str, str] | None = getattr(exc, "headers", None)
     return create_problem_response(
         status=exc.status_code,
         title=exc.title,
@@ -180,6 +184,7 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
         error_type=exc.error_type,
         instance=request.url.path,
         code=exc.code,
+        headers=headers,
     )
 
 

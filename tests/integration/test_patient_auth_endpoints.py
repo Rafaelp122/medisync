@@ -72,6 +72,7 @@ async def test_patient_otp_lifecycle_e2e(
     assert "access_token" in verify_data
     assert verify_data["token_type"] == "bearer"
     assert verify_data["paciente_id"] == str(paciente.id)
+    assert verify_data["role"] == "PACIENTE"
 
     # 4. Validate JWT Token claims and role
     token = cast("str", verify_data["access_token"])
@@ -193,3 +194,75 @@ async def test_patient_otp_sem_tenant_retorna_400(
         json={"telefone": "11987654321"},
     )
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_patient_otp_bloqueio_3_tentativas_retorna_429_com_retry_after(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+) -> None:
+    """Validate that 3 failed OTP verify attempts trigger 429 with Retry-After: 900."""
+    org = make_organizacao(cnpj="11223344000192")
+    db_session.add(org)
+    await db_session.commit()
+    await db_session.refresh(org)
+
+    paciente = make_paciente(
+        organizacao_id=org.id,
+        cpf="11144477735",
+        telefone="11987654324",
+    )
+    db_session.add(paciente)
+    await db_session.commit()
+
+    fake_sms = cast("FakeSmsSenderAdapter", get_sms_sender())
+    fake_sms.clear()
+
+    headers = {"X-Tenant-ID": str(org.id)}
+
+    # Solicitar OTP
+    req_resp = await async_client.post(
+        "/api/v1/auth/patient/otp/request",
+        json={"telefone": "11987654324"},
+        headers=headers,
+    )
+    assert req_resp.status_code == 200
+    codigo_valido = fake_sms.sent_otps[0]["codigo"]
+
+    # Tentativa 1 incorreta -> 401
+    resp1 = await async_client.post(
+        "/api/v1/auth/patient/otp/verify",
+        json={"telefone": "11987654324", "codigo": "000000"},
+        headers=headers,
+    )
+    assert resp1.status_code == 401
+    assert "Restam 2 tentativa(s)" in resp1.json()["detail"]
+
+    # Tentativa 2 incorreta -> 401
+    resp2 = await async_client.post(
+        "/api/v1/auth/patient/otp/verify",
+        json={"telefone": "11987654324", "codigo": "000000"},
+        headers=headers,
+    )
+    assert resp2.status_code == 401
+    assert "Restam 1 tentativa(s)" in resp2.json()["detail"]
+
+    # Tentativa 3 incorreta -> 429 Too Many Requests com Retry-After: 900
+    resp3 = await async_client.post(
+        "/api/v1/auth/patient/otp/verify",
+        json={"telefone": "11987654324", "codigo": "000000"},
+        headers=headers,
+    )
+    assert resp3.status_code == 429
+    assert resp3.headers.get("retry-after") == "900"
+    data3 = cast("dict[str, object]", resp3.json())
+    assert data3["code"] == "OTP_TENTATIVAS_EXCEDIDAS"
+    assert "1198****4324" in cast("str", data3["detail"])
+
+    # Tentativa 4, mesmo com código correto -> 401 (OTP expurgado)
+    resp4 = await async_client.post(
+        "/api/v1/auth/patient/otp/verify",
+        json={"telefone": "11987654324", "codigo": codigo_valido},
+        headers=headers,
+    )
+    assert resp4.status_code == 401

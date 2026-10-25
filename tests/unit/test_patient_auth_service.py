@@ -1,6 +1,5 @@
 """Unit tests for PatientAuthService passwordless OTP workflow."""
 
-from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
@@ -16,6 +15,7 @@ from src.modules.auth.application.dtos import (
 from src.modules.auth.application.ports.identity_reader_port import (
     IdentityReaderPort,
     PacienteAuthLookupData,
+    PacienteAuthLookupDTO,
 )
 from src.modules.auth.application.services.patient_auth_service import (
     PatientAuthService,
@@ -23,9 +23,33 @@ from src.modules.auth.application.services.patient_auth_service import (
 from src.modules.auth.domain.exceptions import (
     OtpInvalidoOuExpiradoError,
     OtpRateLimitExcedidoError,
+    OtpTentativasExcedidasError,
     PacienteNaoEncontradoError,
 )
 from src.modules.identity.infrastructure.fake_sms_adapter import FakeSmsSenderAdapter
+
+
+class FakeIdentityReader(IdentityReaderPort):
+    """Scripted in-memory double satisfying IdentityReaderPort."""
+
+    def __init__(self, paciente: PacienteAuthLookupDTO | None = None) -> None:
+        self.paciente = paciente
+        self.lookups: list[dict[str, object]] = []
+
+    async def buscar_paciente_por_telefone(
+        self,
+        organizacao_id: int,
+        telefone: str,
+        cpf: str | None = None,
+    ) -> PacienteAuthLookupDTO | None:
+        self.lookups.append(
+            {
+                "organizacao_id": organizacao_id,
+                "telefone": telefone,
+                "cpf": cpf,
+            }
+        )
+        return self.paciente
 
 
 @pytest.fixture
@@ -36,8 +60,8 @@ def fake_sms() -> FakeSmsSenderAdapter:
 
 
 @pytest.fixture
-def mock_identity_reader() -> AsyncMock:
-    return AsyncMock(spec=IdentityReaderPort)
+def fake_identity_reader() -> FakeIdentityReader:
+    return FakeIdentityReader()
 
 
 def _make_mock_paciente(
@@ -56,13 +80,13 @@ def _make_mock_paciente(
 
 @pytest.mark.asyncio
 async def test_solicitar_otp_sucesso(
-    mock_identity_reader: AsyncMock, fake_sms: FakeSmsSenderAdapter
+    fake_identity_reader: FakeIdentityReader, fake_sms: FakeSmsSenderAdapter
 ) -> None:
     paciente = _make_mock_paciente()
-    mock_identity_reader.buscar_paciente_por_telefone.return_value = paciente
+    fake_identity_reader.paciente = paciente
 
     service = PatientAuthService(
-        identity_reader=mock_identity_reader,
+        identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
     )
 
@@ -81,21 +105,22 @@ async def test_solicitar_otp_sucesso(
     assert len(fake_sms.sent_otps) == 1
     assert fake_sms.sent_otps[0]["telefone"] == "11987654321"
     assert len(fake_sms.sent_otps[0]["codigo"]) == 6
-    mock_identity_reader.buscar_paciente_por_telefone.assert_awaited_once_with(
-        organizacao_id=1,
-        telefone="11987654321",
-        cpf=None,
-    )
+    assert len(fake_identity_reader.lookups) == 1
+    assert fake_identity_reader.lookups[0] == {
+        "organizacao_id": 1,
+        "telefone": "11987654321",
+        "cpf": None,
+    }
 
 
 @pytest.mark.asyncio
 async def test_solicitar_otp_paciente_nao_encontrado(
-    mock_identity_reader: AsyncMock, fake_sms: FakeSmsSenderAdapter
+    fake_identity_reader: FakeIdentityReader, fake_sms: FakeSmsSenderAdapter
 ) -> None:
-    mock_identity_reader.buscar_paciente_por_telefone.return_value = None
+    fake_identity_reader.paciente = None
 
     service = PatientAuthService(
-        identity_reader=mock_identity_reader,
+        identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
     )
 
@@ -108,13 +133,13 @@ async def test_solicitar_otp_paciente_nao_encontrado(
 
 @pytest.mark.asyncio
 async def test_solicitar_otp_rate_limit_excedido(
-    mock_identity_reader: AsyncMock, fake_sms: FakeSmsSenderAdapter
+    fake_identity_reader: FakeIdentityReader, fake_sms: FakeSmsSenderAdapter
 ) -> None:
     paciente = _make_mock_paciente()
-    mock_identity_reader.buscar_paciente_por_telefone.return_value = paciente
+    fake_identity_reader.paciente = paciente
 
     service = PatientAuthService(
-        identity_reader=mock_identity_reader,
+        identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
     )
 
@@ -135,14 +160,14 @@ async def test_solicitar_otp_rate_limit_excedido(
 
 @pytest.mark.asyncio
 async def test_verificar_otp_sucesso_emite_jwt(
-    mock_identity_reader: AsyncMock, fake_sms: FakeSmsSenderAdapter
+    fake_identity_reader: FakeIdentityReader, fake_sms: FakeSmsSenderAdapter
 ) -> None:
     paciente_id = uuid7()
     paciente = _make_mock_paciente(paciente_id=paciente_id)
-    mock_identity_reader.buscar_paciente_por_telefone.return_value = paciente
+    fake_identity_reader.paciente = paciente
 
     service = PatientAuthService(
-        identity_reader=mock_identity_reader,
+        identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
     )
 
@@ -159,6 +184,7 @@ async def test_verificar_otp_sucesso_emite_jwt(
     assert output.paciente_id == paciente_id
     assert output.token_type == "bearer"
     assert output.access_token is not None
+    assert output.role == "PACIENTE"
 
     # 3. Decode issued JWT
     user = decode_access_token(output.access_token)
@@ -175,13 +201,13 @@ async def test_verificar_otp_sucesso_emite_jwt(
 
 @pytest.mark.asyncio
 async def test_verificar_otp_codigo_incorreto(
-    mock_identity_reader: AsyncMock, fake_sms: FakeSmsSenderAdapter
+    fake_identity_reader: FakeIdentityReader, fake_sms: FakeSmsSenderAdapter
 ) -> None:
     paciente = _make_mock_paciente()
-    mock_identity_reader.buscar_paciente_por_telefone.return_value = paciente
+    fake_identity_reader.paciente = paciente
 
     service = PatientAuthService(
-        identity_reader=mock_identity_reader,
+        identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
     )
 
@@ -200,13 +226,13 @@ async def test_verificar_otp_codigo_incorreto(
 
 @pytest.mark.asyncio
 async def test_verificar_otp_bloqueio_por_forca_bruta(
-    mock_identity_reader: AsyncMock, fake_sms: FakeSmsSenderAdapter
+    fake_identity_reader: FakeIdentityReader, fake_sms: FakeSmsSenderAdapter
 ) -> None:
     paciente = _make_mock_paciente()
-    mock_identity_reader.buscar_paciente_por_telefone.return_value = paciente
+    fake_identity_reader.paciente = paciente
 
     service = PatientAuthService(
-        identity_reader=mock_identity_reader,
+        identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
     )
 
@@ -214,25 +240,50 @@ async def test_verificar_otp_bloqueio_por_forca_bruta(
     await service.solicitar_otp(organizacao_id=1, dados=req_dados)
     codigo_correto = fake_sms.sent_otps[0]["codigo"]
 
-    # 3 falhas consecutivas
-    for _ in range(3):
-        with pytest.raises(OtpInvalidoOuExpiradoError):
-            await service.verificar_otp(
-                organizacao_id=1,
-                dados=VerificarOtpInputDTO(telefone="11987654321", codigo="999999"),
-            )
+    # Tentativa 1: falha com 401 e 2 restantes
+    with pytest.raises(OtpInvalidoOuExpiradoError) as exc_info1:
+        await service.verificar_otp(
+            organizacao_id=1,
+            dados=VerificarOtpInputDTO(telefone="11987654321", codigo="999999"),
+        )
+    assert exc_info1.value.status_code == 401
+    assert "Restam 2 tentativa(s)" in exc_info1.value.detail
 
-    # 4ª tentativa, mesmo com o código correto, deve falhar porque o OTP foi invalidado
-    with pytest.raises(OtpInvalidoOuExpiradoError):
+    # Tentativa 2: falha com 401 e 1 restante
+    with pytest.raises(OtpInvalidoOuExpiradoError) as exc_info2:
+        await service.verificar_otp(
+            organizacao_id=1,
+            dados=VerificarOtpInputDTO(telefone="11987654321", codigo="999999"),
+        )
+    assert exc_info2.value.status_code == 401
+    assert "Restam 1 tentativa(s)" in exc_info2.value.detail
+
+    # Tentativa 3: falha com 429 OtpTentativasExcedidasError (bloqueio por força bruta)
+    with pytest.raises(OtpTentativasExcedidasError) as exc_info3:
+        await service.verificar_otp(
+            organizacao_id=1,
+            dados=VerificarOtpInputDTO(telefone="11987654321", codigo="999999"),
+        )
+    assert exc_info3.value.status_code == 429
+    assert exc_info3.value.code == "OTP_TENTATIVAS_EXCEDIDAS"
+    assert exc_info3.value.headers == {"Retry-After": "900"}
+    assert "1198****4321" in exc_info3.value.detail
+
+    # Tentativa 4: código correto ou incorreto falha com 401
+    # (OTP foi invalidado e removido)
+    with pytest.raises(OtpInvalidoOuExpiradoError) as exc_info4:
         await service.verificar_otp(
             organizacao_id=1,
             dados=VerificarOtpInputDTO(telefone="11987654321", codigo=codigo_correto),
         )
+    assert exc_info4.value.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_tenant_invalido_rejeitado(mock_identity_reader: AsyncMock) -> None:
-    service = PatientAuthService(identity_reader=mock_identity_reader)
+async def test_tenant_invalido_rejeitado(
+    fake_identity_reader: FakeIdentityReader,
+) -> None:
+    service = PatientAuthService(identity_reader=fake_identity_reader)
 
     with pytest.raises(TenantInvalidoError):
         await service.solicitar_otp(

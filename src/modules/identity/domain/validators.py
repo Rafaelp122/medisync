@@ -2,6 +2,7 @@
 
 import re
 import string
+from typing import Literal
 
 from src.core.errors import ValidationError
 from src.modules.identity.domain.models._helpers import clean_digits
@@ -208,3 +209,20 @@ def validate_tcle_hash(tcle_hash: str) -> str:
         raise ValidationError(msg)
 
     return clean_hash
+
+
+def validate_sexo_biologico(valor: str) -> Literal["M", "F"]:
+    """Valida e normaliza o sexo biológico regulatório para 'M' ou 'F'.
+
+    Regras: CFM 1.821/2007, US-03.
+    Documentação: docs/user-stories/US-03-elegibilidade-onboarding-fase2.md
+    """
+    clean_val = valor.strip().upper()
+    if clean_val in ("M", "MASCULINO"):
+        return "M"
+    if clean_val in ("F", "FEMININO"):
+        return "F"
+    raise ValidationError(
+        f"Sexo biológico '{valor}' inválido: esperados 'M', 'F', "
+        "'MASCULINO' ou 'FEMININO'."
+    )
