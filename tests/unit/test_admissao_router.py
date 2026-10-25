@@ -36,6 +36,7 @@ async def test_admissao_sucesso_com_token_intake() -> None:
     triagem_id = uuid4()
     org_id = 42
 
+    tcle_hash = "b" * 64
     mock_service = MagicMock(spec=FilaService)
     mock_service.admitir_paciente = AsyncMock(
         return_value=AdmissaoAtendimentoResult(
@@ -47,6 +48,7 @@ async def test_admissao_sucesso_com_token_intake() -> None:
             prioridade_clinica=3,
             alerta_samu_disparado=False,
             instrucoes=None,
+            tcle_hash=tcle_hash,
         )
     )
 
@@ -78,6 +80,7 @@ async def test_admissao_sucesso_com_token_intake() -> None:
             assert data["paciente_id"] == str(paciente_id)
             assert data["organizacao_id"] == org_id
             assert data["prioridade_clinica"] == 3
+            assert data["tcle_hash"] == tcle_hash
             mock_service.admitir_paciente.assert_awaited_once()
     finally:
         app.dependency_overrides.clear()

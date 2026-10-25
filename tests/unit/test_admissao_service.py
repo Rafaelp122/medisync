@@ -122,6 +122,8 @@ async def test_admitir_paciente_success(
     assert result.paciente_id == pac_id
     assert result.prioridade_clinica in (3, 4)
     assert result.alerta_samu_disparado is False
+    assert result.tcle_hash is not None
+    assert len(result.tcle_hash) == 64
     assert mock_db_session.add.call_count == 2
     mock_db_session.commit.assert_awaited_once()
     mock_arq_pool.enqueue_job.assert_awaited_once()

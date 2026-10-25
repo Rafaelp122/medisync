@@ -29,6 +29,7 @@ async def test_chamar_proximo_sucesso_com_paciente_alocado() -> None:
     app = create_app()
     medico_id = uuid4()
     atendimento_id = uuid4()
+    paciente_id = uuid4()
     org_id = 42
 
     mock_service = MagicMock(spec=FilaService)
@@ -39,6 +40,10 @@ async def test_chamar_proximo_sucesso_com_paciente_alocado() -> None:
             status="CHAMADO",
             chamada_iniciada_em=datetime.now(UTC),
             ttl_segundos=45,
+            paciente_id=paciente_id,
+            prioridade_clinica=2,
+            alocado=True,
+            mensagem="Paciente alocado com sucesso para chamada.",
         )
     )
     app.dependency_overrides[get_fila_service] = lambda: mock_service
@@ -59,8 +64,11 @@ async def test_chamar_proximo_sucesso_com_paciente_alocado() -> None:
             assert data["alocado"] is True
             assert data["atendimento_id"] == str(atendimento_id)
             assert data["medico_id"] == str(medico_id)
+            assert data["paciente_id"] == str(paciente_id)
+            assert data["prioridade_clinica"] == 2
             assert data["status"] == "CHAMADO"
             assert data["ttl_segundos"] == 45
+            assert data["mensagem"] == "Paciente alocado com sucesso para chamada."
             mock_service.adquirir_proximo_paciente.assert_awaited_once()
     finally:
         app.dependency_overrides.clear()

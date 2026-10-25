@@ -27,6 +27,7 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 | `FakeEligibilityProvider` | `EligibilityProviderPort` (`src.modules.billing`) | `verificar_elegibilidade(requisicao)` | `requisicoes: list[Any]` (histórico de requisições enviadas), `resultado: ResultadoElegibilidade`. |
 | `FakeElegibilidadeNotifier` | `ElegibilidadeNotifierPort` (`src.modules.billing`) | `notificar_falha(evento)` | `eventos_falha: list[ElegibilidadeFalhaEvent]` (histórico ordenado de alertas de recusa/timeout emitidos). |
 | `MemoryTokenRevocation` | `TokenRevocationPort` (`src.modules.auth`) | `revogar(jti, exp_segundos)`, `is_revogado(jti)` | `_revoked: set[str]` (conjunto em memória de identificadores JWT invalidados). |
+| `FakeAtendimentoReader` | `AtendimentoReaderPort` (`src.modules.consultation`) | `obter_resumo()`, `concluir_atendimento()`, `atender_chamada()` | `resumo: AtendimentoResumoDTO | None`, `chamada_atendida: bool`, `atendimento_concluido: bool`. |
 | `FakeValkey` / `FakePubSub` | Protocolo Valkey / Redis Pub/Sub | `publish(canal, msg)`, `pubsub()`, `subscribe()`, `listen()` | Filas thread-safe `queue.Queue` em memória para testes de WebSockets e SSE sem infraestrutura externa. |
 
 ### Detalhamento dos Dublês e Mecânica de Estado
@@ -71,10 +72,12 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Impl: `tests/doubles.py:FakeArqPool`
 - Impl: `tests/doubles.py:FakeEligibilityProvider`
 - Impl: `tests/doubles.py:FakeElegibilidadeNotifier`
+- Impl: `tests/doubles.py:FakeAtendimentoReader`
 - Impl: `src/modules/auth/infrastructure/valkey_token_revocation.py:MemoryTokenRevocation`
 - Spec: `src/modules/consultation/application/ports/pdf_generator_port.py:PDFGeneratorPort`
 - Spec: `src/modules/consultation/application/ports/icp_brasil_signer_port.py:ICPBrasilSignerPort`
 - Spec: `src/modules/consultation/application/ports/storage_port.py:StoragePort`
+- Spec: `src/modules/consultation/application/ports/atendimento_reader_port.py:AtendimentoReaderPort`
 - Spec: `src/modules/billing/application/ports/eligibility_provider.py:EligibilityProviderPort`
 - Spec: `src/modules/billing/application/ports/eligibility_notifier.py:ElegibilidadeNotifierPort`
 - Spec: `src/modules/auth/application/ports/token_revocation_port.py:TokenRevocationPort`
@@ -83,6 +86,7 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Prova viva: `tests/unit/test_billing_eligibility.py:test_elegibilidade_service_emits_failure_event_on_rejection`
 - Prova viva: `tests/unit/test_token_revocation.py:test_memory_token_revocation`
 - Prova viva: `tests/unit/test_documento_service.py:test_emitir_gera_chave_canonica_sem_legado`
+- Prova viva: `tests/unit/test_livekit_dependencies.py:test_validar_acesso_livekit_paciente_ausente_retorna_conflict_error`
 - Ver: `uv run pytest tests/unit/ -k "fake" --no-cov`
 - Ver: `rg -n "class Fake" tests/doubles.py`
 

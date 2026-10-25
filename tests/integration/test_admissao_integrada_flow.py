@@ -63,12 +63,15 @@ async def test_admissao_integrada_persists_both_models_and_enqueues_arq_job() ->
                     == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
                 )
                 assert result.alerta_samu_disparado is False
+                assert result.tcle_hash is not None
+                assert len(result.tcle_hash) == 64
 
         # 1. Verify DB persistence of Atendimento
         with tenant_context(org.id):
             async with async_session_factory() as session:
                 atend = await session.get(Atendimento, result.atendimento_id)
                 assert atend is not None
+                assert atend.tcle_hash == result.tcle_hash
                 assert (
                     atend.status
                     == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value

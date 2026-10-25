@@ -250,6 +250,7 @@ class FilaService:
             prioridade_clinica=triage_eval.prioridade_clinica,
             alerta_samu_disparado=triage_eval.alerta_samu_disparado,
             instrucoes=triage_eval.instrucao_redirecionamento,
+            tcle_hash=triage_eval.tcle_hash,
         )
 
     async def ingressar_fila(
@@ -321,7 +322,12 @@ class FilaService:
         self,
         command: AdquirirProximoPacienteCommand,
     ) -> AlocacaoChamadaResult | None:
-        """Acquires next most urgent patient with in-memory retry on code -1."""
+        """Adquire atomicamente o próximo paciente de maior prioridade da fila (RF-03).
+
+        Regras: RN01 (Score 64-bit), RN02 (Double-lock e No-Show 45s).
+        Regras: docs/explanation/domains/queue-domain.md
+        História: docs/user-stories/US-07-alocacao-chamada-medica.md
+        """
         k_fila = f"fila:{command.organizacao_id}:aptos"
 
         for attempt in range(command.max_retries):
@@ -877,7 +883,12 @@ class FilaService:
         self,
         command: PioraClinicaCommand,
     ) -> PioraClinicaResult:
-        """Re-evaluates symptoms upon patient clinical deterioration report (RF-06)."""
+        """Reavalia risco clínico após comunicação de piora de sintomas (RF-06).
+
+        Regras: RN01 (Recálculo de Score ZSET), RN04 (Salvaguarda SAMU 192).
+        Regras: docs/explanation/domains/queue-domain.md
+        História: docs/user-stories/US-06-deterioracao-clinica-escape-samu.md
+        """
         if self._triage_port is None:
             raise RuntimeError(
                 "TriagePort não configurado no FilaService para "
@@ -896,8 +907,10 @@ class FilaService:
             or atendimento.status == StatusAtendimento.EM_ATENDIMENTO.value
         ):
             raise TransicaoEstadoInvalidaError(
-                f"Não é possível acionar piora clínica para atendimento "
-                f"no estado '{atendimento.status}'."
+                "Não é possível acionar piora clínica para atendimento no "
+                f"estado '{atendimento.status}'; esperados status válidos para "
+                "piora: ['TRIADO_AGUARDANDO_ELEGIBILIDADE', 'APTO_PARA_CHAMADA', "
+                "'CHAMANDO_PACIENTE']."
             )
 
         triage_eval = await self._triage_port.avaliar_risco(
@@ -959,6 +972,9 @@ class FilaService:
                 redirecionado_emergencia=True,
                 nova_posicao=None,
                 instrucoes=instrucoes,
+                nova_prioridade=1,
+                status_atendimento=str(atendimento.status),
+                orientacoes_emergencia=instrucoes,
             )
 
         # Reclassificação de prioridade (se mais urgente, valor numérico menor)
@@ -1007,6 +1023,9 @@ class FilaService:
             redirecionado_emergencia=False,
             nova_posicao=nova_pos,
             instrucoes="Prioridade recalculada com sucesso na fila de espera.",
+            nova_prioridade=nova_prioridade,
+            status_atendimento=str(atendimento.status),
+            orientacoes_emergencia=None,
         )
 
     async def regularizar_atendimento(

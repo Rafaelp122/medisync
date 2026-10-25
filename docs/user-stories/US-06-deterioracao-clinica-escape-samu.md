@@ -56,7 +56,21 @@
     "nova_prioridade": 1,
     "status_atendimento": "CANCELADO_PELO_PACIENTE",
     "alerta_samu_disparado": true,
+    "redirecionado_emergencia": true,
+    "nova_posicao": null,
     "orientacoes_emergencia": "Ligue imediatamente para o SAMU 192 ou dirija-se à UPA/Hospital mais próximo."
+  }
+  ```
+* **Resposta Esperada em Caso de Agravamento Nível 2 (`200 OK`):**
+  ```json
+  {
+    "atendimento_id": "018f3a5b-...",
+    "nova_prioridade": 2,
+    "status_atendimento": "APTO_PARA_CHAMADA",
+    "alerta_samu_disparado": false,
+    "redirecionado_emergencia": false,
+    "nova_posicao": 1,
+    "orientacoes_emergencia": null
   }
   ```
 
@@ -65,9 +79,10 @@
 ## 4. Checklist de Inspeção de Código
 
 - [x] **Desacoplamento Modular:** Comunicação via porta abstrata `TriagePort` injetada no composition root de `queue` (`src/modules/queue/application/ports/triage_port.py`).
-- [x] **Remoção Atômica:** Atendimento Nível 1 é expurgado atômica e deterministicamente do conjunto de aptos no Valkey (`FilaService.registrar_piora_clinica()`).
-- [x] **Apresentação:** Rota REST implementada em `src/modules/queue/presentation/routers/fila_router.py`.
+- [x] **Remoção Atômica:** Atendimento Nível 1 é expurgado atômica e deterministicamente do conjunto de aptos no Valkey (`FilaService.processar_piora_clinica()`).
+- [x] **Apresentação:** Rota REST implementada em `src/modules/queue/presentation/routers/fila_router.py` com `PioraClinicaResponse` harmonizado com campos canônicos (ADR-001/ADR-008).
 - [x] **Testes Automatizados:**
+  - `tests/unit/test_queue_schemas.py`
   - `tests/unit/test_fila_router.py`
   - `tests/unit/test_admissao_service.py`
   - `tests/integration/test_admissao_integrada_flow.py`

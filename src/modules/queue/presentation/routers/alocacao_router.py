@@ -41,12 +41,4 @@ async def chamar_proximo_paciente(
             alocado=False,
             mensagem="Fila vazia. Não há pacientes aguardando atendimento no momento.",
         )
-    return ChamarProximoResponse(
-        alocado=True,
-        atendimento_id=result.atendimento_id,
-        medico_id=result.medico_id,
-        status=result.status,
-        chamada_iniciada_em=result.chamada_iniciada_em,
-        ttl_segundos=result.ttl_segundos,
-        mensagem="Paciente alocado com sucesso para chamada.",
-    )
+    return ChamarProximoResponse.model_validate(result)

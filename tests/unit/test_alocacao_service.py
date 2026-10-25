@@ -94,8 +94,11 @@ async def test_alocar_chamada_sucesso(
 
     atend_id = uuid7()
     med_id = uuid4()
+    pac_id = uuid4()
     mock_atendimento = AsyncMock(spec=Atendimento)
     mock_atendimento.id = atend_id
+    mock_atendimento.paciente_id = pac_id
+    mock_atendimento.prioridade_clinica = 2
     mock_atendimento.status = StatusAtendimento.CHAMANDO_PACIENTE.value
     mock_atendimento.chamada_iniciada_em = datetime.now(UTC)
 
@@ -114,6 +117,8 @@ async def test_alocar_chamada_sucesso(
     assert result.medico_id == med_id
     assert result.status == StatusAtendimento.CHAMANDO_PACIENTE.value
     assert result.ttl_segundos == 45
+    assert result.paciente_id == pac_id
+    assert result.prioridade_clinica == 2
 
     mock_atendimento.iniciar_chamada.assert_called_once_with(med_id)
     mock_db_session.commit.assert_called_once()
