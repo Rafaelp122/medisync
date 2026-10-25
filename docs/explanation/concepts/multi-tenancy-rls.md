@@ -101,7 +101,7 @@ leitura e `WITH CHECK` para escrita. Tentativa de
 inserir registro de outro tenant falha na checagem de
 escrita, não em validação de app.
 
-Cobertura é de 9 tabelas multi-tenant; a tabela de
+Cobertura é de 10 tabelas multi-tenant; a tabela de
 organizações fica fora do RLS por ser raiz do tenant.
 Lista e colunas em `../architecture/data-model.md`,
 sem duplicar definição aqui. Nomes das policies seguem
@@ -135,7 +135,7 @@ Cobertura travada por teste de integração em
 `tests/integration/test_rls_security.py`, existência
 confirmada com `ls tests/integration/test_rls_security.py`.
 Cinco testes cobrem flags e policies, isolamento entre
-dois tenants nas 9 tabelas, bloqueio de insert
+dois tenants nas 10 tabelas (incluindo configuracoes_plantao), bloqueio de insert
 cross-tenant via `WITH CHECK`, negação fail-safe sem
 tenant e DCL append-only de auditoria.
 

@@ -2,9 +2,9 @@
 
 > **Requisito Base:** RF-10  
 > **Invariantes Relacionadas:** RNF-10 (Latência de Telemetria < 5s), Metas SMART 1 a 5  
-> **Persona:** Carlos Drumond (Diretor Clínico e Gestor Operacional)  
+> **Persona:** Carlos Drumond (Diretor Clínico e Gestor Operacional) e Dr. Eduardo Rocha (Médico Plantonista)  
 > **Módulos:** `telemetry`  
-> **Status de Qualidade:** 🟡 **Parcial** *(TTL ajustado para 5s - NC-TEL-01; acesso médico pendente na Issue #87)*
+> **Status de Qualidade:** 🟢 **Conforme** *(Resoluções NC-TEL-01 na Issue #76, NC-TEL-02 e NC-SEC-01 na Issue #87)*
 
 ---
 
@@ -13,6 +13,10 @@
 **Como** diretor clínico e gestor da unidade (Carlos Drumond),  
 **Quero** visualizar em tempo real um painel consolidado com os principais indicadores operacionais (TME geral e por nível 1..5, TMA real médio e por médico, taxa de cumprimento de SLA $\ge 95\%$ e taxas de no-show/abandono),  
 **Para que** eu tome decisões imediatas de reforço de escala médica e garanta a segurança assistencial sem onerar o banco de escrita transacional.
+
+**Como** médico plantonista (Dr. Eduardo Rocha),  
+**Quero** acompanhar o painel operacional de telemetria durante o plantão,  
+**Para que** eu tenha visibilidade da carga da fila, tempos médios de espera e alinhamento assistencial com as metas da unidade, sem permissão para alterar as políticas de capacidade da organização.
 
 ---
 
@@ -34,6 +38,13 @@
 - **Então** o indicador de conformidade de SLA retorna positivo (`sla_em_conformidade = true`), sinalizando estabilidade da unidade.
 - **Dado que** a demanda excedeu a capacidade e a taxa de cumprimento caiu para $91{,}0\%$,
 - **Então** o indicador retorna negativo (`sla_em_conformidade = false`), disparando sinalização visual de alerta no dashboard gerencial.
+
+### Cenário 3: Consulta do Painel por Médico Plantonista e Blindagem de Configuração (NC-TEL-02)
+- **Dado que** o médico plantonista Dr. Eduardo Rocha está autenticado com papel `Role.MEDICO`,
+- **Quando** ele requisita a visualização do painel operacional em `GET /api/v1/telemetria/painel`,
+- **Então** o sistema responde com status `200 OK` e os indicadores consolidados de telemetria da unidade;
+- **Mas quando** o médico tenta consultar ou alterar parâmetros de capacidade em `GET /api/v1/telemetria/config-plantao` ou `PUT /api/v1/telemetria/config-plantao`,
+- **Então** o sistema rejeita a operação com status `403 Forbidden` e envelope RFC 7807 (`code="FORBIDDEN"`) indicando o papel ofensivo `MEDICO`.
 
 ---
 
@@ -73,6 +84,8 @@
 - [x] **Read Model Desacoplado:** Leitor puro SQL com queries agregadas assíncronas (`src/modules/telemetry/infrastructure/telemetry_reader_sql.py`).
 - [x] **Cache Volátil no Valkey:** Caching de telemetria para garantir alta performance sem onerar o Postgres (`src/modules/telemetry/application/services/telemetry_service.py`).
 - [x] **Ajuste de TTL (NC-TEL-01):** Reduzir `_CACHE_TTL_SEGUNDOS` de 15s para 5s via injeção IoC (ADR-009) para cumprir RNF-10 e Meta SMART 5 (Resolvido na Issue #76).
+- [x] **Acesso Clínico ao Painel (NC-TEL-02):** Dependência `require_telemetry_view_auth` permitindo `Role.MEDICO`, `Role.GESTOR_UNIDADE` e `Role.ADMIN_GLOBAL` no `GET /painel`, mantendo `config-plantao` restrito à gestão (`src/modules/telemetry/presentation/dependencies.py`).
+- [x] **Isolamento RLS Multi-Tenant (NC-SEC-01):** Tabela `configuracoes_plantao` coberta na suíte de testes de segurança com PostgreSQL real (`tests/integration/test_rls_security.py`).
 - [x] **Apresentação:** Router fino `telemetry_router.py` montado em `/api/v1/telemetria/painel`.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_telemetry_service.py`

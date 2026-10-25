@@ -120,7 +120,7 @@ organizacao_id = NULLIF(current_setting('app.current_tenant_id', true), '')::big
 - Spec: `docs/adrs/ADR-007-Auditoria-Imutavel-Append-Only.md`
 - Spec: `docs/explanation/architecture/data-model.md`
 - Prova viva: `tests/integration/test_rls_security.py:test_rls_flags_and_policies_on_all_tables`
-- Prova viva: `tests/integration/test_rls_security.py:test_tenant_isolation_across_all_nine_tables`
+- Prova viva: `tests/integration/test_rls_security.py:test_tenant_isolation_across_all_ten_tables`
 - Prova viva: `tests/integration/test_rls_security.py:test_rls_with_check_blocks_cross_tenant_insert`
 - Prova viva: `tests/integration/test_rls_security.py:test_fail_safe_deny_without_tenant`
 - Prova viva: `tests/integration/test_rls_security.py:test_audit_events_dcl_and_trigger_security`

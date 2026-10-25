@@ -46,7 +46,7 @@ O catálogo é estruturado entre **Jornadas Assistenciais e Operacionais Primár
 | **US-10** | [`US-10-prescricao-assinatura-icp-brasil.md`](./US-10-prescricao-assinatura-icp-brasil.md) | RF-07 | Portaria 344/98 | Dr. Eduardo / Juliana | 🟢 **Conforme** |
 | **US-11** | [`US-11-liquidacao-fechamento-contabil.md`](./US-11-liquidacao-fechamento-contabil.md) | RF-08 | RN-NEG-01 | Patrícia Mendes | 🔴 **Não Conforme** *(Issue #78: ausência de liquidação e BPA/TISS)* |
 | **US-12** | [`US-12-parametrizacao-politicas-plantao.md`](./US-12-parametrizacao-politicas-plantao.md) | RF-09 | RN05 | Carlos Drumond | 🟢 **Conforme** |
-| **US-13** | [`US-13-telemetria-painel-operacional.md`](./US-13-telemetria-painel-operacional.md) | RF-10 | RNF-10, SMART 1-5 | Carlos Drumond | 🟡 **Parcial** *(TTL ajustado para 5s - NC-TEL-01; gap remanescente: médico sem acesso ao painel - Issue #87)* |
+| **US-13** | [`US-13-telemetria-painel-operacional.md`](./US-13-telemetria-painel-operacional.md) | RF-10 | RNF-10, SMART 1-5 | Carlos Drumond / Dr. Eduardo Rocha | 🟢 **Conforme** *(Resoluções NC-TEL-01, NC-TEL-02 e NC-SEC-01 na Issue #87)* |
 
 ### 3.2 Políticas e Salvaguardas Transversais de Regra de Negócio
 
