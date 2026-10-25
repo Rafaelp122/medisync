@@ -9,7 +9,10 @@ from src.modules.telemetry.composition import (
     ConfigPlantaoServiceDep,
     TelemetryServiceDep,
 )
-from src.modules.telemetry.presentation.dependencies import TelemetryAuthDep
+from src.modules.telemetry.presentation.dependencies import (
+    TelemetryConfigAuthDep,
+    TelemetryViewAuthDep,
+)
 from src.modules.telemetry.presentation.schemas import (
     ConfigPlantaoRequest,
     ConfigPlantaoResponse,
@@ -35,7 +38,7 @@ telemetry_router = APIRouter(
 async def obter_painel_telemetria(
     tenant_id: TenantDep,
     telemetry_service: TelemetryServiceDep,
-    _auth: TelemetryAuthDep,
+    _auth: TelemetryViewAuthDep,
     desconsiderar_cache: Annotated[
         bool,
         Query(description="Forçar recálculo ignorando o cache do Valkey"),
@@ -62,7 +65,7 @@ async def obter_painel_telemetria(
 async def obter_configuracao_plantao(
     tenant_id: TenantDep,
     config_service: ConfigPlantaoServiceDep,
-    _auth: TelemetryAuthDep,
+    _auth: TelemetryConfigAuthDep,
 ) -> ConfigPlantaoResponse:
     """Query current shift configuration policies for the organization."""
     dto = await config_service.obter_configuracao(organizacao_id=tenant_id)
@@ -83,7 +86,7 @@ async def atualizar_configuracao_plantao(
     body: Annotated[ConfigPlantaoRequest, Body()],
     tenant_id: TenantDep,
     config_service: ConfigPlantaoServiceDep,
-    auth: TelemetryAuthDep,
+    auth: TelemetryConfigAuthDep,
 ) -> ConfigPlantaoResponse:
     """Update shift operational parameters and SLA thresholds."""
     cmd = body.to_command(

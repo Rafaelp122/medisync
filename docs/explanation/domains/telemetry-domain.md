@@ -12,6 +12,8 @@ O painel operacional agrega indicadores críticos: Tempo Médio de Espera (TME) 
 
 A segregação Command Query Responsibility Segregation (CQRS) preserva o banco transacional: leituras analíticas utilizam leitor SQL especializado e cache distribuído no Valkey sob a chave `telemetry:painel:{organizacao_id}` com TTL volátil de 5 segundos (resolvendo NC-TEL-01, RNF-10 e Meta SMART 5).
 
+A visualização do painel operacional em tempo real (`GET /telemetria/painel`) é de escopo compartilhado entre gestores (`GESTOR_UNIDADE`, `ADMIN_GLOBAL`) e médicos plantonistas (`MEDICO`) da organização (resolvendo NC-TEL-02). A governança de parâmetros operacionais (`/config-plantao`) permanece estritamente restrita a gestores e administradores hospitalares.
+
 Vocabulário ubíquo: `alpha_backpressure`, `tma_padrao_segundos`, `tempo_tolerancia_ring_segundos`, `cota_diaria_maxima`, `modo_operacao` (SUS/PRIVADO), `read model`, `painel operacional`, `tme_medio`, `tma_medio`, `no_show_rate`, `evasao_rate`, `sla_compliance`.
 
 Multitenancy estrito: todas as consultas e parametrizações operam vinculadas ao `organizacao_id`, com isolamento garantido por chaves compostas e Row-Level Security (RLS) no PostgreSQL.
@@ -23,6 +25,7 @@ Multitenancy estrito: todas as consultas e parametrizações operam vinculadas a
 - **RN-TEL-03 — Caching volátil com TTL de 5s.** `TelemetryService.obter_painel` consulta primeiramente `TelemetryCachePort`. Em cache miss, consulta o reader e persiste na chave `telemetry:painel:{organizacao_id}` com TTL de 5 segundos, assegurando respostas <100ms. [Fonte](../../user-stories/US-13-telemetria-painel-operacional.md)
 - **RN-TEL-04 — Invalidação de cache sob mutação de política.** Ao atualizar parâmetros em `ConfigPlantaoService.atualizar_configuracao`, o serviço invoca `invalidar_painel(organizacao_id)` no Valkey antes do `commit` relacional, prevenindo leituras inconsistentes no painel. [Fonte](../../user-stories/US-12-parametrizacao-politicas-plantao.md)
 - **RN-TEL-05 — Capacidade operacional horária.** `ConfiguracaoPlantao.capacidade_atendimento_hora` calcula `(medicos_ativos_planejados * 3600.0) / tma_padrao_segundos`, fornecendo a vazão máxima teórica da unidade para balizar a admissão e backpressure. [Fonte](../architecture/concurrency-and-queues.md)
+- **RN-TEL-06 — Segregação de autorização operacional.** A leitura do read model (`GET /painel`) requer autenticação com papel `Role.MEDICO`, `Role.GESTOR_UNIDADE` ou `Role.ADMIN_GLOBAL`. A leitura ou alteração de políticas de plantão (`/config-plantao`) exige `Role.GESTOR_UNIDADE`, `Role.ADMIN_GLOBAL` ou a permissão granular `Permission.TMA_CONFIG`. Papéis assistenciais externos (`PACIENTE`, `FATURAMENTO`) são sumariamente rejeitados com `403 Forbidden`. [Fonte](../../user-stories/US-13-telemetria-painel-operacional.md)
 
 Guardiões: `ConfiguracaoPlantao` valida tipos numéricos, integridade do enum `ModoOperacao` (SUS ou PRIVADO), cotas positivas e SLAs de níveis 1 a 5 não negativos no construtor e no método `atualizar_parametros`.
 

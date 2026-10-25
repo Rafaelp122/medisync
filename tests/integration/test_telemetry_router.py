@@ -260,3 +260,106 @@ async def test_configuracao_plantao_validacao_limites_422(
         headers=headers,
     )
     assert resp_modo_invalido.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_obter_painel_telemetria_medico_sucesso(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+) -> None:
+    """Validate GET /painel returns operational metrics for Role.MEDICO.
+
+    Conforms to US-13 and resolves NC-TEL-02.
+    """
+    org = make_organizacao(cnpj="55667788000155")
+    db_session.add(org)
+    await db_session.commit()
+    await db_session.refresh(org)
+
+    medico_id = uuid4()
+    headers = {
+        **auth_headers(papel=Role.MEDICO, org_id=org.id, usuario_id=medico_id),
+        "X-Tenant-ID": str(org.id),
+    }
+
+    resp = await async_client.get("/api/v1/telemetria/painel", headers=headers)
+    assert resp.status_code == 200
+    data = cast("dict[str, object]", resp.json())
+
+    assert data["organizacao_id"] == org.id
+    assert "tme_medio_segundos" in data
+    assert "tma_medio_segundos" in data
+    assert "sla_compliance_percentual" in data
+    assert "sla_em_conformidade" in data
+    assert "medicos_ativos_count" in data
+    assert "total_pacientes_fila" in data
+    assert "total_atendimentos" in data
+
+
+@pytest.mark.asyncio
+async def test_configuracao_plantao_medico_proibido(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+) -> None:
+    """Validate 403 Forbidden for Role.MEDICO on /config-plantao (GET and PUT)."""
+    org = make_organizacao(cnpj="66778899000144")
+    db_session.add(org)
+    await db_session.commit()
+    await db_session.refresh(org)
+
+    medico_id = uuid4()
+    headers = {
+        **auth_headers(papel=Role.MEDICO, org_id=org.id, usuario_id=medico_id),
+        "X-Tenant-ID": str(org.id),
+    }
+
+    # 1. GET /config-plantao proibido para médico
+    resp_get = await async_client.get(
+        "/api/v1/telemetria/config-plantao", headers=headers
+    )
+    assert resp_get.status_code == 403
+    err_get = cast("dict[str, object]", resp_get.json())
+    assert err_get["code"] == "FORBIDDEN"
+    assert "MEDICO" in str(err_get["detail"])
+
+    # 2. PUT /config-plantao proibido para médico
+    resp_put = await async_client.put(
+        "/api/v1/telemetria/config-plantao",
+        json={"medicos_ativos_planejados": 3},
+        headers=headers,
+    )
+    assert resp_put.status_code == 403
+    err_put = cast("dict[str, object]", resp_put.json())
+    assert err_put["code"] == "FORBIDDEN"
+    assert "MEDICO" in str(err_put["detail"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("papel_proibido", [Role.PACIENTE, Role.FATURAMENTO])
+async def test_obter_painel_telemetria_papeis_proibidos(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+    papel_proibido: Role,
+) -> None:
+    """Validate 403 Forbidden with offending value and expected shape."""
+    _cnpjs = {
+        Role.PACIENTE: "77889900000111",
+        Role.FATURAMENTO: "77889900000122",
+    }
+    org = make_organizacao(cnpj=_cnpjs[papel_proibido])
+    db_session.add(org)
+    await db_session.commit()
+    await db_session.refresh(org)
+
+    headers = {
+        **auth_headers(papel=papel_proibido, org_id=org.id, usuario_id=uuid4()),
+        "X-Tenant-ID": str(org.id),
+    }
+
+    resp = await async_client.get("/api/v1/telemetria/painel", headers=headers)
+    assert resp.status_code == 403
+    body = cast("dict[str, object]", resp.json())
+    assert body["code"] == "FORBIDDEN"
+    detail = str(body["detail"])
+    assert papel_proibido.value in detail
+    assert "MEDICO" in detail or "GESTOR_UNIDADE" in detail

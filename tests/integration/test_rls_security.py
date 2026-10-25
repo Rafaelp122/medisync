@@ -4,6 +4,7 @@ Adheres to ADR-003 and ADR-007.
 """
 
 from datetime import date
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import pytest
@@ -29,6 +30,10 @@ from src.modules.identity.domain.models import (
     Profissional,
 )
 from src.modules.queue.domain.models import Atendimento
+from src.modules.telemetry.domain.models import (
+    ConfiguracaoPlantao,
+    ModoOperacao,
+)
 from src.modules.triage.domain.models import Triagem
 
 from tests.factories.identity import make_organizacao
@@ -46,6 +51,7 @@ _MULTI_TENANT_TABLES = (
     "documentos_clinicos",
     "documento_itens",
     "audit_events",
+    "configuracoes_plantao",
 )
 
 _SAMPLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -53,7 +59,9 @@ _SAMPLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 
 @pytest.mark.asyncio
 async def test_rls_flags_and_policies_on_all_tables() -> None:
-    """Verify that RLS is enabled and forced on all 9 tables and not on organizacoes."""
+    """Verify that RLS is enabled and forced on all 10 tables and not
+    on organizacoes.
+    """
     async with engine.connect() as conn:
         res_rls = await conn.execute(
             text(
@@ -63,7 +71,8 @@ async def test_rls_flags_and_policies_on_all_tables() -> None:
                 WHERE relname IN (
                     'profissionais', 'pacientes', 'dependentes', 'atendimentos',
                     'triagens', 'evolucoes_clinicas', 'documentos_clinicos',
-                    'documento_itens', 'audit_events', 'organizacoes'
+                    'documento_itens', 'audit_events', 'configuracoes_plantao',
+                    'organizacoes'
                 )
                 ORDER BY relname;
                 """
@@ -95,10 +104,10 @@ async def test_rls_flags_and_policies_on_all_tables() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tenant_isolation_across_all_nine_tables(
+async def test_tenant_isolation_across_all_ten_tables(
     db_session: AsyncSession,
 ) -> None:
-    """Verify strict tenant isolation across all 9 multi-tenant domain tables."""
+    """Verify strict tenant isolation across all 10 multi-tenant domain tables."""
     # 1. Setup base organizations using canonical scenario factory
     org1, org2 = await seed_multi_tenant_orgs(
         db_session,
@@ -203,6 +212,15 @@ async def test_tenant_isolation_across_all_nine_tables(
             session.add_all([item1, audit1])
             await session.commit()
 
+            cfg1 = ConfiguracaoPlantao(
+                organizacao_id=tenant_1_id,
+                medicos_ativos_planejados=3,
+                alpha_backpressure=Decimal("1.25"),
+                modo_operacao=ModoOperacao.SUS,
+            )
+            session.add(cfg1)
+            await session.commit()
+
     # 3. Insert complete aggregate records for Tenant 2
     prof2_id: UUID = uuid7()
     pac2_id: UUID = uuid7()
@@ -298,6 +316,15 @@ async def test_tenant_isolation_across_all_nine_tables(
             session.add_all([item2, audit2])
             await session.commit()
 
+            cfg2 = ConfiguracaoPlantao(
+                organizacao_id=tenant_2_id,
+                medicos_ativos_planejados=5,
+                alpha_backpressure=Decimal("1.28"),
+                modo_operacao=ModoOperacao.PRIVADO,
+            )
+            session.add(cfg2)
+            await session.commit()
+
     # 4. Verify queries under Tenant 1 return ONLY Tenant 1 data
     with tenant_context(tenant_1_id):
         async with async_session_factory() as session:
@@ -340,6 +367,11 @@ async def test_tenant_isolation_across_all_nine_tables(
             assert len(audits) == 1
             assert audits[0].organizacao_id == tenant_1_id
 
+            cfgs = (await session.execute(select(ConfiguracaoPlantao))).scalars().all()
+            assert len(cfgs) == 1
+            assert cfgs[0].organizacao_id == tenant_1_id
+            assert cfgs[0].medicos_ativos_planejados == 3
+
     # 5. Verify queries under Tenant 2 return ONLY Tenant 2 data
     with tenant_context(tenant_2_id):
         async with async_session_factory() as session:
@@ -381,6 +413,11 @@ async def test_tenant_isolation_across_all_nine_tables(
             audits = (await session.execute(select(AuditEvent))).scalars().all()
             assert len(audits) == 1
             assert audits[0].organizacao_id == tenant_2_id
+
+            cfgs = (await session.execute(select(ConfiguracaoPlantao))).scalars().all()
+            assert len(cfgs) == 1
+            assert cfgs[0].organizacao_id == tenant_2_id
+            assert cfgs[0].medicos_ativos_planejados == 5
 
 
 @pytest.mark.asyncio
