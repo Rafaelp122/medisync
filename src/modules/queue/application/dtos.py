@@ -27,6 +27,10 @@ class AlocacaoChamadaResult:
     status: str
     chamada_iniciada_em: datetime
     ttl_segundos: int
+    paciente_id: UUID | None = None
+    prioridade_clinica: int | None = None
+    alocado: bool = True
+    mensagem: str = "Paciente alocado com sucesso para chamada."
 
 
 @dataclass(frozen=True)
@@ -137,6 +141,7 @@ class AdmissaoAtendimentoResult:
     prioridade_clinica: int
     alerta_samu_disparado: bool
     instrucoes: str | None = None
+    tcle_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -181,6 +186,15 @@ class PioraClinicaResult:
     redirecionado_emergencia: bool
     nova_posicao: int | None
     instrucoes: str | None = None
+    nova_prioridade: int | None = None
+    status_atendimento: str | None = None
+    orientacoes_emergencia: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.nova_prioridade is None:
+            object.__setattr__(self, "nova_prioridade", self.prioridade_clinica)
+        if self.orientacoes_emergencia is None and self.redirecionado_emergencia:
+            object.__setattr__(self, "orientacoes_emergencia", self.instrucoes)
 
 
 @dataclass(frozen=True)

@@ -26,6 +26,7 @@ from src.core.authz.token import decode_access_token
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.core.errors import (
+    ConflictError,
     ForbiddenError,
     NotFoundError,
     TokenRevogadoError,
@@ -294,6 +295,13 @@ async def validar_acesso_livekit(
         raise NotFoundError(f"Atendimento '{atendimento_id}' não encontrado.")
 
     if atendimento.is_terminal:
+        if atendimento.status == "PACIENTE_AUSENTE":
+            raise ConflictError(
+                f"Acesso negado: atendimento '{atendimento_id}' expirou por "
+                f"ausência do paciente (status recebido: '{atendimento.status}'; "
+                "esperados status ativos: ['CHAMANDO_PACIENTE', 'EM_ATENDIMENTO']).",
+                code="ATENDIMENTO_EXPIRADO_NO_SHOW",
+            )
         raise ForbiddenError(
             f"Acesso negado: atendimento '{atendimento_id}' já finalizado com status "
             f"'{atendimento.status}'."

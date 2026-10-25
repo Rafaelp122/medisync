@@ -54,6 +54,7 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - Guarda bytes via porta abstrata. `src/modules/consultation/application/ports/storage_port.py` persiste em `chave_s3` canônica e gera URL pré-assinada de 300s para download.
 - Persiste em três tabelas (`evolucoes_clinicas`, `documentos_clinicos`, `documento_itens` com RLS por `organizacao_id`, `RESTRICT` nas FKs clínicas, `CASCADE` de documento para itens). [Modelo](../architecture/data-model.md)
 - Orquestra mídia sem transportar mídia. `TeleconsultaService` orquestra geração de JWT e ciclo de sala sobre `LiveKitMediaPort`; SFU LiveKit carrega áudio/vídeo, Python só sinaliza.
+- Valida acesso à mídia com distinção clínica de No-Show. `src/modules/consultation/presentation/dependencies.py` (`validar_acesso_livekit`) rejeita atendimento finalizado por no-show (`PACIENTE_AUSENTE`) com HTTP 409 Conflict (`ATENDIMENTO_EXPIRADO_NO_SHOW`), e outros status terminais com HTTP 403 Forbidden.
 - Finalização centralizada no PEP. `src/modules/consultation/application/services/pep_service.py` marca evolução + documentos de forma atômica e conclui o atendimento via `QueueStorePort`.
 
 ## 5. Peculiaridades
@@ -80,11 +81,13 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - `src/modules/consultation/application/services/evolucao_service.py`
 - `src/modules/consultation/application/services/documento_service.py`
 - `src/modules/consultation/application/services/pep_service.py`
+- `src/modules/consultation/presentation/dependencies.py`
 - `src/modules/consultation/infrastructure/livekit_adapter.py`
 - `tests/unit/test_consultation_models.py`
 - `tests/unit/test_evolucao_service.py`
 - `tests/unit/test_documento_service.py`
 - `tests/unit/test_livekit_token.py`
+- `tests/unit/test_livekit_dependencies.py`
 
 Prova viva:
 

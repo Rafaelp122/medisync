@@ -1,10 +1,10 @@
 """Presentation schemas for queue admission and triage endpoints."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoCommand,
@@ -80,6 +80,9 @@ class AdmissaoResponse(BaseModel):
     prioridade_clinica: int
     alerta_samu_disparado: bool
     instrucoes: str | None = None
+    tcle_hash: str | None = Field(
+        default=None, description="Hash SHA-256 do TCLE digital aceito"
+    )
 
 
 class ChamarProximoResponse(BaseModel):
@@ -93,6 +96,10 @@ class ChamarProximoResponse(BaseModel):
     )
     medico_id: UUID | None = Field(
         default=None, description="ID do médico que realizou a chamada"
+    )
+    paciente_id: UUID | None = Field(default=None, description="ID do paciente alocado")
+    prioridade_clinica: int | None = Field(
+        default=None, description="Prioridade clínica do atendimento"
     )
     status: str | None = Field(default=None, description="Status do atendimento")
     chamada_iniciada_em: datetime | None = Field(
@@ -184,6 +191,14 @@ class PioraClinicaResponse(BaseModel):
     prioridade_clinica: int = Field(
         description="Nova prioridade clínica pós-reavaliação"
     )
+    nova_prioridade: int | None = Field(
+        default=None,
+        description="Nova prioridade clínica pós-reavaliação (canônico US-06)",
+    )
+    status_atendimento: str | None = Field(
+        default=None,
+        description="Status do atendimento após a reavaliação de piora",
+    )
     alerta_samu_disparado: bool = Field(
         description="Classificado como emergência máxima (Vermelho)"
     )
@@ -198,6 +213,18 @@ class PioraClinicaResponse(BaseModel):
         default=None,
         description="Instruções de redirecionamento ou emergência imediata",
     )
+    orientacoes_emergencia: str | None = Field(
+        default=None,
+        description="Instruções de emergência imediata (canônico US-06)",
+    )
+
+    @model_validator(mode="after")
+    def _harmonizar_campos_canonicos(self) -> Self:
+        if self.nova_prioridade is None:
+            self.nova_prioridade = self.prioridade_clinica
+        if self.orientacoes_emergencia is None and self.redirecionado_emergencia:
+            self.orientacoes_emergencia = self.instrucoes
+        return self
 
 
 class RegularizacaoFilaRequest(BaseModel):

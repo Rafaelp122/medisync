@@ -47,15 +47,32 @@
 
 * **Endpoint:** `POST /api/v1/fila/chamar-proximo`
 * **Headers:** `Authorization: Bearer <jwt_medico>`, `X-Tenant-ID: <org_id>`
-* **Resposta de Sucesso (`200 OK`):**
+* **Resposta de Sucesso com Alocação (`200 OK`):**
   ```json
   {
+    "alocado": true,
     "atendimento_id": "018f3a5b-...",
+    "medico_id": "018f3a5b-...",
     "paciente_id": "018f3a5b-...",
-    "nome_paciente": "Juliana Santos Silva",
     "prioridade_clinica": 2,
     "status": "CHAMANDO_PACIENTE",
-    "ring_timeout_segundos": 45
+    "chamada_iniciada_em": "2026-10-25T00:30:00Z",
+    "ttl_segundos": 45,
+    "mensagem": "Paciente alocado com sucesso para chamada."
+  }
+  ```
+* **Resposta de Fila Vazia (`200 OK`):**
+  ```json
+  {
+    "alocado": false,
+    "atendimento_id": null,
+    "medico_id": null,
+    "paciente_id": null,
+    "prioridade_clinica": null,
+    "status": null,
+    "chamada_iniciada_em": null,
+    "ttl_segundos": null,
+    "mensagem": "Fila vazia. Não há pacientes aguardando atendimento no momento."
   }
   ```
 
@@ -66,8 +83,10 @@
 - [x] **Script Lua Atômico:** Execução de `alocar_chamada.lua` com EVALSHA e locks atômicos duplos (`src/modules/queue/infrastructure/lua/alocar_chamada.lua`).
 - [x] **Latência Submilisegundo:** Tempo de resposta comprovado em suíte de teste de estresse concorrente.
 - [x] **Agendamento do Timeout:** Enfileiramento do job ARQ `ring_timeout_task` com `_defer_by=45` (`src/worker/tasks/ring_timeout.py`).
-- [x] **Apresentação:** Router fino `alocacao_router.py` montado em `/api/v1/fila/chamar-proximo`.
+- [x] **Apresentação:** Router fino `alocacao_router.py` montado em `/api/v1/fila/chamar-proximo` com `ChamarProximoResponse` validado via `model_validate` e expondo `paciente_id` e `prioridade_clinica` (ADR-001/ADR-008).
 - [x] **Testes Automatizados:**
+  - `tests/unit/test_queue_schemas.py`
   - `tests/unit/test_alocacao_service.py`
+  - `tests/unit/test_alocacao_router.py`
   - `tests/integration/test_alocar_chamada_concurrency.py`
   - `tests/integration/test_ring_timeout_flow.py`

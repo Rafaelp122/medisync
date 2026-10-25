@@ -227,6 +227,8 @@ class AlocacaoChamadaService:
             status=atendimento.status,
             chamada_iniciada_em=atendimento.chamada_iniciada_em or datetime.now(UTC),
             ttl_segundos=command.ttl_segundos,
+            paciente_id=atendimento.paciente_id,
+            prioridade_clinica=atendimento.prioridade_clinica,
         )
 
     async def liberar_locks(

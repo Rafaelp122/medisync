@@ -58,6 +58,7 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 409 | `TRANSICAO_ESTADO_INVALIDA` | Transição ilegal na máquina de estados de atendimento (`TransicaoEstadoInvalidaError`) |
 | 409 | `MEDICO_OCUPADO` | Médico com chamada ativa ou lock de consulta - RN02 (`MedicoOcupadoError`) |
 | 409 | `ATENDIMENTO_NAO_DISPONIVEL` | Atendimento capturado por outro médico (`AtendimentoNaoDisponivelError`) |
+| 409 | `ATENDIMENTO_EXPIRADO_NO_SHOW` | Ingresso em sala LiveKit com atendimento expirado por no-show (`ConflictError`) |
 | 409 | `CONSULTA_FINALIZADA_IMUTAVEL` | Alteração de prontuário de consulta encerrada (`ConsultaFinalizadaError`) |
 | 409 | `AUDITORIA_IMUTAVEL` | Tentativa de mutação UPDATE/DELETE em trilha forense (`AuditoriaImutavelError`) |
 | 422 | `VALIDATION_ERROR` | Falha de validação estrutural Pydantic (`ValidationError`) |

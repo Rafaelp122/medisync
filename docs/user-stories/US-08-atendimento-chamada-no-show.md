@@ -40,8 +40,8 @@
 
 ### Cenário 3: Tentativa de ingresso após expiração do tempo (No-Show já consolidado)
 - **Dado que** o atendimento já transicionou para `PACIENTE_AUSENTE` após a expiração dos 45 segundos,
-- **Quando** a paciente tenta tardiamente ingressar na sala solicitando o token de acesso,
-- **Então** o sistema rejeita a emissão do token informando recurso expirado ou conflito (HTTP 409 Conflict ou 410 Gone), sinalizando que o prazo de atendimento expirou por ausência.
+- **Quando** a paciente tenta tardiamente ingressar na sala solicitando o token de acesso em `POST /api/v1/consultations/{atendimento_id}/livekit/token`,
+- **Então** o sistema rejeita a emissão do token com **HTTP 409 Conflict** (`code: ATENDIMENTO_EXPIRADO_NO_SHOW`), sinalizando que o prazo de atendimento expirou por ausência.
 
 ---
 
@@ -69,6 +69,16 @@
     "participant_identity": "paciente:018f3a5b..."
   }
   ```
+* **Resposta de Erro em Caso de No-Show Consolidado (`409 Conflict`):**
+  ```json
+  {
+    "type": "about:blank",
+    "title": "Conflict",
+    "status": 409,
+    "detail": "Acesso negado: atendimento '018f3a5b-...' expirou por ausência do paciente (status recebido: 'PACIENTE_AUSENTE'; esperados status ativos: ['CHAMANDO_PACIENTE', 'EM_ATENDIMENTO']).",
+    "code": "ATENDIMENTO_EXPIRADO_NO_SHOW"
+  }
+  ```
 
 ---
 
@@ -77,7 +87,9 @@
 - [x] **Domínio:** Método `Atendimento.atender_chamada()` implementado e testado no modelo (`src/modules/queue/domain/models/atendimento.py`).
 - [x] **Worker de No-Show:** Tarefa assíncrona `ring_timeout_task` libera locks e transiciona para `PACIENTE_AUSENTE` (`src/worker/tasks/ring_timeout.py`).
 - [x] **Integração de Ingresso (NC-QUE-03):** Acionar `Atendimento.atender_chamada()` e neutralização do timeout na emissão de token LiveKit do paciente em `TeleconsultaService` (`src/modules/consultation/application/services/teleconsulta_service.py`).
+- [x] **Validação de Micro-Autorização:** Dependência `validar_acesso_livekit` rejeita status `PACIENTE_AUSENTE` com RFC 7807 `409 Conflict` (`src/modules/consultation/presentation/dependencies.py`).
 - [x] **Testes Automatizados:**
   - `tests/unit/test_atendimento_model.py`
+  - `tests/unit/test_livekit_dependencies.py`
   - `tests/integration/test_ring_timeout_flow.py`
   - `tests/integration/test_livekit_lifecycle.py`

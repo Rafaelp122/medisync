@@ -1,7 +1,7 @@
 """Integration tests for LiveKit SFU token endpoint and room lifecycle (Issue #42)."""
 
 from typing import cast
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 import jwt
@@ -12,7 +12,6 @@ from src.core.config import get_settings
 from src.core.security import create_intake_token
 from src.main import app
 from src.modules.consultation.application.ports.atendimento_reader_port import (
-    AtendimentoReaderPort,
     AtendimentoResumoDTO,
 )
 from src.modules.consultation.composition import (
@@ -24,33 +23,8 @@ from src.modules.consultation.infrastructure.livekit_adapter import (
     LiveKitAdapter,
 )
 
+from tests.doubles import FakeAtendimentoReader
 from tests.helpers import auth_headers
-
-
-class FakeAtendimentoReader(AtendimentoReaderPort):
-    def __init__(self, resumo: AtendimentoResumoDTO | None = None) -> None:
-        self.resumo = resumo
-
-    async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
-        if self.resumo is not None and self.resumo.atendimento_id == atendimento_id:
-            return self.resumo
-        return None
-
-    async def concluir_atendimento(self, atendimento_id: UUID) -> None:
-        pass
-
-    async def atender_chamada(self, atendimento_id: UUID) -> None:
-        self.chamada_atendida = True
-        if self.resumo is not None and self.resumo.atendimento_id == atendimento_id:
-            self.resumo = AtendimentoResumoDTO(
-                atendimento_id=self.resumo.atendimento_id,
-                organizacao_id=self.resumo.organizacao_id,
-                medico_id=self.resumo.medico_id,
-                paciente_id=self.resumo.paciente_id,
-                status="EM_ATENDIMENTO",
-                tcle_hash=self.resumo.tcle_hash,
-                is_terminal=self.resumo.is_terminal,
-            )
 
 
 @pytest.mark.asyncio
@@ -318,6 +292,49 @@ async def test_livekit_token_endpoint_terminal_attendance_rejected_403() -> None
                 headers=auth_headers(Role.MEDICO, org_id, doctor_id),
             )
         assert resp.status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_atendimento_reader, None)
+
+
+@pytest.mark.asyncio
+async def test_livekit_token_endpoint_paciente_ausente_409() -> None:
+    """Verifica que atendimento em PACIENTE_AUSENTE rejeita token com
+    HTTP 409 Conflict (US-08).
+    """
+    doctor_id = uuid4()
+    org_id = 1
+    atendimento_id = uuid4()
+
+    reader = FakeAtendimentoReader(
+        AtendimentoResumoDTO(
+            atendimento_id=atendimento_id,
+            organizacao_id=org_id,
+            medico_id=doctor_id,
+            paciente_id=uuid4(),
+            status="PACIENTE_AUSENTE",
+            tcle_hash="a" * 64,
+            is_terminal=True,
+        )
+    )
+    app.dependency_overrides[get_atendimento_reader] = lambda: reader
+    try:
+        payload = {
+            "organizacao_id": org_id,
+            "participant_id": str(doctor_id),
+            "role": "medico",
+        }
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/api/v1/consultations/{atendimento_id}/livekit/token",
+                json=payload,
+                headers=auth_headers(Role.MEDICO, org_id, doctor_id),
+            )
+        assert resp.status_code == 409
+        data = cast("dict[str, object]", resp.json())
+        assert data["title"] == "Conflict"
+        assert data["code"] == "ATENDIMENTO_EXPIRADO_NO_SHOW"
+        assert "PACIENTE_AUSENTE" in str(data["detail"])
     finally:
         app.dependency_overrides.pop(get_atendimento_reader, None)
 

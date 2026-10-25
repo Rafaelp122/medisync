@@ -245,6 +245,7 @@ async def test_comunicar_piora_clinica_reclassificacao_sucesso() -> None:
             data = cast("dict[str, object]", resp.json())
             assert data["atendimento_id"] == str(atendimento_id)
             assert data["prioridade_clinica"] == 2
+            assert data["nova_prioridade"] == 2
             assert data["alerta_samu_disparado"] is False
             assert data["redirecionado_emergencia"] is False
             assert data["nova_posicao"] == 1
@@ -270,6 +271,11 @@ async def test_comunicar_piora_clinica_emergencia_samu() -> None:
             redirecionado_emergencia=True,
             nova_posicao=None,
             instrucoes="Emergência detectada. SAMU 192 notificado imediatamente.",
+            nova_prioridade=1,
+            status_atendimento="CANCELADO_PELO_PACIENTE",
+            orientacoes_emergencia=(
+                "Emergência detectada. SAMU 192 notificado imediatamente."
+            ),
         )
     )
     mock_checker = AsyncMock(return_value=True)
@@ -297,9 +303,15 @@ async def test_comunicar_piora_clinica_emergencia_samu() -> None:
             data = cast("dict[str, object]", resp.json())
             assert data["atendimento_id"] == str(atendimento_id)
             assert data["prioridade_clinica"] == 1
+            assert data["nova_prioridade"] == 1
+            assert data["status_atendimento"] == "CANCELADO_PELO_PACIENTE"
             assert data["alerta_samu_disparado"] is True
             assert data["redirecionado_emergencia"] is True
             assert data["nova_posicao"] is None
+            assert (
+                data["orientacoes_emergencia"]
+                == "Emergência detectada. SAMU 192 notificado imediatamente."
+            )
     finally:
         app.dependency_overrides.clear()
 

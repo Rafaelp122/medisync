@@ -9,6 +9,10 @@ from uuid import UUID
 
 from src.core.audit import AtorPapel, AtorTipo
 from src.core.uuid7 import uuid7
+from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoReaderPort,
+    AtendimentoResumoDTO,
+)
 
 
 class FakeNoneMappings:
@@ -475,3 +479,33 @@ class FakeAuditTrail:
 
     def clear(self) -> None:
         self.events.clear()
+
+
+class FakeAtendimentoReader(AtendimentoReaderPort):
+    """In-memory fake implementation of AtendimentoReaderPort for testing."""
+
+    def __init__(self, resumo: AtendimentoResumoDTO | None = None) -> None:
+        self.resumo = resumo
+        self.chamada_atendida = False
+        self.atendimento_concluido = False
+
+    async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
+        if self.resumo is not None and self.resumo.atendimento_id == atendimento_id:
+            return self.resumo
+        return None
+
+    async def concluir_atendimento(self, atendimento_id: UUID) -> None:
+        self.atendimento_concluido = True
+
+    async def atender_chamada(self, atendimento_id: UUID) -> None:
+        self.chamada_atendida = True
+        if self.resumo is not None and self.resumo.atendimento_id == atendimento_id:
+            self.resumo = AtendimentoResumoDTO(
+                atendimento_id=self.resumo.atendimento_id,
+                organizacao_id=self.resumo.organizacao_id,
+                medico_id=self.resumo.medico_id,
+                paciente_id=self.resumo.paciente_id,
+                status="EM_ATENDIMENTO",
+                tcle_hash=self.resumo.tcle_hash,
+                is_terminal=self.resumo.is_terminal,
+            )
