@@ -8,6 +8,7 @@ description = "Global allowlists for synthetic test fixtures, documentation and 
 paths = [
     '''(?i)tests/''',
     '''(?i)docs/''',
+    '''(?i)\.agents/''',
     '''\.env\.example''',
     '''\.pytest_cache/''',
 ]

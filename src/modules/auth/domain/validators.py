@@ -68,6 +68,9 @@ def validate_cpf(cpf: str) -> str:
 def validate_telefone(telefone: str) -> str:
     """Validate Brazilian telephone number (10 or 11 digits with DDD)."""
     digits = _clean_digits(telefone)
+    if len(digits) in (12, 13) and digits.startswith("55"):
+        digits = digits[2:]
+
     if len(digits) not in (10, 11):
         raise ValidationError(
             f"Telefone inválido: deve conter DDD e ter 10 ou 11 dígitos numéricos; "

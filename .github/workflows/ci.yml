@@ -144,6 +144,35 @@ jobs:
       - name: Run screen & component tests (Vitest + MSW v2)
         run: pnpm --dir frontend test
 
+  frontend-e2e:
+    name: Frontend End-to-End Tests (Playwright)
+    runs-on: ubuntu-latest
+    if: hashFiles('frontend/package.json') != ''
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+          cache-dependency-path: "frontend/pnpm-lock.yaml"
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Install Playwright browsers with OS dependencies
+        run: pnpm --dir frontend exec playwright install --with-deps chromium
+
+      - name: Run E2E tests (Playwright + Axe-core WCAG 2.1 AA)
+        run: pnpm --dir frontend test:e2e
+
   docker-build:
     name: Docker Image Build
     runs-on: ubuntu-latest
