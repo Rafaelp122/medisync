@@ -1,3 +1,9 @@
+## v0.7.0 (2026-10-26)
+
+### Feat
+
+- **frontend**: bala traçante — setup de frontend/, design tokens, Hey API e login OTP (US-02, #28)
+
 ## v0.6.0 (2026-10-25)
 
 ### Feat
