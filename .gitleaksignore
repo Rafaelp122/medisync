@@ -2,3 +2,5 @@
 # Fingerprints of known false-positives in historical git commits
 
 f21c50f569e4b4bbdf8e2ce357164f6505c40fe9:src/modules/consultation/application/services/document_validation_service.py:generic-api-key:174
+6de9046b89a9129842e984a9b3d35e9cb6fd9aa8:.agents/skills/playwright-best-practices/advanced/authentication-flows.md:generic-api-key:54
+

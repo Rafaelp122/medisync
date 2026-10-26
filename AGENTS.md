@@ -8,11 +8,23 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
 
 * **Gerenciador de Pacotes:** `uv` (Backend Python) e `pnpm` (Frontend TypeScript). Nunca use `pip install` ou `npm install` globais.
 * **Automação:** Sempre utilize os comandos do `justfile`:
-  * **Backend & Geral:**
-    * `just install` — Sincroniza ambiente e dependências com `uv` (`uv sync`).
+  * **Geral & Full-Stack:**
+    * `just dev` — Inicia simultaneamente o backend (`granian`) e o frontend (`vite`) em modo desenvolvimento local integrado.
     * `just setup-dev` — Inicializa o ambiente de desenvolvimento completo (infra Docker, deps, migrações e validação rápida).
     * `just check` — Executa o portão de qualidade completo e unificado com Fail-Fast estrito (scan-secrets, docs-check, audit-ai-code, fmt, lint, typecheck, tach, test-unit, test-integration).
     * `just check-fast` — Executa a validação rápida completa em memória (zero Docker: scan-secrets, docs-check, audit-ai-code, fmt, lint, typecheck, tach, test-fast).
+    * `just scan-secrets` — Audita o repositório com Gitleaks (ADR-010) para prevenir vazamento de credenciais.
+    * `just bump-check` — Simula o próximo bump de versão semântica e changelog via Commitizen.
+  * **Infraestrutura, Banco & Contêineres (Infra):**
+    * `just up` — Inicia toda a topologia de contêineres em background (Postgres, Valkey, LiveKit, MinIO e Backend em contêiner).
+    * `just up-infra` — Inicia exclusivamente os serviços essenciais de infraestrutura (Postgres, Valkey, LiveKit, MinIO).
+    * `just down` — Para os contêineres locais.
+    * `just migrate` — Aplica migrações pendentes no banco relacional via Alembic.
+    * `just clean-docker` — Remove contêineres e apaga volumes persistentes locais.
+  * **Backend (Python & FastAPI):**
+    * `just install` — Sincroniza ambiente e dependências com `uv` (`uv sync`).
+    * `just backend-dev` — Inicia o servidor backend localmente com hot-reload (Granian em `http://localhost:8000`).
+    * `just worker` — Inicia o background worker assíncrono ARQ sobre Valkey.
     * `just fmt` — Formata o código com `ruff`.
     * `just lint` — Executa lint com autofix seguro (`ruff check . --fix`).
     * `just typecheck` — Executa checagem estrita de tipos com `basedpyright`.
@@ -21,16 +33,13 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
     * `just test-unit` — Executa testes unitários com cobertura (`pytest tests/unit tests/architecture --cov=src`).
     * `just test-integration` — Executa testes de integração sobre infraestrutura real (`pytest tests/integration`).
     * `just test` — Executa a suíte de testes completa com cobertura consolidada.
-    * `just docs-check` — Valida links `src/docs`, referências relativas e proíbe código colado nos docs.
-    * `just audit-ai-code` — Audita o código sob os princípios de Clean Code para Agentes de IA.
+    * `just dump-openapi` — Exporta o schema OpenAPI 3.1 para `openapi.json` na raiz.
     * `just scaffold-module <nome>` — Cria esqueleto físico hexagonal para novo módulo e registra no `tach.toml`.
-    * `just scan-secrets` — Audita o repositório com Gitleaks (ADR-010) para prevenir vazamento de credenciais.
-    * `just bump-check` — Simula o próximo bump de versão semântica e changelog via Commitizen.
   * **Frontend (ADR-011):**
     * `just frontend-install` — Instala dependências do frontend com `pnpm`.
     * `just frontend-dev` — Inicia servidor de desenvolvimento Vite (`http://localhost:5173`).
     * `just frontend-generate` — Gera contratos tipados TypeScript via Hey API (`@hey-api/openapi-ts`) a partir do `/openapi.json`.
-    * `just frontend-check` — Executa checagem estrita de tipos (`tsc --noEmit`), lint (`eslint`) e testes (`vitest run`).
+    * `just frontend-check` — Executa checagem estrita de tipos (`tsc --noEmit`), lint (`biome check`) e testes.
     * `just frontend-test` — Executa a suíte de testes de tela e unitários do frontend (`vitest`).
     * `just frontend-test-e2e` — Executa testes ponta a ponta com Playwright.
 

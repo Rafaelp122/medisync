@@ -64,6 +64,8 @@ def test_validate_cep_invalid() -> None:
 def test_validate_telefone_valid() -> None:
     assert validate_telefone("(11) 98765-4321") == "11987654321"
     assert validate_telefone("2122334455") == "2122334455"
+    assert validate_telefone("+5511987654321") == "11987654321"
+    assert validate_telefone("+55 (21) 97511-8173") == "21975118173"
 
 
 def test_validate_telefone_invalid() -> None:

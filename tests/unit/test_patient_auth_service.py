@@ -114,6 +114,26 @@ async def test_solicitar_otp_sucesso(
 
 
 @pytest.mark.asyncio
+async def test_solicitar_otp_sucesso_com_prefixo_internacional_e164(
+    fake_identity_reader: FakeIdentityReader, fake_sms: FakeSmsSenderAdapter
+) -> None:
+    paciente = _make_mock_paciente()
+    fake_identity_reader.paciente = paciente
+
+    service = PatientAuthService(
+        identity_reader=fake_identity_reader,
+        sms_sender=fake_sms,
+    )
+
+    dados = SolicitarOtpInputDTO(telefone="+5511987654321")
+    output = await service.solicitar_otp(organizacao_id=1, dados=dados)
+
+    assert output.mensagem == "Código de verificação enviado com sucesso."
+    assert len(fake_sms.sent_otps) == 1
+    assert fake_sms.sent_otps[0]["telefone"] == "11987654321"
+
+
+@pytest.mark.asyncio
 async def test_solicitar_otp_paciente_nao_encontrado(
     fake_identity_reader: FakeIdentityReader, fake_sms: FakeSmsSenderAdapter
 ) -> None:

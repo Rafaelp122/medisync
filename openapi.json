@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MediSync Express",
-    "version": "0.5.3"
+    "version": "0.6.0"
   },
   "paths": {
     "/healthz": {
