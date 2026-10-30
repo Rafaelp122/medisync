@@ -192,13 +192,23 @@ class Paciente(Base):
             )
 
         if not logradouro or not logradouro.strip():
-            raise ValidationError("Logradouro não pode ser vazio.")
+            raise ValidationError(
+                f"Logradouro '{logradouro}' não pode ser vazio; "
+                "esperado texto descritivo."
+            )
         if not numero or not numero.strip():
-            raise ValidationError("Número do endereço não pode ser vazio.")
+            raise ValidationError(
+                f"Número do endereço '{numero}' não pode ser vazio; "
+                "esperado identificador predial."
+            )
         if not bairro or not bairro.strip():
-            raise ValidationError("Bairro não pode ser vazio.")
+            raise ValidationError(
+                f"Bairro '{bairro}' não pode ser vazio; esperado nome de bairro."
+            )
         if not cidade or not cidade.strip():
-            raise ValidationError("Cidade não pode ser vazia.")
+            raise ValidationError(
+                f"Cidade '{cidade}' não pode ser vazia; esperado nome do município."
+            )
 
         clean_uf = estado.strip().upper()
         if len(clean_uf) != 2:

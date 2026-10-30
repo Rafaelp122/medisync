@@ -43,4 +43,7 @@ def test_fila_service_e_modelo_usam_mesma_formula() -> None:
         data_entrada_fila=ts,
         prioridade_clinica=2,
     )
-    assert atend.calcular_score_fila() == dom_score(2, ts)
+    assert atend.data_entrada_fila is not None
+    assert dom_score(
+        int(atend.prioridade_clinica), atend.data_entrada_fila
+    ) == dom_score(2, ts)

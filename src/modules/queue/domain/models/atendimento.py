@@ -29,6 +29,16 @@ from src.modules.queue.domain.exceptions import TransicaoEstadoInvalidaError
 _HEX64_REGEX = re.compile(r"^[a-fA-F0-9]{64}$")
 
 
+def _validar_tcle_hash(hash_str: str) -> str:
+    cleaned = hash_str.strip()
+    if not _HEX64_REGEX.match(cleaned):
+        raise ValidationError(
+            f"Hash do TCLE '{hash_str}' inválido: deve conter 64 caracteres "
+            "hexadecimais (SHA-256)."
+        )
+    return cleaned.lower()
+
+
 class Atendimento(Base):
     """Raiz de agregado do atendimento clínico governando o ciclo de vida.
 
@@ -149,7 +159,7 @@ class Atendimento(Base):
 
         clean_tcle: str | None = None
         if tcle_hash is not None:
-            clean_tcle = self._validar_formato_tcle(tcle_hash)
+            clean_tcle = _validar_tcle_hash(tcle_hash)
 
         status_str = str(status)
 
@@ -171,34 +181,6 @@ class Atendimento(Base):
             super_kwargs["atualizado_em"] = atualizado_em
 
         super().__init__(**super_kwargs)
-
-    # -------------------------------------------------------------------------
-    # Regras e Invariantes do TCLE (RN07, LGPD Art. 11)
-    # -------------------------------------------------------------------------
-
-    def registrar_tcle(self, tcle_hash: str) -> None:
-        """Registra o hash do TCLE com imutabilidade forense (RN07, LGPD Art. 11).
-
-        Regras: docs/explanation/domains/queue-domain.md
-        """
-        self._assegurar_nao_finalizado()
-        if self.tcle_hash is not None:
-            raise ValidationError(
-                f"TCLE já registrado ('{self.tcle_hash}') para este atendimento e "
-                f"não pode ser alterado para '{tcle_hash}'."
-            )
-        self.tcle_hash = self._validar_formato_tcle(tcle_hash)
-        self.atualizado_em = datetime.now(UTC)
-
-    @staticmethod
-    def _validar_formato_tcle(hash_str: str) -> str:
-        cleaned = hash_str.strip()
-        if not _HEX64_REGEX.match(cleaned):
-            raise ValidationError(
-                f"Hash do TCLE '{hash_str}' inválido: deve conter 64 caracteres "
-                "hexadecimais (SHA-256)."
-            )
-        return cleaned.lower()
 
     # -------------------------------------------------------------------------
     # Transições da Máquina de Estados Finita (RN03)
@@ -357,20 +339,6 @@ class Atendimento(Base):
             )
         self.prioridade_clinica = prioridade_int
         self.atualizado_em = datetime.now(UTC)
-
-    def calcular_score_fila(self) -> int:
-        """Calcula o score de 64 bits para indexação no ZSET do Valkey (RN01).
-
-        Regras: docs/explanation/domains/queue-domain.md
-        """
-        from src.modules.queue.domain.scoring import calcular_score
-
-        if self.data_entrada_fila is None:
-            raise ValidationError(
-                f"Atendimento '{self.id}' sem data de entrada na fila "
-                "não possui score calculado."
-            )
-        return calcular_score(int(self.prioridade_clinica), self.data_entrada_fila)
 
     def _assegurar_nao_finalizado(self) -> None:
         if self.is_finalizado:

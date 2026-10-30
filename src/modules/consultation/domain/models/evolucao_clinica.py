@@ -141,7 +141,7 @@ class EvolucaoClinica(Base):
         Assegura imutabilidade legal do registro após encerramento (CFM nº 1.821/2007).
         Regras: RN06 e docs/explanation/domains/consultation-domain.md.
         """
-        return self.finalizado_em is not None or getattr(self, "_is_finalizado", False)
+        return self.finalizado_em is not None
 
     def marcar_finalizado(self) -> None:
         """Congela a evolução clínica e registra data/hora final de atendimento.

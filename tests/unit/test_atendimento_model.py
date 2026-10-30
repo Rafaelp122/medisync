@@ -107,16 +107,16 @@ def test_tcle_hash_validacao_e_imutabilidade() -> None:
             tcle_hash="hash_invalido",
         )
 
-    atendimento = Atendimento(organizacao_id=1, paciente_id=paciente_id)
-    assert atendimento.tcle_hash is None
+    atendimento_sem_tcle = Atendimento(organizacao_id=1, paciente_id=paciente_id)
+    assert atendimento_sem_tcle.tcle_hash is None
 
-    # Registrar TCLE
-    atendimento.registrar_tcle(SAMPLE_TCLE_HASH.upper())
-    assert atendimento.tcle_hash == SAMPLE_TCLE_HASH.lower()
-
-    # Re-tentar registrar TCLE (imutabilidade forense - RN07)
-    with pytest.raises(ValidationError, match="TCLE já registrado"):
-        atendimento.registrar_tcle(ANOTHER_TCLE_HASH)
+    # Fornecer TCLE válido na admissão (sanitização para minúsculo)
+    atendimento_com_tcle = Atendimento(
+        organizacao_id=1,
+        paciente_id=paciente_id,
+        tcle_hash=SAMPLE_TCLE_HASH.upper(),
+    )
+    assert atendimento_com_tcle.tcle_hash == SAMPLE_TCLE_HASH.lower()
 
 
 def test_promover_para_apto_sem_tcle_falha() -> None:
@@ -349,7 +349,9 @@ def test_atualizacao_de_prioridade_clinica_medica() -> None:
         atendimento.atualizar_prioridade(9)
 
 
-def test_calcular_score_fila_valkey() -> None:
+def test_calcular_score_valkey() -> None:
+    from src.modules.queue.domain.scoring import calcular_score
+
     entrada = datetime(2026, 10, 1, 14, 0, 0, tzinfo=UTC)
     epoch = int(entrada.timestamp())
 
@@ -358,13 +360,13 @@ def test_calcular_score_fila_valkey() -> None:
         paciente_id=uuid7(),
         tcle_hash=SAMPLE_TCLE_HASH,
         prioridade_clinica=PrioridadeClinica.MUITO_URGENTE,  # 2
+        data_entrada_fila=entrada,
     )
 
-    with pytest.raises(ValidationError, match=r"sem data de entrada na fila"):
-        atendimento.calcular_score_fila()
-
-    atendimento.data_entrada_fila = entrada
-    score = atendimento.calcular_score_fila()
+    assert atendimento.data_entrada_fila is not None
+    score = calcular_score(
+        int(atendimento.prioridade_clinica), atendimento.data_entrada_fila
+    )
 
     # Score = (prioridade * 10^12) + timestamp
     expected_score = (2 * 1_000_000_000_000) + epoch
