@@ -6,8 +6,6 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from src.modules.telemetry.domain.models import ConfiguracaoPlantao
-
 
 @dataclass(frozen=True)
 class MedicoTMADTO:
@@ -135,47 +133,3 @@ class ConfigPlantaoCommand:
     sla_minutos_nivel_4: int = 120
     sla_minutos_nivel_5: int = 240
     atualizado_por_id: UUID | None = None
-
-
-@dataclass(frozen=True)
-class ConfigPlantaoResultDTO:
-    """Structured representation of shift configuration response."""
-
-    id: UUID
-    organizacao_id: int
-    medicos_ativos_planejados: int
-    alpha_backpressure: Decimal
-    cota_diaria_maxima: int | None
-    tma_padrao_segundos: int
-    tempo_tolerancia_ring_segundos: int
-    modo_operacao: str
-    sla_minutos_nivel_1: int
-    sla_minutos_nivel_2: int
-    sla_minutos_nivel_3: int
-    sla_minutos_nivel_4: int
-    sla_minutos_nivel_5: int
-    criado_em: datetime
-    atualizado_em: datetime
-    atualizado_por_id: UUID | None
-
-    @classmethod
-    def from_entity(cls, config: ConfiguracaoPlantao) -> "ConfigPlantaoResultDTO":
-        """Instantiate DTO directly from ConfiguracaoPlantao rich model."""
-        return cls(
-            id=config.id,
-            organizacao_id=config.organizacao_id,
-            medicos_ativos_planejados=config.medicos_ativos_planejados,
-            alpha_backpressure=config.alpha_backpressure,
-            cota_diaria_maxima=config.cota_diaria_maxima,
-            tma_padrao_segundos=config.tma_padrao_segundos,
-            tempo_tolerancia_ring_segundos=config.tempo_tolerancia_ring_segundos,
-            modo_operacao=config.modo_operacao,
-            sla_minutos_nivel_1=config.sla_minutos_nivel_1,
-            sla_minutos_nivel_2=config.sla_minutos_nivel_2,
-            sla_minutos_nivel_3=config.sla_minutos_nivel_3,
-            sla_minutos_nivel_4=config.sla_minutos_nivel_4,
-            sla_minutos_nivel_5=config.sla_minutos_nivel_5,
-            criado_em=config.criado_em,
-            atualizado_em=config.atualizado_em,
-            atualizado_por_id=config.atualizado_por_id,
-        )

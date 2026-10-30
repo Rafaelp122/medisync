@@ -116,6 +116,24 @@ class Paciente(Base):
         if clean_cns and len(clean_cns) != 15:
             raise ValidationError("CNS inválido: deve conter 15 dígitos numéricos.")
 
+        clean_sexo = sexo_biologico.strip().upper() if sexo_biologico else None
+        if clean_sexo and clean_sexo not in ("M", "F"):
+            raise ValidationError(
+                f"Sexo biológico '{sexo_biologico}' inválido; esperado 'M' ou 'F'."
+            )
+
+        clean_estado = estado.strip().upper() if estado else None
+        if clean_estado and len(clean_estado) != 2:
+            raise ValidationError(
+                f"Estado (UF) '{estado}' inválido; esperado sigla com 2 caracteres."
+            )
+
+        clean_cep = clean_digits(cep) if cep else None
+        if clean_cep and len(clean_cep) != 8:
+            raise ValidationError(
+                f"CEP '{cep}' inválido; esperado formato com 8 dígitos."
+            )
+
         super().__init__(
             id=id or uuid7(),
             organizacao_id=organizacao_id,
@@ -125,16 +143,85 @@ class Paciente(Base):
             telefone=clean_digits(telefone),
             nome_completo=nome_completo.strip() if nome_completo else None,
             nome_social=nome_social.strip() if nome_social else None,
-            nome_mae=nome_mae,
-            sexo_biologico=sexo_biologico.upper() if sexo_biologico else None,
-            cep=clean_digits(cep) if cep else None,
-            logradouro=logradouro,
-            numero=numero,
-            bairro=bairro,
-            cidade=cidade,
-            estado=estado.upper() if estado else None,
+            nome_mae=nome_mae.strip() if nome_mae else None,
+            sexo_biologico=clean_sexo,
+            cep=clean_cep,
+            logradouro=logradouro.strip() if logradouro else None,
+            numero=numero.strip() if numero else None,
+            bairro=bairro.strip() if bairro else None,
+            cidade=cidade.strip() if cidade else None,
+            estado=clean_estado,
             alergias=alergias or [],
         )
+
+    def completar_fase_2(
+        self,
+        *,
+        nome_mae: str,
+        sexo_biologico: str,
+        cep: str,
+        logradouro: str,
+        numero: str,
+        bairro: str,
+        cidade: str,
+        estado: str,
+        nome_social: str | None = None,
+        alergias: list[str] | None = None,
+    ) -> None:
+        """Completa o cadastro clínico regulatório da Fase 2 (CFM 1.821/2007).
+
+        Regras: docs/explanation/domains/identity-domain.md
+        História: docs/user-stories/US-03-elegibilidade-onboarding-fase2.md
+        """
+        if not nome_mae or not nome_mae.strip():
+            raise ValidationError(
+                f"Nome da mãe '{nome_mae}' não pode ser vazio; "
+                "campo obrigatório conforme CFM 1.821/2007."
+            )
+
+        clean_sexo = sexo_biologico.strip().upper()
+        if clean_sexo not in ("M", "F"):
+            raise ValidationError(
+                f"Sexo biológico '{sexo_biologico}' inválido; esperado 'M' ou 'F'."
+            )
+
+        clean_cep = clean_digits(cep)
+        if len(clean_cep) != 8:
+            raise ValidationError(
+                f"CEP '{cep}' inválido; esperado formato com 8 dígitos."
+            )
+
+        if not logradouro or not logradouro.strip():
+            raise ValidationError("Logradouro não pode ser vazio.")
+        if not numero or not numero.strip():
+            raise ValidationError("Número do endereço não pode ser vazio.")
+        if not bairro or not bairro.strip():
+            raise ValidationError("Bairro não pode ser vazio.")
+        if not cidade or not cidade.strip():
+            raise ValidationError("Cidade não pode ser vazia.")
+
+        clean_uf = estado.strip().upper()
+        if len(clean_uf) != 2:
+            raise ValidationError(
+                f"Sigla de estado (UF) '{estado}' inválida; "
+                "esperado exatamente 2 caracteres."
+            )
+
+        self.nome_mae = nome_mae.strip()
+        self.sexo_biologico = clean_sexo
+        self.cep = clean_cep
+        self.logradouro = logradouro.strip()
+        self.numero = numero.strip()
+        self.bairro = bairro.strip()
+        self.cidade = cidade.strip()
+        self.estado = clean_uf
+
+        if nome_social is not None and nome_social.strip():
+            self.nome_social = nome_social.strip()
+
+        if alergias:
+            clean_alergias = [a.strip() for a in alergias if a.strip()]
+            self.alergias = clean_alergias
 
     def is_pediatrico(self) -> bool:
         today = date.today()

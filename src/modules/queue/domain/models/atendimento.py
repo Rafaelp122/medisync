@@ -2,7 +2,6 @@
 
 import re
 from datetime import UTC, datetime
-from enum import IntEnum, StrEnum
 from uuid import UUID
 
 from sqlalchemy import (
@@ -20,40 +19,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.core.database import Base
 from src.core.errors import ValidationError
 from src.core.uuid7 import uuid7
+from src.modules.queue.domain.enums import (
+    TERMINAL_STATUSES,
+    PrioridadeClinica,
+    StatusAtendimento,
+)
 from src.modules.queue.domain.exceptions import TransicaoEstadoInvalidaError
 
 _HEX64_REGEX = re.compile(r"^[a-fA-F0-9]{64}$")
-
-
-class StatusAtendimento(StrEnum):
-    """Deterministic states of clinical attendance lifecycle (RN03)."""
-
-    TRIADO_AGUARDANDO_ELEGIBILIDADE = "TRIADO_AGUARDANDO_ELEGIBILIDADE"
-    APTO_PARA_CHAMADA = "APTO_PARA_CHAMADA"
-    CHAMANDO_PACIENTE = "CHAMANDO_PACIENTE"
-    EM_ATENDIMENTO = "EM_ATENDIMENTO"
-    PACIENTE_AUSENTE = "PACIENTE_AUSENTE"
-    CONCLUIDO = "CONCLUIDO"
-    CANCELADO_PACIENTE = "CANCELADO_PACIENTE"
-
-
-class PrioridadeClinica(IntEnum):
-    """Clinical urgency triage levels (RN01 / Acolhimento ACR)."""
-
-    EMERGENCIA = 1  # Vermelho - Risco Iminente
-    MUITO_URGENTE = 2  # Laranja - Alta Gravidade
-    URGENTE = 3  # Amarelo - Moderada Gravidade
-    POUCO_URGENTE = 4  # Verde - Baixa Gravidade
-    NAO_URGENTE = 5  # Azul - Eletivo / Não Urgente
-
-
-TERMINAL_STATUSES = frozenset(
-    {
-        StatusAtendimento.CONCLUIDO,
-        StatusAtendimento.PACIENTE_AUSENTE,
-        StatusAtendimento.CANCELADO_PACIENTE,
-    }
-)
 
 
 class Atendimento(Base):
@@ -84,6 +57,8 @@ class Atendimento(Base):
             name="chk_atendimento_prioridade",
         ),
         Index("idx_atendimentos_org_status", "organizacao_id", "status"),
+        Index("idx_atendimentos_org_paciente", "organizacao_id", "paciente_id"),
+        Index("idx_atendimentos_medico", "medico_id"),
         Index(
             "idx_atendimentos_fila",
             "organizacao_id",
@@ -388,7 +363,6 @@ class Atendimento(Base):
 
         Regras: docs/explanation/domains/queue-domain.md
         """
-        # lazy import: scoring imports PrioridadeClinica from models (cycle)
         from src.modules.queue.domain.scoring import calcular_score
 
         if self.data_entrada_fila is None:

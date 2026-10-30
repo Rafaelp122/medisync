@@ -110,6 +110,7 @@ class TriageService:
         sintomas: list[str],
         prioridade_calculada: int,
         alerta_samu_disparado: bool = False,
+        escala_dor: int = 0,
     ) -> UUID:
         """Persiste atomicamente Triagem associada 1:1 ao atendimento (RN04, RN07).
 
@@ -129,6 +130,7 @@ class TriageService:
             prioridade_calculada=prioridade_calculada,
             sintomas_alerta=sintomas,
             alerta_samu_disparado=alerta_samu_disparado,
+            escala_dor=escala_dor,
         )
         self._session.add(triagem)
         await self._session.flush()

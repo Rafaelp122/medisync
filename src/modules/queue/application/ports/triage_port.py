@@ -46,6 +46,7 @@ class TriagePort(Protocol):
         sintomas: list[str],
         prioridade_calculada: int,
         alerta_samu_disparado: bool = False,
+        escala_dor: int = 0,
     ) -> UUID:
         """Persist Triagem aggregate associated 1:1 with attendance."""
         ...

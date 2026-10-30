@@ -46,6 +46,7 @@ class EvolucaoSOAPResponse(BaseModel):
     cid10_principal: str | None
     conduta: str
     registrado_em: datetime
+    finalizado_em: datetime | None = None
     is_finalizado: bool
 
 
@@ -113,8 +114,9 @@ class DocumentoClinicoResponse(BaseModel):
     medico_id: UUID
     tipo_documento: str
     chave_s3: str
-    sha256_hash: str
-    assinado_em: datetime
+    sha256_hash: str | None = None
+    assinado_em: datetime | None = None
+    finalizado_em: datetime | None = None
     is_finalizado: bool
     itens: list[ItemPrescricaoResponse]
 
@@ -291,8 +293,8 @@ class ValidarDocumentoResponse(BaseModel):
     documento_id: UUID
     tipo_documento: str
     status_documento: str
-    sha256_hash: str
-    assinado_em: datetime | None
+    sha256_hash: str | None = None
+    assinado_em: datetime | None = None
     emissor_medico_nome: str
     emissor_medico_crm: str
     emissor_medico_uf: str

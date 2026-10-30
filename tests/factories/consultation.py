@@ -24,6 +24,7 @@ def make_evolucao_clinica(
     exame_fisico_virtual: str | None = "Estado geral regular, sem dispneia aparente.",
     cid10_principal: str | None = "J00",
     registrado_em: datetime | None = None,
+    finalizado_em: datetime | None = None,
     id: UUID | None = None,
 ) -> EvolucaoClinica:
     """Create a typed EvolucaoClinica instance for testing."""
@@ -36,6 +37,7 @@ def make_evolucao_clinica(
         exame_fisico_virtual=exame_fisico_virtual,
         cid10_principal=cid10_principal,
         registrado_em=registrado_em,
+        finalizado_em=finalizado_em,
         id=id or uuid7(),
     )
 
@@ -47,8 +49,9 @@ def make_documento_clinico(
     *,
     tipo_documento: TipoDocumentoClinico | str = TipoDocumentoClinico.RECEITA_SIMPLES,
     chave_s3: str = "s3://medisync-docs/1/atendimentos/default/receita.pdf",
-    sha256_hash: str = _DEFAULT_SHA256,
+    sha256_hash: str | None = _DEFAULT_SHA256,
     assinado_em: datetime | None = None,
+    finalizado_em: datetime | None = None,
     id: UUID | None = None,
 ) -> DocumentoClinico:
     """Create a typed DocumentoClinico instance for testing."""
@@ -60,6 +63,7 @@ def make_documento_clinico(
         chave_s3=chave_s3,
         sha256_hash=sha256_hash,
         assinado_em=assinado_em,
+        finalizado_em=finalizado_em,
         id=id or uuid7(),
     )
 

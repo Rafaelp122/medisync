@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.errors import ValidationError
 from src.modules.telemetry.application.dtos import (
     ConfigPlantaoCommand,
-    ConfigPlantaoResultDTO,
     MedicoTMADTO,
     PainelTelemetriaDTO,
 )
@@ -202,7 +201,7 @@ async def test_config_plantao_service_obter_configuracao_existente() -> None:
     service = ConfigPlantaoService(repo=repo, cache=cache, session=session)
     result = await service.obter_configuracao(organizacao_id=42)
 
-    assert isinstance(result, ConfigPlantaoResultDTO)
+    assert isinstance(result, ConfiguracaoPlantao)
     assert result.organizacao_id == 42
     assert result.medicos_ativos_planejados == 3
     repo.salvar.assert_not_called()
@@ -221,7 +220,7 @@ async def test_config_plantao_service_obter_inexistente_persiste_default() -> No
     service = ConfigPlantaoService(repo=repo, cache=cache, session=session)
     result = await service.obter_configuracao(organizacao_id=99)
 
-    assert isinstance(result, ConfigPlantaoResultDTO)
+    assert isinstance(result, ConfiguracaoPlantao)
     assert result.organizacao_id == 99
     assert result.alpha_backpressure == Decimal("1.25")
     assert result.medicos_ativos_planejados == 1

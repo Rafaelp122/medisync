@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 from src.core.errors import ValidationError
-from src.modules.queue.domain.models import PrioridadeClinica
+from src.modules.queue.domain.enums import PrioridadeClinica
 
 SCORE_PRIORITY_MULTIPLIER = 1_000_000_000_000
 
@@ -15,7 +15,8 @@ def calcular_score(
     prioridade_int = int(prioridade_clinica)
     if prioridade_int < 1 or prioridade_int > 5:
         raise ValidationError(
-            "Prioridade clínica deve ser entre 1 e 5 (1=Emergência, 5=Não Urgente)."
+            f"Prioridade clínica '{prioridade_int}' inválida; "
+            "esperado valor entre 1 e 5 (1=Emergência, 5=Não Urgente)."
         )
     if timestamp_epoch is None:
         ts_segundos = int(datetime.now(UTC).timestamp())

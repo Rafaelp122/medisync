@@ -63,7 +63,7 @@ class DocumentoClinico(Base):
             name="chk_documentos_tipo",
         ),
         CheckConstraint(
-            "length(sha256_hash) = 64",
+            "sha256_hash IS NULL OR length(sha256_hash) = 64",
             name="chk_documentos_sha256_len",
         ),
         Index("idx_documentos_atendimento", "atendimento_id"),
@@ -90,11 +90,14 @@ class DocumentoClinico(Base):
         String(32), nullable=False
     )
     chave_s3: Mapped[str] = mapped_column(String(512), nullable=False)
-    sha256_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    assinado_em: Mapped[datetime] = mapped_column(
+    sha256_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    assinado_em: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        nullable=False,
+        nullable=True,
+    )
+    finalizado_em: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     itens: Mapped[list[DocumentoItem]] = relationship(
@@ -112,9 +115,10 @@ class DocumentoClinico(Base):
         medico_id: UUID,
         tipo_documento: TipoDocumentoClinico | str,
         chave_s3: str,
-        sha256_hash: str,
+        sha256_hash: str | None = None,
         *,
         assinado_em: datetime | None = None,
+        finalizado_em: datetime | None = None,
         id: UUID | None = None,
     ) -> None:
         if organizacao_id <= 0:
@@ -128,12 +132,15 @@ class DocumentoClinico(Base):
                 f"chave_s3 inválida: {chave_s3!r}; esperado caminho não vazio."
             )
 
-        clean_hash = sha256_hash.strip().lower() if sha256_hash else ""
-        if len(clean_hash) != 64 or not _SHA256_HEX_REGEX.match(clean_hash):
-            raise ConsultaInvalidaError(
-                f"Hash SHA-256 inválido: '{sha256_hash}'. "
-                "Deve conter 64 caracteres hexadecimais (regex: ^[a-fA-F0-9]{64}$)."
-            )
+        clean_hash: str | None = None
+        if sha256_hash is not None and sha256_hash.strip():
+            ch = sha256_hash.strip().lower()
+            if len(ch) != 64 or not _SHA256_HEX_REGEX.match(ch):
+                raise ConsultaInvalidaError(
+                    f"Hash SHA-256 inválido: '{sha256_hash}'. "
+                    "Deve conter 64 caracteres hexadecimais (regex: ^[a-fA-F0-9]{64}$)."
+                )
+            clean_hash = ch
 
         try:
             tipo_enum = (
@@ -155,9 +162,9 @@ class DocumentoClinico(Base):
             tipo_documento=tipo_enum,
             chave_s3=chave_s3.strip(),
             sha256_hash=clean_hash,
-            assinado_em=assinado_em or datetime.now(UTC),
+            assinado_em=assinado_em,
+            finalizado_em=finalizado_em,
         )
-        self._is_finalizado: bool = False
 
     @property
     def is_finalizado(self) -> bool:
@@ -166,15 +173,37 @@ class DocumentoClinico(Base):
         Garante imutabilidade do prontuário eletrônico conforme CFM nº 1.821/2007.
         Regras: docs/explanation/domains/consultation-domain.md.
         """
-        return getattr(self, "_is_finalizado", False)
+        return self.finalizado_em is not None
 
-    def marcar_finalizado(self) -> None:
+    def marcar_finalizado(self, agora: datetime | None = None) -> None:
         """Bloqueia o documento clínico contra alterações ou exclusões posteriores.
 
         Assegura integridade forense sob CFM nº 1.821/2007 e CFM nº 2.314/2022.
         Regras: docs/explanation/domains/consultation-domain.md.
         """
-        self._is_finalizado = True
+        if self.finalizado_em is None:
+            self.finalizado_em = agora or datetime.now(UTC)
+
+    def registrar_assinatura(
+        self, sha256_hash: str, assinado_em: datetime | None = None
+    ) -> None:
+        """Registra assinatura digital ICP-Brasil e hash (MP 2.200-2/2001).
+
+        Regras: docs/explanation/domains/consultation-domain.md.
+        """
+        if self.is_finalizado:
+            raise ConsultaFinalizadaError(
+                f"Documento clínico '{self.id}' já finalizado; "
+                "não pode receber nova assinatura."
+            )
+        clean_hash = sha256_hash.strip().lower()
+        if len(clean_hash) != 64 or not _SHA256_HEX_REGEX.match(clean_hash):
+            raise ConsultaInvalidaError(
+                f"Hash SHA-256 inválido: '{sha256_hash}'. "
+                "Deve conter 64 caracteres hexadecimais (regex: ^[a-fA-F0-9]{64}$)."
+            )
+        self.sha256_hash = clean_hash
+        self.assinado_em = assinado_em or datetime.now(UTC)
 
     def adicionar_item(self, item: DocumentoItem) -> None:
         """Adiciona item prescrito validando substâncias restritas da Portaria 344/98.
@@ -182,6 +211,12 @@ class DocumentoClinico(Base):
         Bloqueia substâncias das Listas A/B e marca controle especial C1.
         Regras: Portaria 344/98 e docs/explanation/domains/consultation-domain.md.
         """
+        if self.is_finalizado:
+            raise ConsultaFinalizadaError(
+                f"Não é permitido adicionar itens ao documento clínico '{self.id}' "
+                "de consulta finalizada (is_finalizado=True)."
+            )
+
         if item.organizacao_id != self.organizacao_id:
             raise ConsultaInvalidaError(
                 "Violação de isolamento multi-tenant: organizacao_id do item "

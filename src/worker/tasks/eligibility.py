@@ -44,6 +44,7 @@ async def _promover_atendimento_apto(
         adm_result = await fila_service.admitir_atendimento_apto(
             organizacao_id=organizacao_id,
             atendimento_id=atend_uuid,
+            codigo_autorizacao=codigo_autorizacao,
         )
     except NotFoundError:
         logger.warning(

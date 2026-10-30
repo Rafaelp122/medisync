@@ -5,11 +5,9 @@ from uuid import uuid4
 
 import pytest
 from src.core.errors import ValidationError
-from src.modules.telemetry.application.dtos import (
-    ConfigPlantaoCommand,
-    ConfigPlantaoResultDTO,
-)
+from src.modules.telemetry.application.dtos import ConfigPlantaoCommand
 from src.modules.telemetry.domain.models import ConfiguracaoPlantao, ModoOperacao
+from src.modules.telemetry.presentation.schemas import ConfigPlantaoResponse
 
 
 def test_configuracao_plantao_default_initialization() -> None:
@@ -195,9 +193,9 @@ def test_capacidade_atendimento_hora() -> None:
     assert config.capacidade_atendimento_hora() == 12.0
 
 
-def test_result_dto_from_entity() -> None:
+def test_response_schema_from_entity() -> None:
     config = ConfiguracaoPlantao(organizacao_id=42)
-    dto = ConfigPlantaoResultDTO.from_entity(config)
+    dto = ConfigPlantaoResponse.model_validate(config)
 
     assert dto.id == config.id
     assert dto.organizacao_id == 42

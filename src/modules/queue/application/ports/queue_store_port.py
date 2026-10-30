@@ -43,6 +43,7 @@ class QueueStorePort(Protocol):
         self,
         organizacao_id: int,
         atendimento_id: UUID,
+        codigo_autorizacao: str | None = None,
     ) -> AdmissaoAptoResult:
         """Promote attendance to APTO_PARA_CHAMADA in DB and ingest into Valkey queue.
 

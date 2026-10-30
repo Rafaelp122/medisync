@@ -225,6 +225,7 @@ def test_criar_documento_clinico_e_itens_sucesso() -> None:
     )
     assert doc.id == doc_id
     assert doc.tipo_documento == TipoDocumentoClinico.RECEITA_SIMPLES
+    assert doc.sha256_hash is not None
     assert doc.sha256_hash.islower()
     assert len(doc.sha256_hash) == 64
     assert doc.is_finalizado is False
@@ -481,3 +482,97 @@ def test_before_delete_listeners_bloqueiam_quando_finalizado() -> None:
     doc.marcar_finalizado()
     with pytest.raises(ConsultaFinalizadaError, match="finalizada"):
         impedir_exclusao_documento_finalizado(None, None, doc)
+
+
+def test_documento_clinico_rascunho_e_registro_assinatura() -> None:
+    from src.modules.consultation.domain.models import (
+        DocumentoClinico,
+        DocumentoItem,
+        TipoDocumentoClinico,
+    )
+
+    doc = DocumentoClinico(
+        organizacao_id=1,
+        atendimento_id=uuid7(),
+        medico_id=uuid7(),
+        tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
+        chave_s3="s3://bucket/rascunho.pdf",
+        sha256_hash=None,
+    )
+    assert doc.sha256_hash is None
+    assert doc.assinado_em is None
+    assert doc.finalizado_em is None
+    assert doc.is_finalizado is False
+
+    # Assinatura válida
+    valid_hash = "a" * 64
+    doc.registrar_assinatura(valid_hash)
+    assert doc.sha256_hash == valid_hash
+    assert doc.assinado_em is not None
+
+    # Hash inválido
+    with pytest.raises(ConsultaInvalidaError, match="Hash SHA-256 inválido"):
+        doc.registrar_assinatura("curto_invalido")
+
+    # Marcar finalizado congela o documento
+    doc.marcar_finalizado()
+    assert doc.is_finalizado is True
+    assert doc.finalizado_em is not None
+
+    # Bloqueia nova assinatura
+    with pytest.raises(ConsultaFinalizadaError, match="já finalizado"):
+        doc.registrar_assinatura("b" * 64)
+
+    # Bloqueia adição de novos itens
+    item = DocumentoItem(
+        organizacao_id=1,
+        documento_id=doc.id,
+        medicamento="Paracetamol 750mg",
+        dosagem="1 cp",
+        posologia="1 cp de 8 em 8h",
+    )
+    with pytest.raises(ConsultaFinalizadaError, match="consulta finalizada"):
+        doc.adicionar_item(item)
+
+
+def test_evolucao_clinica_atualizar_soap_sucesso_e_validacoes() -> None:
+    from src.modules.consultation.domain.models import EvolucaoClinica
+
+    evolucao = EvolucaoClinica(
+        organizacao_id=1,
+        atendimento_id=uuid7(),
+        medico_id=uuid7(),
+        anamnese="Anamnese inicial",
+        conduta="Conduta inicial",
+    )
+    ts_original = evolucao.registrado_em
+
+    evolucao.atualizar_soap(
+        anamnese="Anamnese atualizada",
+        conduta="Conduta atualizada",
+        exame_fisico_virtual="Sinais vitais normais",
+        cid10_principal="j02.9",
+    )
+    assert evolucao.anamnese == "Anamnese atualizada"
+    assert evolucao.conduta == "Conduta atualizada"
+    assert evolucao.exame_fisico_virtual == "Sinais vitais normais"
+    assert evolucao.cid10_principal == "J02.9"
+    assert evolucao.registrado_em >= ts_original
+
+    # Validações de entrada em atualizar_soap
+    with pytest.raises(ConsultaInvalidaError, match="Anamnese clínica é obrigatória"):
+        evolucao.atualizar_soap(anamnese="   ", conduta="Ok")
+
+    with pytest.raises(ConsultaInvalidaError, match="Conduta clínica é obrigatória"):
+        evolucao.atualizar_soap(anamnese="Ok", conduta="   ")
+
+    with pytest.raises(ConsultaInvalidaError, match="Código CID-10 inválido"):
+        evolucao.atualizar_soap(anamnese="Ok", conduta="Ok", cid10_principal="999")
+
+    # Bloqueia atualização após finalização
+    evolucao.marcar_finalizado()
+    assert evolucao.is_finalizado is True
+    assert evolucao.finalizado_em is not None
+
+    with pytest.raises(ConsultaFinalizadaError, match="consulta finalizada"):
+        evolucao.atualizar_soap(anamnese="Nova", conduta="Nova")

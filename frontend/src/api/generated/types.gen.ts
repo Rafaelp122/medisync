@@ -595,11 +595,15 @@ export type DocumentoClinicoResponse = {
     /**
      * Sha256 Hash
      */
-    sha256_hash: string;
+    sha256_hash?: string | null;
     /**
      * Assinado Em
      */
-    assinado_em: string;
+    assinado_em?: string | null;
+    /**
+     * Finalizado Em
+     */
+    finalizado_em?: string | null;
     /**
      * Is Finalizado
      */
@@ -690,6 +694,10 @@ export type EvolucaoSoapResponse = {
      * Registrado Em
      */
     registrado_em: string;
+    /**
+     * Finalizado Em
+     */
+    finalizado_em?: string | null;
     /**
      * Is Finalizado
      */
@@ -1743,11 +1751,11 @@ export type ValidarDocumentoResponse = {
     /**
      * Sha256 Hash
      */
-    sha256_hash: string;
+    sha256_hash?: string | null;
     /**
      * Assinado Em
      */
-    assinado_em: string | null;
+    assinado_em?: string | null;
     /**
      * Emissor Medico Nome
      */

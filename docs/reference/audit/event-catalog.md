@@ -39,12 +39,12 @@ O schema da trilha de auditoria é normalizado conforme o modelo `AuditEvent`:
 - `organizacao_id`: Inteiro (tenant multitenant sob RLS).
 - `tipo_evento`: String maiúscula conforme tabela canônica acima.
 - `ator_tipo`: `PACIENTE`, `PROFISSIONAL` ou `SISTEMA`.
-- `ator_papel`: Papel funcional do ator (`PACIENTE`, `MEDICO`, `ENFERMEIRO`, `SISTEMA`, `RECEPCIONISTA`).
+- `ator_papel`: Papel funcional do ator (`ADMIN_GLOBAL`, `PACIENTE`, `MEDICO`, `GESTOR_UNIDADE`, `FATURAMENTO`, `WORKER_ARQ`, `SISTEMA`).
 - `ator_id`: UUIDv7 do usuário ou profissional responsável.
-- `atendimento_id`: UUIDv7 correlacionando todos os eventos do ciclo de vida clínico.
+- `atendimento_id`: UUIDv7 correlacionando eventos clínicos do atendimento (ou `null` para eventos transversais/administrativos).
 - `estado_anterior` / `novo_estado`: Transições de status da máquina de estados clínica.
 - `tcle_hash`: Hash SHA-256 (64 hex) do Termo de Consentimento Livre e Esclarecido.
-- `payload`: JSONB contendo metadados específicos do evento (ex.: `triagem_id`, `cid10`, `sha256_hash`, `chave_s3`).
+- `payload`: JSONB contendo metadados específicos do evento (ex.: `triagem_id`, `cid10`, `sha256_hash`, `chave_s3`, `codigo_autorizacao`).
 - `ip_origem`: Endereço IP do solicitante para rastreabilidade de acesso forense.
 
 ## Onde no código

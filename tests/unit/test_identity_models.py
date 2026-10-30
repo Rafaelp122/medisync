@@ -231,3 +231,122 @@ def test_paciente_com_nome_social_succeeds():
     )
     assert paciente.nome_social == "Carla Silva"
     assert paciente.nome_completo == "Carlos Silva"
+
+
+def test_profissional_papel_case_insensitive_and_validation() -> None:
+    # 1. Papel minúsculo normaliza para maiúsculo
+    prof = Profissional(
+        organizacao_id=1,
+        cpf="12345678901",
+        nome_completo="Dr. João",
+        email="joao@hospital.com",
+        papel="medico",
+        crm="123456",
+        crm_uf="sp",
+    )
+    assert prof.papel == "MEDICO"
+    assert prof.crm_uf == "SP"
+
+    # 2. Papel inválido levanta erro com offending value
+    with pytest.raises(
+        ValidationError, match=r"Papel do profissional 'ENFERMEIRO' inválido"
+    ):
+        Profissional(
+            organizacao_id=1,
+            cpf="12345678901",
+            nome_completo="Enf. João",
+            email="joao@hospital.com",
+            papel="ENFERMEIRO",
+        )
+
+    # 3. Médico com UF inválida (> 2 caracteres)
+    with pytest.raises(ValidationError, match=r"UF do CRM 'SPO' inválida"):
+        Profissional(
+            organizacao_id=1,
+            cpf="12345678901",
+            nome_completo="Dr. João",
+            email="joao@hospital.com",
+            papel="medico",
+            crm="123456",
+            crm_uf="SPO",
+        )
+
+
+def test_paciente_validations_sexo_estado_cep() -> None:
+    # 1. Sexo biológico inválido
+    with pytest.raises(ValidationError, match=r"Sexo biológico 'X' inválido"):
+        Paciente(
+            organizacao_id=1,
+            cpf="12345678901",
+            data_nascimento=date(1990, 1, 1),
+            telefone="11999998888",
+            sexo_biologico="X",
+        )
+
+    # 2. Estado com mais de 2 letras
+    with pytest.raises(ValidationError, match=r"Estado \(UF\) 'SAOPAULO' inválido"):
+        Paciente(
+            organizacao_id=1,
+            cpf="12345678901",
+            data_nascimento=date(1990, 1, 1),
+            telefone="11999998888",
+            estado="SAOPAULO",
+        )
+
+    # 3. CEP com formato incorreto
+    with pytest.raises(ValidationError, match=r"CEP '123' inválido"):
+        Paciente(
+            organizacao_id=1,
+            cpf="12345678901",
+            data_nascimento=date(1990, 1, 1),
+            telefone="11999998888",
+            cep="123",
+        )
+
+
+def test_paciente_completar_fase_2_metodo_rico() -> None:
+    paciente = Paciente(
+        organizacao_id=1,
+        cpf="12345678901",
+        data_nascimento=date(1990, 1, 1),
+        telefone="11999998888",
+    )
+    assert paciente.nome_mae is None
+
+    # Sucesso com deduplicação de alergias
+    paciente.completar_fase_2(
+        nome_mae="Maria Souza",
+        sexo_biologico="f",
+        cep="01310-100",
+        logradouro="Av Paulista",
+        numero="1000",
+        bairro="Bela Vista",
+        cidade="São Paulo",
+        estado="sp",
+        nome_social="Mariana",
+        alergias=["Dipirona", "Penicilina", "dipirona"],
+    )
+
+    assert paciente.nome_mae == "Maria Souza"
+    assert paciente.sexo_biologico == "F"
+    assert paciente.cep == "01310100"
+    assert paciente.logradouro == "Av Paulista"
+    assert paciente.numero == "1000"
+    assert paciente.bairro == "Bela Vista"
+    assert paciente.cidade == "São Paulo"
+    assert paciente.estado == "SP"
+    assert paciente.nome_social == "Mariana"
+    assert paciente.alergias == ["Dipirona", "Penicilina", "dipirona"]
+
+    # Validação de nome_mae vazio
+    with pytest.raises(ValidationError, match=r"Nome da mãe '' não pode ser vazio"):
+        paciente.completar_fase_2(
+            nome_mae="",
+            sexo_biologico="F",
+            cep="01310100",
+            logradouro="Rua",
+            numero="1",
+            bairro="Bairro",
+            cidade="Cidade",
+            estado="SP",
+        )

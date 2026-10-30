@@ -163,7 +163,7 @@ class DocumentoValidacaoResult:
     documento_id: UUID
     tipo_documento: str
     status_documento: str
-    sha256_hash: str
+    sha256_hash: str | None
     assinado_em: datetime | None
     emissor_medico_nome: str
     emissor_medico_crm: str

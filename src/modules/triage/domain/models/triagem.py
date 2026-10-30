@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.database import Base
 from src.core.uuid7 import uuid7
+from src.modules.triage.domain.classification import classificar_risco_clinico
 from src.modules.triage.domain.exceptions import TriagemInvalidaError
 
 
@@ -36,8 +37,11 @@ class Triagem(Base):
             "prioridade_calculada BETWEEN 1 AND 5",
             name="chk_triagem_prioridade",
         ),
+        CheckConstraint(
+            "escala_dor BETWEEN 0 AND 10",
+            name="chk_triagem_escala_dor",
+        ),
         Index("idx_triagens_org", "organizacao_id"),
-        Index("idx_triagens_atendimento", "atendimento_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -56,6 +60,7 @@ class Triagem(Base):
     sintomas_alerta: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list
     )
+    escala_dor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     alerta_samu_disparado: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
@@ -73,6 +78,7 @@ class Triagem(Base):
         queixa_principal: str,
         prioridade_calculada: int,
         *,
+        escala_dor: int = 0,
         sintomas_alerta: list[str] | None = None,
         alerta_samu_disparado: bool = False,
         avaliado_em: datetime | None = None,
@@ -97,9 +103,25 @@ class Triagem(Base):
                 "esperado valor entre 1 e 5."
             )
 
+        escala_dor_int = int(escala_dor)
+        if escala_dor_int < 0 or escala_dor_int > 10:
+            raise TriagemInvalidaError(
+                f"Escala de dor '{escala_dor_int}' inválida; "
+                "esperado valor entre 0 e 10."
+            )
+
         clean_sintomas = [
             s.strip().lower() for s in (sintomas_alerta or []) if s and s.strip()
         ]
+
+        prioridade_esperada = classificar_risco_clinico(
+            queixa_principal.strip(), clean_sintomas, escala_dor_int
+        )
+        if prioridade_int != prioridade_esperada:
+            raise TriagemInvalidaError(
+                f"Prioridade calculada '{prioridade_int}' incoerente com a queixa "
+                f"e sintomas informados; esperado '{prioridade_esperada}'."
+            )
 
         super().__init__(
             id=id or uuid7(),
@@ -107,6 +129,7 @@ class Triagem(Base):
             atendimento_id=atendimento_id,
             queixa_principal=queixa_principal.strip(),
             sintomas_alerta=clean_sintomas,
+            escala_dor=escala_dor_int,
             alerta_samu_disparado=alerta_samu_disparado,
             prioridade_calculada=prioridade_int,
             avaliado_em=avaliado_em or datetime.now(UTC),

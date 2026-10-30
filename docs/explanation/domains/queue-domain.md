@@ -37,7 +37,7 @@ Admissão avalia em ordem fixa: sem médicos ativos, cota diária atingida, carg
 
 ## 3. Máquina de estados
 
-Sete estados em `StatusAtendimento`, três terminais em `TERMINAL_STATUSES` (CONCLUIDO, PACIENTE_AUSENTE, CANCELADO_PACIENTE). Toda transição passa por `_assegurar_nao_finalizado` primeiro.
+Sete estados em `StatusAtendimento` (`src/modules/queue/domain/enums.py`), três terminais em `TERMINAL_STATUSES` (CONCLUIDO, PACIENTE_AUSENTE, CANCELADO_PACIENTE). Toda transição passa por `_assegurar_nao_finalizado` primeiro.
 
 ```mermaid
 stateDiagram-v2

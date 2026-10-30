@@ -41,6 +41,7 @@ class AtorTipo(StrEnum):
 class AtorPapel(StrEnum):
     """Specific role or capability exercised during the event."""
 
+    ADMIN_GLOBAL = "ADMIN_GLOBAL"
     PACIENTE = "PACIENTE"
     MEDICO = "MEDICO"
     GESTOR_UNIDADE = "GESTOR_UNIDADE"
@@ -65,6 +66,12 @@ class AuditEvent(Base):
         ),
         Index("idx_audit_atendimento", "atendimento_id", "registrado_em"),
         Index("idx_audit_ator", "organizacao_id", "ator_tipo", "ator_id"),
+        Index(
+            "idx_audit_org_atendimento",
+            "organizacao_id",
+            "atendimento_id",
+            "registrado_em",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -73,10 +80,10 @@ class AuditEvent(Base):
     organizacao_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
     )
-    atendimento_id: Mapped[UUID] = mapped_column(
+    atendimento_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("atendimentos.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
     )
     ator_tipo: Mapped[str] = mapped_column(String(20), nullable=False)
     ator_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
@@ -96,10 +103,10 @@ class AuditEvent(Base):
     def __init__(
         self,
         organizacao_id: int,
-        atendimento_id: UUID,
-        ator_tipo: AtorTipo | str,
-        ator_papel: AtorPapel | str,
-        tipo_evento: str,
+        atendimento_id: UUID | None = None,
+        ator_tipo: AtorTipo | str = AtorTipo.SISTEMA,
+        ator_papel: AtorPapel | str = AtorPapel.SISTEMA,
+        tipo_evento: str = "",
         *,
         ator_id: UUID | None = None,
         estado_anterior: str | None = None,
@@ -129,7 +136,10 @@ class AuditEvent(Base):
                 else AtorTipo(str(ator_tipo).strip().upper())
             )
         except ValueError as err:
-            raise AuditoriaInvalidaError(f"ator_tipo inválido: '{ator_tipo}'.") from err
+            raise AuditoriaInvalidaError(
+                f"ator_tipo inválido: '{ator_tipo}'; "
+                f"esperados: {[e.value for e in AtorTipo]}."
+            ) from err
 
         try:
             papel_enum = (
@@ -139,7 +149,8 @@ class AuditEvent(Base):
             )
         except ValueError as err:
             raise AuditoriaInvalidaError(
-                f"ator_papel inválido: '{ator_papel}'."
+                f"ator_papel inválido: '{ator_papel}'; "
+                f"esperados: {[e.value for e in AtorPapel]}."
             ) from err
 
         # Atores humanos (PROFISSIONAL, PACIENTE) obrigatoriamente exigem ator_id
