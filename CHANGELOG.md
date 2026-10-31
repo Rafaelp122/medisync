@@ -1,3 +1,13 @@
+## v0.8.0 (2026-10-31)
+
+### Feat
+
+- **compliance**: hardening forense, integridade clinica e modelos ricos (#107, #108, #109, #110)
+
+### Fix
+
+- **review**: sanear metodos mortos de atendimento e padronizar fakes em testes (#107, #108, #109, #110)
+
 ## v0.7.0 (2026-10-26)
 
 ### Feat
