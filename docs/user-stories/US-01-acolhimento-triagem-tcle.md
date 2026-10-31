@@ -42,6 +42,18 @@
 - **Quando** submeto a requisição,
 - **Então** o sistema rejeita a admissão com HTTP 422 e mensagem explicativa sobre a obrigatoriedade legal do consentimento (LGPD Art. 11 / CFM 2.314).
 
+### Cenário 4: Persistência local da sessão e proteção contra abandono (Issue #113)
+- **Dado que** concluí com sucesso a triagem e recebi o identificador do atendimento e a credencial provisória de acesso,
+- **Quando** recarrego a página acidentalmente (F5) ou fecho temporariamente a aba do navegador,
+- **Então** o sistema recupera atomicamente a credencial e o estado de admissão do storage local do navegador (`sessionStorage`),
+- **E** restaura a visualização da fila ou confirmação de acolhimento sem obrigar a paciente a reiniciar o formulário clínico do zero.
+
+### Cenário 5: Proteção de Privacidade e Anti-Enumeração de Pacientes (LGPD Art. 11)
+- **Dado que** inicio o acolhimento emergencial informando CPF e telefone celular,
+- **Quando** o sistema processa os dados de identificação,
+- **Então** a interface pública nunca revela se o CPF/telefone já possui prontuário prévio na instituição (prevenindo *User Enumeration* de dados sensíveis de saúde),
+- **E** o backend realiza a vinculação civil do prontuário silenciosamente sem bloquear nem desacelerar o ingresso na fila de urgência.
+
 ---
 
 ## 3. Contrato de API

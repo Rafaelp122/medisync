@@ -37,6 +37,13 @@
 - **Quando** qualquer usuário tenta submeter nova alteração clínica no SOAP desse atendimento encerrado,
 - **Então** o sistema bloqueia a mutação (HTTP 409 Conflict ou 422 Unprocessable Entity), garantindo a imutabilidade do prontuário médico.
 
+### Cenário 4: Gate Mandatório de Conferência de Identidade Visual e Documento Oficial (CFM nº 2.314/2022)
+- **Dado que** o médico plantonista está em videoconferência ativa com a paciente,
+- **Quando** realiza a abertura da teleconsulta,
+- **Então** o médico deve solicitar a apresentação de documento oficial com foto (RG/CNH/CNS) na câmera e registrar no PEP a validação de identidade (`identidade_verificada: true`, `tipo_documento_apresentado: "RG"` ou justificativa formal em caso de impossibilidade/urgência extrema),
+- **E** a interface do prontuário bloqueia preventivamente o comando de finalização e a assinatura de prescrições enquanto a identidade não for confirmada,
+- **E** a confirmação é registrada com carimbo de tempo oficial na evolução clínica do atendimento (ADR-007).
+
 ---
 
 ## 3. Contrato de API
@@ -49,7 +56,10 @@
     "anamnese": "Paciente refere dor de garganta, febre aferida em 38.5C e tosse seca.",
     "exame_fisico_virtual": "Orofaringe hiperemiada com exsudato purulento amigdaliano.",
     "cid10_principal": "J03.0",
-    "conduta": "Prescrito Amoxicilina 500mg por 7 dias e repouso."
+    "conduta": "Prescrito Amoxicilina 500mg por 7 dias e repouso.",
+    "identidade_verificada": true,
+    "tipo_documento_verificado": "RG",
+    "justificativa_excecao_identidade": null
   }
   ```
 * **Resposta Esperada (`200 OK`):** Retorna o objeto da evolução clínica persistida.
@@ -58,8 +68,8 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Modelo:** Entidade `EvolucaoClinica` com campos SOAP, CID-10 e flags de finalização (`src/modules/consultation/domain/models/evolucao_clinica.py`).
-- [x] **Imutabilidade:** Guardas de finalização bloqueiam alterações pós-fechamento (`PEPService.salvar_soap()`).
+- [x] **Modelo:** Entidade `EvolucaoClinica` com campos SOAP, CID-10, campos de conferência de identidade e flags de finalização (`src/modules/consultation/domain/models/evolucao_clinica.py`).
+- [x] **Imutabilidade e Salvaguarda:** Guardas de finalização bloqueiam alterações pós-fechamento e exigem verificação de identidade antes da emissão de prescrição digital (`PEPService.salvar_soap()`).
 - [x] **Apresentação:** Router fino `consultation_router.py` integrado em `/api/v1/consultations`.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_pep_soap_service.py`

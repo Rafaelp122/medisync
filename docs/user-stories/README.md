@@ -47,6 +47,8 @@ O catálogo é estruturado entre **Jornadas Assistenciais e Operacionais Primár
 | **US-11** | [`US-11-liquidacao-fechamento-contabil.md`](./US-11-liquidacao-fechamento-contabil.md) | RF-08 | RN-NEG-01 | Patrícia Mendes | 🔴 **Não Conforme** *(Issue #78: ausência de liquidação e BPA/TISS)* |
 | **US-12** | [`US-12-parametrizacao-politicas-plantao.md`](./US-12-parametrizacao-politicas-plantao.md) | RF-09 | RN05 | Carlos Drumond | 🟢 **Conforme** |
 | **US-13** | [`US-13-telemetria-painel-operacional.md`](./US-13-telemetria-painel-operacional.md) | RF-10 | RNF-10, SMART 1-5 | Carlos Drumond / Dr. Eduardo Rocha | 🟢 **Conforme** *(Resoluções NC-TEL-01, NC-TEL-02 e NC-SEC-01 na Issue #87)* |
+| **US-14** | [`US-14-biometria-passkeys-webauthn.md`](./US-14-biometria-passkeys-webauthn.md) | RF-01, RF-07 | LGPD Art. 11, OWASP | Juliana Silva | 🔴 **Pendente (Backlog / Issue #115)** |
+| **US-15** | [`US-15-prova-de-vida-facial-liveness.md`](./US-15-prova-de-vida-facial-liveness.md) | RF-07 | Portaria 344/98, CFM 2.314 | Dr. Eduardo / Juliana | 🔴 **Pendente (Backlog / Issue #116)** |
 
 ### 3.2 Políticas e Salvaguardas Transversais de Regra de Negócio
 
