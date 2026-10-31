@@ -81,8 +81,28 @@
 - [x] **Desacoplamento Modular:** Comunicação via porta abstrata `TriagePort` injetada no composition root de `queue` (`src/modules/queue/application/ports/triage_port.py`).
 - [x] **Remoção Atômica:** Atendimento Nível 1 é expurgado atômica e deterministicamente do conjunto de aptos no Valkey (`FilaService.processar_piora_clinica()`).
 - [x] **Apresentação:** Rota REST implementada em `src/modules/queue/presentation/routers/fila_router.py` com `PioraClinicaResponse` harmonizado com campos canônicos (ADR-001/ADR-008).
+- [x] **Frontend (Salvaguarda SAMU 192):** Componente composto `frontend/src/features/onboarding/components/samu-emergency-modal.tsx` com `role="alertdialog"`, bloqueio de dismiss em backdrop/esc e discagem rápida `tel:192`.
+- [x] **Detecção de Red Flags:** Chips de sinais clínicos críticos em `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx:SINAIS_ALARME_CRITICOS` e interceptação de HTTP 422 `EMERGENCIA_CRITICA_SAMU_192`.
 - [x] **Testes Automatizados:**
-  - `tests/unit/test_queue_schemas.py`
-  - `tests/unit/test_fila_router.py`
-  - `tests/unit/test_admissao_service.py`
-  - `tests/integration/test_admissao_integrada_flow.py`
+  - Backend: `tests/unit/test_queue_schemas.py`, `tests/unit/test_fila_router.py`, `tests/unit/test_admissao_service.py`, `tests/integration/test_admissao_integrada_flow.py`
+  - Frontend Modal: `frontend/src/features/onboarding/tests/samu-emergency-modal.test.tsx` (`IT-SAMU-01`, `IT-SAMU-02`, `IT-SAMU-03`)
+  - Frontend Telas: `frontend/src/features/onboarding/tests/acolhimento-triagem-form.test.tsx` (`IT-ONB-03`, `IT-ONB-04`)
+  - E2E / A11y: `frontend/e2e/onboarding-acolhimento.spec.ts` (`E2E-ONB-02`, `E2E-ONB-03`)
+
+---
+
+## 5. Critérios de Interface & Experiência (UI/UX, A11y & Troféu de Testes - ADR-011)
+
+### 5.1 Salvaguarda Clínica SAMU 192 (RN04)
+- **Bloqueio Crítico (`alertdialog`):** Diálogo modal com `role="alertdialog"`, impossibilitando fechamento acidental via clique no backdrop ou tecla Escape.
+- **Acionamento Imediato:** Botão de destaque com link telefônico nativo (`tel:192`) para chamada imediata de socorro pré-hospitalar móvel.
+- **Duplo Gatilho de Segurança:**
+  1. *Preventivo no Cliente:* Seleção direta de sinais de alarme de risco iminente de morte (dor precordial típica, perda de consciência, anafilaxia, etc.).
+  2. *Reativo do Backend:* Tratamento unificado do erro RFC 7807 com código `EMERGENCIA_CRITICA_SAMU_192` retornado na admissão ou reclassificação.
+
+### 5.2 Troféu de Testes do Frontend
+- **Integração de Componente e Tela (Vitest + RTL):**
+  - `frontend/src/features/onboarding/tests/samu-emergency-modal.test.tsx`: Renderização com `role="alertdialog"`, presença do link `tel:192` e acionamento de callback de saída presencial.
+  - `frontend/src/features/onboarding/tests/acolhimento-triagem-form.test.tsx`: Abertura imediata do modal ao clicar em chip de alerta crítico e ao receber HTTP 422 do backend.
+- **E2E e A11y (Playwright):**
+  - `frontend/e2e/onboarding-acolhimento.spec.ts`: Testes ponta a ponta `E2E-ONB-02` (sintoma crítico) e `E2E-ONB-03` (422 backend) validando a salvaguarda em navegador real.
