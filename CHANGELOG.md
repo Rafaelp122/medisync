@@ -1,3 +1,9 @@
+## v0.9.0 (2026-10-31)
+
+### Feat
+
+- **frontend**: fluxo de acolhimento progressivo e salvaguarda SAMU 192 (#29)
+
 ## v0.8.0 (2026-10-31)
 
 ### Feat
