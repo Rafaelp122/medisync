@@ -37,6 +37,18 @@
 - **Quando** tento solicitar novo envio mais de 3 vezes em um intervalo de 15 minutos,
 - **Então** o sistema bloqueia preventivamente o envio com HTTP 429, instruindo aguardar o encerramento da janela de proteção.
 
+### Cenário 4: Resposta Neutra Anti-Enumeração de Pacientes (OWASP ASVS / LGPD Art. 11)
+- **Dado que** uma solicitação de código OTP é disparada para um número de telefone não cadastrado ou arbitrário,
+- **Quando** a requisição é processada em `POST /api/v1/auth/patient/otp/request`,
+- **Então** o sistema retorna HTTP 200 OK com mensagem padronizada e genérica (*"Se o número informado estiver cadastrado, enviamos um código de verificação"*),
+- **E** NÃO indica para o remetente se o paciente existe ou não na base de dados, prevenindo ataques de enumeração cadastral e violação de sigilo médico.
+
+### Cenário 5: Reconexão de Sessão Interrompida e Escopos Clínicos
+- **Dado que** a paciente teve a sessão desconectada ou acessa a plataforma por um novo navegador,
+- **Quando** ela valida o código OTP com sucesso em `POST /api/v1/auth/patient/otp/verify`,
+- **Então** o sistema retorna um Bearer JWT contendo o papel `PACIENTE` e as permissões `patient:queue_track` e `patient:doc_view`,
+- **E** o frontend persiste a credencial no storage local do navegador, restabelecendo o acompanhamento da fila e o acesso a documentos clínicos.
+
 ---
 
 ## 3. Contrato de API

@@ -32,10 +32,10 @@ test.describe("Autenticação OTP de Paciente (E2E)", () => {
   });
 
   test("E2E-01: Jornada Completa do Paciente com Login OTP", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?mode=otp");
 
     // Verify title and prompt
-    await expect(page.getByRole("heading", { name: /medisync express/i })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: /medisync express/i })).toBeVisible();
 
     // Fill phone number
     const phoneInput = page.getByLabel(/telefone celular/i);
@@ -65,7 +65,7 @@ test.describe("Autenticação OTP de Paciente (E2E)", () => {
   });
 
   test("E2E-02: Auditoria de Acessibilidade WCAG 2.1 AA", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?mode=otp");
 
     const accessibilityScanResults = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -76,7 +76,7 @@ test.describe("Autenticação OTP de Paciente (E2E)", () => {
 
   test("E2E-03: Respeito estrito a prefers-reduced-motion", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/");
+    await page.goto("/?mode=otp");
 
     const button = page.getByRole("button", { name: /receber código/i });
     const duration = await button.evaluate((el) => {
