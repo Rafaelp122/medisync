@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     String,
     Text,
+    UniqueConstraint,
     event,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -39,6 +40,7 @@ class EvolucaoClinica(Base):
     __table_args__ = (
         Index("idx_evolucoes_atendimento", "atendimento_id"),
         Index("idx_evolucoes_org", "organizacao_id"),
+        UniqueConstraint("atendimento_id", name="uq_evolucoes_clinicas_atendimento_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -139,7 +141,7 @@ class EvolucaoClinica(Base):
         Assegura imutabilidade legal do registro após encerramento (CFM nº 1.821/2007).
         Regras: RN06 e docs/explanation/domains/consultation-domain.md.
         """
-        return self.finalizado_em is not None or getattr(self, "_is_finalizado", False)
+        return self.finalizado_em is not None
 
     def marcar_finalizado(self) -> None:
         """Congela a evolução clínica e registra data/hora final de atendimento.
@@ -149,6 +151,53 @@ class EvolucaoClinica(Base):
         """
         self.finalizado_em = datetime.now(UTC)
         self._is_finalizado = True
+
+    def atualizar_soap(
+        self,
+        *,
+        anamnese: str,
+        conduta: str,
+        exame_fisico_virtual: str | None = None,
+        cid10_principal: str | None = None,
+    ) -> None:
+        """Atualiza a anotação SOAP enquanto a consulta estiver em andamento (RN06).
+
+        Garante integridade clínica sob CFM nº 1.821/2007 e CFM nº 2.314/2022.
+        Regras: RN06 (Ato Médico) e docs/explanation/domains/consultation-domain.md.
+        """
+        if self.is_finalizado:
+            raise ConsultaFinalizadaError(
+                f"Não é permitido atualizar evolução '{self.id}' "
+                "de consulta finalizada (is_finalizado=True)."
+            )
+        if not anamnese or not anamnese.strip():
+            raise ConsultaInvalidaError(
+                f"Anamnese clínica é obrigatória e não pode ser vazia: {anamnese!r}."
+            )
+        if not conduta or not conduta.strip():
+            raise ConsultaInvalidaError(
+                f"Conduta clínica é obrigatória e não pode ser vazia: {conduta!r}."
+            )
+        clean_cid10: str | None = None
+        if cid10_principal is not None and cid10_principal.strip():
+            c = cid10_principal.strip().upper()
+            if not _CID10_REGEX.match(c):
+                raise ConsultaInvalidaError(
+                    f"Código CID-10 inválido: '{cid10_principal}'. "
+                    "Formato esperado: letra maiúscula seguida de 2 dígitos "
+                    "e subcategoria opcional (ex.: J00, J02.9, A09.0)."
+                )
+            clean_cid10 = c
+
+        self.anamnese = anamnese.strip()
+        self.conduta = conduta.strip()
+        self.exame_fisico_virtual = (
+            exame_fisico_virtual.strip()
+            if exame_fisico_virtual and exame_fisico_virtual.strip()
+            else None
+        )
+        self.cid10_principal = clean_cid10
+        self.registrado_em = datetime.now(UTC)
 
     def validar_pode_excluir(self, status_atendimento: str | None = None) -> None:
         """Valida se a exclusão da evolução é legalmente admissível.

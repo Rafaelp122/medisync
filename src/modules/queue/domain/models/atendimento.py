@@ -2,7 +2,6 @@
 
 import re
 from datetime import UTC, datetime
-from enum import IntEnum, StrEnum
 from uuid import UUID
 
 from sqlalchemy import (
@@ -20,40 +19,24 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.core.database import Base
 from src.core.errors import ValidationError
 from src.core.uuid7 import uuid7
+from src.modules.queue.domain.enums import (
+    TERMINAL_STATUSES,
+    PrioridadeClinica,
+    StatusAtendimento,
+)
 from src.modules.queue.domain.exceptions import TransicaoEstadoInvalidaError
 
 _HEX64_REGEX = re.compile(r"^[a-fA-F0-9]{64}$")
 
 
-class StatusAtendimento(StrEnum):
-    """Deterministic states of clinical attendance lifecycle (RN03)."""
-
-    TRIADO_AGUARDANDO_ELEGIBILIDADE = "TRIADO_AGUARDANDO_ELEGIBILIDADE"
-    APTO_PARA_CHAMADA = "APTO_PARA_CHAMADA"
-    CHAMANDO_PACIENTE = "CHAMANDO_PACIENTE"
-    EM_ATENDIMENTO = "EM_ATENDIMENTO"
-    PACIENTE_AUSENTE = "PACIENTE_AUSENTE"
-    CONCLUIDO = "CONCLUIDO"
-    CANCELADO_PACIENTE = "CANCELADO_PACIENTE"
-
-
-class PrioridadeClinica(IntEnum):
-    """Clinical urgency triage levels (RN01 / Acolhimento ACR)."""
-
-    EMERGENCIA = 1  # Vermelho - Risco Iminente
-    MUITO_URGENTE = 2  # Laranja - Alta Gravidade
-    URGENTE = 3  # Amarelo - Moderada Gravidade
-    POUCO_URGENTE = 4  # Verde - Baixa Gravidade
-    NAO_URGENTE = 5  # Azul - Eletivo / Não Urgente
-
-
-TERMINAL_STATUSES = frozenset(
-    {
-        StatusAtendimento.CONCLUIDO,
-        StatusAtendimento.PACIENTE_AUSENTE,
-        StatusAtendimento.CANCELADO_PACIENTE,
-    }
-)
+def _validar_tcle_hash(hash_str: str) -> str:
+    cleaned = hash_str.strip()
+    if not _HEX64_REGEX.match(cleaned):
+        raise ValidationError(
+            f"Hash do TCLE '{hash_str}' inválido: deve conter 64 caracteres "
+            "hexadecimais (SHA-256)."
+        )
+    return cleaned.lower()
 
 
 class Atendimento(Base):
@@ -84,6 +67,8 @@ class Atendimento(Base):
             name="chk_atendimento_prioridade",
         ),
         Index("idx_atendimentos_org_status", "organizacao_id", "status"),
+        Index("idx_atendimentos_org_paciente", "organizacao_id", "paciente_id"),
+        Index("idx_atendimentos_medico", "medico_id"),
         Index(
             "idx_atendimentos_fila",
             "organizacao_id",
@@ -174,7 +159,7 @@ class Atendimento(Base):
 
         clean_tcle: str | None = None
         if tcle_hash is not None:
-            clean_tcle = self._validar_formato_tcle(tcle_hash)
+            clean_tcle = _validar_tcle_hash(tcle_hash)
 
         status_str = str(status)
 
@@ -196,34 +181,6 @@ class Atendimento(Base):
             super_kwargs["atualizado_em"] = atualizado_em
 
         super().__init__(**super_kwargs)
-
-    # -------------------------------------------------------------------------
-    # Regras e Invariantes do TCLE (RN07, LGPD Art. 11)
-    # -------------------------------------------------------------------------
-
-    def registrar_tcle(self, tcle_hash: str) -> None:
-        """Registra o hash do TCLE com imutabilidade forense (RN07, LGPD Art. 11).
-
-        Regras: docs/explanation/domains/queue-domain.md
-        """
-        self._assegurar_nao_finalizado()
-        if self.tcle_hash is not None:
-            raise ValidationError(
-                f"TCLE já registrado ('{self.tcle_hash}') para este atendimento e "
-                f"não pode ser alterado para '{tcle_hash}'."
-            )
-        self.tcle_hash = self._validar_formato_tcle(tcle_hash)
-        self.atualizado_em = datetime.now(UTC)
-
-    @staticmethod
-    def _validar_formato_tcle(hash_str: str) -> str:
-        cleaned = hash_str.strip()
-        if not _HEX64_REGEX.match(cleaned):
-            raise ValidationError(
-                f"Hash do TCLE '{hash_str}' inválido: deve conter 64 caracteres "
-                "hexadecimais (SHA-256)."
-            )
-        return cleaned.lower()
 
     # -------------------------------------------------------------------------
     # Transições da Máquina de Estados Finita (RN03)
@@ -382,21 +339,6 @@ class Atendimento(Base):
             )
         self.prioridade_clinica = prioridade_int
         self.atualizado_em = datetime.now(UTC)
-
-    def calcular_score_fila(self) -> int:
-        """Calcula o score de 64 bits para indexação no ZSET do Valkey (RN01).
-
-        Regras: docs/explanation/domains/queue-domain.md
-        """
-        # lazy import: scoring imports PrioridadeClinica from models (cycle)
-        from src.modules.queue.domain.scoring import calcular_score
-
-        if self.data_entrada_fila is None:
-            raise ValidationError(
-                f"Atendimento '{self.id}' sem data de entrada na fila "
-                "não possui score calculado."
-            )
-        return calcular_score(int(self.prioridade_clinica), self.data_entrada_fila)
 
     def _assegurar_nao_finalizado(self) -> None:
         if self.is_finalizado:

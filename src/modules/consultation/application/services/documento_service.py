@@ -171,9 +171,7 @@ class DocumentoService:
         sha256_hash = (
             command.sha256_hash.strip().lower()
             if command.sha256_hash and command.sha256_hash.strip()
-            else hashlib.sha256(
-                f"{command.atendimento_id}:{chave_s3}:{datetime.now(UTC).isoformat()}".encode()
-            ).hexdigest()
+            else None
         )
 
         doc = DocumentoClinico(
@@ -312,7 +310,7 @@ class DocumentoService:
         payload = DocumentoPDFPayload(
             documento_id=doc.id,
             tipo_documento=doc.tipo_documento,
-            data_emissao=doc.assinado_em,
+            data_emissao=doc.assinado_em or datetime.now(UTC),
             organizacao_nome=org_nome,
             organizacao_cnpj=org_cnpj,
             organizacao_cnes=org_cnes,
@@ -372,8 +370,7 @@ class DocumentoService:
         signed_bytes = await self._signer.assinar_pdf(pdf_bytes, credenciais)
 
         new_hash = hashlib.sha256(signed_bytes).hexdigest()
-        doc.sha256_hash = new_hash
-        doc.assinado_em = datetime.now(UTC)
+        doc.registrar_assinatura(new_hash, datetime.now(UTC))
 
         s3_key = build_signed_document_key(
             doc.organizacao_id, doc.atendimento_id, doc.id
@@ -403,7 +400,7 @@ class DocumentoService:
         return DocumentoAssinadoResult(
             documento_id=doc.id,
             tipo_documento=str(doc.tipo_documento),
-            sha256_hash=doc.sha256_hash,
+            sha256_hash=doc.sha256_hash or new_hash,
             assinado_em=assinado_em,
             tamanho_bytes=len(signed_bytes),
         )

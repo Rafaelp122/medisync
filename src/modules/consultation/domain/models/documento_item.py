@@ -58,6 +58,7 @@ class DocumentoItem(Base):
     documento: Mapped["DocumentoClinico | None"] = relationship(
         "DocumentoClinico",
         back_populates="itens",
+        lazy="raise",
     )
 
     def __init__(

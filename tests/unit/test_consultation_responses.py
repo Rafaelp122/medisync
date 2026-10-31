@@ -17,7 +17,9 @@ from src.modules.consultation.domain.exceptions import (
 )
 from src.modules.consultation.presentation.schemas import (
     AssinarDocumentoResponse,
+    DocumentoClinicoResponse,
     DownloadUrlResponse,
+    EvolucaoSOAPResponse,
     FinalizarConsultaResponse,
     ProntuarioResponse,
     ValidarPrescricaoResponse,
@@ -117,3 +119,44 @@ def test_assinar_response_via_dto() -> None:
     assert resp.tipo_documento == "RECEITA_SIMPLES"
     assert resp.tamanho_bytes == 1234
     assert resp.status == "ASSINADO"
+
+
+def test_documento_clinico_response_draft_serialization() -> None:
+    from src.modules.consultation.domain.models import (
+        DocumentoClinico,
+        TipoDocumentoClinico,
+    )
+
+    doc = DocumentoClinico(
+        organizacao_id=1,
+        atendimento_id=uuid4(),
+        medico_id=uuid4(),
+        tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
+        chave_s3="s3://bucket/test.pdf",
+        sha256_hash=None,
+    )
+    resp = DocumentoClinicoResponse.model_validate(doc)
+    assert resp.id == doc.id
+    assert resp.sha256_hash is None
+    assert resp.assinado_em is None
+    assert resp.finalizado_em is None
+    assert resp.is_finalizado is False
+    assert resp.itens == []
+
+
+def test_evolucao_soap_response_com_finalizado_em() -> None:
+    from src.modules.consultation.domain.models import EvolucaoClinica
+
+    now = datetime.now(UTC)
+    evolucao = EvolucaoClinica(
+        organizacao_id=1,
+        atendimento_id=uuid4(),
+        medico_id=uuid4(),
+        anamnese="Paciente com cefaleia",
+        conduta="Orientado repouso",
+        finalizado_em=now,
+    )
+    resp = EvolucaoSOAPResponse.model_validate(evolucao)
+    assert resp.id == evolucao.id
+    assert resp.finalizado_em == now
+    assert resp.is_finalizado is True

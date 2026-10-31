@@ -2,10 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.modules.telemetry.application.dtos import (
-    ConfigPlantaoCommand,
-    ConfigPlantaoResultDTO,
-)
+from src.modules.telemetry.application.dtos import ConfigPlantaoCommand
 from src.modules.telemetry.application.ports.config_plantao_port import (
     ConfigPlantaoRepositoryPort,
 )
@@ -28,7 +25,7 @@ class ConfigPlantaoService:
         self._cache = cache
         self._session = session
 
-    async def obter_configuracao(self, organizacao_id: int) -> ConfigPlantaoResultDTO:
+    async def obter_configuracao(self, organizacao_id: int) -> ConfiguracaoPlantao:
         """Recupera configuração ativa do plantão ou cria padrões do tenant.
 
         Garante parametrização de SLAs, TMA e limites operacionais.
@@ -40,11 +37,11 @@ class ConfigPlantaoService:
             await self._repo.salvar(config)
             await self._session.commit()
 
-        return ConfigPlantaoResultDTO.from_entity(config)
+        return config
 
     async def atualizar_configuracao(
         self, command: ConfigPlantaoCommand
-    ) -> ConfigPlantaoResultDTO:
+    ) -> ConfiguracaoPlantao:
         """Cria ou atualiza configuração do plantão, persistindo e invalidando cache.
 
         Valida parâmetros de alpha backpressure, TMA e ring tolerance do domínio.
@@ -88,4 +85,4 @@ class ConfigPlantaoService:
         await self._cache.invalidar_painel(command.organizacao_id)
         await self._session.commit()
 
-        return ConfigPlantaoResultDTO.from_entity(config)
+        return config

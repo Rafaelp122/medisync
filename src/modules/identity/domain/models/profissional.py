@@ -71,21 +71,37 @@ class Profissional(Base):
                 "CPF do profissional inválido: deve conter 11 dígitos numéricos."
             )
 
-        if papel == "MEDICO" and (not crm or not crm_uf):
+        papel_clean = papel.strip().upper()
+        papeis_validos = ("ADMIN_GLOBAL", "GESTOR_UNIDADE", "MEDICO", "FATURAMENTO")
+        if papel_clean not in papeis_validos:
             raise ValidationError(
-                "CRM e UF são obrigatórios para profissionais com papel "
-                "MEDICO (CFM 2.314/2022)."
+                f"Papel do profissional '{papel}' inválido; "
+                f"esperados: {sorted(papeis_validos)}."
             )
+
+        clean_crm = crm.strip() if crm else None
+        clean_crm_uf = crm_uf.strip().upper() if crm_uf else None
+
+        if papel_clean == "MEDICO":
+            if not clean_crm or not clean_crm_uf:
+                raise ValidationError(
+                    "CRM e UF são obrigatórios para profissionais com papel "
+                    "MEDICO (CFM 2.314/2022)."
+                )
+            if len(clean_crm_uf) != 2:
+                raise ValidationError(
+                    f"UF do CRM '{crm_uf}' inválida; esperado sigla com 2 caracteres."
+                )
 
         super().__init__(
             id=id or uuid7(),
             organizacao_id=organizacao_id,
             cpf=digits,
-            nome_completo=nome_completo,
+            nome_completo=nome_completo.strip(),
             email=email.strip().lower(),
-            papel=papel,
-            crm=crm.strip() if crm else None,
-            crm_uf=crm_uf.strip().upper() if crm_uf else None,
+            papel=papel_clean,
+            crm=clean_crm,
+            crm_uf=clean_crm_uf,
             ativo=ativo,
         )
 

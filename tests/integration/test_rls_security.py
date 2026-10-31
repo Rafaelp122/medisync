@@ -173,6 +173,7 @@ async def test_tenant_isolation_across_all_ten_tables(
                 organizacao_id=tenant_1_id,
                 atendimento_id=atend1_id,
                 queixa_principal="Cefaleia moderada",
+                sintomas_alerta=["febre"],
                 prioridade_calculada=3,
             )
             evolucao1 = EvolucaoClinica(
@@ -277,6 +278,7 @@ async def test_tenant_isolation_across_all_ten_tables(
                 organizacao_id=tenant_2_id,
                 atendimento_id=atend2_id,
                 queixa_principal="Febre baixa",
+                sintomas_alerta=["tosse"],
                 prioridade_calculada=4,
             )
             evolucao2 = EvolucaoClinica(

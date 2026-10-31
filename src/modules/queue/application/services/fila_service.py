@@ -189,6 +189,7 @@ class FilaService:
             sintomas=command.sintomas,
             prioridade_calculada=triage_eval.prioridade_clinica,
             alerta_samu_disparado=triage_eval.alerta_samu_disparado,
+            escala_dor=command.escala_dor,
         )
 
         if self._audit_trail is not None:
@@ -438,6 +439,7 @@ class FilaService:
         self,
         organizacao_id: int,
         atendimento_id: UUID,
+        codigo_autorizacao: str | None = None,
     ) -> AdmissaoAptoResult:
         """Promote attendance to APTO_PARA_CHAMADA in DB and ingest into queue."""
         atendimento = await self._db_session.get(Atendimento, atendimento_id)
@@ -454,6 +456,9 @@ class FilaService:
             estado_anterior = str(atendimento.status)
             atendimento.promover_para_apto()
             if self._audit_trail is not None:
+                payload: dict[str, object] = {"canal": "ARQ_WORKER"}
+                if codigo_autorizacao is not None:
+                    payload["codigo_autorizacao"] = codigo_autorizacao
                 await self._audit_trail.record_event(
                     organizacao_id=organizacao_id,
                     atendimento_id=atendimento_id,
@@ -464,7 +469,7 @@ class FilaService:
                     estado_anterior=estado_anterior,
                     novo_estado=str(atendimento.status),
                     tcle_hash=_safe_tcle_hash(atendimento),
-                    payload={"canal": "ARQ_WORKER"},
+                    payload=payload,
                 )
             await self._db_session.commit()
             await self._db_session.refresh(atendimento)

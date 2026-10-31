@@ -60,11 +60,11 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 ## 5. Peculiaridades
 
 - Mídia nunca passa pelo Python. Backend gera JWT e gerencia sala via Twirp RPC; pacotes WebRTC fluem paciente ↔ SFU, nunca por FastAPI.
-- `TipoDocumentoClinico` fecha o vocabulário. Cinco valores (RECEITA_SIMPLES, RECEITA_ANTIMICROBIANO, RECEITA_CONTROLE_ESPECIAL_C1, ATESTADO_MEDICO, RELATORIO_ENCAMINHAMENTO) espelhados em `CheckConstraint` no banco; fora disso é `ConsultaInvalidaError`.
-- `_is_finalizado` é in-memory, não coluna. Trava vale na sessão; persistência da finalidade vem do status terminal do atendimento, não de flag no banco.
+- `finalizado_em` é coluna persistida com timezone. Presente tanto em `evolucoes_clinicas` quanto em `documentos_clinicos`; a imutabilidade jurídica é garantida no banco e refletida na property `is_finalizado`.
+- Documentos clínicos nascem em rascunho com `sha256_hash` e `assinado_em` nulos, sendo preenchidos atomicamente pelo método rico `registrar_assinatura` apenas após assinatura ICP-Brasil válida.
 - Chave S3 canônica única. `build_signed_document_key` monta `orgs/{org}/consultations/{atendimento}/documents/{documento}.pdf`; prefixo não indica assinatura, fonte da verdade é `SignedCachePort`.
 - Portaria 344/98 no domínio. `validar_substancia_permitida_telemedicina` barra Listas A e B em `DocumentoItem.__init__` e em `adicionar_item`; entorpecente via teleconsulta nem chega ao PDF.
-- UTC sempre, relógio do cliente nunca. `registrado_em` e `assinado_em` usam `datetime.now(UTC)` como default; auditoria RN07 depende desse carimbo.
+- UTC sempre, relógio do cliente nunca. `registrado_em`, `assinado_em` e `finalizado_em` usam `datetime.now(UTC)` como default; auditoria RN07 depende desse carimbo.
 - Erros de domínio tipados. `ConsultaFinalizadaError` para mutação/exclusão pós-trava, `ConsultaInvalidaError` para dado inválido; borda converte em 4xx sem vazar stack.
 
 ## 6. Onde no código

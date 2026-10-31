@@ -152,6 +152,43 @@ async def test_admitir_atendimento_apto_records_elegibilidade_confirmada_audit_e
     )
 
     assert evt["novo_estado"] == StatusAtendimento.APTO_PARA_CHAMADA.value
+    assert evt["payload"]["canal"] == "ARQ_WORKER"
+
+
+@pytest.mark.asyncio
+async def test_admitir_atendimento_apto_records_codigo_autorizacao_in_audit_payload(
+    fake_valkey: FakeValkey,
+    fake_audit_trail: FakeAuditTrail,
+) -> None:
+    org_id = 1
+    atendimento_id = uuid4()
+    paciente_id = uuid4()
+    atendimento = Atendimento(
+        id=atendimento_id,
+        organizacao_id=org_id,
+        paciente_id=paciente_id,
+        status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
+        prioridade_clinica=PrioridadeClinica.URGENTE,
+        tcle_hash="b" * 64,
+    )
+    fake_session = FakeAsyncSession(entities={atendimento_id: atendimento})
+
+    fila_service = FilaService(
+        valkey=cast("Any", fake_valkey),
+        db_session=cast("AsyncSession", fake_session),
+        audit_trail=fake_audit_trail,
+    )
+
+    res = await fila_service.admitir_atendimento_apto(
+        org_id, atendimento_id, codigo_autorizacao="SUS-ISENTO"
+    )
+    assert res.promovido is True
+
+    events = fake_audit_trail.get_events_by_type("ELEGIBILIDADE_CONFIRMADA")
+    assert len(events) == 1
+    evt = events[0]
+    assert evt["payload"]["canal"] == "ARQ_WORKER"
+    assert evt["payload"]["codigo_autorizacao"] == "SUS-ISENTO"
 
 
 @pytest.mark.asyncio

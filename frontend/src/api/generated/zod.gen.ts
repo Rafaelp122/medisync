@@ -208,6 +208,7 @@ export const zEvolucaoSoapResponse = z.object({
     cid10_principal: z.string().nullable(),
     conduta: z.string(),
     registrado_em: z.iso.datetime(),
+    finalizado_em: z.iso.datetime().nullish(),
     is_finalizado: z.boolean()
 });
 
@@ -354,8 +355,9 @@ export const zDocumentoClinicoResponse = z.object({
     medico_id: z.uuid(),
     tipo_documento: z.string(),
     chave_s3: z.string(),
-    sha256_hash: z.string(),
-    assinado_em: z.iso.datetime(),
+    sha256_hash: z.string().nullish(),
+    assinado_em: z.iso.datetime().nullish(),
+    finalizado_em: z.iso.datetime().nullish(),
     is_finalizado: z.boolean(),
     itens: z.array(zItemPrescricaoResponse)
 });
@@ -619,8 +621,8 @@ export const zValidarDocumentoResponse = z.object({
     documento_id: z.uuid(),
     tipo_documento: z.string(),
     status_documento: z.string(),
-    sha256_hash: z.string(),
-    assinado_em: z.iso.datetime().nullable(),
+    sha256_hash: z.string().nullish(),
+    assinado_em: z.iso.datetime().nullish(),
     emissor_medico_nome: z.string(),
     emissor_medico_crm: z.string(),
     emissor_medico_uf: z.string(),

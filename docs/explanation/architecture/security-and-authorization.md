@@ -194,6 +194,9 @@ No endpoint `POST /consultations/{atendimento_id}/livekit/token`:
 | **Notificações de Chamada Médica (WS)** | Não | Não | Sim (seu id) | Não | Não |
 | **Visualizar Documentos Próprios** | Não | Não | Não | Não | Sim (seu id) |
 
+> **Nota de Auditoria (ADR-007 / Issue #108):** Operações administrativas e de configuração executadas por `ADMIN_GLOBAL` são integralmente auditadas na tabela append-only `audit_events` com `ator_papel = 'ADMIN_GLOBAL'`. Para eventos de segurança e alterações de sistema desvinculadas de uma consulta médica específica, a coluna `atendimento_id` é registrada como `null`, mantendo a rastreabilidade sob o índice composto multitenant `(organizacao_id, atendimento_id, registrado_em)`.
+
+
 ---
 
 ## 6. Rastreabilidade de Implementação

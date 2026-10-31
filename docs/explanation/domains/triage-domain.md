@@ -6,7 +6,7 @@
 
 Acolhimento gera `Triagem` 1:1 com atendimento. Função pura classifica, agregado valida, serviço aplica salvaguarda.
 
-Vocabulário ubíquo: `queixa_principal`, `sintomas_alerta`, `prioridade_calculada` (1–5), `alerta_samu_disparado`, `avaliado_em` (UTC).
+Vocabulário ubíquo: `queixa_principal`, `sintomas_alerta`, `escala_dor` (0–10), `prioridade_calculada` (1–5), `alerta_samu_disparado`, `avaliado_em` (UTC).
 
 Entrada via RF-01 (queixa + dor 0–10 + sinais + aceite TCLE). Saída alimenta ordenação da fila sem chamar módulo queue.
 
@@ -18,7 +18,7 @@ Escopo termina na decisão. Fila, chamada e consulta pertencem a outros domínio
 - **RN04 — Nível 1 bloqueia PA Virtual e dispara SAMU 192.** `disparar_alerta_samu` marca flag + `self._notifier` emite instrução 192. [Fonte](../product-specification.md) (RN04)
 - **RN07 — TCLE vinculado por hash, acolhimento ágil <45s.** `calcular_hash_tcle` (SHA-256) amarra termo aceito ao prontuário, append-only UTC. [Fonte](../product-specification.md) (RN07)
 
-Guardiões: `__init__` rejeita `organizacao_id <= 0`, queixa vazia, prioridade fora de 1–5, dor fora de 0–10 (`TriagemInvalidaError`).
+Guardiões: `__init__` rejeita `organizacao_id <= 0`, queixa vazia, prioridade fora de 1–5, dor fora de 0–10 (`TriagemInvalidaError`) e valida rigorosamente a coerência clínica da prioridade contra `classificar_risco_clinico(queixa, sintomas, escala_dor)`.
 
 Sinais Nível 1 vencem tudo: conjunto `SINAIS_ALARME_NIVEL_1` ou palavra-chave na queixa normalizada força retorno 1 antes de avaliar dor.
 

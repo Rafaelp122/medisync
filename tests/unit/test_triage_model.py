@@ -191,6 +191,41 @@ def test_triagem_model_validations() -> None:
             prioridade_calculada=6,
         )
 
+    with pytest.raises(TriagemInvalidaError, match=r"Escala de dor '.*' inválida"):
+        Triagem(
+            organizacao_id=1,
+            atendimento_id=atendimento_id,
+            queixa_principal="Dor leve",
+            prioridade_calculada=4,
+            escala_dor=12,
+        )
+
+    # Coerência clínica: queixa com PCR (nível 1) não pode ter prioridade 5
+    with pytest.raises(
+        TriagemInvalidaError, match=r"incoerente com a queixa e sintomas"
+    ):
+        Triagem(
+            organizacao_id=1,
+            atendimento_id=atendimento_id,
+            queixa_principal="Paciente em parada cardiorrespiratoria",
+            sintomas_alerta=["parada_cardiorrespiratoria"],
+            prioridade_calculada=5,
+            escala_dor=0,
+        )
+
+
+def test_triagem_model_escala_dor_persistence() -> None:
+    atendimento_id = uuid7()
+    triagem = Triagem(
+        organizacao_id=1,
+        atendimento_id=atendimento_id,
+        queixa_principal="Cefaleia intensa",
+        sintomas_alerta=["cefaleia_intensa"],
+        prioridade_calculada=2,
+        escala_dor=8,
+    )
+    assert triagem.escala_dor == 8
+
 
 def test_triagem_disparar_alerta_samu_e_emergencia() -> None:
     atendimento_id = uuid7()

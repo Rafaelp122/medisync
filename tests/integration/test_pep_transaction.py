@@ -217,6 +217,7 @@ async def test_assinar_documento_service_commit_visivel_outra_sessao(
         assert persisted is not None
         assert persisted.chave_s3.startswith(f"orgs/{org_id}/consultations/")
         assert persisted.assinado_em is not None
+        assert persisted.sha256_hash is not None
         assert len(persisted.sha256_hash) == 64
 
 

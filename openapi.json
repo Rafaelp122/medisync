@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MediSync Express",
-    "version": "0.6.0"
+    "version": "0.7.0"
   },
   "paths": {
     "/healthz": {
@@ -2563,13 +2563,39 @@
             "title": "Chave S3"
           },
           "sha256_hash": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Sha256 Hash"
           },
           "assinado_em": {
-            "type": "string",
-            "format": "date-time",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Assinado Em"
+          },
+          "finalizado_em": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalizado Em"
           },
           "is_finalizado": {
             "type": "boolean",
@@ -2592,8 +2618,6 @@
           "medico_id",
           "tipo_documento",
           "chave_s3",
-          "sha256_hash",
-          "assinado_em",
           "is_finalizado",
           "itens"
         ],
@@ -2715,6 +2739,18 @@
             "type": "string",
             "format": "date-time",
             "title": "Registrado Em"
+          },
+          "finalizado_em": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalizado Em"
           },
           "is_finalizado": {
             "type": "boolean",
@@ -4241,7 +4277,14 @@
             "title": "Status Documento"
           },
           "sha256_hash": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Sha256 Hash"
           },
           "assinado_em": {
@@ -4302,8 +4345,6 @@
           "documento_id",
           "tipo_documento",
           "status_documento",
-          "sha256_hash",
-          "assinado_em",
           "emissor_medico_nome",
           "emissor_medico_crm",
           "emissor_medico_uf",

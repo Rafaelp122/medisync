@@ -166,7 +166,6 @@ class DependenteService:
         )
         db.add(vinculo)
         await db.commit()
-        await db.refresh(vinculo)
 
         return DependenteOutputDTO(
             id=vinculo.id,

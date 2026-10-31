@@ -1,6 +1,9 @@
-"""Unit tests for AuditEvent domain model, actor validations, and immutability."""
+from typing import TYPE_CHECKING, cast
 
 import pytest
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.audit.exceptions import (
     AuditoriaImutavelError,
     AuditoriaInvalidaError,
@@ -196,16 +199,16 @@ def test_audit_event_immutability_hooks_raise_error() -> None:
 
 @pytest.mark.asyncio
 async def test_audit_service_record_event_sync_dispatch() -> None:
-    from unittest.mock import MagicMock
-
     from src.core.audit.service import AuditService
 
-    mock_session = MagicMock()
+    from tests.doubles import FakeAsyncSession
+
+    session = FakeAsyncSession()
     atend_id = uuid7()
     med_id = uuid7()
 
     evt = await AuditService.record_event(
-        mock_session,
+        cast("AsyncSession", session),
         organizacao_id=1,
         atendimento_id=atend_id,
         ator_tipo=AtorTipo.PROFISSIONAL,
@@ -219,4 +222,36 @@ async def test_audit_service_record_event_sync_dispatch() -> None:
     assert evt.id is not None
     assert evt.tipo_evento == "CONSULTA_INICIADA"
     assert evt.ator_id == med_id
-    mock_session.add.assert_called_once_with(evt)
+    assert evt in session.added
+
+
+def test_audit_event_admin_global_and_null_atendimento_id() -> None:
+    admin_id = uuid7()
+    evt = AuditEvent(
+        organizacao_id=1,
+        atendimento_id=None,
+        ator_tipo=AtorTipo.PROFISSIONAL,
+        ator_papel=AtorPapel.ADMIN_GLOBAL,
+        tipo_evento="CONFIGURACAO_GERAL_ALTERADA",
+        ator_id=admin_id,
+        payload={"parametro": "valor"},
+    )
+    assert evt.atendimento_id is None
+    assert evt.ator_papel == "ADMIN_GLOBAL"
+    assert evt.ator_id == admin_id
+    assert evt.tipo_evento == "CONFIGURACAO_GERAL_ALTERADA"
+
+
+def test_audit_event_ator_papel_invalido_mensagem_ofensiva_e_esperados() -> None:
+    with pytest.raises(AuditoriaInvalidaError) as exc_info:
+        AuditEvent(
+            organizacao_id=1,
+            atendimento_id=None,
+            ator_tipo=AtorTipo.SISTEMA,
+            ator_papel="PAPEL_INEXISTENTE",
+            tipo_evento="SISTEMA_EVENTO",
+        )
+    msg = str(exc_info.value)
+    assert "PAPEL_INEXISTENTE" in msg
+    assert "esperados:" in msg
+    assert "ADMIN_GLOBAL" in msg

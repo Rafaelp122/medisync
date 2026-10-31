@@ -133,7 +133,6 @@ class OnboardingService:
                 paciente.nome_social = nome_social
 
         await db.commit()
-        await db.refresh(paciente)
 
         token = create_intake_token(
             paciente_id=paciente.id,
@@ -207,29 +206,8 @@ class OnboardingService:
                 f"organização '{organizacao_id}'."
             )
 
-        # 3. Enrich patient fields
-        if dados.nome_social:
-            paciente.nome_social = dados.nome_social.strip()
-        paciente.nome_mae = clean_nome_mae
-        paciente.sexo_biologico = clean_sexo
-        paciente.cep = clean_cep
-        paciente.logradouro = logradouro
-        paciente.numero = numero
-        paciente.bairro = bairro
-        paciente.cidade = cidade
-        paciente.estado = estado
-
-        # Clean allergies
-        clean_alergias = [a.strip() for a in dados.alergias if a.strip()]
-        paciente.alergias = clean_alergias
-
-        await db.commit()
-        await db.refresh(paciente)
-
-        return Fase2OutputDTO(
-            paciente_id=paciente.id,
-            nome_completo=paciente.nome_completo,
-            nome_social=paciente.nome_social,
+        # 3. Enrich patient fields via rich domain model (CFM 1.821/2007)
+        paciente.completar_fase_2(
             nome_mae=clean_nome_mae,
             sexo_biologico=clean_sexo,
             cep=clean_cep,
@@ -238,6 +216,24 @@ class OnboardingService:
             bairro=bairro,
             cidade=cidade,
             estado=estado,
-            alergias=clean_alergias,
+            nome_social=dados.nome_social,
+            alergias=dados.alergias,
+        )
+
+        await db.commit()
+
+        return Fase2OutputDTO(
+            paciente_id=paciente.id,
+            nome_completo=paciente.nome_completo,
+            nome_social=paciente.nome_social,
+            nome_mae=paciente.nome_mae or clean_nome_mae,
+            sexo_biologico=paciente.sexo_biologico or clean_sexo,
+            cep=paciente.cep or clean_cep,
+            logradouro=paciente.logradouro or logradouro,
+            numero=paciente.numero or numero,
+            bairro=paciente.bairro or bairro,
+            cidade=paciente.cidade or cidade,
+            estado=paciente.estado or estado,
+            alergias=list(paciente.alergias),
             status="DADOS_COMPLETOS",
         )

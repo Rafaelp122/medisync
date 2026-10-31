@@ -37,7 +37,7 @@ Admissão avalia em ordem fixa: sem médicos ativos, cota diária atingida, carg
 
 ## 3. Máquina de estados
 
-Sete estados em `StatusAtendimento`, três terminais em `TERMINAL_STATUSES` (CONCLUIDO, PACIENTE_AUSENTE, CANCELADO_PACIENTE). Toda transição passa por `_assegurar_nao_finalizado` primeiro.
+Sete estados em `StatusAtendimento` (`src/modules/queue/domain/enums.py`), três terminais em `TERMINAL_STATUSES` (CONCLUIDO, PACIENTE_AUSENTE, CANCELADO_PACIENTE). Toda transição passa por `_assegurar_nao_finalizado` primeiro.
 
 ```mermaid
 stateDiagram-v2
@@ -67,7 +67,7 @@ stateDiagram-v2
 
 `cancelar_pelo_paciente` aceita TRIADO, APTO e CHAMANDO, recusa EM_ATENDIMENTO. Ato médico em curso nunca sofre corte administrativo.
 
-`registrar_tcle` não muda estado, só fixa hash SHA-256 uma vez. Pré-condição silenciosa de `promover_para_apto`.
+O hash do TCLE é validado e fixado na criação do atendimento (SHA-256 obrigatório como pré-condição de `promover_para_apto`).
 
 Helpers de leitura espelham estados sem mutar: `is_em_fila`, `is_apto_para_chamada`, `is_chamando`, `is_em_atendimento`, `is_ativo`, `is_finalizado`. Painel usa esses predicados; nunca compara string de status na mão.
 
@@ -99,14 +99,14 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - Double-lock previne overbooking nos dois sentidos. Médico ocupado retorna `0` (HTTP 409), atendimento capturado retorna `-1` (retry); nunca meio-estado.
 - TTL de 45s é deadlock breaker, não SLA clínico. Expirou sem conexão, lock some sozinho; fila nunca trava por crash de worker.
 - Despacho de notificação não-bloqueante (best-effort). Falha de rede ou exaustão de cota no rate limiter de notificações nunca aborta nem dá rollback na transação de alocação da fila nem no ring do médico.
-- `calcular_score_fila` no agregado exige `data_entrada_fila` presente. Sem carimbo de entrada, sem score; `ValidationError` em vez de zero silencioso.
+- `calcular_score` no domínio de scoring exige `data_entrada_fila` presente. Sem carimbo de entrada, sem score; `ValidationError` em vez de zero silencioso.
 - Ato médico nunca cortado — ponte RN06. Nenhum timer, quota ou backpressure transiciona EM_ATENDIMENTO para fora; TMA gera só sinal visual discreto. [Fonte](../product-specification.md) (RN06)
 - Admissão suspensa protege quem já entrou. Transbordo fecha a porta, nunca despeja a sala; contingência vira evento externo, não cancelamento interno.
 - UUIDv7 como PK dá FIFO aproximado até sem score. Inserção ordenada por tempo correlaciona id com chegada; índice de fila refina com prioridade.
 - `atualizar_prioridade` permite reclassificar sem sair da fila. Soberania do assistente (RN-REG-01) sobrepõe triagem inicial; score recalcula no próximo ciclo.
 - `CheckConstraint` no banco espelha validação do modelo. Status e prioridade 1–5 checados em DDL e em `__init__`; invariante sobrevive a escrita fora da ORM.
 - Erros de domínio tipados, não genéricos. `TransicaoEstadoInvalidaError` para salto ilegal, `ValidationError` para dado inválido, `MedicoOcupadoError` / `AtendimentoNaoDisponivelError` / `AdmissaoFilaSuspensaError` na borda de serviço.
-- `FilaService.calcular_score_fila` é wrapper fino sobre domínio. Fonte única em `scoring.py`; serviço reexporta para compatibilidade sem duplicar fórmula.
+- `FilaService` delega o cálculo de score diretamente para a função pura `scoring.calcular_score`, eliminando duplicações e ciclos de dependência.
 
 ## 6. Onde no código
 
@@ -168,7 +168,7 @@ ls tests/unit | rg -i "alocacao|atendimento|admissao|fila|queue"
 
 ```bash
 rg -n "def calcular_score|def iniciar_chamada|def registrar_ausencia_paciente" src/modules/queue/domain/
-# scoring.py:11 def calcular_score + atendimento.py:234 iniciar_chamada, :268 registrar_ausencia, :334 calcular_score_fila
+# scoring.py:11 def calcular_score + atendimento.py:234 iniciar_chamada, :268 registrar_ausencia
 
 ls src/modules/queue/infrastructure/lua/
 # alocar_chamada.lua

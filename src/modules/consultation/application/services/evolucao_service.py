@@ -1,10 +1,9 @@
 """SOAP evolution owner: salvar/obter evolucao with terminal guard via reader port."""
 
-import re
-from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
@@ -15,12 +14,9 @@ from src.modules.consultation.application.ports.atendimento_reader_port import (
 )
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
-    ConsultaInvalidaError,
     EvolucaoNaoEncontradaError,
 )
 from src.modules.consultation.domain.models import EvolucaoClinica
-
-_CID10_REGEX = re.compile(r"^[A-Z][0-9]{2}(\.[0-9]{1,2})?$")
 
 
 class EvolucaoService:
@@ -39,33 +35,6 @@ class EvolucaoService:
     async def _is_terminal(self, atendimento_id: UUID) -> bool:
         """Return True when queue-owned attendance reached terminal status."""
         return await is_atendimento_terminal(self._reader, atendimento_id)
-
-    def _validar_campos_evolucao(
-        self, command: RegistrarEvolucaoSOAPCommand
-    ) -> str | None:
-        """Valida campos obrigatórios e formato de CID-10 para evolução SOAP."""
-        if not command.anamnese or not command.anamnese.strip():
-            raise ConsultaInvalidaError(
-                f"Anamnese clínica é obrigatória e não pode ser vazia: "
-                f"{command.anamnese!r}."
-            )
-        if not command.conduta or not command.conduta.strip():
-            raise ConsultaInvalidaError(
-                f"Conduta clínica é obrigatória e não pode ser vazia: "
-                f"{command.conduta!r}."
-            )
-
-        if not (command.cid10_principal and command.cid10_principal.strip()):
-            return None
-
-        c = command.cid10_principal.strip().upper()
-        if not _CID10_REGEX.match(c):
-            raise ConsultaInvalidaError(
-                f"Código CID-10 inválido: '{command.cid10_principal}'. "
-                "Formato esperado: letra maiúscula seguida de 2 dígitos "
-                "e subcategoria opcional (ex.: J00, J02.9, A09.0)."
-            )
-        return c
 
     async def salvar_evolucao_soap(
         self, command: RegistrarEvolucaoSOAPCommand
@@ -92,17 +61,12 @@ class EvolucaoService:
                     f"(status atual: '{status_desc}')."
                 )
 
-            clean_cid10 = self._validar_campos_evolucao(command)
-
-            existing.anamnese = command.anamnese.strip()
-            existing.conduta = command.conduta.strip()
-            existing.exame_fisico_virtual = (
-                command.exame_fisico_virtual.strip()
-                if command.exame_fisico_virtual and command.exame_fisico_virtual.strip()
-                else None
+            existing.atualizar_soap(
+                anamnese=command.anamnese,
+                conduta=command.conduta,
+                exame_fisico_virtual=command.exame_fisico_virtual,
+                cid10_principal=command.cid10_principal,
             )
-            existing.cid10_principal = clean_cid10
-            existing.registrado_em = datetime.now(UTC)
 
             await self._session.flush()
             if self._audit_trail is not None:
@@ -115,7 +79,7 @@ class EvolucaoService:
                     atendimento_id=command.atendimento_id,
                     payload={
                         "evolucao_id": str(existing.id),
-                        "cid10": clean_cid10,
+                        "cid10": existing.cid10_principal,
                     },
                 )
             await self._session.commit()
@@ -137,7 +101,47 @@ class EvolucaoService:
             cid10_principal=command.cid10_principal,
         )
         self._session.add(evolucao)
-        await self._session.flush()
+        try:
+            await self._session.flush()
+        except IntegrityError as err:
+            await self._session.rollback()
+            stmt_retry = select(EvolucaoClinica).where(
+                EvolucaoClinica.atendimento_id == command.atendimento_id
+            )
+            res_retry = await self._session.execute(stmt_retry)
+            existing_retry = res_retry.scalar_one_or_none()
+            if existing_retry is None:
+                raise
+            if existing_retry.is_finalizado or is_term:
+                existing_retry.marcar_finalizado()
+                status_desc = "terminal" if is_term else "evolucao_finalizada"
+                raise ConsultaFinalizadaError(
+                    "Não é permitido alterar evolução de consulta finalizada "
+                    f"(status atual: '{status_desc}')."
+                ) from err
+            existing_retry.atualizar_soap(
+                anamnese=command.anamnese,
+                conduta=command.conduta,
+                exame_fisico_virtual=command.exame_fisico_virtual,
+                cid10_principal=command.cid10_principal,
+            )
+            await self._session.flush()
+            if self._audit_trail is not None:
+                await self._audit_trail.record_event(
+                    organizacao_id=command.organizacao_id,
+                    tipo_evento="EVOLUCAO_SOAP_REGISTRADA",
+                    ator_tipo=AtorTipo.PROFISSIONAL.value,
+                    ator_papel=AtorPapel.MEDICO.value,
+                    ator_id=command.medico_id,
+                    atendimento_id=command.atendimento_id,
+                    payload={
+                        "evolucao_id": str(existing_retry.id),
+                        "cid10": existing_retry.cid10_principal,
+                    },
+                )
+            await self._session.commit()
+            return existing_retry
+
         if self._audit_trail is not None:
             await self._audit_trail.record_event(
                 organizacao_id=command.organizacao_id,
