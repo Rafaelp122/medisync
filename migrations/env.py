@@ -5,9 +5,11 @@ import concurrent.futures
 from logging.config import fileConfig
 
 import src.core.audit.models
+import src.modules.auth.domain.models
 import src.modules.consultation.domain.models
 import src.modules.identity.domain.models
 import src.modules.queue.domain.models
+import src.modules.telemetry.domain.models
 import src.modules.triage.domain.models  # noqa: F401
 from alembic import context
 from sqlalchemy import pool

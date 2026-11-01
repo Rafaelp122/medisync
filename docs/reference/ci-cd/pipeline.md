@@ -12,15 +12,18 @@ Para instruções passo a passo de como rodar o contêiner, consulte `docs/how-t
 
 ### Matriz de Jobs do CI (`.github/workflows/ci.yml`)
 
-O pipeline é acionado nos eventos `push` e `pull_request` direcionados à branch `main`. A concorrência é configurada com `cancel-in-progress: true` para otimizar consumo de runners.
+O pipeline é acionado nos eventos `push` e `pull_request` direcionados à branch `main`. A concorrência é configurada com `cancel-in-progress: true` no escopo do PR para otimizar consumo de runners.
 
 | Job | Escopo / Responsabilidade | Comandos Executados | Dependências Externas |
 | :--- | :--- | :--- | :--- |
-| `code-quality` | Validação estática, formatação, tipos e fronteiras | `uv run ruff format --check .`<br>`uv run ruff check .`<br>`uv run basedpyright`<br>`uv run tach check` | Nenhuma (em memória) |
-| `unit-tests` | Regras clínicas, modelos ricos e AST routers | `uv run pytest tests/unit tests/architecture -n auto --cov=src` | Nenhuma (em memória) |
-| `frontend-quality` | Tipos, linting e paridade de contratos OpenAPI | `pnpm --dir frontend run check`<br>`pnpm --dir frontend generate:api` | Node.js 24 + pnpm 10 (condicional a `frontend/`) |
-| `frontend-tests` | Testes de integração de tela e unitários | `pnpm --dir frontend test` | Vitest + MSW v2 (condicional a `frontend/`) |
-| `docker-build` | Validação de empacotamento OCI multi-stage | `docker buildx build --target production` (cache `gha`) | Docker Buildx |
+| `detect-changes` | Filtragem de caminhos alterados via `dorny/paths-filter` | Mapeamento de diff em `backend`, `frontend` e `docs` | Nenhuma |
+| `code-quality` | Formatação, tipos, fronteiras, links e auditorias de clean code | `scripts/docs_check.py`<br>`scripts/audit_ai_clean_code.py`<br>`scripts/audit_frontend_guidelines.py`<br>`uv run ruff check .`<br>`uv run basedpyright`<br>`uv run tach check` | Python 3.14 + uv (em memória) |
+| `database-migrations` | Aplicação de DDL e detecção de drift entre models e schema | `uv run alembic upgrade head`<br>`uv run alembic check` | Postgres 17 (Service Container) |
+| `unit-tests` | Regras clínicas, modelos ricos e AST routers | `uv run pytest tests/unit tests/architecture -n auto --cov=src` | Python 3.14 + uv (em memória) |
+| `frontend-quality` | Tipos, linting e paridade de contratos OpenAPI | `uv run python -c "..." > openapi.json`<br>`pnpm --dir frontend generate:api`<br>`pnpm --dir frontend run check` | Node.js 24 + pnpm 10 + Python 3.14 |
+| `frontend-tests` | Testes de integração de tela e unitários | `pnpm --dir frontend test` | Vitest + MSW v2 (condicional a `frontend`) |
+| `frontend-e2e` | Testes ponta a ponta com Playwright e upload de relatório em falha | `pnpm --dir frontend test:e2e`<br>`actions/upload-artifact@v4` (`playwright-report`) | Chromium + Node.js 24 (condicional a `frontend`) |
+| `docker-build` | Empacotamento OCI multi-stage e Smoke Test HTTP | `docker buildx build`<br>`docker run --detach ... medisync:ci`<br>Polling curl em `/healthz` | Docker Buildx + Daemon |
 
 ### Workflows Complementares de Segurança (DevSecOps)
 
@@ -31,49 +34,28 @@ Além do pipeline principal de CI, o repositório conta com dois workflows dedic
 | **Secret Scanning** | `.github/workflows/secret-scanning.yml` | `push` e `pull_request` (branch `main`) | Detecção preventiva de segredos, credenciais e chaves via `gitleaks-action@v2` e `.gitleaks.toml`. |
 | **Deep SAST** | `.github/workflows/codeql.yml` | `push` (branch `main`), `schedule` (semanal) e `pull_request` (código em src/) | Análise estática profunda de vulnerabilidades e fluxo de dados (*taint tracking*) em Python 3.12 via GitHub CodeQL. |
 
-### Estágios do `Dockerfile`
+### Governança de Dependências (`.github/dependabot.yml`)
 
-O arquivo `Dockerfile` define quatro estágios sequenciais e reutilizáveis:
+O repositório adota política de atualização automatizada com escalonamento diário para evitar sobrecarga de PRs:
 
-| Estágio | Imagem Base | Finalidade | Usuário | Porta |
+| Ecossistema | Diretório | Agendamento | Limite de PRs | Grupo |
 | :--- | :--- | :--- | :--- | :--- |
-| `base` | `python:3.14-slim` | Runtime comum, deps C de sistema (`libpq5`, `curl`) | `root` | - |
-| `builder` | `base` + `ghcr.io/astral-sh/uv:latest` | Compila venv de produção em `/opt/venv` sem dev | `root` | - |
-| `development` | `builder` | Venv completo com deps dev e granian reload | `root` | `8000` |
-| `production` | `base` | Imagem final mínima com bytecode pré-compilado | `appuser` (1000) | `8080` |
+| **uv** | `/` | Semanal (Segundas) | 3 | `python-dependencies` |
+| **npm** | `/frontend` | Semanal (Terças) | 3 | `frontend-dependencies` |
+| **docker** | `/` | Semanal (Quartas) | 3 | `docker-images` |
+| **github-actions** | `/` | Semanal (Quintas) | 3 | `github-actions` |
 
-### Variáveis de Ambiente do Servidor ASGI (Granian)
+### Composite Actions Reutilizáveis (`.github/actions/`)
 
-A imagem de produção executa o servidor Granian sobre `src.main:app` com suporte às seguintes variáveis:
+A infraestrutura adota duas composite actions locais para padronizar versões de runtimes e políticas de cache:
+1. **`.github/actions/setup-python-uv`**: Encapsula `astral-sh/setup-uv@v5` (cache com hash de `uv.lock`) e `actions/setup-python@v5` (Python 3.14).
+2. **`.github/actions/setup-node-pnpm`**: Encapsula `pnpm/action-setup@v4` (pnpm 10) e `actions/setup-node@v4` (Node.js 24 com cache de `frontend/pnpm-lock.yaml`).
 
-| Variável | Padrão | Descrição |
-| :--- | :--- | :--- |
-| `PORT` | `8080` | Porta TCP escutada pelo servidor Granian |
-| `GRANIAN_WORKERS` | `2` | Número de processos trabalhadores paralelos |
-| `GRANIAN_HTTP` | `auto` | Versão do protocolo HTTP (HTTP/1.1 e HTTP/2) |
-| `PYTHONOPTIMIZE` | `1` | Ativa otimização de bytecode do interpretador CPython |
-| `PYTHONPATH` | `/app` | Raiz de importação dos módulos da aplicação |
+### Concorrência e Cancelamento Preventivo
 
-### Estratégia de Cache e Eficiência no CI
-
-O pipeline de CI adota três mecanismos de cache para minimizar tempo de execução:
-1. **Cache de Dependências uv (`astral-sh/setup-uv@v5`):**
-   * Parâmetro: `enable-cache: true`.
-   * Chave de cache: hash do arquivo `uv.lock`.
-   * Restaura o diretório de cache do `uv` em aproximadamente 2 segundos em cada job independente.
-2. **Cache de Dependências pnpm (`actions/setup-node@v4`):**
-   * Parâmetro: `cache: "pnpm"` acoplado a `frontend/pnpm-lock.yaml`.
-   * Restaura a store global do pnpm acelerando a instalação em ambiente virtual.
-3. **Cache de Camadas Docker (`docker/build-push-action@v6`):**
-   * Backend de cache: `type=gha` (GitHub Actions Cache API).
-   * Modo: `mode=max` (armazena todas as camadas intermediárias dos estágios `base` e `builder`).
-   * Permite reuso direto das camadas compilaras em builds subsequentes de Pull Requests.
-
-### Concorrência e Cancelamento Automático
-
-O workflow define a política de cancelamento preventivo:
-* Grupo: `${{ github.workflow }}-${{ github.ref }}`.
-* `cancel-in-progress: true`: Quando novos commits são enviados para um Pull Request aberto, execuções anteriores ainda em andamento são canceladas imediatamente para economizar minutos de runner.
+O workflow define a política de cancelamento automático:
+* Grupo: `${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}`.
+* `cancel-in-progress: true`: Quando novos commits são enviados para um Pull Request aberto, execuções anteriores em andamento são canceladas imediatamente.
 
 ## Onde no código
 
@@ -92,10 +74,11 @@ uv run ruff check .
 uv run basedpyright
 uv run tach check
 just scan-secrets
-just docker-build
+just check-migrations
+just smoke-docker
 ```
 
-Esperado: todas as checagens estáticas e varredura de segredos retornam código 0; build Docker conclui gerando tag `medisync:latest`.
+Esperado: todas as checagens estáticas, varredura de segredos, paridade de migrações e smoke test do contêiner retornam código 0; build Docker conclui e responde HTTP 200 em `/healthz`.
 
 ## Ver também
 

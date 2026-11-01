@@ -1,0 +1,30 @@
+name: "Setup Python and uv"
+description: "Configura uv, runtime Python e sincronização de dependências com cache"
+inputs:
+  python-version:
+    description: "Versão do Python a ser instalada"
+    required: false
+    default: "3.14"
+  sync:
+    description: "Determina se uv sync --frozen deve ser executado"
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+        cache-dependency-glob: "uv.lock"
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Sync dependencies
+      if: inputs.sync == 'true'
+      shell: bash
+      run: uv sync --frozen

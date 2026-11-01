@@ -10,22 +10,25 @@ Para comandos operacionais de execução, veja `docs/how-to/dev-environment/run-
 
 ## Conceito
 
-### 1. Filosofia Fail-Fast e Paralelismo de Jobs
+### 1. Filosofia Fail-Fast, Filtragem de Caminhos e Paralelismo de Jobs
 
-No pipeline do GitHub Actions (`.github/workflows/ci.yml`), as etapas de validação são distribuídas em três jobs paralelos:
-* `code-quality`: Linters (`ruff`), checagem estrita de tipos (`basedpyright`) e auditoria modular (`tach`).
+No pipeline do GitHub Actions (`.github/workflows/ci.yml`), as etapas de validação são orientadas por detecção seletiva de caminhos (`dorny/paths-filter@v3`) e distribuídas em jobs paralelos com Fail-Fast estrito:
+* `detect-changes`: Mapeia alterações entre `backend`, `frontend` e `docs`, ignorando execuções redundantes.
+* `code-quality`: Linters (`ruff`), checagem estrita de tipos (`basedpyright`), auditoria modular (`tach`), auditoria de Diátaxis (`docs_check.py`) e diretrizes Clean Code / Web Guidelines (`audit_ai_clean_code.py` e `audit_frontend_guidelines.py`) em memória.
+* `database-migrations`: Executa sobre contêiner de serviço PostgreSQL 17 isolado, aplicando migrações (`alembic upgrade head`) e auditando drift de esquemas (`alembic check`).
 * `unit-tests`: Testes de domínio, modelos ricos e AST em memória com `pytest-xdist`.
-* `docker-build`: Compilação da imagem OCI através do Docker Buildx com cache `type=gha`.
+* `frontend-quality` & `frontend-tests`: Validação de contratos OpenAPI tipados (Hey API), checagem de tipos e testes de tela (Vitest + MSW v2).
+* `frontend-e2e`: Testes ponta a ponta (Playwright + Axe-core WCAG 2.1 AA) com upload automático de `playwright-report` em falha.
+* `docker-build`: Compilação da imagem OCI via Docker Buildx e Smoke Test HTTP real em `/healthz`.
 
-A execução paralela reduz o tempo de resposta (wall-clock time) para o desenvolvedor ao patamar do job mais lento, em vez de acumular tempo em uma fila sequencial. Além disso, fornece granularidade nos status checks do Pull Request, permitindo identificar imediatamente se uma quebra decorreu de violação arquitetural, erro de tipagem ou falha de empacotamento.
+A execução paralela reduz o tempo de resposta (wall-clock time) para o desenvolvedor ao patamar do job mais lento, em vez de acumular tempo em uma fila sequencial. Além disso, fornece granularidade nos status checks do Pull Request, permitindo identificar imediatamente se uma quebra decorreu de violação arquitetural, erro de tipagem, drift de migrações ou falha de empacotamento.
 
-### 2. Por que Migrações não rodam no Fast CI
+### 2. Validação de Migrações e Detecção de Drift no CI
 
-A pirâmide de testes do MediSync Express (detalhada em `docs/explanation/architecture/testing-strategy.md`) estabelece segregação estrita entre testes unitários e testes de integração:
-* **Camada U (Unitários):** 100% em memória, zero Docker, zero banco relacional e zero I/O de rede. Executa em ~13s.
-* **Camada I (Integração):** Valida sobre infraestrutura real (PostgreSQL com RLS, Valkey com scripts Lua, MinIO e LiveKit).
-
-Executar migrações (`alembic upgrade head`) no Fast CI exigiria provisionar um contêiner de banco de dados e aplicar scripts DDL de inicialização (`scripts/postgres/01-init-extensions.sql`), o que violaria o princípio de testes unitários sem I/O e aumentaria o tempo de feedback do PR. As migrações possuem uma suíte exaustiva de validação no arquivo `tests/integration/test_migrations.py`, que valida criação de tabelas, triggers anti-adulteração e ciclos de rollback (`downgrade base`).
+Para garantir que nenhuma alteração em entidades do SQLAlchemy seja enviada sem sua respectiva migração do Alembic:
+* **Job Dedicado de Migração:** O job `database-migrations` conecta-se a um serviço PostgreSQL 17 temporário e executa `alembic upgrade head` seguido por `alembic check`.
+* **Detecção Automática de Drift:** Caso um desenvolvedor modifique um modelo declarativo em `src/modules/*/domain/models/` e esqueça de gerar o arquivo de migração, o comando `alembic check` detecta a divergência e falha a esteira preventivamente antes do merge.
+* **Isolamento da Camada Unitária:** Os testes unitários rápidos (`unit-tests`) continuam 100% em memória (zero Docker e zero I/O de rede), preservando o loop rápido de desenvolvimento. As migrações possuem validação contínua de rollback (`downgrade base`) na suíte de integração (`tests/integration/test_migrations.py`).
 
 ### 3. Empacotamento Multi-Stage com `uv`
 
@@ -79,19 +82,17 @@ A rastreabilidade de versões no MediSync Express é tratada como requisito de g
 - Spec: `docs/explanation/architecture/testing-strategy.md`
 - Ver: `rg -n "name: CI" .github/workflows/ci.yml`
 - Ver: `rg -n "USER appuser" Dockerfile`
-- Ver: `rg -n "docker-build" justfile`
+- Ver: `rg -n "smoke-docker" justfile`
+- Ver: `rg -n "check-migrations" justfile`
 
 ## Verificação
 
 ```bash
-just docker-build
-docker run --rm -d --name medisync-arch-test -p 8089:8080 -e PORT=8080 medisync:latest
-sleep 2
-docker ps --filter "name=medisync-arch-test"
-docker stop medisync-arch-test
+just check-migrations
+just smoke-docker
 ```
 
-Esperado: contêiner sobe em segundo plano, executa como usuário não-root e encerra com código 0.
+Esperado: checagem de migrações confirma ausência de drift e o contêiner de produção sobe, executa como usuário não-root e valida a resposta HTTP 200 em `/healthz`.
 
 ## Ver também
 
