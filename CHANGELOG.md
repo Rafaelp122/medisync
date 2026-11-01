@@ -1,3 +1,9 @@
+## v0.11.0 (2026-11-01)
+
+### Feat
+
+- **frontend**: persistência de sessão do paciente e reconexão na fila virtual (US-01, US-02) (#113)
+
 ## v0.10.0 (2026-11-01)
 
 ### Feat
