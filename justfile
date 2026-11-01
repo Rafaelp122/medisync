@@ -25,10 +25,10 @@ setup-dev:
     just seed-dev
 
 # Portão de qualidade completo com Fail-Fast estrito (segurança, docs, clean code, tipos, arquitetura e testes)
-check: scan-secrets docs-check audit-ai-code fmt lint typecheck tach test-unit test-integration
+check: scan-secrets docs-check audit-ai-code audit-frontend fmt lint frontend-check typecheck tach test-unit test-integration frontend-test
 
-# Validação rápida de alta velocidade (100% em memória, zero Docker, ~15 segundos)
-check-fast: scan-secrets docs-check audit-ai-code fmt lint typecheck tach test-fast
+# Validação rápida de alta velocidade (100% em memória, zero Docker, ~16 segundos)
+check-fast: scan-secrets docs-check audit-ai-code audit-frontend fmt lint frontend-check typecheck tach test-fast
 
 # Executa auditoria estática de segredos com gitleaks (binário local ou Docker)
 scan-secrets:
@@ -45,6 +45,10 @@ docs-check:
 # Audita o código sob os princípios de Clean Code para Agentes de IA
 audit-ai-code:
     uv run python scripts/audit_ai_clean_code.py
+
+# Audita o código do frontend sob as diretrizes de Web Guidelines da Vercel e ADR-011
+audit-frontend:
+    uv run python scripts/audit_frontend_guidelines.py
 
 # Simula o próximo bump de versão e valida consistência (dry-run)
 bump-check:

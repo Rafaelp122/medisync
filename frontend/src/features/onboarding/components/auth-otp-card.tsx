@@ -20,7 +20,16 @@ export function AuthOtpCard({ onAuthenticated, className }: AuthOtpCardProps) {
   const [codigoDebug, setCodigoDebug] = React.useState<string | null>(null);
 
   const changeStep = (nextStep: "solicitar" | "verificar") => {
-    if (typeof document !== "undefined" && "startViewTransition" in document) {
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (
+      !prefersReducedMotion &&
+      typeof document !== "undefined" &&
+      "startViewTransition" in document
+    ) {
       document.startViewTransition(() => setStep(nextStep));
     } else {
       setStep(nextStep);

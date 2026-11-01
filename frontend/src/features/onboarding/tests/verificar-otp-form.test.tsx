@@ -158,7 +158,10 @@ describe("VerificarOtpForm (Integração de Tela)", () => {
     await user.type(inputs[4], "5");
 
     const submitBtn = getByRole("button", { name: /confirmar e entrar/i });
-    expect(submitBtn).toBeDisabled();
+    expect(submitBtn).toBeEnabled();
+    await user.click(submitBtn);
+
     expect(handleAuthenticated).not.toHaveBeenCalled();
+    expect(inputs[5]).toHaveFocus();
   });
 });

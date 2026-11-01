@@ -156,6 +156,7 @@ export function FormMessage({
       ref={ref}
       id={formMessageId}
       role="alert"
+      aria-live="polite"
       className={cn("text-xs font-medium text-destructive", className)}
       {...props}
     >

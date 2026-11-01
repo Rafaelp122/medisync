@@ -22,20 +22,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-PATH_RE = re.compile(r"`((?:src|docs|tests)/[^`:\s#]+)")
+PATH_RE = re.compile(r"`((?:src|docs|tests|frontend)/[^`:\s#]+)")
 MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 FENCE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
 PYTHON_FENCE_RE = re.compile(r"```python(.*?)```", re.DOTALL)
+TS_FENCE_RE = re.compile(r"```(?:tsx?|typescript)(.*?)```", re.DOTALL)
 
 POSTGRES_VERSION_RE = re.compile(r"\b(?:PostgreSQL|Postgres)\s+(\d+)\b")
 VALKEY_VERSION_RE = re.compile(r"\bValkey\s+(\d+(?:\.\d+)?\+?)\b")
 PYTHON_VERSION_RE = re.compile(r"\bPython\s+(\d+\.\d+)(?:\+|(?:\s+ou\s+superior))?\b")
 
-# Diretórios autorizados a conter blocos Python explicativos > 5 linhas
-ALLOWED_PYTHON_DIRS = (
+# Diretórios autorizados a conter blocos de código explicativos > 5 linhas
+ALLOWED_CODE_DIRS = (
     "docs/reference",
     "docs/adrs",
     "docs/how-to",
+    "docs/tutorials",
 )
 
 # Template obrigatório de 5 seções para o quadrante Reference
@@ -124,15 +126,21 @@ def main() -> int:
             if not target_file.exists():
                 errors.append(f"{rel_posix}: missing link target [{label}]({target})")
 
-        # 3. Checagem de blocos python >5 linhas fora de reference/, adrs e how-to
+        # 3. Checagem de blocos de código >5 linhas fora de diretórios permitidos
         if (
-            not any(rel_posix.startswith(d) for d in ALLOWED_PYTHON_DIRS)
+            not any(rel_posix.startswith(d) for d in ALLOWED_CODE_DIRS)
             and rel_posix != "README.md"
         ):
             for m in PYTHON_FENCE_RE.finditer(text):
                 lines = [ln for ln in m.group(1).strip().splitlines() if ln.strip()]
                 if len(lines) > 5:
                     errors.append(f"{rel_posix}: python block {len(lines)} lines >5")
+            for m in TS_FENCE_RE.finditer(text):
+                lines = [ln for ln in m.group(1).strip().splitlines() if ln.strip()]
+                if len(lines) > 5:
+                    errors.append(
+                        f"{rel_posix}: typescript block {len(lines)} lines >5"
+                    )
 
         # 4. Validação de seções obrigatórias para docs/reference/*.md
         if (

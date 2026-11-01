@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Loader2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { getHumanizedErrorMessage, type HumanizedError, isProblemDetailsError } from "@/api/errors";
@@ -365,8 +366,9 @@ export function AcolhimentoFase1Form({
                         <FormLabel>Nome Completo</FormLabel>
                         <FormControl>
                           <Input
-                            placeholder="Ex: Juliana Santos Silva"
+                            placeholder="Ex: Juliana Santos Silva…"
                             autoComplete="name"
+                            spellCheck={false}
                             disabled={isSubmitting}
                             {...field}
                           />
@@ -385,7 +387,12 @@ export function AcolhimentoFase1Form({
                         <FormItem>
                           <FormLabel>Data de Nascimento</FormLabel>
                           <FormControl>
-                            <Input type="date" disabled={isSubmitting} {...field} />
+                            <Input
+                              type="date"
+                              autoComplete="bday"
+                              disabled={isSubmitting}
+                              {...field}
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -401,8 +408,11 @@ export function AcolhimentoFase1Form({
                           <FormLabel>Telefone Celular com DDD</FormLabel>
                           <FormControl>
                             <Input
-                              placeholder="(11) 98765-4321"
+                              placeholder="(11) 98765-4321…"
                               type="tel"
+                              inputMode="tel"
+                              autoComplete="tel-national"
+                              spellCheck={false}
                               disabled={isSubmitting}
                               {...field}
                               onChange={(e) => field.onChange(mascararTelefoneBR(e.target.value))}
@@ -454,7 +464,12 @@ export function AcolhimentoFase1Form({
                           </div>
                           <FormControl>
                             <Input
-                              placeholder="000.000.000-00"
+                              name="cpf"
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="off"
+                              spellCheck={false}
+                              placeholder="000.000.000-00…"
                               disabled={isSubmitting}
                               value={field.value || ""}
                               onChange={(e) => field.onChange(mascararCPF(e.target.value))}
@@ -503,7 +518,12 @@ export function AcolhimentoFase1Form({
                           </div>
                           <FormControl>
                             <Input
-                              placeholder="000 0000 0000 0000"
+                              name="cns"
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="off"
+                              spellCheck={false}
+                              placeholder="000 0000 0000 0000…"
                               disabled={isSubmitting}
                               value={field.value || ""}
                               onChange={(e) => field.onChange(mascararCNS(e.target.value))}
@@ -538,7 +558,7 @@ export function AcolhimentoFase1Form({
                         <FormLabel>O que você está sentindo? (Queixa Principal)</FormLabel>
                         <FormControl>
                           <Input
-                            placeholder="Ex: Febre alta há 2 dias com dor no corpo"
+                            placeholder="Ex: Febre alta há 2 dias com dor no corpo…"
                             disabled={isSubmitting}
                             {...field}
                           />
@@ -574,7 +594,7 @@ export function AcolhimentoFase1Form({
                   {/* Alerta Preventivo Acolhedor (Salvaguarda SAMU 192) */}
                   <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                      <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
                         <span aria-hidden="true">⚠️</span> Sintomas graves exigem socorro imediato
                       </p>
                     </div>
@@ -654,9 +674,17 @@ export function AcolhimentoFase1Form({
                       type="submit"
                       size="lg"
                       disabled={!tcleAceito || isSubmitting}
+                      aria-busy={isSubmitting}
                       className="w-2/3 font-bold text-base h-11"
                     >
-                      {isSubmitting ? "Avaliando e Ingressando..." : "Entrar na Fila Virtual"}
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                          Avaliando e Ingressando…
+                        </>
+                      ) : (
+                        "Entrar na Fila Virtual"
+                      )}
                     </Button>
                   </div>
                 </div>

@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Loader2 } from "lucide-react";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { extractProblemDetail } from "@/api/errors";
@@ -89,7 +90,9 @@ export function SolicitarOtpForm({ onOtpSent, className }: SolicitarOtpFormProps
                 <Input
                   {...field}
                   type="tel"
-                  placeholder="(11) 98765-4321"
+                  inputMode="tel"
+                  spellCheck={false}
+                  placeholder="(11) 98765-4321…"
                   autoComplete="tel-national"
                   disabled={cooldown > 0 || solicitarOtp.isPending}
                   onChange={(e) => {
@@ -112,11 +115,16 @@ export function SolicitarOtpForm({ onOtpSent, className }: SolicitarOtpFormProps
           disabled={cooldown > 0 || solicitarOtp.isPending}
           aria-busy={solicitarOtp.isPending}
         >
-          {solicitarOtp.isPending
-            ? "Enviando código..."
-            : cooldown > 0
-              ? `Reenviar código em ${cooldown}s...`
-              : "Receber código"}
+          {solicitarOtp.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+              Enviando código…
+            </>
+          ) : cooldown > 0 ? (
+            `Reenviar código em ${cooldown}s…`
+          ) : (
+            "Receber código"
+          )}
         </Button>
       </form>
     </Form>

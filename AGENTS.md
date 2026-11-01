@@ -11,8 +11,8 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
   * **Geral & Full-Stack:**
     * `just dev` — Inicia simultaneamente o backend (`granian`) e o frontend (`vite`) em modo desenvolvimento local integrado.
     * `just setup-dev` — Inicializa o ambiente de desenvolvimento completo (infra Docker, deps, migrações e validação rápida).
-    * `just check` — Executa o portão de qualidade completo e unificado com Fail-Fast estrito (scan-secrets, docs-check, audit-ai-code, fmt, lint, typecheck, tach, test-unit, test-integration).
-    * `just check-fast` — Executa a validação rápida completa em memória (zero Docker: scan-secrets, docs-check, audit-ai-code, fmt, lint, typecheck, tach, test-fast).
+    * `just check` — Executa o portão de qualidade completo e unificado com Fail-Fast estrito (scan-secrets, docs-check, audit-ai-code, audit-frontend, fmt, lint, frontend-check, typecheck, tach, test-unit, test-integration, frontend-test).
+    * `just check-fast` — Executa a validação rápida completa em memória (zero Docker: scan-secrets, docs-check, audit-ai-code, audit-frontend, fmt, lint, frontend-check, typecheck, tach, test-fast).
     * `just scan-secrets` — Audita o repositório com Gitleaks (ADR-010) para prevenir vazamento de credenciais.
     * `just bump-check` — Simula o próximo bump de versão semântica e changelog via Commitizen.
   * **Infraestrutura, Banco & Contêineres (Infra):**
@@ -39,7 +39,8 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
     * `just frontend-install` — Instala dependências do frontend com `pnpm`.
     * `just frontend-dev` — Inicia servidor de desenvolvimento Vite (`http://localhost:5173`).
     * `just frontend-generate` — Gera contratos tipados TypeScript via Hey API (`@hey-api/openapi-ts`) a partir do `/openapi.json`.
-    * `just frontend-check` — Executa checagem estrita de tipos (`tsc --noEmit`), lint (`biome check`) e testes.
+    * `just audit-frontend` — Audita diretrizes de UI (Vercel Web Interface Guidelines e ADR-011) via `scripts/audit_frontend_guidelines.py`.
+    * `just frontend-check` — Executa checagem estrita de tipos (`tsc --noEmit`) e lint (`biome check .`).
     * `just frontend-test` — Executa a suíte de testes de tela e unitários do frontend (`vitest`).
     * `just frontend-test-e2e` — Executa testes ponta a ponta com Playwright.
 
