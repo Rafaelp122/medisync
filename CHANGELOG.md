@@ -1,3 +1,13 @@
+## v0.12.0 (2026-11-01)
+
+### Feat
+
+- **frontend**: sala de espera virtual, posição em tempo real e ring modal 45s (#30)
+
+### Fix
+
+- **queue**: sanar apontamentos de review e adicionar testes E2E com acessibilidade WCAG 2.1 AA (#30)
+
 ## v0.11.0 (2026-11-01)
 
 ### Feat
