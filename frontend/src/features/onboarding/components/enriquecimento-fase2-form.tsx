@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { extractProblemDetail } from "@/api/errors";
@@ -169,7 +170,9 @@ export function EnriquecimentoFase2Form({
                   <FormLabel>Nome Completo da Mãe</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="Ex: Maria Aparecida Santos Silva"
+                      placeholder="Ex: Maria Aparecida Santos Silva…"
+                      spellCheck={false}
+                      autoComplete="off"
                       disabled={isSubmitting}
                       {...field}
                     />
@@ -232,18 +235,37 @@ export function EnriquecimentoFase2Form({
                     <FormLabel>
                       CEP{" "}
                       {buscandoCep && (
-                        <span className="text-xs text-primary font-normal">(Buscando...)</span>
+                        <span
+                          role="status"
+                          aria-live="polite"
+                          className="text-xs text-primary font-normal"
+                        >
+                          (Buscando…)
+                        </span>
                       )}
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="00000-000"
+                        name="cep"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="postal-code"
+                        spellCheck={false}
+                        placeholder="00000-000…"
                         disabled={isSubmitting}
                         value={field.value}
                         onChange={(e) => field.onChange(mascararCEP(e.target.value))}
                       />
                     </FormControl>
-                    {erroCep && <p className="text-xs text-amber-600 font-medium">{erroCep}</p>}
+                    {erroCep && (
+                      <p
+                        role="status"
+                        aria-live="polite"
+                        className="text-xs text-amber-800 dark:text-amber-200 font-medium"
+                      >
+                        {erroCep}
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -257,7 +279,12 @@ export function EnriquecimentoFase2Form({
                     <FormItem>
                       <FormLabel>Logradouro / Rua</FormLabel>
                       <FormControl>
-                        <Input placeholder="Ex: Av. Paulista" disabled={isSubmitting} {...field} />
+                        <Input
+                          placeholder="Ex: Av. Paulista…"
+                          autoComplete="street-address"
+                          disabled={isSubmitting}
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -274,7 +301,13 @@ export function EnriquecimentoFase2Form({
                   <FormItem>
                     <FormLabel>Número</FormLabel>
                     <FormControl>
-                      <Input placeholder="1000" disabled={isSubmitting} {...field} />
+                      <Input
+                        placeholder="1000…"
+                        autoComplete="address-line2"
+                        inputMode="numeric"
+                        disabled={isSubmitting}
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -288,7 +321,12 @@ export function EnriquecimentoFase2Form({
                   <FormItem>
                     <FormLabel>Bairro</FormLabel>
                     <FormControl>
-                      <Input placeholder="Bela Vista" disabled={isSubmitting} {...field} />
+                      <Input
+                        placeholder="Bela Vista…"
+                        autoComplete="address-level3"
+                        disabled={isSubmitting}
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -302,7 +340,12 @@ export function EnriquecimentoFase2Form({
                   <FormItem>
                     <FormLabel>Cidade</FormLabel>
                     <FormControl>
-                      <Input placeholder="São Paulo" disabled={isSubmitting} {...field} />
+                      <Input
+                        placeholder="São Paulo…"
+                        autoComplete="address-level2"
+                        disabled={isSubmitting}
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -317,7 +360,10 @@ export function EnriquecimentoFase2Form({
                     <FormLabel>UF</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="SP"
+                        name="estado"
+                        placeholder="SP…"
+                        autoComplete="address-level1"
+                        spellCheck={false}
                         maxLength={2}
                         disabled={isSubmitting}
                         value={field.value}
@@ -339,7 +385,10 @@ export function EnriquecimentoFase2Form({
                   <FormLabel>Nome Social (Opcional)</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="Como prefere ser chamado(a)"
+                      name="nome_social"
+                      placeholder="Como prefere ser chamado(a)…"
+                      autoComplete="nickname"
+                      spellCheck={false}
                       disabled={isSubmitting}
                       value={field.value || ""}
                       onChange={field.onChange}
@@ -371,8 +420,21 @@ export function EnriquecimentoFase2Form({
               </div>
             </div>
 
-            <Button type="submit" size="lg" disabled={isSubmitting} className="w-full font-bold">
-              {isSubmitting ? "Salvando Dados..." : "Concluir Enriquecimento"}
+            <Button
+              type="submit"
+              size="lg"
+              disabled={isSubmitting}
+              aria-busy={isSubmitting}
+              className="w-full font-bold"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                  Salvando Dados…
+                </>
+              ) : (
+                "Concluir Enriquecimento"
+              )}
             </Button>
           </form>
         </Form>

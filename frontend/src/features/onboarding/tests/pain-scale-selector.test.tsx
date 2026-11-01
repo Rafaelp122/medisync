@@ -13,12 +13,12 @@ describe("PainScaleSelector (Escala Visual Analógica de Dor)", () => {
     // Verificar presença dos 11 botões de 0 a 10
     for (let i = 0; i <= 10; i++) {
       expect(
-        screen.getByRole("button", { name: new RegExp(`^nível ${i}$`, "i") }),
+        screen.getByRole("radio", { name: new RegExp(`^nível ${i}$`, "i") }),
       ).toBeInTheDocument();
     }
 
     // Clicar no nível 4
-    const btn4 = screen.getByRole("button", { name: /^nível 4$/i });
+    const btn4 = screen.getByRole("radio", { name: /^nível 4$/i });
     await user.click(btn4);
 
     expect(handleChange).toHaveBeenCalledWith(4);

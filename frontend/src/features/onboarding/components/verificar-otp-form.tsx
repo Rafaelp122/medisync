@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import * as React from "react";
 import { extractProblemDetail, extractProblemStatus } from "@/api/errors";
 import type { VerificarOtpResponse } from "@/api/generated/types.gen";
@@ -90,9 +91,9 @@ export function VerificarOtpForm({
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    e.preventDefault();
     const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
     if (!pasted) return;
+    e.preventDefault();
 
     const nextDigits = [...digits];
     for (let i = 0; i < 6; i++) {
@@ -115,6 +116,8 @@ export function VerificarOtpForm({
         validation.error.issues[0]?.message ??
           "O código deve conter exatamente 6 dígitos numéricos",
       );
+      const firstEmptyIdx = digits.findIndex((d) => !d);
+      inputRefs.current[firstEmptyIdx !== -1 ? firstEmptyIdx : 0]?.focus();
       return;
     }
 
@@ -144,10 +147,8 @@ export function VerificarOtpForm({
         </Alert>
       )}
 
-      <div className="space-y-2">
-        <label htmlFor="otp-slot-0" className="text-sm font-medium leading-none">
-          Código de 6 dígitos
-        </label>
+      <fieldset className="space-y-2 border-0 p-0 m-0">
+        <legend className="text-sm font-medium leading-none">Código de 6 dígitos</legend>
         <p className="text-xs text-muted-foreground">Enviado por SMS para o telefone {telefone}</p>
 
         {codigoDebug && (
@@ -165,6 +166,7 @@ export function VerificarOtpForm({
             <Input
               key={slotId}
               id={slotId}
+              name={slotId}
               ref={(el) => {
                 inputRefs.current[idx] = el;
               }}
@@ -173,6 +175,8 @@ export function VerificarOtpForm({
               pattern="[0-9]*"
               maxLength={1}
               value={digits[idx]}
+              spellCheck={false}
+              autoComplete={idx === 0 ? "one-time-code" : "off"}
               disabled={isBlocked || verificarOtp.isPending}
               onChange={(e) => handleDigitChange(idx, e.target.value)}
               onKeyDown={(e) => handleKeyDown(idx, e)}
@@ -182,15 +186,22 @@ export function VerificarOtpForm({
             />
           ))}
         </div>
-      </div>
+      </fieldset>
 
       <Button
         type="submit"
         className="w-full"
-        disabled={isBlocked || verificarOtp.isPending || digits.join("").length < 6}
+        disabled={isBlocked || verificarOtp.isPending}
         aria-busy={verificarOtp.isPending}
       >
-        {verificarOtp.isPending ? "Verificando..." : "Confirmar e entrar"}
+        {verificarOtp.isPending ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+            Verificando…
+          </>
+        ) : (
+          "Confirmar e entrar"
+        )}
       </Button>
 
       {onVoltar && (

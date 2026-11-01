@@ -37,7 +37,7 @@ describe("AcolhimentoFase1Form (Integração de Tela - RF-01, RN04)", () => {
     await user.click(getByRole("button", { name: /^febre$/i }));
 
     // Selecionar escala de dor nível 4
-    await user.click(getByRole("button", { name: /^nível 4$/i }));
+    await user.click(getByRole("radio", { name: /^nível 4$/i }));
 
     // Aceitar TCLE
     const tcleCheckbox = getByLabelText(/termo de consentimento livre e esclarecido/i);

@@ -66,7 +66,7 @@ Isso gera automaticamente em `frontend/src/api/generated/`:
 
 ## Passo 2: Estender o schema Zod gerado para o formulário
 
-Em vez de redeclarar o schema Zod manualmente, importe o schema correspondente gerado pelo plugin `zod` em `frontend/src/api/generated/zod.gen` e apenas refine com mensagens em português e validações algorítmicas locais:
+Em vez de redeclarar o schema Zod manualmente, importe o schema correspondente gerado pelo plugin `zod` em `frontend/src/api/generated/zod.gen.ts` e apenas refine com mensagens em português e validações algorítmicas locais:
 
 Em `frontend/src/features/onboarding/schemas/onboarding-schema.ts`:
 

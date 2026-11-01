@@ -51,18 +51,23 @@ export function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <main className="min-h-screen flex flex-col items-center justify-center p-4 bg-background text-foreground">
+      <main
+        id="main-content"
+        className="min-h-screen flex flex-col items-center justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-background text-foreground"
+      >
         <header className="mb-6 text-center space-y-1">
-          <h1 className="text-3xl font-extrabold tracking-tight text-primary">MediSync Express</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-3xl font-extrabold tracking-tight text-primary text-balance">
+            MediSync Express
+          </h1>
+          <p className="text-sm text-muted-foreground text-pretty">
             Pronto Atendimento Virtual & Telemedicina de Urgência
           </p>
         </header>
 
         {session ? (
           <div className="w-full max-w-md mx-auto p-6 bg-card rounded-xl border shadow text-center space-y-4">
-            <h2 className="text-2xl font-bold text-primary">Acesso Autorizado</h2>
-            <p className="text-sm text-muted-foreground">
+            <h2 className="text-2xl font-bold text-primary text-balance">Acesso Autorizado</h2>
+            <p className="text-sm text-muted-foreground text-pretty">
               {session.tipo === "acolhimento"
                 ? "Atendimento admitido na fila virtual com sucesso."
                 : "Sessão de paciente autenticada com sucesso via SMS."}
@@ -90,7 +95,7 @@ export function App() {
               onClick={() => {
                 setSession(null);
               }}
-              className="text-xs text-muted-foreground hover:underline"
+              className="inline-flex items-center justify-center min-h-[44px] px-3 py-2 text-xs text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
             >
               Encerrar sessão
             </button>
@@ -101,6 +106,12 @@ export function App() {
               <div
                 role="tablist"
                 aria-label="Opções de atendimento"
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                    e.preventDefault();
+                    setModo((prev) => (prev === "acolhimento" ? "otp" : "acolhimento"));
+                  }
+                }}
                 className="inline-flex gap-1 p-1 bg-muted rounded-lg text-xs sm:text-sm"
               >
                 <button
@@ -111,7 +122,7 @@ export function App() {
                   aria-controls="panel-acolhimento"
                   onClick={() => setModo("acolhimento")}
                   className={cn(
-                    "px-3 py-1.5 rounded-md font-medium transition-all",
+                    "min-h-[44px] px-3.5 py-2 rounded-md font-medium transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     modo === "acolhimento"
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
@@ -127,7 +138,7 @@ export function App() {
                   aria-controls="panel-otp"
                   onClick={() => setModo("otp")}
                   className={cn(
-                    "px-3 py-1.5 rounded-md font-medium transition-all",
+                    "min-h-[44px] px-3.5 py-2 rounded-md font-medium transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     modo === "otp"
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground",

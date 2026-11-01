@@ -21,12 +21,19 @@ const alertVariants = cva(
 export function Alert({
   className,
   variant,
+  role = variant === "destructive" ? "alert" : "status",
   ref,
   ...props
 }: React.HTMLAttributes<HTMLDivElement> &
   VariantProps<typeof alertVariants> & { ref?: React.Ref<HTMLDivElement> }) {
   return (
-    <div ref={ref} role="alert" className={cn(alertVariants({ variant }), className)} {...props} />
+    <div
+      ref={ref}
+      role={role}
+      aria-live="polite"
+      className={cn(alertVariants({ variant }), className)}
+      {...props}
+    />
   );
 }
 
@@ -40,7 +47,7 @@ export function AlertTitle({
   return (
     <h5
       ref={ref}
-      className={cn("mb-1 font-medium leading-none tracking-tight", className)}
+      className={cn("mb-1 font-medium leading-none tracking-tight text-balance", className)}
       {...props}
     />
   );

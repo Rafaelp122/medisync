@@ -44,6 +44,8 @@ export function TcleDialog({ open, onOpenChange }: TcleDialogProps) {
         </DialogHeader>
 
         <section
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: scrollable container requires keyboard focus
+          tabIndex={0}
           aria-label="Texto integral do TCLE"
           className="flex-1 overflow-y-auto rounded-md border p-4 bg-muted/40 font-mono text-xs leading-relaxed whitespace-pre-wrap select-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >

@@ -68,7 +68,11 @@ export function ProgressiveOnboardingWizard({
   }
 
   return (
-    <Card className="w-full max-w-md mx-auto shadow-lg text-center space-y-4">
+    <Card
+      role="status"
+      aria-live="polite"
+      className="w-full max-w-md mx-auto shadow-lg text-center space-y-4"
+    >
       <CardHeader>
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mb-2">
           <span className="text-3xl" aria-hidden="true">
