@@ -81,11 +81,13 @@
 - [x] **Desacoplamento Modular:** Comunicação via porta abstrata `TriagePort` injetada no composition root de `queue` (`src/modules/queue/application/ports/triage_port.py`).
 - [x] **Remoção Atômica:** Atendimento Nível 1 é expurgado atômica e deterministicamente do conjunto de aptos no Valkey (`FilaService.processar_piora_clinica()`).
 - [x] **Apresentação:** Rota REST implementada em `src/modules/queue/presentation/routers/fila_router.py` com `PioraClinicaResponse` harmonizado com campos canônicos (ADR-001/ADR-008).
-- [x] **Frontend (Salvaguarda SAMU 192):** Componente composto `frontend/src/features/onboarding/components/samu-emergency-modal.tsx` com `role="alertdialog"`, bloqueio de dismiss em backdrop/esc e discagem rápida `tel:192`.
+- [x] **Frontend (Salvaguarda SAMU 192):** Componente composto `frontend/src/components/samu-emergency-modal.tsx` com `role="alertdialog"`, bloqueio de dismiss em backdrop/esc e discagem rápida `tel:192`.
+- [x] **Frontend Fila (Piora Clínica - RF-06):** Modal `PioraClinicaModal` em `frontend/src/features/queue/components/piora-clinica-modal.tsx` integrado à `VirtualWaitingRoom` para relato de novos sintomas e reavaliação imediata.
 - [x] **Detecção de Red Flags:** Chips de sinais clínicos críticos em `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx:SINAIS_ALARME_CRITICOS` e interceptação de HTTP 422 `EMERGENCIA_CRITICA_SAMU_192`.
 - [x] **Testes Automatizados:**
   - Backend: `tests/unit/test_queue_schemas.py`, `tests/unit/test_fila_router.py`, `tests/unit/test_admissao_service.py`, `tests/integration/test_admissao_integrada_flow.py`
   - Frontend Modal: `frontend/src/features/onboarding/tests/samu-emergency-modal.test.tsx` (`IT-SAMU-01`, `IT-SAMU-02`, `IT-SAMU-03`)
+  - Frontend Fila: `frontend/src/features/queue/schemas/piora-clinica-schema.test.ts`, `frontend/src/features/queue/tests/virtual-waiting-room.test.tsx` (`IT-WAIT-02`, `IT-WAIT-03`)
   - Frontend Telas: `frontend/src/features/onboarding/tests/acolhimento-triagem-form.test.tsx` (`IT-ONB-03`, `IT-ONB-04`)
   - E2E / A11y: `frontend/e2e/onboarding-acolhimento.spec.ts` (`E2E-ONB-02`, `E2E-ONB-03`)
 

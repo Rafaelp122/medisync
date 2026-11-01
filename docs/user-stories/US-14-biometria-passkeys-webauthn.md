@@ -81,8 +81,10 @@
 - [ ] **Modelo:** Tabela `paciente_passkeys` no módulo `identity` com `credential_id`, `public_key`, `sign_count`, `device_name` e `created_at`.
 - [ ] **Aplicação:** Serviço `PatientWebAuthnService` utilizando `py_webauthn` para geração de desafios e verificação de assinaturas FIDO2/WebAuthn.
 - [ ] **Apresentação:** Router fino `patient_webauthn_router.py` integrado em `/api/v1/auth/patient/webauthn`.
-- [ ] **Frontend (ADR-011):** Hook headless `usePasskey` em `frontend/src/features/onboarding/api/` e componente `<BiometriaConviteCard />`.
-- [ ] **Testes:** Testes unitários com fakes de WebAuthn e testes de integração com verificação criptográfica.
+- [x] **Frontend Detecção e Card (ADR-011):** Verificação segura em `frontend/src/lib/formatters.ts:isWebAuthnSupported` e card não-bloqueante na sala de espera `frontend/src/features/queue/components/passkey-invitation-card.tsx`.
+- [x] **Testes Automatizados de Frontend:**
+  - `frontend/src/features/queue/tests/queue-unit.test.ts` (detecção de `window.PublicKeyCredential`)
+  - `frontend/src/features/queue/tests/passkey-invitation-card.test.tsx` (`IT-PASSKEY-01` a `IT-PASSKEY-04`)
 
 ---
 
@@ -90,9 +92,9 @@
 
 ### 5.1 Validação e Interação de Tela
 - **Detecção Silenciosa de Suporte:** O card de convite à biometria só é renderizado se `window.PublicKeyCredential` for suportado pelo dispositivo.
-- **UX Não-Bloqueante na Sala de Espera:** O convite a biometria é exibido como benefício de segurança opcional; recusar ou fechar o card não altera a posição nem o tempo na fila virtual.
+- **UX Não-Bloqueante na Sala de Espera:** O convite a biometria é exibido como benefício de segurança opcional; recusar ou fechar o card persiste dispensa na sessão (`sessionStorage`) e não altera a posição nem o tempo na fila virtual.
 - **Feedback Háptico e Acessibilidade:** Uso de estados acessíveis (`aria-live="polite"`, `aria-busy="true"`) durante o acionamento do sensor biométrico.
 
 ### 5.2 Troféu de Testes do Frontend
-- **Integração de Tela (Vitest + RTL + MSW v2):** Testes de renderização condicional com mock da WebAuthn API no `jsdom`.
+- **Integração de Tela (Vitest + RTL + MSW v2):** Testes de renderização condicional com mock da WebAuthn API no `jsdom` (`frontend/src/features/queue/tests/passkey-invitation-card.test.tsx`).
 - **E2E (Playwright):** Simulação de credencial virtual WebAuthn via CDP (`client.send('WebAuthn.enable')`, `client.send('WebAuthn.addVirtualAuthenticator')`).

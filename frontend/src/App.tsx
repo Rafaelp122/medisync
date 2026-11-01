@@ -1,10 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
-import type { VerificarOtpResponse } from "@/api/generated/types.gen";
+import type { LiveKitTokenResponse, VerificarOtpResponse } from "@/api/generated/types.gen";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { AcolhimentoConcluidoData } from "@/features/onboarding/components/acolhimento-fase1-form";
 import { AuthOtpCard } from "@/features/onboarding/components/auth-otp-card";
+import { EnriquecimentoFase2Form } from "@/features/onboarding/components/enriquecimento-fase2-form";
 import { IngressoConfirmadoCard } from "@/features/onboarding/components/ingresso-confirmado-card";
 import { ProgressiveOnboardingWizard } from "@/features/onboarding/components/progressive-onboarding-wizard";
+import { VirtualWaitingRoom } from "@/features/queue/components/virtual-waiting-room";
 import {
   clearStoredSession,
   getStoredSession,
@@ -71,9 +80,21 @@ export function App() {
     });
   };
 
+  const [teleconsultaData, setTeleconsultaData] = useState<LiveKitTokenResponse | null>(null);
+  const [modalComplementarAberto, setModalComplementarAberto] = useState(false);
+
+  const handleAtendimentoIniciado = (data: LiveKitTokenResponse) => {
+    setModalComplementarAberto(false);
+    startSafeViewTransition(() => {
+      setTeleconsultaData(data);
+    });
+  };
+
   const handleEncerrarSessao = () => {
     clearStoredSession();
+    setModalComplementarAberto(false);
     startSafeViewTransition(() => {
+      setTeleconsultaData(null);
       setSession(null);
       setModo("acolhimento");
     });
@@ -94,8 +115,64 @@ export function App() {
           </p>
         </header>
 
-        {session ? (
-          <IngressoConfirmadoCard session={session} onEncerrarSessao={handleEncerrarSessao} />
+        {teleconsultaData ? (
+          <div className="w-full max-w-xl mx-auto p-6 bg-card text-card-foreground rounded-xl shadow-lg border border-emerald-500/30 text-center space-y-4">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mb-2">
+              <span className="text-3xl" aria-hidden="true">
+                📹
+              </span>
+            </div>
+            <h2 className="text-2xl font-bold text-foreground">Teleconsulta em Andamento</h2>
+            <p className="text-xs text-muted-foreground">
+              Conexão com a sala LiveKit estabelecida com sucesso.
+            </p>
+            <div className="p-3 bg-muted rounded-lg text-xs font-mono text-left space-y-1 border">
+              <p>
+                <strong>Sala:</strong> {teleconsultaData.room_name}
+              </p>
+              <p>
+                <strong>Participante:</strong> {teleconsultaData.participant_identity}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleEncerrarSessao}
+              className="min-h-[44px] px-4 py-2 border rounded-md text-xs font-semibold hover:bg-muted transition-colors"
+            >
+              Encerrar Teleconsulta
+            </button>
+          </div>
+        ) : session ? (
+          session.atendimentoId ? (
+            <>
+              <VirtualWaitingRoom
+                session={session}
+                onEncerrarSessao={handleEncerrarSessao}
+                onAtendimentoIniciado={handleAtendimentoIniciado}
+                onComplementarCadastro={() => setModalComplementarAberto(true)}
+              />
+
+              <Dialog open={modalComplementarAberto} onOpenChange={setModalComplementarAberto}>
+                <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto p-0 border-0 bg-transparent shadow-none">
+                  <DialogHeader className="sr-only">
+                    <DialogTitle>Complementação Cadastral (Fase 2)</DialogTitle>
+                    <DialogDescription>
+                      Complemente seus dados de endereço e alergias para o prontuário médico. Sua
+                      vaga na fila virtual permanece garantida.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <EnriquecimentoFase2Form
+                    pacienteId={session.pacienteId}
+                    token={session.token}
+                    onConcluido={() => setModalComplementarAberto(false)}
+                    onPular={() => setModalComplementarAberto(false)}
+                  />
+                </DialogContent>
+              </Dialog>
+            </>
+          ) : (
+            <IngressoConfirmadoCard session={session} onEncerrarSessao={handleEncerrarSessao} />
+          )
         ) : (
           <div className="w-full max-w-xl mx-auto space-y-4">
             <div className="flex justify-center">

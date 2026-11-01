@@ -150,6 +150,21 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `tests/integration/test_admissao_integrada_flow.py`
 - `tests/integration/test_valkey_rate_limiter.py`
 - `tests/integration/test_regularizacao_flow.py`
+- `frontend/src/features/queue/components/virtual-waiting-room.tsx` (orquestrador principal da sala de espera do paciente)
+- `frontend/src/features/queue/components/queue-position-card.tsx` (card de posição ordinal e tempo estimado com badge ACR)
+- `frontend/src/features/queue/components/incoming-call-ring-modal.tsx` (modal fullscreen de toque médico com áudio chime e timer 45s)
+- `frontend/src/features/queue/components/piora-clinica-modal.tsx` (checklist de reavaliação de piora clínica e escape SAMU 192)
+- `frontend/src/features/queue/components/cancelar-fila-dialog.tsx` (confirmação voluntária de saída da fila)
+- `frontend/src/features/queue/components/passkey-invitation-card.tsx` (card não-bloqueante de biometria Passkey)
+- `frontend/src/features/queue/api/use-posicao-fila.ts` (consulta de posição e tempo estimado via Hey API)
+- `frontend/src/features/queue/api/use-queue-socket.ts` (WebSocket de tempo real com contingência)
+- `frontend/src/features/queue/api/use-comunicar-piora.ts` (mutação de piora clínica)
+- `frontend/src/features/queue/api/use-cancelar-fila.ts` (mutação de cancelamento voluntário)
+- `frontend/src/features/queue/api/use-atender-chamada.ts` (mutação de atendimento e geração de token LiveKit)
+- `frontend/src/features/queue/tests/virtual-waiting-room.test.tsx` (integração de tela completa com MSW)
+- `frontend/src/features/queue/tests/incoming-call-ring-modal.test.tsx` (testes de timer, chime e auto-dismiss)
+- `frontend/src/features/queue/tests/passkey-invitation-card.test.tsx` (testes de convite à biometria)
+- `frontend/src/features/queue/tests/queue-unit.test.ts` (testes unitários de formatação e utilitários)
 
 
 Prova viva:
