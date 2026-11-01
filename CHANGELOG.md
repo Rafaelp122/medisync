@@ -1,3 +1,9 @@
+## v0.10.0 (2026-11-01)
+
+### Feat
+
+- **frontend**: auditar diretrizes de UI (Vercel & ADR-011) e remediar acessibilidade/ux
+
 ## v0.9.0 (2026-10-31)
 
 ### Feat
