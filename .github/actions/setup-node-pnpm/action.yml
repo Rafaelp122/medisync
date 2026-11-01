@@ -1,0 +1,39 @@
+name: "Setup Node.js and pnpm"
+description: "Configura pnpm, runtime Node.js e instalação de dependências do frontend com cache"
+inputs:
+  node-version:
+    description: "Versão do Node.js a ser instalada"
+    required: false
+    default: "24"
+  pnpm-version:
+    description: "Versão do pnpm a ser instalada"
+    required: false
+    default: "10"
+  working-directory:
+    description: "Diretório do projeto que contém o pnpm-lock.yaml"
+    required: false
+    default: "frontend"
+  install-deps:
+    description: "Determina se pnpm install --frozen-lockfile deve ser executado"
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: "pnpm"
+        cache-dependency-path: "${{ inputs.working-directory }}/pnpm-lock.yaml"
+
+    - name: Install dependencies
+      if: inputs.install-deps == 'true'
+      shell: bash
+      run: pnpm --dir ${{ inputs.working-directory }} install --frozen-lockfile

@@ -9,30 +9,68 @@ on:
       - main
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  detect-changes:
+    name: Detect Code Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Filter path changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'src/**'
+              - 'tests/**'
+              - 'migrations/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'alembic.ini'
+              - 'Dockerfile'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
+            frontend:
+              - 'frontend/**'
+              - 'openapi.json'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
+            docs:
+              - 'docs/**'
+              - 'README.md'
+              - 'scripts/**'
+              - 'AGENTS.md'
+
   code-quality:
-    name: Code Quality (Lint, Typecheck & Tach)
+    name: Code Quality (Lint, Typecheck, Tach & Audits)
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          version: "latest"
+      - name: Set up Python & uv
+        uses: ./.github/actions/setup-python-uv
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
+      - name: Check documentation integrity & SSOT
+        run: uv run python scripts/docs_check.py
 
-      - name: Install dependencies
-        run: uv sync --frozen
+      - name: Audit Clean Code for AI agents
+        run: uv run python scripts/audit_ai_clean_code.py
+
+      - name: Audit frontend guidelines
+        run: uv run python scripts/audit_frontend_guidelines.py
 
       - name: Check formatting (Ruff)
         run: uv run ruff format --check .
@@ -46,69 +84,76 @@ jobs:
       - name: Check modular boundaries (Tach)
         run: uv run tach check
 
+  database-migrations:
+    name: Database Migrations & Drift Check (Alembic)
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: medisync
+          POSTGRES_USER: medisync
+          POSTGRES_PASSWORD: medisync
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: medisync
+      POSTGRES_USER: medisync
+      POSTGRES_PASSWORD: medisync
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python & uv
+        uses: ./.github/actions/setup-python-uv
+
+      - name: Apply Alembic migrations
+        run: uv run alembic upgrade head
+
+      - name: Check for migration drift (Alembic check)
+        run: uv run alembic check
+
   unit-tests:
     name: Unit & Architecture Tests
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          version: "latest"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-
-      - name: Install dependencies
-        run: uv sync --frozen
+      - name: Set up Python & uv
+        uses: ./.github/actions/setup-python-uv
 
       - name: Run unit and architecture test suite
         run: uv run pytest tests/unit tests/architecture -n auto --cov=src --cov-report=term-missing
 
   frontend-quality:
     name: Frontend Quality (Lint, Types & OpenAPI Sync)
+    needs: [detect-changes]
+    if: (needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.backend == 'true') && hashFiles('frontend/package.json') != ''
     runs-on: ubuntu-latest
-    if: hashFiles('frontend/package.json') != ''
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          version: "latest"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-
-      - name: Install backend dependencies (for OpenAPI export)
-        run: uv sync --frozen
+      - name: Set up Python & uv (for OpenAPI export)
+        uses: ./.github/actions/setup-python-uv
 
       - name: Export OpenAPI schema
         run: uv run python -c "import json; from src.main import app; print(json.dumps(app.openapi(), indent=2))" > openapi.json
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: "pnpm"
-          cache-dependency-path: "frontend/pnpm-lock.yaml"
-
-      - name: Install frontend dependencies
-        run: pnpm --dir frontend install --frozen-lockfile
+      - name: Set up Node.js & pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Validate OpenAPI contracts parity (Hey API)
         run: |
@@ -120,52 +165,30 @@ jobs:
 
   frontend-tests:
     name: Frontend Component & Screen Tests
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.frontend == 'true' && hashFiles('frontend/package.json') != ''
     runs-on: ubuntu-latest
-    if: hashFiles('frontend/package.json') != ''
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: "pnpm"
-          cache-dependency-path: "frontend/pnpm-lock.yaml"
-
-      - name: Install frontend dependencies
-        run: pnpm --dir frontend install --frozen-lockfile
+      - name: Set up Node.js & pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Run screen & component tests (Vitest + MSW v2)
         run: pnpm --dir frontend test
 
   frontend-e2e:
     name: Frontend End-to-End Tests (Playwright)
+    needs: [detect-changes]
+    if: (needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.backend == 'true') && hashFiles('frontend/package.json') != ''
     runs-on: ubuntu-latest
-    if: hashFiles('frontend/package.json') != ''
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: "pnpm"
-          cache-dependency-path: "frontend/pnpm-lock.yaml"
-
-      - name: Install frontend dependencies
-        run: pnpm --dir frontend install --frozen-lockfile
+      - name: Set up Node.js & pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Install Playwright browsers with OS dependencies
         run: pnpm --dir frontend exec playwright install --with-deps chromium
@@ -173,8 +196,18 @@ jobs:
       - name: Run E2E tests (Playwright + Axe-core WCAG 2.1 AA)
         run: pnpm --dir frontend test:e2e
 
+      - name: Upload Playwright Report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
   docker-build:
-    name: Docker Image Build
+    name: Docker Build & Smoke Test
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.backend == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -189,7 +222,27 @@ jobs:
           context: .
           target: production
           push: false
-          tags: medisync:latest
+          load: true
+          tags: medisync:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Smoke test production container
+        run: |
+          container_name="medisync-ci-${{ github.run_id }}-${{ github.run_attempt }}"
+          trap 'docker logs "$container_name" || true; docker rm -f "$container_name" > /dev/null 2>&1 || true' EXIT
+          docker run --detach --name "$container_name" --publish 8080:8080 \
+            --env PORT=8080 \
+            --env VALKEY_RETRY_ATTEMPTS=0 \
+            --env VALKEY_CONNECT_TIMEOUT=1.0 \
+            medisync:ci
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/healthz > /dev/null; then
+              echo "✅ Production container healthy and responded on /healthz!"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Production container healthcheck timed out after 30 seconds."
+          exit 1
 

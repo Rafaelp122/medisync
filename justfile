@@ -112,6 +112,10 @@ rollback-base:
 migration-history:
     uv run alembic history
 
+# Valida ausência de drift entre os modelos SQLAlchemy e as migrações do Alembic
+check-migrations:
+    uv run alembic check
+
 # Compila a imagem Docker de produção
 docker-build:
     docker build -t medisync:latest --target production .
@@ -119,6 +123,24 @@ docker-build:
 # Compila a imagem Docker de desenvolvimento
 docker-build-dev:
     docker build -t medisync:dev --target development .
+
+# Executa smoke test na imagem de produção compilada verificando a rota /healthz
+smoke-docker: docker-build
+    #!/usr/bin/env bash
+    set -e
+    CONTAINER_NAME="medisync-smoke-$$"
+    trap 'docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true' EXIT
+    docker run --detach --name "$CONTAINER_NAME" -p 8089:8080 -e PORT=8080 -e VALKEY_RETRY_ATTEMPTS=0 -e VALKEY_CONNECT_TIMEOUT=1.0 medisync:latest
+    for attempt in {1..30}; do
+        if curl --fail --silent http://127.0.0.1:8089/healthz >/dev/null; then
+            echo "✅ Container de produção saudável em /healthz!"
+            exit 0
+        fi
+        sleep 1
+    done
+    echo "❌ Timeout aguardando o healthcheck do container de produção."
+    docker logs "$CONTAINER_NAME"
+    exit 1
 
 
 # ==============================================================================

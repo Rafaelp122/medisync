@@ -1,24 +1,29 @@
 version: 2
 updates:
   # Dependências Python (pyproject.toml / uv)
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+      day: "monday"
+    open-pull-requests-limit: 3
     groups:
       python-dependencies:
         patterns:
           - "*"
 
-  # Workflows do GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  # Dependências do Frontend (pnpm / npm)
+  - package-ecosystem: "npm"
+    directory: "/frontend"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+      day: "tuesday"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "frontend"
     groups:
-      github-actions:
+      frontend-dependencies:
         patterns:
           - "*"
 
@@ -27,8 +32,21 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+      day: "wednesday"
+    open-pull-requests-limit: 3
     groups:
       docker-images:
+        patterns:
+          - "*"
+
+  # Workflows do GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
         patterns:
           - "*"
