@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { startSafeViewTransition } from "@/lib/view-transitions";
 import { type AcolhimentoConcluidoData, AcolhimentoFase1Form } from "./acolhimento-fase1-form";
 import { EnriquecimentoFase2Form } from "./enriquecimento-fase2-form";
 
-export type EtapaWizard = "acolhimento" | "enriquecimento" | "concluido";
+export type EtapaWizard = "acolhimento" | "enriquecimento";
 
 export interface ProgressiveOnboardingWizardProps {
   onTrocarParaOtp?: () => void;
@@ -21,18 +20,9 @@ export function ProgressiveOnboardingWizard({
   const [admissaoData, setAdmissaoData] = useState<AcolhimentoConcluidoData | null>(null);
 
   const transicionar = (proxima: EtapaWizard) => {
-    const prefersReducedMotion =
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    if (!prefersReducedMotion && "startViewTransition" in document) {
-      document.startViewTransition(() => {
-        setEtapa(proxima);
-      });
-    } else {
+    startSafeViewTransition(() => {
       setEtapa(proxima);
-    }
+    });
   };
 
   const handleAcolhimentoConcluido = (data: AcolhimentoConcluidoData) => {
@@ -44,7 +34,9 @@ export function ProgressiveOnboardingWizard({
   };
 
   const handleEnriquecimentoConcluido = () => {
-    transicionar("concluido");
+    if (admissaoData && onFinalizar) {
+      onFinalizar(admissaoData);
+    }
   };
 
   if (etapa === "acolhimento") {
@@ -62,62 +54,10 @@ export function ProgressiveOnboardingWizard({
         pacienteId={admissaoData.pacienteId}
         token={admissaoData.token}
         onConcluido={handleEnriquecimentoConcluido}
-        onPular={() => transicionar("concluido")}
+        onPular={handleEnriquecimentoConcluido}
       />
     );
   }
 
-  return (
-    <Card
-      role="status"
-      aria-live="polite"
-      className="w-full max-w-md mx-auto shadow-lg text-center space-y-4"
-    >
-      <CardHeader>
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mb-2">
-          <span className="text-3xl" aria-hidden="true">
-            ✓
-          </span>
-        </div>
-        <CardTitle className="text-2xl font-bold text-primary">Ingresso Confirmado!</CardTitle>
-        <CardDescription>
-          Você já está posicionado na fila virtual de espera do Pronto Atendimento.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 text-left">
-        <div className="p-4 bg-muted/50 rounded-lg text-xs font-mono space-y-1.5 border">
-          <p>
-            <strong>Atendimento ID:</strong> {admissaoData?.atendimentoId}
-          </p>
-          <p>
-            <strong>Prioridade Clínica:</strong> Nível {admissaoData?.prioridadeClinica} (ACR)
-          </p>
-          <p>
-            <strong>Status:</strong> TRIADO_AGUARDANDO_ELEGIBILIDADE
-          </p>
-        </div>
-
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          Nossa equipe médica está ciente e sua chamada será iniciada em instantes. Mantenha esta
-          tela aberta para receber a notificação de chamada com áudio e vídeo.
-        </p>
-
-        {admissaoData && onFinalizar && (
-          <Button
-            type="button"
-            className="w-full font-bold"
-            onClick={() => onFinalizar(admissaoData)}
-          >
-            Acompanhar Atendimento na Fila
-          </Button>
-        )}
-
-        {onTrocarParaOtp && (
-          <Button type="button" variant="outline" className="w-full mt-2" onClick={onTrocarParaOtp}>
-            Acessar com outro número
-          </Button>
-        )}
-      </CardContent>
-    </Card>
-  );
+  return null;
 }

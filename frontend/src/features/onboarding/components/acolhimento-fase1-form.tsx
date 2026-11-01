@@ -314,7 +314,7 @@ export function AcolhimentoFase1Form({
                 onClick={onVoltarParaLogin}
                 className="text-xs h-7 px-2"
               >
-                Já tenho cadastro (Entrar via SMS)
+                Já possui atendimento? Acesse com seu telefone
               </Button>
             )}
           </div>

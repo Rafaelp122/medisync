@@ -47,7 +47,7 @@
 - **Dado que** a paciente teve a sessão desconectada ou acessa a plataforma por um novo navegador,
 - **Quando** ela valida o código OTP com sucesso em `POST /api/v1/auth/patient/otp/verify`,
 - **Então** o sistema retorna um Bearer JWT contendo o papel `PACIENTE` e as permissões `patient:queue_track` e `patient:doc_view`,
-- **E** o frontend persiste a credencial no storage local do navegador, restabelecendo o acompanhamento da fila e o acesso a documentos clínicos.
+- **E** o frontend persiste a credencial no storage local do navegador (`localStorage` sob a chave `medisync_session`), restabelecendo o acompanhamento no Card Canônico 'Ingresso Confirmado!' e ocultando as abas de seleção de modo.
 
 ---
 
@@ -97,6 +97,8 @@
 - **Cooldown de Reenvio:** Após o envio com sucesso, inicia-se contagem regressiva de 60 segundos bloqueando novas solicitações de OTP para mitigar flooding, exibindo "Reenviar código em 59s...".
 - **Entrada OTP Acessível:** Formulário de 6 dígitos com avanço automático de foco entre campos, suporte a colar código completo via clipboard e foco inicial automático no primeiro dígito.
 - **Envelope de Erro RFC 7807:** Exibição de alertas textuais em português com `role="alert"` para código incorreto e contagem de tentativas restantes; em caso de bloqueio (HTTP 429), exibe banner persistente com tempo de espera restante.
+- **Clareza de UX para Reconexão:** A aba e o formulário de OTP deixam explícito que o acesso é para quem já possui atendimento/cadastro ("Já tenho Atendimento (Telefone)"), incluindo callout orientativo para novos pacientes realizarem o acolhimento primeiro.
+- **Card Canônico Unificado de Sessão:** Ao validar com sucesso, a interface transiciona para o Card Canônico 'Ingresso Confirmado!', ocultando abas de seleção e disponibilizando o botão 'Encerrar Sessão / Novo Atendimento'.
 
 ### 5.2 Acessibilidade Clínica (WCAG 2.1 AA)
 - Rótulos semânticos explícitos (`<label htmlFor="...">`) associados aos inputs.
@@ -105,10 +107,10 @@
 
 ### 5.3 Troféu de Testes do Frontend
 - **Integração de Tela (Vitest + RTL + MSW v2):**
-  - `frontend/src/features/onboarding/tests/solicitar-otp-form.test.tsx`
+  - `frontend/src/features/onboarding/tests/solicitar-otp-form.test.tsx` e `frontend/src/features/onboarding/tests/verificar-otp-form.test.tsx`.
+  - `frontend/src/App.test.tsx`: validação de orquestração de abas, login OTP e encerramento de sessão.
   - Simulação HTTP na camada de transporte via factory tipada `solicitarOtpPacienteMock` (`@/api/generated/msw.gen`).
   - Avanço determinístico do cooldown de 60s via `vi.useFakeTimers()` e `await vi.advanceTimersByTimeAsync(60_000)` com teardown mandatório em `afterEach(() => vi.useRealTimers())`.
 - **E2E e A11y (Playwright):**
-  - `frontend/e2e/auth-otp.spec.ts`
-  - Jornada completa do paciente simulando digitação, recebimento de código e redirecionamento de sessão.
+  - `frontend/e2e/auth-otp.spec.ts`: jornada completa do paciente com login OTP, exibição do Card Canônico unificado, persistência pós-reload (`page.reload()`) e encerramento de sessão com limpeza do `localStorage`.
 

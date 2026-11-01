@@ -3,22 +3,21 @@ import { useState } from "react";
 import type { VerificarOtpResponse } from "@/api/generated/types.gen";
 import type { AcolhimentoConcluidoData } from "@/features/onboarding/components/acolhimento-fase1-form";
 import { AuthOtpCard } from "@/features/onboarding/components/auth-otp-card";
+import { IngressoConfirmadoCard } from "@/features/onboarding/components/ingresso-confirmado-card";
 import { ProgressiveOnboardingWizard } from "@/features/onboarding/components/progressive-onboarding-wizard";
+import {
+  clearStoredSession,
+  getStoredSession,
+  type StoredPatientSession,
+  saveStoredSession,
+} from "@/lib/session-storage";
 import { cn } from "@/lib/utils";
+import { startSafeViewTransition } from "@/lib/view-transitions";
 
 const queryClient = new QueryClient();
 
-export interface AppSessionData {
-  tipo: "otp" | "acolhimento";
-  role: string;
-  pacienteId: string;
-  atendimentoId?: string;
-  prioridadeClinica?: number;
-  token?: string;
-}
-
 export function App() {
-  const [session, setSession] = useState<AppSessionData | null>(null);
+  const [session, setSession] = useState<StoredPatientSession | null>(() => getStoredSession());
   const [modo, setModo] = useState<"acolhimento" | "otp">(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -30,22 +29,53 @@ export function App() {
   });
 
   const handleOtpAuthenticated = (data: VerificarOtpResponse) => {
-    setSession({
+    const newSession: StoredPatientSession = {
       tipo: "otp",
-      role: data.role,
+      role: data.role ?? "PACIENTE",
       pacienteId: data.paciente_id,
-      token: data.token,
+      token: data.access_token,
+    };
+    saveStoredSession(newSession);
+    startSafeViewTransition(() => {
+      setSession(newSession);
     });
   };
 
-  const handleOnboardingFinalizado = (data: AcolhimentoConcluidoData) => {
-    setSession({
+  const handleSessaoIniciada = (data: AcolhimentoConcluidoData) => {
+    // Persistência atômica no storage local após Admissão na Fila (Fase 1 concluída)
+    const newSession: StoredPatientSession = {
       tipo: "acolhimento",
       role: "PACIENTE",
       pacienteId: data.pacienteId,
       atendimentoId: data.atendimentoId,
       prioridadeClinica: data.prioridadeClinica,
       token: data.token,
+      status: "TRIADO_AGUARDANDO_ELEGIBILIDADE",
+    };
+    saveStoredSession(newSession);
+  };
+
+  const handleOnboardingFinalizado = (data: AcolhimentoConcluidoData) => {
+    const newSession: StoredPatientSession = {
+      tipo: "acolhimento",
+      role: "PACIENTE",
+      pacienteId: data.pacienteId,
+      atendimentoId: data.atendimentoId,
+      prioridadeClinica: data.prioridadeClinica,
+      token: data.token,
+      status: "TRIADO_AGUARDANDO_ELEGIBILIDADE",
+    };
+    saveStoredSession(newSession);
+    startSafeViewTransition(() => {
+      setSession(newSession);
+    });
+  };
+
+  const handleEncerrarSessao = () => {
+    clearStoredSession();
+    startSafeViewTransition(() => {
+      setSession(null);
+      setModo("acolhimento");
     });
   };
 
@@ -65,41 +95,7 @@ export function App() {
         </header>
 
         {session ? (
-          <div className="w-full max-w-md mx-auto p-6 bg-card rounded-xl border shadow text-center space-y-4">
-            <h2 className="text-2xl font-bold text-primary text-balance">Acesso Autorizado</h2>
-            <p className="text-sm text-muted-foreground text-pretty">
-              {session.tipo === "acolhimento"
-                ? "Atendimento admitido na fila virtual com sucesso."
-                : "Sessão de paciente autenticada com sucesso via SMS."}
-            </p>
-            <div className="p-3 bg-muted rounded-md text-xs font-mono text-left break-all space-y-1">
-              <p>
-                <strong>Papel:</strong> {session.role}
-              </p>
-              <p>
-                <strong>Paciente ID:</strong> {session.pacienteId}
-              </p>
-              {session.atendimentoId && (
-                <p>
-                  <strong>Atendimento ID:</strong> {session.atendimentoId}
-                </p>
-              )}
-              {session.prioridadeClinica !== undefined && (
-                <p>
-                  <strong>Prioridade Clínica:</strong> Nível {session.prioridadeClinica} (ACR)
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setSession(null);
-              }}
-              className="inline-flex items-center justify-center min-h-[44px] px-3 py-2 text-xs text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
-            >
-              Encerrar sessão
-            </button>
-          </div>
+          <IngressoConfirmadoCard session={session} onEncerrarSessao={handleEncerrarSessao} />
         ) : (
           <div className="w-full max-w-xl mx-auto space-y-4">
             <div className="flex justify-center">
@@ -128,7 +124,7 @@ export function App() {
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  Novo Atendimento (Acolhimento Rápido)
+                  Novo Atendimento (Primeira Vez)
                 </button>
                 <button
                   type="button"
@@ -144,7 +140,7 @@ export function App() {
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  Acesso por Telefone / OTP
+                  Já tenho Atendimento (Telefone)
                 </button>
               </div>
             </div>
@@ -158,6 +154,7 @@ export function App() {
               {modo === "acolhimento" && (
                 <ProgressiveOnboardingWizard
                   onTrocarParaOtp={() => setModo("otp")}
+                  onSessaoIniciada={handleSessaoIniciada}
                   onFinalizar={handleOnboardingFinalizado}
                 />
               )}

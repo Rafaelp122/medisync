@@ -45,8 +45,8 @@
 ### Cenário 4: Persistência local da sessão e proteção contra abandono (Issue #113)
 - **Dado que** concluí com sucesso a triagem e recebi o identificador do atendimento e a credencial provisória de acesso,
 - **Quando** recarrego a página acidentalmente (F5) ou fecho temporariamente a aba do navegador,
-- **Então** o sistema recupera atomicamente a credencial e o estado de admissão do storage local do navegador (`sessionStorage`),
-- **E** restaura a visualização da fila ou confirmação de acolhimento sem obrigar a paciente a reiniciar o formulário clínico do zero.
+- **Então** o sistema recupera atomicamente a credencial e o estado de admissão do storage local do navegador (`localStorage` sob a chave `medisync_session`),
+- **E** restaura a visualização direta da fila no Card Canônico de Ingresso Confirmado sem obrigar a paciente a reiniciar o formulário clínico do zero e ocultando as abas de seleção de modo.
 
 ### Cenário 5: Proteção de Privacidade e Anti-Enumeração de Pacientes (LGPD Art. 11)
 - **Dado que** inicio o acolhimento emergencial informando CPF e telefone celular,
@@ -92,12 +92,13 @@
 - [x] **Apresentação:** Router fino `admissao_router.py` montado em `/api/v1/fila/admissao` com `AdmissaoResponse` expondo `tcle_hash` validado via `model_validate` (ADR-001).
 - [x] **Frontend (Fase 1 & TCLE):** `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx` e `frontend/src/features/onboarding/components/tcle-dialog.tsx` com cálculo de hash forense nativo Web Crypto API (`frontend/src/lib/validators.ts:calcularHashTcle`).
 - [x] **Frontend Hooks:** `frontend/src/features/onboarding/api/use-intake-fase1.ts` e `frontend/src/features/onboarding/api/use-admitir-paciente.ts`.
+- [x] **Sessão & Interceptor (Issue #113):** Persistência segura em `frontend/src/lib/session-storage.ts` (`medisync_session`) e injeção do cabeçalho `Authorization: Bearer <token>` em `frontend/src/api/client.ts`.
 - [x] **Testes Automatizados:**
   - Backend: `tests/unit/test_triage_model.py`, `tests/unit/test_admissao_service.py`, `tests/integration/test_admissao_integrada_flow.py`
-  - Frontend Unitários: `frontend/src/lib/validators.test.ts`, `frontend/src/features/onboarding/schemas/onboarding-schema.test.ts`
+  - Frontend Unitários: `frontend/src/lib/validators.test.ts`, `frontend/src/features/onboarding/schemas/onboarding-schema.test.ts`, `frontend/src/lib/session-storage.test.ts`, `frontend/src/api/client.test.ts`
   - Frontend Hooks: `frontend/src/features/onboarding/api/__tests__/onboarding-hooks.test.tsx`
-  - Frontend Telas: `frontend/src/features/onboarding/tests/acolhimento-triagem-form.test.tsx`
-  - E2E / A11y: `frontend/e2e/onboarding-acolhimento.spec.ts` (`E2E-ONB-01`, `E2E-A11Y-01`)
+  - Frontend Telas: `frontend/src/features/onboarding/tests/acolhimento-triagem-form.test.tsx`, `frontend/src/App.test.tsx`
+  - E2E / A11y: `frontend/e2e/onboarding-acolhimento.spec.ts` (`E2E-ONB-01` cobrindo persistência pós-admissão e `page.reload()`, `E2E-A11Y-01`)
 
 ---
 
@@ -108,6 +109,7 @@
 - **Termo de Consentimento (TCLE Digital):** Exibição do termo integral em caixa rolável acessível; checkbox explícito de concordância legal (LGPD Art. 11 / CFM nº 2.314/2022) que condiciona o botão de submissão.
 - **Escala Analógica Visual de Dor:** Seletor de 1 a 10 com cores semânticas e labels descritivos ("Sem dor" a "Pior dor imaginável"), totalmente operável por teclado ou toque.
 - **Salvaguarda Imediata SAMU 192 (RN04):** Em caso de classificação Nível 1 (Vermelho / Emergência), o fluxo virtual é imediatamente interrompido, disparando um modal com alerta audiovisual chamativo e botão de discagem rápida (`tel:192`) ou orientação de deslocamento hospitalar imediato.
+- **Persistência Imediata pós-Admissão:** Ao receber confirmação HTTP 201 da admissão na fila, os metadados e credenciais são salvos atomicamente no `localStorage` sob a chave `medisync_session`, restaurando a tela "Ingresso Confirmado!" após recarregamento acidental (`F5`).
 
 ### 5.2 Acessibilidade Clínica (WCAG 2.1 AA)
 - Rótulos semânticos e tags ARIA (`role="dialog"`, `role="alert"`, `aria-describedby`).
@@ -116,11 +118,12 @@
 
 ### 5.3 Troféu de Testes do Frontend
 - **Integração de Tela (Vitest + RTL + MSW v2):**
-  - `frontend/src/features/onboarding/tests/acolhimento-triagem-form.test.tsx`
+  - `frontend/src/features/onboarding/tests/acolhimento-triagem-form.test.tsx` e `frontend/src/App.test.tsx`.
   - Simulação de resposta de admissão via factory `admitirPacienteMock` (`@/api/generated/msw.gen`).
   - Teste de bloqueio do botão quando o TCLE não estiver marcado.
   - Teste de renderização do modal de emergência SAMU 192 em resposta de risco Nível 1.
+  - Teste de restauração e encerramento de sessão persistida.
 - **E2E e A11y (Playwright):**
-  - `frontend/e2e/onboarding-acolhimento.spec.ts`
+  - `frontend/e2e/onboarding-acolhimento.spec.ts` (`E2E-ONB-01` com `page.reload()` e asserções web-first sem regressão de tela).
   - Verificação de conformidade contínua com `@axe-core/playwright`.
 

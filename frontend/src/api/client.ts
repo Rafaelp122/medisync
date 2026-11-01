@@ -1,3 +1,4 @@
+import { clearStoredSession, getStoredToken } from "@/lib/session-storage";
 import { toProblemDetailsError } from "./errors";
 import { client } from "./generated/client.gen";
 
@@ -22,19 +23,30 @@ client.setConfig({
   },
 });
 
-// Configure client request interceptor to inject default X-Tenant-ID header
+// Configure client request interceptor to inject default X-Tenant-ID and Authorization headers
 client.interceptors.request.use((request) => {
   const tenantId = getActiveTenantId();
   if (!request.headers.has("X-Tenant-ID")) {
     request.headers.set("X-Tenant-ID", tenantId);
   }
+  const token = getStoredToken();
+  if (token && !request.headers.has("Authorization")) {
+    request.headers.set("Authorization", `Bearer ${token}`);
+  }
   return request;
 });
 
-// Configure client error interceptor to convert RFC 7807 responses into ProblemDetailsError
+// Configure client error interceptor to convert RFC 7807 responses into ProblemDetailsError and purge session on 401
 client.interceptors.error.use((error, response) => {
   const status = response?.status ?? 500;
+  if (status === 401) {
+    clearStoredSession();
+  }
   return toProblemDetailsError(error, status);
 });
+
+if (typeof window !== "undefined") {
+  (window as unknown as { __medisyncClient?: typeof client }).__medisyncClient = client;
+}
 
 export { client };
