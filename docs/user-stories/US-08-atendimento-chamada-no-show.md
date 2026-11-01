@@ -87,9 +87,8 @@
 - [x] **Domínio:** Método `Atendimento.atender_chamada()` implementado e testado no modelo (`src/modules/queue/domain/models/atendimento.py`).
 - [x] **Worker de No-Show:** Tarefa assíncrona `ring_timeout_task` libera locks e transiciona para `PACIENTE_AUSENTE` (`src/worker/tasks/ring_timeout.py`).
 - [x] **Integração de Ingresso (NC-QUE-03):** Acionar `Atendimento.atender_chamada()` e neutralização do timeout na emissão de token LiveKit do paciente em `TeleconsultaService` (`src/modules/consultation/application/services/teleconsulta_service.py`).
-- [x] **Validação de Micro-Autorização:** Dependência `validar_acesso_livekit` rejeita status `PACIENTE_AUSENTE` com RFC 7807 `409 Conflict` (`src/modules/consultation/presentation/dependencies.py`).
+- [x] **Frontend Teleconsulta Hook (RF-03):** Hook headless `useAtenderChamada` para emissão do token LiveKit via Hey API (`frontend/src/features/queue/api/use-atender-chamada.ts`).
+- [x] **Frontend No-Show Determinístico:** Auto-dismiss da chamada após 45 segundos e exibição de card de ausência sem travar a interface (`frontend/src/features/queue/components/incoming-call-ring-modal.tsx`).
 - [x] **Testes Automatizados:**
-  - `tests/unit/test_atendimento_model.py`
-  - `tests/unit/test_livekit_dependencies.py`
-  - `tests/integration/test_ring_timeout_flow.py`
-  - `tests/integration/test_livekit_lifecycle.py`
+  - Backend: `tests/unit/test_atendimento_model.py`, `tests/unit/test_livekit_dependencies.py`, `tests/integration/test_ring_timeout_flow.py`, `tests/integration/test_livekit_lifecycle.py`
+  - Frontend: `frontend/src/features/queue/tests/incoming-call-ring-modal.test.tsx`, `frontend/src/features/queue/tests/virtual-waiting-room.test.tsx` (`IT-WAIT-04`, `IT-WAIT-05`)

@@ -14,6 +14,7 @@
 - [Emit Realtime Domain Event](backend/emit-realtime-domain-event.md) — publicação de eventos clínicos via Valkey Pub/Sub e streaming WebSockets de baixa latência.
 - [Write Tests](backend/write-tests.md) — como escrever testes unitários e de integração no Padrão Ouro.
 - [Run Tests](backend/run-tests.md) — comandos, pirâmide e diagnóstico.
+- [Patient Virtual Waiting Room](patient-virtual-waiting-room.md) — jornada do paciente na sala de espera virtual, WebSocket e ring modal de 45s.
 
 ## Verificação
 

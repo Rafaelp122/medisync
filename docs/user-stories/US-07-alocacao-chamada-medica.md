@@ -84,9 +84,7 @@
 - [x] **Latência Submilisegundo:** Tempo de resposta comprovado em suíte de teste de estresse concorrente.
 - [x] **Agendamento do Timeout:** Enfileiramento do job ARQ `ring_timeout_task` com `_defer_by=45` (`src/worker/tasks/ring_timeout.py`).
 - [x] **Apresentação:** Router fino `alocacao_router.py` montado em `/api/v1/fila/chamar-proximo` com `ChamarProximoResponse` validado via `model_validate` e expondo `paciente_id` e `prioridade_clinica` (ADR-001/ADR-008).
+- [x] **Frontend Ring Modal (RF-03, RN02):** Modal fullscreen `IncomingCallRingModal` com contagem regressiva de 45 segundos, chime sonoro sintetizado em Web Audio API e auto-dismiss (`frontend/src/features/queue/components/incoming-call-ring-modal.tsx`).
 - [x] **Testes Automatizados:**
-  - `tests/unit/test_queue_schemas.py`
-  - `tests/unit/test_alocacao_service.py`
-  - `tests/unit/test_alocacao_router.py`
-  - `tests/integration/test_alocar_chamada_concurrency.py`
-  - `tests/integration/test_ring_timeout_flow.py`
+  - Backend: `tests/unit/test_queue_schemas.py`, `tests/unit/test_alocacao_service.py`, `tests/unit/test_alocacao_router.py`, `tests/integration/test_alocar_chamada_concurrency.py`, `tests/integration/test_ring_timeout_flow.py`
+  - Frontend: `frontend/src/features/queue/tests/incoming-call-ring-modal.test.tsx`, `frontend/src/features/queue/tests/virtual-waiting-room.test.tsx`

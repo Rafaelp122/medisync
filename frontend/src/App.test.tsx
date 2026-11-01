@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { HttpResponse, http, ws } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "./App";
 import {
@@ -8,10 +9,30 @@ import {
   type StoredPatientSession,
   saveStoredSession,
 } from "./lib/session-storage";
+import { server } from "./mocks/server";
+
+const queueWs = ws.link(/.*\/ws\/queue\/.*/);
 
 describe("App (Orquestração de Sessão, Persistência e Abas)", () => {
   beforeEach(() => {
     localStorage.clear();
+    server.use(
+      queueWs.addEventListener("connection", ({ client }) => {
+        client.send(JSON.stringify({ event: "CONNECTED" }));
+      }),
+      http.get("*/api/v1/fila/posicao/:atendimentoId", () => {
+        return HttpResponse.json(
+          {
+            atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2d",
+            status: "TRIADO_AGUARDANDO_ELEGIBILIDADE",
+            posicao: 2,
+            total_aguardando: 3,
+            tempo_estimado_segundos: 600,
+          },
+          { status: 200 },
+        );
+      }),
+    );
   });
 
   const mockSession: StoredPatientSession = {
@@ -44,7 +65,7 @@ describe("App (Orquestração de Sessão, Persistência e Abas)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("IT-APP-02: Restaura automaticamente a sessão salva no localStorage e oculta abas", () => {
+  it("IT-APP-02: Restaura automaticamente a sessão salva com atendimentoId e exibe a Sala de Espera Virtual", () => {
     saveStoredSession(mockSession);
 
     render(<App />);
@@ -52,31 +73,53 @@ describe("App (Orquestração de Sessão, Persistência e Abas)", () => {
     // Abas de seleção de modo DEVEM ser ocultadas
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
 
-    // Card canônico unificado "Ingresso Confirmado!" DEVE estar visível com dados
-    expect(screen.getByRole("heading", { name: /ingresso confirmado!/i })).toBeInTheDocument();
-    expect(screen.getByText("018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2d")).toBeInTheDocument();
-    expect(screen.getByText(/nível 2 \(acr\)/i)).toBeInTheDocument();
+    // Sala de Espera Virtual DEVE estar visível com dados da fila
+    expect(screen.getByRole("heading", { name: /sala de espera virtual/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /sua posição na fila/i })).toBeInTheDocument();
+    expect(screen.getByText(/nível 2 — muito urgente \(laranja\)/i)).toBeInTheDocument();
   });
 
-  it("IT-APP-03: Botão 'Encerrar Sessão' limpa o storage e reexibe a interface inicial", async () => {
+  it("IT-APP-03: Botão 'Desistir do atendimento' cancela a fila e permite voltar ao início", async () => {
+    server.use(
+      http.post("*/api/v1/fila/cancelar/:atendimentoId", () => {
+        return HttpResponse.json(
+          {
+            atendimento_id: mockSession.atendimentoId,
+            status: "CANCELADO",
+            cancelado_em: new Date().toISOString(),
+            motivo: "Desistência voluntária pelo paciente",
+          },
+          { status: 200 },
+        );
+      }),
+    );
+
     saveStoredSession(mockSession);
     const user = userEvent.setup();
 
     render(<App />);
 
-    const btnEncerrar = screen.getByRole("button", {
-      name: /encerrar sessão \/ novo atendimento/i,
+    const btnDesistir = screen.getByRole("button", {
+      name: /desistir do atendimento/i,
     });
-    await user.click(btnEncerrar);
+    await user.click(btnDesistir);
+
+    const btnConfirmar = screen.getByRole("button", {
+      name: /confirmar desistência/i,
+    });
+    await user.click(btnConfirmar);
+
+    // Card de cancelamento exibido com botão para voltar
+    const btnVoltar = await screen.findByRole("button", {
+      name: /voltar ao início/i,
+    });
+    await user.click(btnVoltar);
 
     // Storage limpo
     expect(getStoredSession()).toBeNull();
     expect(localStorage.getItem(MEDISYNC_SESSION_KEY)).toBeNull();
 
-    // Card de ingresso confirmado fechado e abas reexibidas
-    expect(
-      screen.queryByRole("heading", { name: /ingresso confirmado!/i }),
-    ).not.toBeInTheDocument();
+    // Abas reexibidas
     expect(screen.getByRole("tablist")).toBeInTheDocument();
   });
 
@@ -126,5 +169,34 @@ describe("App (Orquestração de Sessão, Persistência e Abas)", () => {
     expect(stored?.token).toBe("mock-jwt-token-paciente");
     expect(stored?.tipo).toBe("otp");
     expect(stored?.role).toBe("PACIENTE");
+  });
+
+  it("IT-APP-05: Abre e fecha o formulário de complementação cadastral sem perder a sala de espera", async () => {
+    saveStoredSession(mockSession);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: /sala de espera virtual/i })).toBeInTheDocument();
+
+    const btnComplementar = screen.getByRole("button", { name: /completar cadastro/i });
+    await user.click(btnComplementar);
+
+    // Modal de complementação abre com formulário da Fase 2
+    expect(
+      screen.getByRole("heading", { name: /completar prontuário regulatório/i }),
+    ).toBeInTheDocument();
+
+    // Clica em "Completar mais tarde" para fechar
+    const btnPular = screen.getByRole("button", { name: /completar mais tarde/i });
+    await user.click(btnPular);
+
+    // Modal fecha e sala de espera continua ativa
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("heading", { name: /completar prontuário regulatório/i }),
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("heading", { name: /sala de espera virtual/i })).toBeInTheDocument();
   });
 });
