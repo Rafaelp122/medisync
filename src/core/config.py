@@ -187,6 +187,7 @@ class ProductionSettings(CommonSettings):
     TOKEN_REVOCATION_BACKEND: Literal["valkey", "memory"] = "valkey"
     VALIDATION_RATE_LIMIT_BACKEND: Literal["valkey", "memory"] = "valkey"
     TELEMETRY_CACHE_BACKEND: Literal["valkey", "memory"] = "valkey"
+    PSC_DEFAULT_PROVIDER: Literal["birdid", "safeid", "vidaas", "fake"] = "birdid"
 
     @model_validator(mode="after")
     def validate_production_invariants(self) -> Self:
@@ -202,6 +203,11 @@ class ProductionSettings(CommonSettings):
         if not self.CORS_ORIGINS:
             raise ValueError(
                 "CORS_ORIGINS deve listar explicitamente as origens em produção."
+            )
+        if self.PSC_DEFAULT_PROVIDER == "fake":
+            raise ValueError(
+                f"PSC_DEFAULT_PROVIDER '{self.PSC_DEFAULT_PROVIDER}' não pode ser "
+                "'fake' em produção/staging; esperados: birdid, safeid, vidaas."
             )
         return self
 

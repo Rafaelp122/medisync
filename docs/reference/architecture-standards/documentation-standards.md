@@ -96,7 +96,7 @@ rg -U '```python[^`]{600,}' docs/tutorials docs/how-to | head -3
 rg -c "^[A-Z_]+=" .env.example
 ```
 
-Esperado: cada arquivo entre 80–250 linhas; nenhum bloco python gigante em `tutorials/` ou `how-to/`; `25` vars no `.env.example` batendo com `variables.md`.
+Esperado: cada arquivo entre 80–250 linhas; nenhum bloco python gigante em `tutorials/` ou `how-to/`; `29` vars no `.env.example` batendo com `variables.md`.
 
 ## Ver também
 

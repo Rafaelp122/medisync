@@ -8,6 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { DoctorLoginCard } from "@/features/consultation/components/doctor-login-card";
+import { DoctorWorkstation } from "@/features/consultation/components/doctor-workstation";
 import type { AcolhimentoConcluidoData } from "@/features/onboarding/components/acolhimento-fase1-form";
 import { AuthOtpCard } from "@/features/onboarding/components/auth-otp-card";
 import { EnriquecimentoFase2Form } from "@/features/onboarding/components/enriquecimento-fase2-form";
@@ -15,9 +17,13 @@ import { IngressoConfirmadoCard } from "@/features/onboarding/components/ingress
 import { ProgressiveOnboardingWizard } from "@/features/onboarding/components/progressive-onboarding-wizard";
 import { VirtualWaitingRoom } from "@/features/queue/components/virtual-waiting-room";
 import {
+  clearStoredDoctorSession,
   clearStoredSession,
+  getStoredDoctorSession,
   getStoredSession,
+  type StoredDoctorSession,
   type StoredPatientSession,
+  saveStoredDoctorSession,
   saveStoredSession,
 } from "@/lib/session-storage";
 import { cn } from "@/lib/utils";
@@ -27,12 +33,23 @@ const queryClient = new QueryClient();
 
 export function App() {
   const [session, setSession] = useState<StoredPatientSession | null>(() => getStoredSession());
-  const [modo, setModo] = useState<"acolhimento" | "otp">(() => {
+  const [doctorSession, setDoctorSession] = useState<StoredDoctorSession | null>(() =>
+    getStoredDoctorSession(),
+  );
+  const [modo, setModo] = useState<"acolhimento" | "otp" | "medico">(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      if (params.get("mode") === "otp") {
+      const modeParam = params.get("mode");
+      if (modeParam === "otp") {
         return "otp";
       }
+      if (modeParam === "doctor" || modeParam === "medico") {
+        return "medico";
+      }
+    }
+    const storedDoctor = getStoredDoctorSession();
+    if (storedDoctor) {
+      return "medico";
     }
     return "acolhimento";
   });
@@ -51,7 +68,6 @@ export function App() {
   };
 
   const handleSessaoIniciada = (data: AcolhimentoConcluidoData) => {
-    // Persistência atômica no storage local após Admissão na Fila (Fase 1 concluída)
     const newSession: StoredPatientSession = {
       tipo: "acolhimento",
       role: "PACIENTE",
@@ -100,13 +116,40 @@ export function App() {
     });
   };
 
+  const handleDoctorLogin = (newDoctorSession: StoredDoctorSession) => {
+    saveStoredDoctorSession(newDoctorSession);
+    startSafeViewTransition(() => {
+      setDoctorSession(newDoctorSession);
+    });
+  };
+
+  const handleDoctorLogout = () => {
+    clearStoredDoctorSession();
+    startSafeViewTransition(() => {
+      setDoctorSession(null);
+    });
+  };
+
+  const handleTabKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      const modos: Array<"acolhimento" | "otp" | "medico"> = ["acolhimento", "otp", "medico"];
+      const currentIndex = modos.indexOf(modo);
+      const nextIndex =
+        e.key === "ArrowRight"
+          ? (currentIndex + 1) % modos.length
+          : (currentIndex - 1 + modos.length) % modos.length;
+      setModo(modos[nextIndex]);
+    }
+  };
+
   return (
     <QueryClientProvider client={queryClient}>
       <main
         id="main-content"
-        className="min-h-screen flex flex-col items-center justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-background text-foreground"
+        className="min-h-screen flex flex-col items-center justify-start p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-background text-foreground"
       >
-        <header className="mb-6 text-center space-y-1">
+        <header className="mb-4 text-center space-y-1">
           <h1 className="text-3xl font-extrabold tracking-tight text-primary text-balance">
             MediSync Express
           </h1>
@@ -174,53 +217,71 @@ export function App() {
             <IngressoConfirmadoCard session={session} onEncerrarSessao={handleEncerrarSessao} />
           )
         ) : (
-          <div className="w-full max-w-xl mx-auto space-y-4">
-            <div className="flex justify-center">
-              <div
-                role="tablist"
-                aria-label="Opções de atendimento"
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-                    e.preventDefault();
-                    setModo((prev) => (prev === "acolhimento" ? "otp" : "acolhimento"));
-                  }
-                }}
-                className="inline-flex gap-1 p-1 bg-muted rounded-lg text-xs sm:text-sm"
-              >
-                <button
-                  type="button"
-                  id="tab-acolhimento"
-                  role="tab"
-                  aria-selected={modo === "acolhimento"}
-                  aria-controls="panel-acolhimento"
-                  onClick={() => setModo("acolhimento")}
-                  className={cn(
-                    "min-h-[44px] px-3.5 py-2 rounded-md font-medium transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    modo === "acolhimento"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
+          <div
+            className={cn(
+              "w-full mx-auto space-y-4",
+              modo === "medico" ? "max-w-[1600px]" : "max-w-xl",
+            )}
+          >
+            {!doctorSession && (
+              <div className="flex justify-center">
+                <div
+                  role="tablist"
+                  aria-label="Opções de atendimento"
+                  onKeyDown={handleTabKeyDown}
+                  className="inline-flex gap-1 p-1 bg-muted rounded-lg text-xs sm:text-sm"
                 >
-                  Novo Atendimento (Primeira Vez)
-                </button>
-                <button
-                  type="button"
-                  id="tab-otp"
-                  role="tab"
-                  aria-selected={modo === "otp"}
-                  aria-controls="panel-otp"
-                  onClick={() => setModo("otp")}
-                  className={cn(
-                    "min-h-[44px] px-3.5 py-2 rounded-md font-medium transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    modo === "otp"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  Já tenho Atendimento (Telefone)
-                </button>
+                  <button
+                    type="button"
+                    id="tab-acolhimento"
+                    role="tab"
+                    aria-selected={modo === "acolhimento"}
+                    aria-controls="panel-acolhimento"
+                    onClick={() => setModo("acolhimento")}
+                    className={cn(
+                      "min-h-[44px] px-3.5 py-2 rounded-md font-medium transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      modo === "acolhimento"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    Novo Atendimento (Primeira Vez)
+                  </button>
+                  <button
+                    type="button"
+                    id="tab-otp"
+                    role="tab"
+                    aria-selected={modo === "otp"}
+                    aria-controls="panel-otp"
+                    onClick={() => setModo("otp")}
+                    className={cn(
+                      "min-h-[44px] px-3.5 py-2 rounded-md font-medium transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      modo === "otp"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    Já tenho Atendimento (Telefone)
+                  </button>
+                  <button
+                    type="button"
+                    id="tab-medico"
+                    role="tab"
+                    aria-selected={modo === "medico"}
+                    aria-controls="panel-medico"
+                    onClick={() => setModo("medico")}
+                    className={cn(
+                      "min-h-[44px] px-3.5 py-2 rounded-md font-medium transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      modo === "medico"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    Estação Médica (Dr. Eduardo Rocha)
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             <div
               role="tabpanel"
@@ -243,6 +304,26 @@ export function App() {
                   <AuthOtpCard onAuthenticated={handleOtpAuthenticated} />
                 </div>
               )}
+            </div>
+
+            <div
+              role="tabpanel"
+              id="panel-medico"
+              aria-labelledby="tab-medico"
+              hidden={modo !== "medico"}
+            >
+              {modo === "medico" &&
+                (!doctorSession ? (
+                  <DoctorLoginCard onLoginSuccess={handleDoctorLogin} />
+                ) : (
+                  <DoctorWorkstation
+                    token={doctorSession.token}
+                    medicoId={doctorSession.medicoId}
+                    medicoNome={doctorSession.medicoNome}
+                    crmUf={doctorSession.crmUf}
+                    onLogout={handleDoctorLogout}
+                  />
+                ))}
             </div>
           </div>
         )}

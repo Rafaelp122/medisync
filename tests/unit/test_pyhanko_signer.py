@@ -279,6 +279,19 @@ async def test_pyhanko_signer_delegates_to_fake_for_test_providers() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pyhanko_signer_rejects_fake_when_disallowed() -> None:
+    """Verify PyHankoSigner raises when fake provider is disabled."""
+    pdf_bytes = _build_valid_pdf()
+    signer = PyHankoSigner(allow_fake=False)
+    creds = DoctorCertificateCredentials(token="tok-123", provider="fake")
+
+    with pytest.raises(
+        AssinaturaDigitalInvalidaError, match="Provedor simulado 'fake' desabilitado"
+    ):
+        await signer.assinar_pdf(pdf_bytes, creds)
+
+
+@pytest.mark.asyncio
 async def test_pyhanko_signer_cloud_provider_flow() -> None:
     """Verify PyHankoSigner coordinates signHash with PSC client for cloud providers."""
     pdf_bytes = _build_valid_pdf()

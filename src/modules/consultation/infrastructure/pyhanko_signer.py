@@ -266,9 +266,11 @@ class PyHankoSigner(ICPBrasilSignerPort):
         self,
         psc_client: CloudPSCOAuth2Client | None = None,
         fake_signer: FakeICPBrasilSigner | None = None,
+        allow_fake: bool = True,
     ) -> None:
         self._psc_client = psc_client or CloudPSCOAuth2Client()
         self._fake_signer = fake_signer or FakeICPBrasilSigner()
+        self._allow_fake = allow_fake
 
     async def assinar_pdf(
         self,
@@ -291,6 +293,10 @@ class PyHankoSigner(ICPBrasilSignerPort):
 
         # In test mode or when provider is fake/mock, execute with in-memory signer
         if prov in ("fake", "mock", "local"):
+            if not self._allow_fake:
+                raise AssinaturaDigitalInvalidaError(
+                    f"Provedor simulado '{prov}' desabilitado neste ambiente."
+                )
             return await self._fake_signer.assinar_pdf(pdf_bytes, credenciais, metadata)
 
         # For external cloud PSCs (BirdID, SafeID, Vidaas)

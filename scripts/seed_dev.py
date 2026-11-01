@@ -3,11 +3,14 @@
 import asyncio
 import logging
 from datetime import date
+from uuid import UUID
 
 from sqlalchemy import select
 from src.core.context import set_current_tenant_id
 from src.core.database import async_session_factory
-from src.modules.identity.domain.models import Organizacao, Paciente
+from src.modules.auth.domain.models import UsuarioCredencial
+from src.modules.auth.infrastructure.argon2_hasher import Argon2PasswordHasher
+from src.modules.identity.domain.models import Organizacao, Paciente, Profissional
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("medisync.seed_dev")
@@ -59,7 +62,7 @@ async def main() -> None:
                 Paciente.telefone == dados["telefone"],
             )
             res_pac = await session.execute(stmt_pac)
-            pac = res_pac.scalar_one_or_none()
+            pac = res_pac.scalars().first()
 
             if pac is None:
                 logger.info(
@@ -81,6 +84,57 @@ async def main() -> None:
                 logger.info(
                     "Paciente '%s' (%s) já existente.", pac.nome_completo, pac.telefone
                 )
+
+        # 3. Garante Profissional Médico Plantonista Demo (Dr. Eduardo Rocha)
+        med_id = UUID("018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e")
+        stmt_prof = select(Profissional).where(Profissional.id == med_id)
+        res_prof = await session.execute(stmt_prof)
+        prof = res_prof.scalars().first()
+
+        if prof is None:
+            logger.info("Criando perfil profissional do Dr. Eduardo Rocha...")
+            prof = Profissional(
+                id=med_id,
+                organizacao_id=1,
+                cpf="11122233344",
+                nome_completo="Dr. Eduardo Rocha",
+                email="eduardo.rocha@medisync.com.br",
+                papel="MEDICO",
+                crm="123456",
+                crm_uf="SP",
+                ativo=True,
+            )
+            session.add(prof)
+            await session.commit()
+            logger.info("Perfil profissional do Dr. Eduardo Rocha criado com sucesso.")
+        else:
+            logger.info("Perfil profissional já existente: %s", prof.nome_completo)
+
+        # 4. Garante Credencial de Autenticação do Médico Demo
+        stmt_med = select(UsuarioCredencial).where(
+            UsuarioCredencial.organizacao_id == 1,
+            UsuarioCredencial.identificador == "eduardo.rocha@medisync.com.br",
+        )
+        res_med = await session.execute(stmt_med)
+        med = res_med.scalars().first()
+
+        if med is None:
+            logger.info("Criando credencial do médico demo (Dr. Eduardo Rocha)...")
+            hasher = Argon2PasswordHasher()
+            med = UsuarioCredencial(
+                id=UUID("018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2f"),
+                organizacao_id=1,
+                usuario_id=med_id,
+                identificador="eduardo.rocha@medisync.com.br",
+                senha_hash=hasher.hash("Medisync@2026"),
+                papel="MEDICO",
+                ativo=True,
+            )
+            session.add(med)
+            await session.commit()
+            logger.info("Médico demo (Dr. Eduardo Rocha) criado com sucesso.")
+        else:
+            logger.info("Médico demo já existente: %s", med.identificador)
 
     logger.info("Seed de desenvolvimento finalizado com sucesso!")
 

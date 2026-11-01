@@ -199,4 +199,38 @@ describe("App (Orquestração de Sessão, Persistência e Abas)", () => {
     });
     expect(screen.getByRole("heading", { name: /sala de espera virtual/i })).toBeInTheDocument();
   });
+
+  it("IT-APP-06: Alternar para aba 'Estação Médica' exibe login e permite autenticar", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const tabMedico = screen.getByRole("tab", { name: /estação médica/i });
+    expect(tabMedico).toBeInTheDocument();
+
+    await user.click(tabMedico);
+
+    // Deve exibir o card de login do médico
+    expect(screen.getByRole("heading", { name: /acesso à estação médica/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /entrar no plantão/i })).toBeInTheDocument();
+
+    // Clica para autenticar
+    await user.click(screen.getByRole("button", { name: /entrar no plantão/i }));
+
+    // Deve transicionar para a estação clínica e ocultar as abas de navegação
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /chamar próximo paciente/i })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /dr\. eduardo rocha/i })).toBeInTheDocument();
+      expect(screen.getByText(/nenhum atendimento clínico ativo/i)).toBeInTheDocument();
+      expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    });
+
+    // Ao sair do plantão, as abas devem ser restauradas
+    const btnSair = screen.getByRole("button", { name: /sair do plantão/i });
+    await user.click(btnSair);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tablist")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /acesso à estação médica/i })).toBeInTheDocument();
+    });
+  });
 });

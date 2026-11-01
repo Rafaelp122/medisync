@@ -192,7 +192,9 @@ def get_pdf_generator() -> PDFGeneratorPort:
 
 def get_signer() -> ICPBrasilSignerPort:
     """Provide ICP-Brasil PAdES signer adapter."""
-    return PyHankoSigner()
+    settings = get_settings()
+    allow_fake = settings.ENVIRONMENT != "production" or settings.DEBUG
+    return PyHankoSigner(allow_fake=allow_fake)
 
 
 @lru_cache(maxsize=1)
