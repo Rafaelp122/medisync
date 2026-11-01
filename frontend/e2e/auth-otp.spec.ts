@@ -59,9 +59,44 @@ test.describe("Autenticação OTP de Paciente (E2E)", () => {
     // Submit OTP
     await page.getByRole("button", { name: /confirmar e entrar/i }).click();
 
-    // Verify successful authentication
+    // Verify successful authentication via unified canonical card (Acesso Autorizado sem atendimento em curso)
     await expect(page.getByRole("heading", { name: /acesso autorizado/i })).toBeVisible();
     await expect(page.getByText(/papel:\s*paciente/i)).toBeVisible();
+
+    // Verify localStorage session persistence
+    const rawSession = await page.evaluate(() => localStorage.getItem("medisync_session"));
+    expect(rawSession).not.toBeNull();
+    const parsed = JSON.parse(rawSession ?? "{}");
+    expect(parsed.token).toBe("fake-e2e-jwt-token");
+    expect(parsed.pacienteId).toBe("00000000-0000-0000-0000-000000000001");
+
+    // Verify that client attaches Authorization Bearer header to network requests
+    const tokenHeader = await page.evaluate(async () => {
+      const client = (
+        window as unknown as { __medisyncClient: { get: (opts: unknown) => Promise<unknown> } }
+      ).__medisyncClient;
+      let capturedAuth: string | null = null;
+      await client.get({
+        url: "/api/v1/auth/me",
+        fetch: async (req: Request) => {
+          capturedAuth = req.headers.get("Authorization");
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        },
+      });
+      return capturedAuth;
+    });
+    expect(tokenHeader).toBe("Bearer fake-e2e-jwt-token");
+
+    // Verify persistence across page reload (F5)
+    await page.reload();
+    await expect(page.getByRole("heading", { name: /acesso autorizado/i })).toBeVisible();
+    await expect(page.getByRole("tablist")).not.toBeVisible();
+
+    // Verify logout / session termination
+    await page.getByRole("button", { name: /encerrar sessão \/ novo atendimento/i }).click();
+    await expect(page.getByRole("tablist")).toBeVisible();
+    const clearedSession = await page.evaluate(() => localStorage.getItem("medisync_session"));
+    expect(clearedSession).toBeNull();
   });
 
   test("E2E-02: Auditoria de Acessibilidade WCAG 2.1 AA", async ({ page }) => {

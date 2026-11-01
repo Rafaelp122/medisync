@@ -121,4 +121,18 @@ describe("SolicitarOtpForm (Integração de Tela)", () => {
     expect(errorMsg).toBeInTheDocument();
     expect(handleOtpSent).not.toHaveBeenCalled();
   });
+
+  it("IT-05: Exibe textos de apoio comunicando reconexão de cadastro prévio", () => {
+    const { getByText } = renderWithProviders(<SolicitarOtpForm />);
+
+    expect(
+      getByText(
+        /informe o telefone cadastrado no seu atendimento para receber o código sms de acesso/i,
+      ),
+    ).toBeInTheDocument();
+    expect(getByText(/primeiro atendimento no medisync\?/i)).toBeInTheDocument();
+    expect(
+      getByText(/inicie pelo 'novo atendimento' para realizar sua triagem clínica/i),
+    ).toBeInTheDocument();
+  });
 });

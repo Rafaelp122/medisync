@@ -82,7 +82,7 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
 
     // Selecionar sintoma e nível de dor
     await page.getByRole("button", { name: /^dor de cabeça$/i }).click();
-    await page.getByRole("button", { name: /^nível 4$/i }).click();
+    await page.getByRole("radio", { name: /^nível 4$/i }).click();
 
     // Visualizar TCLE em modal
     await page.getByRole("button", { name: /termo de consentimento livre e esclarecido/i }).click();
@@ -119,6 +119,26 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
     await expect(
       page.getByText(/você já está posicionado na fila virtual de espera/i),
     ).toBeVisible();
+
+    // 5. Persistência de Sessão e Recarga (Issue #113)
+    const rawSession = await page.evaluate(() => localStorage.getItem("medisync_session"));
+    expect(rawSession).not.toBeNull();
+    const parsed = JSON.parse(rawSession ?? "{}");
+    expect(parsed.atendimentoId).toBe("018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c");
+    expect(parsed.token).toBe("fake-jwt-intake-token-e2e");
+
+    // Recarregar a página (F5)
+    await page.reload();
+
+    // Deve restaurar automaticamente no Ingresso Confirmado sem voltar ao início
+    await expect(page.getByRole("heading", { name: /ingresso confirmado!/i })).toBeVisible();
+    await expect(page.getByRole("tablist")).not.toBeVisible();
+
+    // 6. Encerramento de Sessão e Limpeza de Storage
+    await page.getByRole("button", { name: /encerrar sessão \/ novo atendimento/i }).click();
+    await expect(page.getByRole("tablist")).toBeVisible();
+    const clearedSession = await page.evaluate(() => localStorage.getItem("medisync_session"));
+    expect(clearedSession).toBeNull();
   });
 
   test("E2E-ONB-02: Salvaguarda SAMU 192 imediata e recuperação por engano (Red Flag RN04)", async ({

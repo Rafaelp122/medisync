@@ -58,7 +58,7 @@ export function AuthOtpCard({ onAuthenticated, className }: AuthOtpCardProps) {
         </CardTitle>
         <CardDescription>
           {step === "solicitar"
-            ? "Acesso rápido sem senhas para pacientes"
+            ? "Já possui atendimento ou cadastro? Acesse com seu telefone para retomar seu lugar na fila."
             : "Confirme sua identidade com o código recebido"}
         </CardDescription>
       </CardHeader>

@@ -102,12 +102,20 @@ export function SolicitarOtpForm({ onOtpSent, className }: SolicitarOtpFormProps
                 />
               </FormControl>
               <FormDescription>
-                Informe seu número celular com DDD para receber o código por SMS
+                Informe o telefone cadastrado no seu atendimento para receber o código SMS de
+                acesso.
               </FormDescription>
               <FormMessage />
             </FormItem>
           )}
         />
+
+        <div className="p-3 bg-muted/60 rounded-md text-xs text-muted-foreground border">
+          <p>
+            <strong>Primeiro atendimento no MediSync?</strong> Inicie pelo 'Novo Atendimento' para
+            realizar sua triagem clínica.
+          </p>
+        </div>
 
         <Button
           type="submit"
