@@ -49,11 +49,11 @@ Enquanto aguarda na fila, o paciente pode visualizar o `PasskeyInvitationCard` c
 - Orquestrador da tela: `frontend/src/features/queue/components/virtual-waiting-room.tsx:VirtualWaitingRoom`
 - Card de posição e TMA: `frontend/src/features/queue/components/queue-position-card.tsx:QueuePositionCard`
 - Ring modal de 45s: `frontend/src/features/queue/components/incoming-call-ring-modal.tsx:IncomingCallRingModal`
-- Alerta sonoro sintetizado: `frontend/src/features/queue/lib/audio-chime.ts:reproduzirChimeChamada`
+- Alerta sonoro sintetizado: `frontend/src/features/queue/lib/audio-chime.ts:iniciarToqueChamadaMedica`
 - Modal de piora clínica: `frontend/src/features/queue/components/piora-clinica-modal.tsx:PioraClinicaModal`
 - Diálogo de desistência (RN06): `frontend/src/features/queue/components/cancelar-fila-dialog.tsx:CancelarFilaDialog`
 - Card de convite Passkey: `frontend/src/features/queue/components/passkey-invitation-card.tsx:PasskeyInvitationCard`
-- Salvaguarda SAMU compartilhada: `frontend/src/components/samu-emergency-modal.tsx:SamuEmergencyModal`
+- Salvaguarda SAMU compartilhada: `frontend/src/features/onboarding/components/samu-emergency-modal.tsx:SamuEmergencyModal`
 - Formatação e estimativas: `frontend/src/lib/formatters.ts:formatarPosicaoOrdinal`
 - Hook de WebSocket: `frontend/src/features/queue/api/use-queue-socket.ts:useQueueSocket`
 - Hook de posição REST: `frontend/src/features/queue/api/use-posicao-fila.ts:usePosicaoFila`

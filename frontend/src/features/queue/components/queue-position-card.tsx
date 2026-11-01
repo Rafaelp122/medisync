@@ -26,6 +26,15 @@ const PRIORIDADE_LABELS: Record<
   5: { label: "Nível 5 — Não Urgente (Azul)", variant: "nivel5" },
 };
 
+/**
+ * Card de Posição em Tempo Real e Estimativa de Espera (RF-03, RN01).
+ *
+ * Apresenta a classificação de risco Manchester/ACR, a posição ordinal na fila
+ * calculada no Valkey e o Tempo Médio de Atendimento (TMA) estimado.
+ *
+ * @see docs/user-stories/US-07-alocacao-chamada-medica.md
+ * @see docs/how-to/patient-virtual-waiting-room.md
+ */
 export function QueuePositionCard({
   atendimentoId,
   posicao,

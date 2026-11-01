@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useComunicarPiora } from "../api/use-comunicar-piora";
+import { pioraClinicaFormSchema } from "../schemas/piora-clinica-schema";
 
 export interface PioraClinicaModalProps {
   open: boolean;
@@ -32,6 +33,15 @@ const SINTOMAS_ALARME = [
   { id: "febre_alta", label: "Febre muito alta com calafrios intensos" },
 ];
 
+/**
+ * Modal de Salvaguarda de Piora Clínica e Reavaliação de Risco (RF-06, RN04).
+ *
+ * Permite ao paciente na sala de espera relatar agravamento dos sintomas,
+ * recalculando o escore Manchester/ACR ou disparando escape SAMU 192 imediato.
+ *
+ * @see docs/user-stories/US-06-deterioracao-clinica-escape-samu.md
+ * @see docs/how-to/patient-virtual-waiting-room.md
+ */
 export function PioraClinicaModal({
   open,
   onOpenChange,
@@ -75,21 +85,25 @@ export function PioraClinicaModal({
     e.preventDefault();
     setErroValidacao(null);
 
-    if (sintomasSelecionados.length === 0 && !queixaAdicional.trim() && escalaDor === 0) {
+    const payload = {
+      atendimento_id: atendimentoId,
+      novos_sintomas: sintomasSelecionados,
+      escala_dor: escalaDor,
+      queixa_adicional: queixaAdicional.trim(),
+    };
+
+    const validacao = pioraClinicaFormSchema.safeParse(payload);
+    if (!validacao.success) {
       setErroValidacao(
-        "Selecione ao menos um sintoma novo, informe alteração na dor ou descreva o agravamento.",
+        validacao.error.issues[0]?.message ||
+          "Informe ao menos um sintoma novo, alteração na dor ou descreva o agravamento.",
       );
       return;
     }
 
     comunicarPiora({
       token,
-      body: {
-        atendimento_id: atendimentoId,
-        novos_sintomas: sintomasSelecionados,
-        escala_dor: escalaDor,
-        queixa_adicional: queixaAdicional.trim(),
-      },
+      body: validacao.data,
     });
   };
 

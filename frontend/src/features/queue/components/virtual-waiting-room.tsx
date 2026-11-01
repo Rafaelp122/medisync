@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import type { LiveKitTokenResponse } from "@/api/generated/types.gen";
 import { SamuEmergencyModal } from "@/components/samu-emergency-modal";
@@ -21,6 +22,17 @@ export interface VirtualWaitingRoomProps {
   className?: string;
 }
 
+/**
+ * Sala de Espera Virtual do Paciente (RF-03, RN01, RN02).
+ *
+ * Gerencia a posição em tempo real na fila via polling e streaming WebSocket,
+ * despacha a convocação médica de 45s (IncomingCallRingModal), reavaliação de risco
+ * (PioraClinicaModal / RF-06) e salvaguarda SAMU 192 (RN04).
+ *
+ * @see docs/user-stories/US-07-alocacao-chamada-medica.md
+ * @see docs/user-stories/US-08-atendimento-chamada-no-show.md
+ * @see docs/how-to/patient-virtual-waiting-room.md
+ */
 export function VirtualWaitingRoom({
   session,
   onEncerrarSessao,
@@ -28,6 +40,7 @@ export function VirtualWaitingRoom({
   onComplementarCadastro,
   className,
 }: VirtualWaitingRoomProps) {
+  const queryClient = useQueryClient();
   const atendimentoId = session.atendimentoId ?? "";
   const token = session.token;
 
@@ -58,11 +71,21 @@ export function VirtualWaitingRoom({
     setChamadaAtiva(event);
   }, []);
 
+  const handleQueueEvent = useCallback(() => {
+    // Invalidação imediata do cache para avanço de fila em tempo real (DoD 1)
+    if (atendimentoId) {
+      queryClient.invalidateQueries({
+        queryKey: ["queue", "posicao", atendimentoId],
+      });
+    }
+  }, [atendimentoId, queryClient]);
+
   useQueueSocket({
     atendimentoId,
     token,
     enabled: Boolean(atendimentoId && !isPacienteAusente && !isCancelado),
     onCallReceived: handleCallReceived,
+    onEvent: handleQueueEvent,
   });
 
   // Se o polling detectar status de chamada médica antes do WS
@@ -97,8 +120,13 @@ export function VirtualWaitingRoom({
   const handleReclassificado = useCallback(
     (data: { novaPrioridade: number; novaPosicao?: number | null }) => {
       setPrioridadeOverride(data.novaPrioridade);
+      if (atendimentoId) {
+        queryClient.invalidateQueries({
+          queryKey: ["queue", "posicao", atendimentoId],
+        });
+      }
     },
-    [],
+    [atendimentoId, queryClient],
   );
 
   // 1. Tela de Emergência Máxima SAMU (Escape RN04)

@@ -41,12 +41,12 @@ describe("PasskeyInvitationCard (Convite Não-Bloqueante de Biometria - US-14)",
     expect(window.sessionStorage.getItem("medisync_passkey_invite_dismissed")).toBe("true");
   });
 
-  it("IT-PASS-04: Clicar em 'Ativar Biometria deste Aparelho' aciona callback e exibe confirmação", async () => {
+  it("IT-PASS-04: Clicar em 'Ativar Biometria deste Aparelho' aciona callback quando fornecido", async () => {
     const user = userEvent.setup();
     const handleAtivar = vi.fn();
     vi.stubGlobal("PublicKeyCredential", class FakePublicKeyCredential {});
 
-    const { getByRole, getByText } = renderWithProviders(
+    const { getByRole } = renderWithProviders(
       <PasskeyInvitationCard onAtivarBiometria={handleAtivar} />,
     );
 
@@ -54,6 +54,18 @@ describe("PasskeyInvitationCard (Convite Não-Bloqueante de Biometria - US-14)",
     await user.click(btnAtivar);
 
     expect(handleAtivar).toHaveBeenCalledTimes(1);
-    expect(getByText(/biometria habilitada com sucesso/i)).toBeInTheDocument();
+  });
+
+  it("IT-PASS-05: Clicar em ativar sem callback exibe orientações honestas de suporte FIDO2 (US-14)", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("PublicKeyCredential", class FakePublicKeyCredential {});
+
+    const { getByRole, getByText } = renderWithProviders(<PasskeyInvitationCard />);
+
+    const btnAtivar = getByRole("button", { name: /ativar biometria deste aparelho/i });
+    await user.click(btnAtivar);
+
+    expect(getByText(/suporte fido2 \/ passkeys detectado/i)).toBeInTheDocument();
+    expect(getByText(/issue #115/i)).toBeInTheDocument();
   });
 });

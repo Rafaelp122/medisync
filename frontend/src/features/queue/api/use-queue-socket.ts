@@ -42,6 +42,11 @@ export function useQueueSocket({
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attemptRef = useRef(0);
 
+  const onCallReceivedRef = useRef(onCallReceived);
+  onCallReceivedRef.current = onCallReceived;
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
+
   useEffect(() => {
     if (!enabled || !atendimentoId || !token) {
       if (wsRef.current) {
@@ -84,12 +89,12 @@ export function useQueueSocket({
           try {
             const data = JSON.parse(messageEvent.data) as QueueSocketEvent;
             setLastEvent(data);
-            onEvent?.(data);
+            onEventRef.current?.(data);
 
             if (data.event === "CALLED") {
               const callEvent = data as unknown as IncomingCallEvent;
               setCalledEvent(callEvent);
-              onCallReceived?.(callEvent);
+              onCallReceivedRef.current?.(callEvent);
             }
           } catch {
             // Silencioso em mensagens não-JSON ou pings textuais
@@ -127,7 +132,7 @@ export function useQueueSocket({
         wsRef.current = null;
       }
     };
-  }, [atendimentoId, token, enabled, onCallReceived, onEvent]);
+  }, [atendimentoId, token, enabled]);
 
   return {
     isConnected,

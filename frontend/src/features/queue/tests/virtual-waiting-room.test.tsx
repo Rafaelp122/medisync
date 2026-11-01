@@ -277,4 +277,41 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
 
     expect(handleComplementar).toHaveBeenCalledTimes(1);
   });
+
+  it("IT-WAIT-08: Convocação médica recebida via WebSocket dispara o modal de chamada imediatamente (DoD 1)", async () => {
+    let wsClient: { send: (data: string) => void } | null = null;
+    server.use(
+      queueWs.addEventListener("connection", ({ client }) => {
+        wsClient = client;
+        client.send(JSON.stringify({ event: "CONNECTED" }));
+      }),
+    );
+
+    const { getByRole, queryByRole } = renderWithProviders(
+      <VirtualWaitingRoom session={MOCK_SESSION} />,
+    );
+
+    expect(queryByRole("alertdialog")).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(wsClient).not.toBeNull();
+    });
+
+    // Envia evento CALLED em tempo real pelo WebSocket
+    wsClient?.send(
+      JSON.stringify({
+        event: "CALLED",
+        atendimento_id: MOCK_ATENDIMENTO_ID,
+        medico_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b99",
+        status: "CHAMANDO_PACIENTE",
+        ttl_segundos: 45,
+        chamada_iniciada_em: new Date().toISOString(),
+      }),
+    );
+
+    // O modal deve abrir instantaneamente
+    await waitFor(() => {
+      expect(getByRole("alertdialog")).toBeInTheDocument();
+    });
+  });
 });

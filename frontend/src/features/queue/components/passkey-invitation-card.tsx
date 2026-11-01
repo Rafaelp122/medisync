@@ -11,12 +11,22 @@ export interface PasskeyInvitationCardProps {
 
 const DISMISSED_KEY = "medisync_passkey_invite_dismissed";
 
+/**
+ * Card Informativo de Convite Não-Bloqueante de Biometria Passkeys (US-14).
+ *
+ * Apresentado exclusivamente em dispositivos compatíveis com Web Authentication
+ * API (PublicKeyCredential), convidando o paciente a utilizar autenticação
+ * biométrica nativa (TouchID, FaceID ou impressão digital Android).
+ *
+ * @see docs/user-stories/US-14-biometria-passkeys-webauthn.md
+ * @see docs/how-to/patient-virtual-waiting-room.md
+ */
 export function PasskeyInvitationCard({
   className,
   onAtivarBiometria,
 }: PasskeyInvitationCardProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const [ativado, setAtivado] = useState(false);
+  const [avisoExibido, setAvisoExibido] = useState(false);
 
   useEffect(() => {
     if (!isWebAuthnSupported()) return;
@@ -37,8 +47,11 @@ export function PasskeyInvitationCard({
   };
 
   const handleAtivar = () => {
-    setAtivado(true);
-    onAtivarBiometria?.();
+    if (onAtivarBiometria) {
+      onAtivarBiometria();
+    } else {
+      setAvisoExibido(true);
+    }
   };
 
   return (
@@ -71,10 +84,16 @@ export function PasskeyInvitationCard({
       </CardHeader>
 
       <CardContent className="pt-1">
-        {ativado ? (
-          <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 py-1">
-            <span aria-hidden="true">✓</span>
-            Biometria habilitada com sucesso neste dispositivo!
+        {avisoExibido ? (
+          <div className="text-xs text-blue-900/90 dark:text-blue-200/90 py-1 space-y-1">
+            <p className="font-semibold flex items-center gap-1.5">
+              <span aria-hidden="true">ℹ️</span>
+              Suporte FIDO2 / Passkeys detectado neste dispositivo.
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              O registro criptográfico de chaves públicas será configurado junto ao seu prontuário
+              (US-14 / Issue #115).
+            </p>
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2">

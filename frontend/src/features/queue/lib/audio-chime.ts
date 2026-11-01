@@ -1,3 +1,15 @@
+function safeResumeAudio(ctx: AudioContext): void {
+  if (ctx.state !== "suspended") return;
+  try {
+    const res = ctx.resume();
+    if (res && typeof res.catch === "function") {
+      res.catch(() => {});
+    }
+  } catch {
+    // ignora
+  }
+}
+
 /**
  * Sintetizador Web Audio API nativo para toque de convocação médica (Ring Chime).
  * Emite sinal sonoro harmonioso de dois tons (523Hz C5 / 659Hz E5) em loop suave a cada 2.5s.
@@ -27,16 +39,7 @@ export function iniciarToqueChamadaMedica(): () => void {
         audioCtx = new AudioCtxClass();
       }
 
-      if (audioCtx.state === "suspended") {
-        try {
-          const res = audioCtx.resume();
-          if (res && typeof res.catch === "function") {
-            res.catch(() => {});
-          }
-        } catch {
-          // ignora
-        }
-      }
+      safeResumeAudio(audioCtx);
 
       const now = audioCtx.currentTime;
 

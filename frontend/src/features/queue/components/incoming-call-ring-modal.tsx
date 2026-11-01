@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveKitTokenResponse } from "@/api/generated/types.gen";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +25,17 @@ export interface IncomingCallRingModalProps {
   onNoShow: () => void;
 }
 
+/**
+ * Modal Fullscreen de Convocação Médica com Tolerância de 45s (RF-03, RN02).
+ *
+ * Emite sinal sonoro contínuo sintetizado via Web Audio API e gerencia a contagem
+ * regressiva estrita de 45 segundos. Ao expirar, realiza auto-dismiss determinístico
+ * para o estado de PACIENTE_AUSENTE (No-Show).
+ *
+ * @see docs/user-stories/US-07-alocacao-chamada-medica.md
+ * @see docs/user-stories/US-08-atendimento-chamada-no-show.md
+ * @see docs/how-to/patient-virtual-waiting-room.md
+ */
 export function IncomingCallRingModal({
   open,
   atendimentoId,
@@ -40,12 +51,16 @@ export function IncomingCallRingModal({
   const [erroAtendimento, setErroAtendimento] = useState<string | null>(null);
   const pararToqueRef = useRef<(() => void) | null>(null);
 
+  const silenciarChime = useCallback(() => {
+    if (pararToqueRef.current) {
+      pararToqueRef.current();
+      pararToqueRef.current = null;
+    }
+  }, []);
+
   const { mutate: atenderChamada, isPending } = useAtenderChamada({
     onSuccess: (data) => {
-      if (pararToqueRef.current) {
-        pararToqueRef.current();
-        pararToqueRef.current = null;
-      }
+      silenciarChime();
       onAtendido(data);
     },
     onError: (err) => {
@@ -53,10 +68,7 @@ export function IncomingCallRingModal({
         setErroAtendimento(
           "O prazo de 45 segundos para resposta expirou. O atendimento foi encerrado por ausência.",
         );
-        if (pararToqueRef.current) {
-          pararToqueRef.current();
-          pararToqueRef.current = null;
-        }
+        silenciarChime();
         onNoShow();
       } else {
         setErroAtendimento(err.detail || err.message || "Erro ao conectar à chamada médica.");
@@ -70,10 +82,7 @@ export function IncomingCallRingModal({
   // Gerenciamento do Áudio Chime
   useEffect(() => {
     if (!open) {
-      if (pararToqueRef.current) {
-        pararToqueRef.current();
-        pararToqueRef.current = null;
-      }
+      silenciarChime();
       return;
     }
 
@@ -81,12 +90,9 @@ export function IncomingCallRingModal({
     pararToqueRef.current = iniciarToqueChamadaMedica();
 
     return () => {
-      if (pararToqueRef.current) {
-        pararToqueRef.current();
-        pararToqueRef.current = null;
-      }
+      silenciarChime();
     };
-  }, [open]);
+  }, [open, silenciarChime]);
 
   // Contagem Regressiva Determinística de 45s (RN02 / RF-03)
   useEffect(() => {
@@ -102,10 +108,7 @@ export function IncomingCallRingModal({
     setSegundosRestantes(initialSeconds);
 
     if (initialSeconds <= 0) {
-      if (pararToqueRef.current) {
-        pararToqueRef.current();
-        pararToqueRef.current = null;
-      }
+      silenciarChime();
       onNoShowRef.current();
       return;
     }
@@ -116,10 +119,7 @@ export function IncomingCallRingModal({
       setSegundosRestantes(Math.max(0, remaining));
       if (remaining <= 0) {
         clearInterval(timer);
-        if (pararToqueRef.current) {
-          pararToqueRef.current();
-          pararToqueRef.current = null;
-        }
+        silenciarChime();
         onNoShowRef.current();
       }
     }, 1000);
@@ -127,7 +127,7 @@ export function IncomingCallRingModal({
     return () => {
       clearInterval(timer);
     };
-  }, [open, ttlSegundos, chamadaIniciadaEm]);
+  }, [open, ttlSegundos, chamadaIniciadaEm, silenciarChime]);
 
   const handleEntrarConsulta = () => {
     setErroAtendimento(null);
@@ -171,7 +171,7 @@ export function IncomingCallRingModal({
             </span>
             <span
               role="timer"
-              aria-live="assertive"
+              aria-label={`${segundosRestantes} segundos restantes`}
               data-testid="ring-timer"
               className={
                 segundosRestantes <= 10
@@ -183,9 +183,21 @@ export function IncomingCallRingModal({
             </span>
           </div>
 
+          {segundosRestantes === 10 && (
+            <div role="status" aria-live="assertive" className="sr-only">
+              Atenção: restam 10 segundos para atender a chamada médica.
+            </div>
+          )}
+          {segundosRestantes === 0 && (
+            <div role="status" aria-live="assertive" className="sr-only">
+              O tempo de atendimento expirou.
+            </div>
+          )}
+
           <Progress
             value={segundosRestantes}
             max={ttlSegundos}
+            aria-label="Tempo restante para atendimento"
             indicatorClassName={segundosRestantes <= 10 ? "bg-destructive" : "bg-primary"}
           />
 

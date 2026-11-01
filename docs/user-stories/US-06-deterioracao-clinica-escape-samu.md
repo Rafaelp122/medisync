@@ -81,7 +81,7 @@
 - [x] **Desacoplamento Modular:** Comunicação via porta abstrata `TriagePort` injetada no composition root de `queue` (`src/modules/queue/application/ports/triage_port.py`).
 - [x] **Remoção Atômica:** Atendimento Nível 1 é expurgado atômica e deterministicamente do conjunto de aptos no Valkey (`FilaService.processar_piora_clinica()`).
 - [x] **Apresentação:** Rota REST implementada em `src/modules/queue/presentation/routers/fila_router.py` com `PioraClinicaResponse` harmonizado com campos canônicos (ADR-001/ADR-008).
-- [x] **Frontend (Salvaguarda SAMU 192):** Componente composto `frontend/src/components/samu-emergency-modal.tsx` com `role="alertdialog"`, bloqueio de dismiss em backdrop/esc e discagem rápida `tel:192`.
+- [x] **Frontend (Salvaguarda SAMU 192):** Componente composto `frontend/src/features/onboarding/components/samu-emergency-modal.tsx` com `role="alertdialog"`, bloqueio de dismiss em backdrop/esc e discagem rápida `tel:192`.
 - [x] **Frontend Fila (Piora Clínica - RF-06):** Modal `PioraClinicaModal` em `frontend/src/features/queue/components/piora-clinica-modal.tsx` integrado à `VirtualWaitingRoom` para relato de novos sintomas e reavaliação imediata.
 - [x] **Detecção de Red Flags:** Chips de sinais clínicos críticos em `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx:SINAIS_ALARME_CRITICOS` e interceptação de HTTP 422 `EMERGENCIA_CRITICA_SAMU_192`.
 - [x] **Testes Automatizados:**
