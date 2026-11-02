@@ -1,3 +1,9 @@
+## v0.13.0 (2026-11-02)
+
+### Feat
+
+- **consultation**: implement doctor single-pane clinical dashboard
+
 ## v0.12.0 (2026-11-01)
 
 ### Feat
