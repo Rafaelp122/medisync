@@ -44,6 +44,15 @@
 - **E** a interface do prontuário bloqueia preventivamente o comando de finalização e a assinatura de prescrições enquanto a identidade não for confirmada,
 - **E** a confirmação é registrada com carimbo de tempo oficial na evolução clínica do atendimento (ADR-007).
 
+### Cenário 5: Estação Médica Clínica Single-Pane (3 colunas integradas sem troca de abas)
+- **Dado que** o médico Dr. Eduardo Rocha acessa a estação clínica de telemedicina (`frontend/src/features/consultation/`),
+- **Quando** aloca um paciente da fila virtual via "Chamar Próximo Paciente",
+- **Então** o sistema renderiza simultaneamente a tela unificada em 3 colunas:
+  1. **Coluna 1 (Esquerda):** Mídia WebRTC LiveKit, badge passivo de TMA decorrido (RN06) e Gate CFM nº 2.314/2022 com conferência visual de RG/CNH/CNS;
+  2. **Coluna 2 (Centro):** Prontuário Eletrônico com classificação Manchester e histórico de documentos clínicos emitidos;
+  3. **Coluna 3 (Direita):** Editor SOAP estruturado, prescritor digital com salvaguarda da Portaria 344/98 e acionamento de conclusão com assinatura ICP-Brasil;
+- **E** todas as atualizações de formulários e controles WebRTC ocorrem sem perda de foco, sem re-renders indesejados da árvore e sem navegação entre abas.
+
 ---
 
 ## 3. Contrato de API
@@ -70,8 +79,16 @@
 
 - [x] **Modelo:** Entidade `EvolucaoClinica` com campos SOAP, CID-10, campos de conferência de identidade e flags de finalização (`src/modules/consultation/domain/models/evolucao_clinica.py`).
 - [x] **Imutabilidade e Salvaguarda:** Guardas de finalização bloqueiam alterações pós-fechamento e exigem verificação de identidade antes da emissão de prescrição digital (`PEPService.salvar_soap()`).
-- [x] **Apresentação:** Router fino `consultation_router.py` integrado em `/api/v1/consultations`.
+- [x] **Apresentação Backend:** Router fino `consultation_router.py` integrado em `/api/v1/consultations`.
+- [x] **Frontend Workstation Single-Pane:**
+  - Componente mestre: `frontend/src/features/consultation/components/doctor-workstation.tsx`
+  - Painéis compostos: `video-pane.tsx`, `medical-records-pane.tsx`, `soap-editor.tsx`, `prescription-builder.tsx`, `cfm-identity-gate.tsx`, `finalize-consultation-modal.tsx`, `tma-timer-badge.tsx`
+  - Hooks TanStack Query: `frontend/src/features/consultation/api/`
+  - Schemas Zod: `frontend/src/features/consultation/schemas/consultation-schema.ts`
 - [x] **Testes Automatizados:**
   - `tests/unit/test_pep_soap_service.py`
   - `tests/integration/test_consultation_endpoints.py`
   - `tests/integration/test_pep_transaction.py`
+  - `frontend/src/features/consultation/schemas/consultation-schema.test.ts`
+  - `frontend/src/features/consultation/api/__tests__/consultation-hooks.test.tsx`
+  - `frontend/src/features/consultation/tests/consultation-workstation.test.tsx`

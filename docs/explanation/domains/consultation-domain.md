@@ -66,6 +66,8 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - Portaria 344/98 no domínio. `validar_substancia_permitida_telemedicina` barra Listas A e B em `DocumentoItem.__init__` e em `adicionar_item`; entorpecente via teleconsulta nem chega ao PDF.
 - UTC sempre, relógio do cliente nunca. `registrado_em`, `assinado_em` e `finalizado_em` usam `datetime.now(UTC)` como default; auditoria RN07 depende desse carimbo.
 - Erros de domínio tipados. `ConsultaFinalizadaError` para mutação/exclusão pós-trava, `ConsultaInvalidaError` para dado inválido; borda converte em 4xx sem vazar stack.
+- Gate CFM nº 2.314/2022 na Estação Médica. O frontend bloqueia preventivamente a emissão de receitas digitais e a finalização da consulta até que o médico confirme a conferência visual de RG/CNH/CNS em vídeo ou registre justificativa clínica formal em caso de emergência.
+- Imutabilidade visual do PEP (CFM nº 1.821/2007). Ao concluir o atendimento, todos os painéis clínicos (SOAP, prescrições, conferência de identidade) entram em modo imutável somente leitura (`isReadOnly`), impossibilitando edições posteriores na UI.
 
 ## 6. Onde no código
 
@@ -83,6 +85,11 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - `src/modules/consultation/application/services/pep_service.py`
 - `src/modules/consultation/presentation/dependencies.py`
 - `src/modules/consultation/infrastructure/livekit_adapter.py`
+- `frontend/src/features/consultation/components/doctor-workstation.tsx`
+- `frontend/src/features/consultation/components/cfm-identity-gate.tsx`
+- `frontend/src/features/consultation/components/prescription-builder.tsx`
+- `frontend/src/features/consultation/components/soap-editor.tsx`
+- `frontend/src/features/consultation/tests/consultation-workstation.test.tsx`
 - `tests/unit/test_consultation_models.py`
 - `tests/unit/test_evolucao_service.py`
 - `tests/unit/test_documento_service.py`

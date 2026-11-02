@@ -1,6 +1,6 @@
 # Environment Variables
 
-> Espelho comentado de `.env.example` (25 vars); valor canônico vive no arquivo, uso vive em `src/core/config.py:Settings`.
+> Espelho comentado de `.env.example` (29 vars); valor canônico vive no arquivo, uso vive em `src/core/config.py:Settings` e `frontend/src/config/env.ts:env`.
 
 ## Contexto
 
@@ -65,7 +65,7 @@ As variáveis `MINIO_*` pertencem exclusivamente à infraestrutura de desenvolvi
 | `MINIO_DEFAULT_BUCKET` | `docker-compose.yml:minio-init` | Bucket padrão (`medisync-docs`) criado pelo mc |
 | `MINIO_USE_SSL` | `docker-compose.yml` | `false` em dev local |
 
-Cobertura do `.env.example`: 3 (core) + 6 (postgres) + 3 (valkey) + 5 (livekit) + 8 (minio compose) = 25 vars. 17 são lidas pelo `CommonSettings` da aplicação; as 8 de MinIO são consumidas exclusivamente pelo Docker Compose local.
+Cobertura do `.env.example`: 3 (core) + 6 (postgres) + 3 (valkey) + 5 (livekit) + 8 (minio compose) + 4 (frontend vite) = 29 vars. 17 são lidas pelo `CommonSettings` da aplicação; as 8 de MinIO são consumidas exclusivamente pelo Docker Compose local; as 4 `VITE_*` são consumidas pelo cliente web frontend.
 Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3_*`, `JWT_*`, `PSC_*`) usam defaults sem precisar exportar em dev; documentar aqui só quando virarem obrigatórios.
 
 ### 6. Seletores de Adaptadores e Backends (Opcionais)
@@ -81,19 +81,31 @@ Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3
 | `NOTIFICATION_RATE_LIMIT_CAPACITY` | `src/core/config.py:CommonSettings.NOTIFICATION_RATE_LIMIT_CAPACITY` | Inteiro $\ge 1$ | `5` | Capacidade máxima de tokens (burst) por telefone |
 | `NOTIFICATION_RATE_LIMIT_REFILL_RATE` | `src/core/config.py:CommonSettings.NOTIFICATION_RATE_LIMIT_REFILL_RATE` | Float $\ge 0.0$ | `0.05` | Reposição de tokens por segundo (~1 a cada 20s) |
 | `NOTIFICATION_RATE_LIMIT_TTL_SECONDS` | `src/core/config.py:CommonSettings.NOTIFICATION_RATE_LIMIT_TTL_SECONDS` | Inteiro $\ge 1$ | `3600` | Expiração da chave hash do token bucket no Valkey |
+| `PSC_DEFAULT_PROVIDER` | `src/core/config.py:CommonSettings.PSC_DEFAULT_PROVIDER` | `birdid`, `safeid`, `vidaas`, `fake` | `fake` | Provedor de assinatura ICP-Brasil em nuvem (rejeita fake em prod) |
 
 ### 7. Perfis Polimórficos de Ambiente
 
 O carregamento via `src/core/config.py:get_settings` instancia dinamicamente a subclasse de acordo com `ENVIRONMENT`:
 - `development` → `DevelopmentSettings` (`DEBUG=True`, defaults para Docker Compose local).
 - `test` → `TestSettings` (`DEBUG=True`, seletores automáticos para `memory`).
-- `production` → `ProductionSettings` (`DEBUG=False`, fail-fast ativo via `@model_validator` rejeitando `devkey`, segredos fracos e SAMU de teste).
+- `production` → `ProductionSettings` (`DEBUG=False`, fail-fast ativo via `@model_validator` rejeitando `devkey`, segredos fracos, SAMU de teste e `PSC_DEFAULT_PROVIDER='fake'`).
 
 Bootstrap:
 
 ```bash
 cp .env.example .env
 ```
+
+### 8. Frontend SPA/PWA (Vite)
+
+Variáveis do cliente web (`frontend/src/config/env.ts` via `import.meta.env` carregadas do `.env` da raiz):
+
+| Var | Lida em | Padrão | Notas |
+|---|---|---|---|
+| `VITE_API_BASE_URL` | `frontend/src/config/env.ts:env.apiBaseUrl` | `""` (origin) | URL base da API REST/WebSocket |
+| `VITE_TENANT_ID` | `frontend/src/config/env.ts:env.defaultTenantId` | `"1"` | Tenant padrão do profissional médico |
+| `VITE_ENABLE_DEMO_HELPERS` | `frontend/src/config/env.ts:env.isDemoMode` | `DEV ? "true" : "false"` | Controla botões de preenchimento demo e simulador ICP |
+| `VITE_DEFAULT_PSC_PROVIDER` | `frontend/src/config/env.ts:env.defaultPscProvider` | `DEV ? "fake" : "birdid"` | Provedor padrão de PSC selecionado na interface |
 
 ## Onde no código
 
@@ -104,10 +116,12 @@ cp .env.example .env
 - Impl: `src/core/config.py:get_settings`
 - Impl: `src/core/config.py:async_database_url`
 - Impl: `src/core/config.py:async_valkey_url`
+- Impl frontend: `frontend/src/config/env.ts:env`
 - Impl queue composition: `src/modules/queue/composition.py:get_notification_adapter`
 - Spec: `.env.example`
 - Prova viva: `tests/unit/test_config_profiles.py`
 - Prova viva wiring: `tests/unit/test_composition_wiring.py:test_queue_notification_adapter_resolution_with_rate_limiter`
+- Prova viva frontend: `frontend/src/config/env.test.ts`
 - Ver: `rg -c "^[A-Z_]+=" .env.example`
 - Ver: `rg -n "^[A-Z_]+=" .env.example`
 
@@ -120,7 +134,7 @@ cp .env.example .env && uv run python -c "from src.core.config import get_settin
 uv run pytest tests/unit/test_config_profiles.py -v --no-cov
 ```
 
-Esperado: `25`, matches no `.env.example` batendo com campos em `config.py`, bootstrap sem erro e testes de perfil verdes.
+Esperado: `29`, matches no `.env.example` batendo com campos em `config.py` e `frontend/src/config/env.ts`, bootstrap sem erro e testes de perfil verdes.
 
 ## Ver também
 

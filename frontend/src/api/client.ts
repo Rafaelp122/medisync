@@ -1,19 +1,16 @@
+import { env } from "@/config/env";
 import { clearStoredSession, getStoredToken } from "@/lib/session-storage";
 import { toProblemDetailsError } from "./errors";
 import { client } from "./generated/client.gen";
 
-const baseUrl =
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" && window.location?.origin && window.location.origin !== "null"
-    ? window.location.origin
-    : "http://localhost:5173");
+const baseUrl = env.apiBaseUrl;
 
 export function getActiveTenantId(): string {
   if (typeof window !== "undefined" && window.localStorage) {
     const stored = window.localStorage.getItem("tenant_id");
     if (stored) return stored;
   }
-  return import.meta.env.VITE_TENANT_ID || "1";
+  return env.defaultTenantId;
 }
 
 client.setConfig({

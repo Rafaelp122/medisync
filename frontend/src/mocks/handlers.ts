@@ -3,9 +3,12 @@ import {
   handleAdmitirPacienteApiV1FilaAdmissaoPost,
   handleEnrichmentFase2ApiV1OnboardingFase2Post,
   handleIntakeFase1ApiV1OnboardingFase1Post,
+  handleLoginApiV1AuthLoginPost,
+  handleObterPainelTelemetriaApiV1TelemetriaPainelGet,
   handleRequestOtpApiV1AuthPatientOtpRequestPost,
   handleVerifyOtpApiV1AuthPatientOtpVerifyPost,
 } from "@/api/generated/msw.gen";
+import { createPainelTelemetriaResponse } from "@/features/consultation/tests/fixtures";
 
 import {
   createAdmissaoResponse,
@@ -15,6 +18,18 @@ import {
 } from "@/features/onboarding/tests/fixtures";
 
 export const defaultHandlers = [
+  handleObterPainelTelemetriaApiV1TelemetriaPainelGet({
+    body: createPainelTelemetriaResponse(),
+  }),
+  handleLoginApiV1AuthLoginPost({
+    body: {
+      access_token: "mock-jwt-token-medico",
+      refresh_token: "mock-refresh-token-medico",
+      token_type: "bearer",
+      expires_in: 900,
+      refresh_expires_in: 604800,
+    },
+  }),
   handleRequestOtpApiV1AuthPatientOtpRequestPost({
     body: {
       mensagem: "Código enviado com sucesso.",

@@ -93,6 +93,18 @@ def test_production_environment_fails_with_empty_cors() -> None:
         )
 
 
+def test_production_environment_fails_with_fake_psc_provider() -> None:
+    with pytest.raises(
+        ValueError, match="PSC_DEFAULT_PROVIDER 'fake' não pode ser 'fake'"
+    ):
+        ProductionSettings(
+            SECRET_KEY="a-super-secret-app-key-with-sufficient-length-32-chars",
+            JWT_SECRET_KEY="a-super-secret-jwt-key-with-sufficient-length-32-chars",
+            CORS_ORIGINS=["https://app.medisync.com.br"],
+            PSC_DEFAULT_PROVIDER="fake",
+        )
+
+
 def test_production_environment_succeeds_with_valid_config() -> None:
     prod = ProductionSettings(
         SECRET_KEY="a-super-secret-app-key-with-sufficient-length-32-chars",

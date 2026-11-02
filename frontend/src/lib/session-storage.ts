@@ -91,3 +91,80 @@ export function getStoredToken(): string | null {
   const session = getStoredSession();
   return session?.token ?? null;
 }
+
+export const MEDISYNC_DOCTOR_SESSION_KEY = "medisync_doctor_session";
+
+/**
+ * Contrato da sessão do médico plantonista persistida no navegador.
+ */
+export interface StoredDoctorSession {
+  token: string;
+  medicoId: string;
+  medicoNome: string;
+  crmUf: string;
+  identificador: string;
+}
+
+/**
+ * Recupera com segurança a sessão persistida do médico.
+ */
+export function getStoredDoctorSession(): StoredDoctorSession | null {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(MEDISYNC_DOCTOR_SESSION_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<StoredDoctorSession>;
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      typeof parsed.token !== "string" ||
+      typeof parsed.medicoId !== "string" ||
+      !parsed.token.trim() ||
+      !parsed.medicoId.trim()
+    ) {
+      clearStoredDoctorSession();
+      return null;
+    }
+
+    return parsed as StoredDoctorSession;
+  } catch {
+    clearStoredDoctorSession();
+    return null;
+  }
+}
+
+/**
+ * Persiste a sessão do médico no localStorage.
+ */
+export function saveStoredDoctorSession(session: StoredDoctorSession): void {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(MEDISYNC_DOCTOR_SESSION_KEY, JSON.stringify(session));
+  } catch {
+    // Tratamento silencioso para storage restrito
+  }
+}
+
+/**
+ * Remove atomicamente a sessão persistida do médico.
+ */
+export function clearStoredDoctorSession(): void {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(MEDISYNC_DOCTOR_SESSION_KEY);
+  } catch {
+    // Ignora erros de storage
+  }
+}

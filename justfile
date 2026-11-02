@@ -6,13 +6,14 @@
 default:
     @just --list
 
-# Inicia simultaneamente o backend e o frontend em modo desenvolvimento local
+# Inicia simultaneamente o backend, worker assíncrono e frontend em modo desenvolvimento local
 dev:
     #!/usr/bin/env bash
     set -e
     trap 'kill $(jobs -p) 2>/dev/null || true' EXIT INT TERM
-    echo "🚀 Iniciando MediSync Express (Backend + Frontend)..."
+    echo "🚀 Iniciando MediSync Express (Backend + Worker + Frontend)..."
     just backend-dev &
+    just worker &
     just frontend-dev &
     wait -n
 

@@ -117,3 +117,21 @@ sequenceDiagram
 2. **Assinatura PAdES em Nuvem ([ADR-006](../../adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md))**: Integração via `PyHanko` com provedores PSC (BirdID, SafeID, Vidaas) através de OAuth2, dispensando tokens físicos USB e viabilizando plantões ágeis.
 3. **Persistência em Object Storage**: O PDF assinado é salvo no bucket MinIO/S3 (`s3://medisync-docs/{org_id}/atendimentos/{atendimento_id}/{uuid}.pdf`). O PostgreSQL armazena apenas a chave S3 e o hash SHA-256 no log de auditoria imutável.
 4. **Presigned URLs**: Entrega ao paciente e farmacêutico via link de validação pública que gera uma *Presigned URL* fresca com validade de 15 minutos (900 segundos).
+
+---
+
+## 5. Estação Clínica Unificada do Médico (Doctor Single-Pane Workstation)
+
+Para mitigar a fadiga cognitiva do médico plantonista e evitar trocas de contexto (*tab switching*) durante atendimentos críticos, o frontend implementa uma estação unificada em 3 colunas contínuas (`frontend/src/features/consultation/`):
+
+1. **Coluna 1 (Esquerda) — Mídia WebRTC & Gate CFM 2.314/2022**:
+   - Renderização da videoconferência LiveKit SFU via WebRTC;
+   - Indicador passivo de TMA (`TmaTimerBadge`): calcula tempo transcorrido e exibe badge sutil sem desconectar nem penalizar a chamada ao estourar o limite (garantia estrita da RN06);
+   - Gate mandatório de conferência de identidade (`CfmIdentityGate`): exige inspeção visual de RG/CNH/CNS na câmera ou justificativa médica antes de destravar prescrições e encerramento.
+2. **Coluna 2 (Centro) — Prontuário Eletrônico & Documentos (PEP)**:
+   - Exibição de dados do paciente mascarados conforme LGPD, queixa principal e classificação Manchester;
+   - Histórico em tempo real de documentos clínicos emitidos e assinados durante a sessão.
+3. **Coluna 3 (Direita) — Evolução SOAP, Prescritor Portaria 344/98 e Conclusão ICP-Brasil**:
+   - Editor estruturado SOAP (Subjetivo, Objetivo, Avaliação com CID-10, Plano/Conduta);
+   - Prescritor digital com salvaguarda imediata contra substâncias das Listas A e B da Portaria 344/98;
+   - Modal de conclusão (`FinalizeConsultationModal`) com confirmação de assinatura ICP-Brasil e congelamento do PEP em modo imutável (CFM nº 1.821/2007).
