@@ -1,6 +1,6 @@
 # Environment Variables
 
-> Espelho comentado de `.env.example` (29 vars); valor canônico vive no arquivo, uso vive em `src/core/config.py:Settings` e `frontend/src/config/env.ts:env`.
+> Espelho comentado de `.env.example` (29 vars); valor canônico vive no arquivo, uso vive em `src/core/config.py:Settings` e `frontend/src/config/settings.ts:settings`.
 
 ## Contexto
 
@@ -98,14 +98,16 @@ cp .env.example .env
 
 ### 8. Frontend SPA/PWA (Vite)
 
-Variáveis do cliente web (`frontend/src/config/env.ts` via `import.meta.env` carregadas do `.env` da raiz):
+Variáveis do cliente web (`frontend/src/config/settings.ts` via `import.meta.env` carregadas do `.env` da raiz):
 
 | Var | Lida em | Padrão | Notas |
 |---|---|---|---|
-| `VITE_API_BASE_URL` | `frontend/src/config/env.ts:env.apiBaseUrl` | `""` (origin) | URL base da API REST/WebSocket |
-| `VITE_TENANT_ID` | `frontend/src/config/env.ts:env.defaultTenantId` | `"1"` | Tenant padrão do profissional médico |
-| `VITE_ENABLE_DEMO_HELPERS` | `frontend/src/config/env.ts:env.isDemoMode` | `DEV ? "true" : "false"` | Controla botões de preenchimento demo e simulador ICP |
-| `VITE_DEFAULT_PSC_PROVIDER` | `frontend/src/config/env.ts:env.defaultPscProvider` | `DEV ? "fake" : "birdid"` | Provedor padrão de PSC selecionado na interface |
+| `VITE_API_BASE_URL` | `frontend/src/config/settings.ts:settings.env.apiBaseUrl` | `""` (origin) | URL base da API REST/WebSocket |
+| `VITE_TENANT_ID` | `frontend/src/config/settings.ts:settings.env.defaultTenantId` | `"1"` | Tenant padrão do profissional médico |
+| `VITE_ENABLE_DEMO_HELPERS` | `frontend/src/config/settings.ts:settings.env.isDemoMode` | `DEV ? "true" : "false"` | Controla botões de preenchimento demo e simulador ICP |
+| `VITE_DEFAULT_PSC_PROVIDER` | `frontend/src/config/settings.ts:settings.env.defaultPscProvider` | `DEV ? "fake" : "birdid"` | Provedor padrão de PSC selecionado na interface |
+
+Propriedades utilitárias de runtime derivadas do Vite expostas em `settings.env`: `mode` (string do modo ativo), `isDev` (boolean equivalente a `import.meta.env.DEV`) e `isProd` (boolean equivalente a `import.meta.env.PROD`).
 
 ## Onde no código
 
@@ -116,12 +118,12 @@ Variáveis do cliente web (`frontend/src/config/env.ts` via `import.meta.env` ca
 - Impl: `src/core/config.py:get_settings`
 - Impl: `src/core/config.py:async_database_url`
 - Impl: `src/core/config.py:async_valkey_url`
-- Impl frontend: `frontend/src/config/env.ts:env`
+- Impl frontend: `frontend/src/config/settings.ts:settings`
 - Impl queue composition: `src/modules/queue/composition.py:get_notification_adapter`
 - Spec: `.env.example`
 - Prova viva: `tests/unit/test_config_profiles.py`
 - Prova viva wiring: `tests/unit/test_composition_wiring.py:test_queue_notification_adapter_resolution_with_rate_limiter`
-- Prova viva frontend: `frontend/src/config/env.test.ts`
+- Prova viva frontend: `frontend/src/config/settings.test.ts`
 - Ver: `rg -c "^[A-Z_]+=" .env.example`
 - Ver: `rg -n "^[A-Z_]+=" .env.example`
 
@@ -134,7 +136,7 @@ cp .env.example .env && uv run python -c "from src.core.config import get_settin
 uv run pytest tests/unit/test_config_profiles.py -v --no-cov
 ```
 
-Esperado: `29`, matches no `.env.example` batendo com campos em `config.py` e `frontend/src/config/env.ts`, bootstrap sem erro e testes de perfil verdes.
+Esperado: `29`, matches no `.env.example` batendo com campos em `config.py` e `frontend/src/config/settings.ts`, bootstrap sem erro e testes de perfil verdes.
 
 ## Ver também
 

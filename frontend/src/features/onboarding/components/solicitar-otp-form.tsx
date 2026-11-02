@@ -15,6 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { settings } from "@/config/settings";
 import { mascararTelefoneBR } from "@/lib/validators";
 import { useSolicitarOtp } from "../api/use-solicitar-otp";
 import { type SolicitarOtpFormData, solicitarOtpSchema } from "../schemas/onboarding-schema";
@@ -59,10 +60,10 @@ export function SolicitarOtpForm({ onOtpSent, className }: SolicitarOtpFormProps
         telefone: values.telefone,
         cpf: values.cpf,
       });
-      setCooldown(60);
+      setCooldown(settings.clinical.otpCooldownSeconds);
       onOtpSent?.({
         telefone: values.telefone,
-        expiraEmSegundos: response?.expira_em_segundos ?? 300,
+        expiraEmSegundos: response?.expira_em_segundos ?? settings.clinical.otpExpirationSeconds,
         codigoDebug: response?.codigo_debug,
       });
     } catch {

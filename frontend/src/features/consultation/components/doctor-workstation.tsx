@@ -148,7 +148,7 @@ export function DoctorWorkstation({
           {atendimentoAtivo?.atendimento_id && (
             <TmaTimerBadge
               iniciadoEm={atendimentoAtivo.chamada_iniciada_em}
-              tmaPlanejadoSegundos={atendimentoAtivo.ttl_segundos ?? 900}
+              tmaPlanejadoSegundos={atendimentoAtivo.ttl_segundos ?? undefined}
             />
           )}
 

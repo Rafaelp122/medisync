@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import { settings } from "@/config/settings";
 import { useAtenderChamada } from "../api/use-atender-chamada";
 import { iniciarToqueChamadaMedica } from "../lib/audio-chime";
 
@@ -42,7 +43,7 @@ export function IncomingCallRingModal({
   pacienteId,
   nomePaciente,
   token,
-  ttlSegundos = 45,
+  ttlSegundos = settings.clinical.callRingTtlSeconds,
   chamadaIniciadaEm,
   onAtendido,
   onNoShow,

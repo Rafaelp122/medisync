@@ -3,6 +3,7 @@ import { client, getActiveTenantId } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { obterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGet } from "@/api/generated/sdk.gen";
 import type { TmaStatusResponse } from "@/api/generated/types.gen";
+import { settings } from "@/config/settings";
 
 export interface TmaStatusQueryParams {
   iniciado_em?: string;
@@ -38,7 +39,8 @@ export function useTmaStatus(
           },
           query: {
             iniciado_em: params?.iniciado_em,
-            tma_planejado_segundos: params?.tma_planejado_segundos ?? 900,
+            tma_planejado_segundos:
+              params?.tma_planejado_segundos ?? settings.clinical.tmaPlannedSeconds,
           },
           headers,
           throwOnError: true,
@@ -49,7 +51,7 @@ export function useTmaStatus(
       }
     },
     enabled: Boolean(atendimentoId),
-    refetchInterval: 30000, // Telemetria a cada 30 segundos sem travar a interface
+    refetchInterval: settings.network.tmaTelemetryIntervalMs,
     ...options,
   });
 }

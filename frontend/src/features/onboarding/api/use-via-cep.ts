@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { settings } from "@/config/settings";
 import { limparDigitos, validarCEP } from "@/lib/validators";
 
 export interface EnderecoViaCep {
@@ -20,7 +21,7 @@ export async function buscarEnderecoPorCep(cep: string): Promise<EnderecoViaCep 
 
   try {
     const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(settings.network.viaCepTimeoutMs),
     });
     if (!res.ok) {
       return null;

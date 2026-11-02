@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { client } from "@/api/client";
+import { settings } from "@/config/settings";
 
 export interface IncomingCallEvent {
   event: "CALLED";
@@ -106,8 +107,11 @@ export function useQueueSocket({
           setIsConnected(false);
           wsRef.current = null;
 
-          // Reconexão com backoff exponencial (1s, 2s, máx 5s)
-          const delay = Math.min(1000 * 2 ** attemptRef.current, 5000);
+          // Reconexão com backoff exponencial
+          const delay = Math.min(
+            1000 * 2 ** attemptRef.current,
+            settings.network.wsBackoffMaxDelayMs,
+          );
           attemptRef.current += 1;
           reconnectTimeoutRef.current = setTimeout(connect, delay);
         };
