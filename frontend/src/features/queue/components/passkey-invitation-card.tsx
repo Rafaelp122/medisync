@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { settings } from "@/config/settings";
 import { isWebAuthnSupported } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +10,7 @@ export interface PasskeyInvitationCardProps {
   onAtivarBiometria?: () => void;
 }
 
-const DISMISSED_KEY = "medisync_passkey_invite_dismissed";
+const DISMISSED_KEY = settings.storage.passkeyDismissed;
 
 /**
  * Card Informativo de Convite Não-Bloqueante de Biometria Passkeys (US-14).

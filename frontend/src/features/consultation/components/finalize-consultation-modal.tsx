@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { env } from "@/config/env";
+import { settings } from "@/config/settings";
 import { useAssinarDocumento } from "../api/use-assinar-documento";
 import { useFinalizarConsulta } from "../api/use-finalizar-consulta";
 
@@ -41,8 +41,8 @@ export function FinalizeConsultationModal({
   onFinalized,
   token,
 }: FinalizeConsultationModalProps) {
-  const [pscToken, setPscToken] = useState(env.isDemoMode ? "demo-psc-token-123" : "");
-  const [pscProvider, setPscProvider] = useState(env.defaultPscProvider);
+  const [pscToken, setPscToken] = useState(settings.env.isDemoMode ? settings.demo.pscToken : "");
+  const [pscProvider, setPscProvider] = useState(settings.env.defaultPscProvider);
   const [documentoAssinado, setDocumentoAssinado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -157,13 +157,13 @@ export function FinalizeConsultationModal({
                     onChange={(e) => {
                       const novo = e.target.value;
                       setPscProvider(novo);
-                      if (novo === "fake" && env.isDemoMode) {
-                        setPscToken("demo-psc-token-123");
+                      if (novo === "fake" && settings.env.isDemoMode) {
+                        setPscToken(settings.demo.pscToken);
                       }
                     }}
                     className="w-full h-8 px-2 rounded-md border border-input bg-background text-xs"
                   >
-                    {env.isDemoMode && (
+                    {settings.env.isDemoMode && (
                       <option value="fake">Simulador ICP-Brasil (Ambiente de Testes / Demo)</option>
                     )}
                     <option value="birdid">BirdID (Soluti)</option>
@@ -177,10 +177,10 @@ export function FinalizeConsultationModal({
                     <Label htmlFor="psc-token" className="text-xs">
                       Token OAuth2 / OTP do PSC:
                     </Label>
-                    {env.isDemoMode && pscProvider === "fake" && (
+                    {settings.env.isDemoMode && pscProvider === "fake" && (
                       <button
                         type="button"
-                        onClick={() => setPscToken("demo-psc-token-123")}
+                        onClick={() => setPscToken(settings.demo.pscToken)}
                         className="text-[10px] text-primary hover:underline cursor-pointer"
                       >
                         Preencher Token Demo

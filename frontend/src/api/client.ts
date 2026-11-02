@@ -1,16 +1,16 @@
-import { env } from "@/config/env";
+import { settings } from "@/config/settings";
 import { clearStoredSession, getStoredToken } from "@/lib/session-storage";
 import { toProblemDetailsError } from "./errors";
 import { client } from "./generated/client.gen";
 
-const baseUrl = env.apiBaseUrl;
+const baseUrl = settings.env.apiBaseUrl;
 
 export function getActiveTenantId(): string {
   if (typeof window !== "undefined" && window.localStorage) {
-    const stored = window.localStorage.getItem("tenant_id");
+    const stored = window.localStorage.getItem(settings.storage.tenantId);
     if (stored) return stored;
   }
-  return env.defaultTenantId;
+  return settings.env.defaultTenantId;
 }
 
 client.setConfig({

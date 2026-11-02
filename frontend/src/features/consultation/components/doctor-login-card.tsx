@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { env } from "@/config/env";
+import { settings } from "@/config/settings";
 import type { StoredDoctorSession } from "@/lib/session-storage";
 
 export interface DoctorLoginCardProps {
@@ -19,19 +19,19 @@ export interface DoctorLoginCardProps {
 /**
  * Card de Autenticação Corporativa do Médico Plantonista.
  * Conecta-se a POST /api/v1/auth/login emitindo Bearer JWT para a estação clínica.
- * Regras: RF-01, RF-03, US-07, CFM nº 2.314/2022.
+ * Regras: docs/user-stories/US-09-teleconsulta-pep-soap.md, RF-01, RF-03 e CFM nº 2.314/2022.
  */
 export function DoctorLoginCard({ onLoginSuccess }: DoctorLoginCardProps) {
   const [identificador, setIdentificador] = useState(
-    env.isDemoMode ? "eduardo.rocha@medisync.com.br" : "",
+    settings.env.isDemoMode ? settings.demo.doctorEmail : "",
   );
-  const [senha, setSenha] = useState(env.isDemoMode ? "Medisync@2026" : "");
+  const [senha, setSenha] = useState(settings.env.isDemoMode ? settings.demo.doctorPassword : "");
   const [isLoading, setIsLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   const handlePreencherDemo = () => {
-    setIdentificador("eduardo.rocha@medisync.com.br");
-    setSenha("Medisync@2026");
+    setIdentificador(settings.demo.doctorEmail);
+    setSenha(settings.demo.doctorPassword);
     setErro(null);
   };
 
@@ -161,7 +161,7 @@ export function DoctorLoginCard({ onLoginSuccess }: DoctorLoginCardProps) {
           </Button>
         </form>
 
-        {env.isDemoMode && (
+        {settings.env.isDemoMode && (
           <div className="pt-2 border-t border-border/60 text-center">
             <Button
               type="button"

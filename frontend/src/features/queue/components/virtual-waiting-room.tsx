@@ -313,7 +313,7 @@ export function VirtualWaitingRoom({
         atendimentoId={atendimentoId}
         pacienteId={session.pacienteId}
         token={token}
-        ttlSegundos={chamadaAtiva?.ttl_segundos ?? 45}
+        ttlSegundos={chamadaAtiva?.ttl_segundos ?? undefined}
         chamadaIniciadaEm={chamadaAtiva?.chamada_iniciada_em}
         onAtendido={handleAtendido}
         onNoShow={handleNoShow}

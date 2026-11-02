@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { settings } from "@/config/settings";
 
 export interface TmaTimerBadgeProps {
   iniciadoEm?: string | null;
@@ -11,7 +12,10 @@ export interface TmaTimerBadgeProps {
  * Garante estrita conformidade com a Regra RN06 (Preservação Soberana do Ato Médico):
  * o estouro de tempo NUNCA interrompe, desconecta ou bloqueia a consulta médica.
  */
-export function TmaTimerBadge({ iniciadoEm, tmaPlanejadoSegundos = 900 }: TmaTimerBadgeProps) {
+export function TmaTimerBadge({
+  iniciadoEm,
+  tmaPlanejadoSegundos = settings.clinical.tmaPlannedSeconds,
+}: TmaTimerBadgeProps) {
   const calcularDiff = () => {
     if (!iniciadoEm) return 0;
     const inicio = new Date(iniciadoEm).getTime();

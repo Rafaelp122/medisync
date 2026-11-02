@@ -1,6 +1,7 @@
 import type { AdmissaoResponse } from "@/api/generated/types.gen";
+import { settings } from "@/config/settings";
 
-export const MEDISYNC_SESSION_KEY = "medisync_session";
+export const MEDISYNC_SESSION_KEY = settings.storage.patientSession;
 
 /**
  * Contrato canônico da sessão do paciente persistida no navegador.
@@ -92,7 +93,7 @@ export function getStoredToken(): string | null {
   return session?.token ?? null;
 }
 
-export const MEDISYNC_DOCTOR_SESSION_KEY = "medisync_doctor_session";
+export const MEDISYNC_DOCTOR_SESSION_KEY = settings.storage.doctorSession;
 
 /**
  * Contrato da sessão do médico plantonista persistida no navegador.
