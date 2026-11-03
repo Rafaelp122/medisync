@@ -1,7 +1,7 @@
 """Data Transfer Objects for the authentication application layer."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -37,6 +37,7 @@ class TokenPairDTO:
     token_type: str = "bearer"  # noqa: S105
     expires_in: int = 900
     refresh_expires_in: int = 604800
+    mfa_requerido: bool = False
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,32 @@ class TokenPayloadDTO:
     exp: datetime
     jti: str
     type: str
+    mfa_pending: bool = False
+
+
+@dataclass(frozen=True)
+class MfaSetupDTO:
+    """Setup data for registering a TOTP authenticator app."""
+
+    secret: str
+    uri: str
+
+
+@dataclass(frozen=True)
+class AtivarMfaCommand:
+    """Command to activate second-factor TOTP for a user."""
+
+    usuario_id: UUID
+    organizacao_id: int
+    codigo: str
+
+
+@dataclass(frozen=True)
+class VerificarMfaLoginCommand:
+    """Command to exchange temporary MFA token for final token pair."""
+
+    temp_token: str
+    codigo: str
 
 
 @dataclass(frozen=True)
@@ -98,3 +125,14 @@ class VerificarOtpOutputDTO(BaseModel):
     expires_in: int
     paciente_id: UUID
     role: str = "PACIENTE"
+
+
+class AutenticarCadsusInputDTO(BaseModel):
+    """Input parameters for CADSUS/Gov.br passwordless civil registry lookup."""
+
+    model_config = ConfigDict(frozen=True, str_strip_whitespace=True)
+
+    cpf: str | None = None
+    cns: str | None = None
+    data_nascimento: date | None = None
+    nome_mae: str | None = None

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Body, status
 from src.core.dependencies import TenantDep
 from src.modules.auth.composition import PatientAuthServiceDep
 from src.modules.auth.presentation.schemas import (
+    AutenticarCadsusRequest,
     SolicitarOtpRequest,
     SolicitarOtpResponse,
     VerificarOtpRequest,
@@ -53,4 +54,29 @@ async def verify_otp(
 ) -> VerificarOtpResponse:
     """Verify OTP code and issue patient Bearer JWT token."""
     result = await service.verificar_otp(tenant_id, body)
+    return VerificarOtpResponse.model_validate(result)
+
+
+@patient_auth_router.post(
+    "/auth/patient/cadsus",
+    status_code=status.HTTP_200_OK,
+    summary="Autenticar paciente via CADSUS / Gov.br",
+    description=(
+        "Autenticação sem senha via desambiguação de dados civis "
+        "(CPF, CNS, Data de Nascimento)."
+    ),
+    operation_id="post_auth_paciente_cadsus",
+)
+async def post_auth_paciente_cadsus(
+    body: Annotated[AutenticarCadsusRequest, Body()],
+    tenant_id: TenantDep,
+    service: PatientAuthServiceDep,
+) -> VerificarOtpResponse:
+    """Authenticate patient via CADSUS / Gov.br civil registry lookup."""
+    result = await service.autenticar_cadsus_govbr(
+        organizacao_id=tenant_id,
+        cpf=body.cpf,
+        data_nascimento=body.data_nascimento,
+        cns=body.cns,
+    )
     return VerificarOtpResponse.model_validate(result)

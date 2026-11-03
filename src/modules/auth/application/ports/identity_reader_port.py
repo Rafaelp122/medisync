@@ -1,6 +1,7 @@
 """Public read port for patient identity lookups in auth module."""
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
@@ -46,6 +47,16 @@ class IdentityReaderPort(Protocol):
         cpf: str | None = None,
     ) -> PacienteAuthLookupDTO | None:
         """Look up patient record by organization and telephone number."""
+        ...
+
+    async def buscar_paciente_cadsus(
+        self,
+        organizacao_id: int,
+        cpf: str | None = None,
+        data_nascimento: date | None = None,
+        cns: str | None = None,
+    ) -> PacienteAuthLookupDTO | None:
+        """Look up patient record via CADSUS/Gov.br credentials (CPF, CNS)."""
         ...
 
 

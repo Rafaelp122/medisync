@@ -26,3 +26,16 @@ class TokenServicePort(Protocol):
     def validar_refresh_token(self, token: str) -> TokenPayloadDTO:
         """Validate signature, type, and expiration of refresh token."""
         ...
+
+    def gerar_mfa_token(
+        self,
+        usuario_id: UUID,
+        organizacao_id: int,
+        papel: str,
+    ) -> str:
+        """Issue a short-lived temporary token with mfa_pending claim."""
+        ...
+
+    def validar_mfa_token(self, token: str) -> TokenPayloadDTO:
+        """Validate signature, expiration, and mfa_pending type of a temporary token."""
+        ...

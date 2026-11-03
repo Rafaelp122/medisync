@@ -1,5 +1,6 @@
 """Unit tests for PatientAuthService passwordless OTP workflow."""
 
+from datetime import date
 from uuid import UUID
 
 import pytest
@@ -47,6 +48,23 @@ class FakeIdentityReader(IdentityReaderPort):
                 "organizacao_id": organizacao_id,
                 "telefone": telefone,
                 "cpf": cpf,
+            }
+        )
+        return self.paciente
+
+    async def buscar_paciente_cadsus(
+        self,
+        organizacao_id: int,
+        cpf: str | None = None,
+        data_nascimento: date | None = None,
+        cns: str | None = None,
+    ) -> PacienteAuthLookupDTO | None:
+        self.lookups.append(
+            {
+                "organizacao_id": organizacao_id,
+                "cpf": cpf,
+                "data_nascimento": data_nascimento,
+                "cns": cns,
             }
         )
         return self.paciente

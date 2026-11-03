@@ -6,6 +6,7 @@ import json
 import logging
 import secrets
 import time
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -418,5 +419,65 @@ class PatientAuthService:
             token_type="bearer",  # noqa: S106
             expires_in=self._access_token_expire_minutes * 60,
             paciente_id=paciente_id,
+            role=Role.PACIENTE.value,
+        )
+
+    async def autenticar_cadsus_govbr(
+        self,
+        organizacao_id: int,
+        cpf: str | None = None,
+        data_nascimento: date | None = None,
+        cns: str | None = None,
+    ) -> VerificarOtpOutputDTO:
+        """Autenticação sem senha via CADSUS/Gov.br por desambiguação de dados civis.
+
+        Regras: ADR-005, RF-01, CFM nº 2.314/2022 e auth-domain.md.
+        """
+        if self._identity_reader is None:
+            raise ValueError(
+                "IdentityReaderPort não configurado no PatientAuthService."
+            )
+        if organizacao_id <= 0:
+            raise TenantInvalidoError(
+                f"Identificador da organização '{organizacao_id}' deve ser "
+                "positivo; esperado valor > 0."
+            )
+
+        clean_cpf = validate_cpf(cpf) if cpf else None
+        clean_cns = cns.strip() if cns and cns.strip() else None
+
+        if not clean_cpf and not clean_cns:
+            raise PacienteNaoEncontradoError(
+                "Desambiguação CADSUS exige ao menos CPF ou CNS válido para "
+                "autenticação sem senha."
+            )
+
+        paciente = await self._identity_reader.buscar_paciente_cadsus(
+            organizacao_id=organizacao_id,
+            cpf=clean_cpf,
+            data_nascimento=data_nascimento,
+            cns=clean_cns,
+        )
+        if paciente is None:
+            raise PacienteNaoEncontradoError(
+                f"Paciente com dados civis informados (CPF: {clean_cpf or 'N/A'}, "
+                f"CNS: {clean_cns or 'N/A'}) não encontrado na organização "
+                f"'{organizacao_id}'."
+            )
+
+        token = create_access_token(
+            usuario_id=paciente.id,
+            organizacao_id=organizacao_id,
+            papel=Role.PACIENTE.value,
+            secret_key=self._secret_key,
+            algorithm=self._algorithm,
+            expire_minutes=self._access_token_expire_minutes,
+        )
+
+        return VerificarOtpOutputDTO(
+            access_token=token,
+            token_type="bearer",  # noqa: S106
+            expires_in=self._access_token_expire_minutes * 60,
+            paciente_id=paciente.id,
             role=Role.PACIENTE.value,
         )

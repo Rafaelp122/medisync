@@ -73,7 +73,7 @@ class Fase1Response(BaseModel):
 
     paciente_id: UUID
     token: str
-    status: str = "TRIADO_AGUARDANDO_ELEGIBILIDADE"
+    status: str = "APTO_PARA_CHAMADA"
     mensagem: str
     is_novo_paciente: bool
 

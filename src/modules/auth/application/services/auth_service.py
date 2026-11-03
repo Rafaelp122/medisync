@@ -8,10 +8,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.errors import ConflictError
+from src.core.errors import ConflictError, MfaCodigoInvalidoError, NotFoundError
 from src.modules.auth.application.dtos import (
     CadastrarCredencialCommand,
     LoginCommand,
+    MfaSetupDTO,
     TokenPairDTO,
     TokenPayloadDTO,
 )
@@ -34,6 +35,11 @@ from src.modules.auth.domain.exceptions import (
     TokenRevogadoError,
 )
 from src.modules.auth.domain.models import UsuarioCredencial
+from src.modules.auth.domain.totp import (
+    build_totp_uri,
+    generate_totp_secret,
+    verify_totp_code,
+)
 
 
 class _LocalMemoryRevocation:
@@ -191,7 +197,110 @@ class AuthService:
 
         await self._session.commit()
 
-        # 8. Issue JWT token pair
+        # 8. Check if MFA is required (active and role in MEDICO / GESTOR_UNIDADE)
+        if cred.mfa_ativo and cred.papel in {"MEDICO", "GESTOR_UNIDADE"}:
+            temp_token = self._token_service.gerar_mfa_token(
+                usuario_id=cred.usuario_id,
+                organizacao_id=cred.organizacao_id,
+                papel=cred.papel,
+            )
+            return TokenPairDTO(
+                access_token=temp_token,
+                refresh_token="",
+                token_type="bearer",  # noqa: S106
+                expires_in=300,
+                refresh_expires_in=0,
+                mfa_requerido=True,
+            )
+
+        # 9. Issue JWT token pair
+        return self._token_service.gerar_tokens(
+            usuario_id=cred.usuario_id,
+            organizacao_id=cred.organizacao_id,
+            papel=cred.papel,
+        )
+
+    async def gerar_mfa_secret(
+        self, usuario_id: UUID, organizacao_id: int | None = None
+    ) -> MfaSetupDTO:
+        """Gera chave secreta Base32 e URI para app autenticador (TOTP).
+
+        Regras: ADR-007 (MFA), RF-01 e docs/explanation/domains/auth-domain.md.
+        """
+        stmt = select(UsuarioCredencial).where(
+            UsuarioCredencial.usuario_id == usuario_id
+        )
+        if organizacao_id is not None:
+            stmt = stmt.where(UsuarioCredencial.organizacao_id == organizacao_id)
+        res = await self._session.execute(stmt)
+        cred = res.scalar_one_or_none()
+        if cred is None:
+            raise NotFoundError(
+                f"Usuário '{usuario_id}' não encontrado para configuração de MFA."
+            )
+
+        secret = generate_totp_secret()
+        uri = build_totp_uri(secret, cred.identificador, issuer="MediSync")
+        cred.mfa_secret = secret
+        await self._session.commit()
+        return MfaSetupDTO(secret=secret, uri=uri)
+
+    async def ativar_mfa(
+        self, usuario_id: UUID, organizacao_id: int | None = None, codigo: str = ""
+    ) -> bool:
+        """Valida o primeiro código TOTP de 6 dígitos e ativa o MFA para a conta.
+
+        Regras: ADR-007, RF-01 e docs/explanation/domains/auth-domain.md.
+        """
+        stmt = select(UsuarioCredencial).where(
+            UsuarioCredencial.usuario_id == usuario_id
+        )
+        if organizacao_id is not None:
+            stmt = stmt.where(UsuarioCredencial.organizacao_id == organizacao_id)
+        res = await self._session.execute(stmt)
+        cred = res.scalar_one_or_none()
+        if cred is None:
+            raise NotFoundError(
+                f"Usuário '{usuario_id}' não encontrado para ativação de MFA."
+            )
+
+        if not cred.mfa_secret:
+            raise MfaCodigoInvalidoError(
+                f"Usuário '{usuario_id}' não possui segredo MFA gerado; "
+                "execute o setup prévio."
+            )
+
+        is_valido = verify_totp_code(cred.mfa_secret, codigo)
+        if not is_valido:
+            raise MfaCodigoInvalidoError(
+                f"Código TOTP '{codigo}' inválido para ativação de MFA; "
+                "esperado token numérico de 6 dígitos válido."
+            )
+
+        cred.mfa_ativo = True
+        await self._session.commit()
+        return True
+
+    async def verificar_mfa_login(self, temp_token: str, codigo: str) -> TokenPairDTO:
+        """Valida TOTP contra token temporário e emite tokens definitivos.
+
+        Regras: ADR-007, RF-01 e docs/explanation/domains/auth-domain.md.
+        """
+        payload = self._token_service.validar_mfa_token(temp_token)
+        cred = await self.obter_usuario_por_id(payload.sub, payload.org_id)
+        if cred is None or not cred.ativo or cred.is_bloqueado() or not cred.mfa_secret:
+            raise CredenciaisInvalidasError(
+                f"Sessão temporária para usuário '{payload.sub}' ou credencial "
+                "indisponível para segundo fator."
+            )
+
+        is_valido = verify_totp_code(cred.mfa_secret, codigo)
+        if not is_valido:
+            raise MfaCodigoInvalidoError(
+                f"Código TOTP '{codigo}' fornecido para o usuário '{payload.sub}' "
+                "é inválido ou expirou; esperado código numérico de 6 dígitos válido."
+            )
+
         return self._token_service.gerar_tokens(
             usuario_id=cred.usuario_id,
             organizacao_id=cred.organizacao_id,

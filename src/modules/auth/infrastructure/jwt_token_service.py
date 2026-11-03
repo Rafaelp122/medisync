@@ -83,6 +83,36 @@ class JWTTokenService(TokenServicePort):
         """Validate signature, expiration, and refresh type of a JWT token."""
         return self._decode_token(token, expected_type="refresh")
 
+    def gerar_mfa_token(
+        self,
+        usuario_id: UUID,
+        organizacao_id: int,
+        papel: str,
+    ) -> str:
+        """Issue short-lived token requiring second-factor verification."""
+        now = datetime.now(UTC)
+        mfa_exp = now + timedelta(minutes=5)
+
+        payload: dict[str, Any] = {
+            "sub": str(usuario_id),
+            "org_id": organizacao_id,
+            "papel": papel,
+            "iat": int(now.timestamp()),
+            "exp": int(mfa_exp.timestamp()),
+            "jti": str(uuid7()),
+            "type": "mfa_pending",
+            "mfa_pending": True,
+        }
+
+        token: str = jwt.encode(  # pyright: ignore[reportUnknownMemberType]
+            payload, self._secret_key, algorithm=self._algorithm
+        )
+        return token
+
+    def validar_mfa_token(self, token: str) -> TokenPayloadDTO:
+        """Validate signature, expiration, and mfa_pending type of a temporary token."""
+        return self._decode_token(token, expected_type="mfa_pending")
+
     def _decode_token(self, token: str, expected_type: str) -> TokenPayloadDTO:
         try:
             claims: dict[str, Any] = jwt.decode(  # pyright: ignore[reportUnknownMemberType]
@@ -111,6 +141,7 @@ class JWTTokenService(TokenServicePort):
             exp_ts = int(claims["exp"])
             exp = datetime.fromtimestamp(exp_ts, tz=UTC)
             jti = str(claims["jti"])
+            mfa_pending = bool(claims.get("mfa_pending", False))
         except (KeyError, ValueError) as err:
             raise TokenInvalidoError(
                 "Estrutura de claims do token incompleta ou corrompida."
@@ -123,4 +154,5 @@ class JWTTokenService(TokenServicePort):
             exp=exp,
             jti=jti,
             type=token_type,
+            mfa_pending=mfa_pending,
         )

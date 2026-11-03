@@ -11,6 +11,10 @@ from src.modules.auth.composition import AuthServiceDep
 from src.modules.auth.presentation.helpers import resolve_login_tenant_id
 from src.modules.auth.presentation.schemas import (
     LoginRequest,
+    MfaAtivarRequest,
+    MfaAtivarResponse,
+    MfaSetupResponse,
+    MfaVerificarLoginRequest,
     RefreshTokenRequest,
     TokenResponse,
     UsuarioPerfilResponse,
@@ -48,6 +52,49 @@ async def login(
     )
 
     tokens = await service.autenticar(command)
+    return TokenResponse.model_validate(tokens)
+
+
+@auth_router.post(
+    "/mfa/setup",
+    status_code=status.HTTP_200_OK,
+    summary="Gera chave secreta e URI para app autenticador (TOTP)",
+)
+async def mfa_setup(
+    user: CurrentUserDep,
+    service: AuthServiceDep,
+) -> MfaSetupResponse:
+    """Gera o segredo Base32 e URI otpauth:// para MFA no app do usuário."""
+    setup_dto = await service.gerar_mfa_secret(user.usuario_id, user.organizacao_id)
+    return MfaSetupResponse(secret=setup_dto.secret, uri=setup_dto.uri)
+
+
+@auth_router.post(
+    "/mfa/activate",
+    status_code=status.HTTP_200_OK,
+    summary="Valida código de 6 dígitos e ativa o segundo fator (MFA)",
+)
+async def mfa_activate(
+    body: Annotated[MfaAtivarRequest, Body()],
+    user: CurrentUserDep,
+    service: AuthServiceDep,
+) -> MfaAtivarResponse:
+    """Valida o primeiro código TOTP de 6 dígitos e ativa o segundo fator."""
+    await service.ativar_mfa(user.usuario_id, user.organizacao_id, body.codigo)
+    return MfaAtivarResponse()
+
+
+@auth_router.post(
+    "/mfa/verify",
+    status_code=status.HTTP_200_OK,
+    summary="Verificação do segundo fator (MFA) e emissão de tokens de sessão",
+)
+async def mfa_verify(
+    body: Annotated[MfaVerificarLoginRequest, Body()],
+    service: AuthServiceDep,
+) -> TokenResponse:
+    """Troca token temporário mfa_pending por tokens definitivos após validação TOTP."""
+    tokens = await service.verificar_mfa_login(body.temp_token, body.codigo)
     return TokenResponse.model_validate(tokens)
 
 
@@ -99,6 +146,8 @@ async def me(
     """Retorna perfil do usuário ativo a partir do principal central validado."""
     cred = await service.obter_usuario_por_id(user.usuario_id, user.organizacao_id)
     if cred is None:
-        raise NotFoundError("Registro de credencial do usuário não encontrado.")
+        raise NotFoundError(
+            f"Registro de credencial do usuário '{user.usuario_id}' não encontrado."
+        )
 
     return UsuarioPerfilResponse.model_validate(cred)
