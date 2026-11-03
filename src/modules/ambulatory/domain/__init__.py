@@ -1,5 +1,13 @@
-"""Billing domain package."""
+"""Ambulatory domain package."""
 
-from src.modules.billing.domain.enums import StatusElegibilidade
+from src.modules.ambulatory.domain.enums import (
+    CaraterAtendimento,
+    StatusElegibilidade,
+    TipoProcedimentoAmbulatorial,
+)
 
-__all__ = ["StatusElegibilidade"]
+__all__ = [
+    "CaraterAtendimento",
+    "StatusElegibilidade",
+    "TipoProcedimentoAmbulatorial",
+]

@@ -1,20 +1,26 @@
-"""Unit tests for billing eligibility adapters and service (RF-02, RF-05, RT-01)."""
+"""Unit tests for SUS ambulatory production and eligibility.
+
+Conforme RF-02, RF-05, RT-01 e ADR-012.
+"""
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-import httpx
 import pytest
-from src.modules.billing import (
+from src.core.errors import TenantInvalidoError
+from src.modules.ambulatory import (
+    BpaProducaoDTO,
+    CaraterAtendimento,
+    ConsolidarTeleconsultaCommand,
     ElegibilidadeFalhaEvent,
     ElegibilidadeService,
     LoggingElegibilidadeNotifier,
-    PrivateInsuranceGatewayAdapter,
     RequisicaoElegibilidade,
     ResultadoElegibilidade,
     StatusElegibilidade,
     SusEligibilityAdapter,
+    TipoProcedimentoAmbulatorial,
 )
 
 from tests.doubles import FakeElegibilidadeNotifier, FakeEligibilityProvider
@@ -24,11 +30,13 @@ from tests.doubles import FakeElegibilidadeNotifier, FakeEligibilityProvider
 async def test_sus_adapter_instant_no_op_approval() -> None:
     """SUS adapter immediately approves attendance without network latency (RT-01)."""
     adapter = SusEligibilityAdapter()
+
     req = RequisicaoElegibilidade(
         organizacao_id=1,
         atendimento_id=uuid4(),
         paciente_id=uuid4(),
         cpf="12345678901",
+        cns="123456789012345",
     )
 
     resultado = await adapter.verificar_elegibilidade(req)
@@ -40,115 +48,13 @@ async def test_sus_adapter_instant_no_op_approval() -> None:
 
 
 @pytest.mark.asyncio
-async def test_private_gateway_adapter_approved() -> None:
-    """Private gateway approves when operator returns 200 with aprovado=True."""
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_response = MagicMock(spec=httpx.Response)
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "aprovado": True,
-        "codigo_autorizacao": "AUTH-UNIMED-998",
-    }
-    mock_client.post.return_value = mock_response
-
-    adapter = PrivateInsuranceGatewayAdapter(client=mock_client)
-    req = RequisicaoElegibilidade(
-        organizacao_id=2,
-        atendimento_id=uuid4(),
-        paciente_id=uuid4(),
-        cpf="98765432100",
-        operadora_id="UNIMED",
-        numero_carteirinha="0011223344",
-    )
-
-    resultado = await adapter.verificar_elegibilidade(req)
-
-    assert resultado.aprovado is True
-    assert resultado.status == StatusElegibilidade.APROVADO
-    assert resultado.codigo_autorizacao == "AUTH-UNIMED-998"
-
-
-@pytest.mark.asyncio
-async def test_private_gateway_adapter_rejected() -> None:
-    """Private gateway records rejection reason from operator payload."""
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_response = MagicMock(spec=httpx.Response)
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "aprovado": False,
-        "motivo": "Carência não cumprida para teleconsulta",
-    }
-    mock_client.post.return_value = mock_response
-
-    adapter = PrivateInsuranceGatewayAdapter(client=mock_client)
-    req = RequisicaoElegibilidade(
-        organizacao_id=2,
-        atendimento_id=uuid4(),
-        paciente_id=uuid4(),
-        cpf="98765432100",
-        operadora_id="BRADESCO",
-        numero_carteirinha="99887766",
-    )
-
-    resultado = await adapter.verificar_elegibilidade(req)
-
-    assert resultado.aprovado is False
-    assert resultado.status == StatusElegibilidade.REJEITADO
-    assert "Carência não cumprida" in (resultado.motivo or "")
-
-
-@pytest.mark.asyncio
-async def test_private_gateway_adapter_timeout_15s() -> None:
-    """Private gateway handles timeout exception and returns TIMEOUT status (RF-02)."""
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_client.post.side_effect = httpx.TimeoutException("Read timed out")
-
-    adapter = PrivateInsuranceGatewayAdapter(timeout_segundos=15.0, client=mock_client)
-    req = RequisicaoElegibilidade(
-        organizacao_id=2,
-        atendimento_id=uuid4(),
-        paciente_id=uuid4(),
-        cpf="98765432100",
-    )
-
-    resultado = await adapter.verificar_elegibilidade(req)
-
-    assert resultado.aprovado is False
-    assert resultado.status == StatusElegibilidade.TIMEOUT
-    assert "15s excedido" in (resultado.motivo or "")
-
-
-@pytest.mark.asyncio
-async def test_private_gateway_adapter_http_error() -> None:
-    """Private gateway handles non-200 operator status code."""
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_response = MagicMock(spec=httpx.Response)
-    mock_response.status_code = 502
-    mock_response.text = "Bad Gateway"
-    mock_client.post.return_value = mock_response
-
-    adapter = PrivateInsuranceGatewayAdapter(client=mock_client)
-    req = RequisicaoElegibilidade(
-        organizacao_id=2,
-        atendimento_id=uuid4(),
-        paciente_id=uuid4(),
-    )
-
-    resultado = await adapter.verificar_elegibilidade(req)
-
-    assert resultado.aprovado is False
-    assert resultado.status == StatusElegibilidade.REJEITADO
-    assert "502" in (resultado.motivo or "")
-
-
-@pytest.mark.asyncio
 async def test_elegibilidade_service_emits_failure_event_on_rejection() -> None:
     """ElegibilidadeService dispatches failure event to waiting room on rejection."""
     provider = FakeEligibilityProvider(
         ResultadoElegibilidade(
             aprovado=False,
             status=StatusElegibilidade.REJEITADO,
-            motivo="Plano suspenso",
+            motivo="Cadastro SUS irregular",
         )
     )
     notifier = FakeElegibilidadeNotifier()
@@ -172,7 +78,7 @@ async def test_elegibilidade_service_emits_failure_event_on_rejection() -> None:
     evento = notifier.eventos_falha[0]
     assert evento.atendimento_id == atend_id
     assert evento.paciente_id == pac_id
-    assert evento.motivo == "Plano suspenso"
+    assert evento.motivo == "Cadastro SUS irregular"
     assert evento.status == StatusElegibilidade.REJEITADO
 
 
@@ -183,7 +89,7 @@ async def test_elegibilidade_service_does_not_notify_on_approval() -> None:
         ResultadoElegibilidade(
             aprovado=True,
             status=StatusElegibilidade.APROVADO,
-            codigo_autorizacao="AUTH-OK",
+            codigo_autorizacao="SUS-ISENTO",
         )
     )
     notifier = FakeElegibilidadeNotifier()
@@ -212,12 +118,12 @@ async def test_logging_elegibilidade_notifier() -> None:
         atendimento_id=uuid4(),
         organizacao_id=1,
         paciente_id=uuid4(),
-        motivo="Cartão vencido",
+        motivo="Documento inconsistente",
         status=StatusElegibilidade.REJEITADO,
         disparado_em=datetime.now(UTC),
     )
     with patch(
-        "src.modules.billing.application.ports.eligibility_notifier.logger.warning"
+        "src.modules.ambulatory.application.ports.eligibility_notifier.logger.warning"
     ) as mock_log:
         await notifier.notificar_falha(evento)
 
@@ -234,63 +140,39 @@ async def test_elegibilidade_service_tenant_invalido_raises() -> None:
         paciente_id=uuid4(),
     )
     match_msg = "Identificador da organização '0' deve ser positivo"
-    with pytest.raises(Exception, match=match_msg):
+    with pytest.raises(TenantInvalidoError, match=match_msg):
         await service.avaliar_elegibilidade(req)
 
 
-@pytest.mark.asyncio
-async def test_elegibilidade_service_operadora_vazia_raises() -> None:
-    service = ElegibilidadeService(provider=AsyncMock())
-    req = RequisicaoElegibilidade(
-        organizacao_id=1,
-        atendimento_id=uuid4(),
-        paciente_id=uuid4(),
-        operadora_id="   ",
-    )
-    with pytest.raises(Exception, match="Identificador de operadora '   ' inválido"):
-        await service.avaliar_elegibilidade(req)
+def test_consolidar_teleconsulta_command_and_bpa_dto() -> None:
+    """Verifica contratos tipados para consolidação de faturamento ambulatorial SUS."""
+    atend_id = uuid4()
+    prof_id = uuid4()
+    pac_id = uuid4()
+    cnes = "1234567"
 
+    cmd = ConsolidarTeleconsultaCommand(
+        atendimento_id=atend_id,
+        profissional_id=prof_id,
+        paciente_id=pac_id,
+        cnes=cnes,
+    )
 
-@pytest.mark.asyncio
-async def test_elegibilidade_service_carteirinha_vazia_raises() -> None:
-    service = ElegibilidadeService(
-        provider=FakeEligibilityProvider(
-            ResultadoElegibilidade(aprovado=True, status=StatusElegibilidade.APROVADO)
-        )
+    assert (
+        cmd.codigo_sigtap
+        == TipoProcedimentoAmbulatorial.CONSULTA_MEDICA_ATENCAO_PRIMARIA
     )
-    req = RequisicaoElegibilidade(
-        organizacao_id=1,
-        atendimento_id=uuid4(),
-        paciente_id=uuid4(),
-        operadora_id="UNIMED",
-        numero_carteirinha="   ",
-    )
-    match_cart = "Número de carteirinha '   ' inválido para a operadora 'UNIMED'"
-    with pytest.raises(Exception, match=match_cart):
-        await service.avaliar_elegibilidade(req)
+    assert cmd.carater_atendimento == CaraterAtendimento.URGENCIA
 
+    now = datetime.now(UTC)
+    bpa = BpaProducaoDTO(
+        atendimento_id=atend_id,
+        cnes=cnes,
+        codigo_sigtap=cmd.codigo_sigtap,
+        carater_atendimento=cmd.carater_atendimento,
+        consolidado_em=now,
+    )
 
-@pytest.mark.asyncio
-async def test_elegibilidade_service_falha_com_motivo_interpolando() -> None:
-    provider = FakeEligibilityProvider(
-        ResultadoElegibilidade(
-            aprovado=False,
-            status=StatusElegibilidade.REJEITADO,
-            motivo=None,
-        )
-    )
-    notifier = FakeElegibilidadeNotifier()
-    service = ElegibilidadeService(provider=provider, notifier=notifier)
-    req = RequisicaoElegibilidade(
-        organizacao_id=1,
-        atendimento_id=uuid4(),
-        paciente_id=uuid4(),
-        operadora_id="BRADESCO",
-        numero_carteirinha="123456",
-    )
-    resultado = await service.avaliar_elegibilidade(req)
-    assert resultado.aprovado is False
-    assert len(notifier.eventos_falha) == 1
-    evento = notifier.eventos_falha[0]
-    assert "operadora 'BRADESCO'" in evento.motivo
-    assert "carteirinha '123456'" in evento.motivo
+    assert bpa.cnes == "1234567"
+    assert bpa.codigo_sigtap == "03.01.01.025-0"
+    assert bpa.carater_atendimento == "02"

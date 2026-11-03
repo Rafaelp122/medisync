@@ -10,7 +10,7 @@ import pytest
 from src.core.context import tenant_context
 from src.core.database import async_session_factory
 from src.core.valkey import close_valkey_pool, get_valkey_client
-from src.modules.billing import (
+from src.modules.ambulatory import (
     EligibilityProviderPort,
     ResultadoElegibilidade,
     StatusElegibilidade,

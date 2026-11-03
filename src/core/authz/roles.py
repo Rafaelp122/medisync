@@ -27,7 +27,7 @@ class Permission(StrEnum):
     PRONTUARIO_VIEW = "prontuario:view"
     PRONTUARIO_EDIT = "prontuario:edit"
     DOC_SIGN = "doc:sign"
-    BILLING_CONSOLIDATE = "billing:consolidate"
+    AMBULATORY_CONSOLIDATE = "ambulatory:consolidate"
     PATIENT_QUEUE_TRACK = "patient:queue_track"
     PATIENT_DOC_VIEW = "patient:doc_view"
 
@@ -41,7 +41,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             Permission.TMA_CONFIG,
             Permission.PROFISSIONAL_MANAGE,
             Permission.QUEUE_VIEW,
-            Permission.BILLING_CONSOLIDATE,
+            Permission.AMBULATORY_CONSOLIDATE,
         }
     ),
     Role.GESTOR_UNIDADE: frozenset(
@@ -49,7 +49,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             Permission.TMA_CONFIG,
             Permission.PROFISSIONAL_MANAGE,
             Permission.QUEUE_VIEW,
-            Permission.BILLING_CONSOLIDATE,
+            Permission.AMBULATORY_CONSOLIDATE,
         }
     ),
     Role.MEDICO: frozenset(
@@ -63,7 +63,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     ),
     Role.FATURAMENTO: frozenset(
         {
-            Permission.BILLING_CONSOLIDATE,
+            Permission.AMBULATORY_CONSOLIDATE,
         }
     ),
     Role.PACIENTE: frozenset(

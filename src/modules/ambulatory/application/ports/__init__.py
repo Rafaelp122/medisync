@@ -1,11 +1,11 @@
 """Billing application ports package."""
 
-from src.modules.billing.application.ports.eligibility_notifier import (
+from src.modules.ambulatory.application.ports.eligibility_notifier import (
     ElegibilidadeFalhaEvent,
     ElegibilidadeNotifierPort,
     LoggingElegibilidadeNotifier,
 )
-from src.modules.billing.application.ports.eligibility_provider import (
+from src.modules.ambulatory.application.ports.eligibility_provider import (
     EligibilityProviderPort,
 )
 

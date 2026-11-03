@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from src.modules.billing.application.dtos import (
+from src.modules.ambulatory.application.dtos import (
     RequisicaoElegibilidade,
     ResultadoElegibilidade,
 )

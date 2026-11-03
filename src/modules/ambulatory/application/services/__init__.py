@@ -1,6 +1,6 @@
-"""Billing application services package."""
+"""Ambulatory application services package."""
 
-from src.modules.billing.application.services.eligibility_service import (
+from src.modules.ambulatory.application.services.eligibility_service import (
     ElegibilidadeService,
 )
 

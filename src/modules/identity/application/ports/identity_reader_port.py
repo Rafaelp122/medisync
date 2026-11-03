@@ -65,3 +65,13 @@ class IdentityReaderPort(Protocol):
     ) -> PacienteAuthLookupDTO | None:
         """Look up patient authentication record by organization and phone."""
         ...
+
+    async def buscar_paciente_cadsus(
+        self,
+        organizacao_id: int,
+        cpf: str | None = None,
+        data_nascimento: date | None = None,
+        cns: str | None = None,
+    ) -> PacienteAuthLookupDTO | None:
+        """Look up patient record via CADSUS/Gov.br credentials (CPF, CNS)."""
+        ...

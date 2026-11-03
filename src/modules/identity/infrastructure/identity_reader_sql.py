@@ -1,5 +1,4 @@
-"""SQLAlchemy 2.0 ORM implementation of IdentityReaderPort."""
-
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select
@@ -108,6 +107,33 @@ class SqlIdentityReader(IdentityReaderPort):
         )
         if cpf is not None:
             stmt = stmt.where(Paciente.cpf == cpf)
+
+        pac = (await self._session.execute(stmt)).scalars().first()
+        if pac is None:
+            return None
+
+        return PacienteAuthLookupDTO(
+            id=pac.id,
+            organizacao_id=pac.organizacao_id,
+            telefone=pac.telefone,
+            cpf=pac.cpf,
+            nome_completo=pac.nome_completo or "",
+        )
+
+    async def buscar_paciente_cadsus(
+        self,
+        organizacao_id: int,
+        cpf: str | None = None,
+        data_nascimento: date | None = None,
+        cns: str | None = None,
+    ) -> PacienteAuthLookupDTO | None:
+        stmt = select(Paciente).where(Paciente.organizacao_id == organizacao_id)
+        if cpf is not None:
+            stmt = stmt.where(Paciente.cpf == cpf)
+        if data_nascimento is not None:
+            stmt = stmt.where(Paciente.data_nascimento == data_nascimento)
+        if cns is not None:
+            stmt = stmt.where(Paciente.cns == cns)
 
         pac = (await self._session.execute(stmt)).scalars().first()
         if pac is None:

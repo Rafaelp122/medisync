@@ -54,7 +54,7 @@ def test_role_and_permission_matrix() -> None:
     assert Permission.DOC_SIGN in medico_perms
     assert Permission.QUEUE_CALL in medico_perms
     assert Permission.QUEUE_VIEW in medico_perms
-    assert Permission.BILLING_CONSOLIDATE not in medico_perms
+    assert Permission.AMBULATORY_CONSOLIDATE not in medico_perms
 
     # 2. Gestor and Admin CANNOT view medical records (CFM 1.821/2007 rule)
     admin_perms = ROLE_PERMISSIONS[Role.ADMIN_GLOBAL]
@@ -68,9 +68,9 @@ def test_role_and_permission_matrix() -> None:
     assert Permission.PRONTUARIO_VIEW not in gestor_perms
     assert Permission.TMA_CONFIG in gestor_perms
 
-    # 3. Faturamento only consolidates billing
+    # 3. Faturamento only consolidates ambulatory production
     fat_perms = ROLE_PERMISSIONS[Role.FATURAMENTO]
-    assert fat_perms == frozenset({Permission.BILLING_CONSOLIDATE})
+    assert fat_perms == frozenset({Permission.AMBULATORY_CONSOLIDATE})
 
     # 4. Paciente can only track their own queue position and documents
     pac_perms = ROLE_PERMISSIONS[Role.PACIENTE]
@@ -92,7 +92,7 @@ def test_authenticated_user_methods() -> None:
     assert user.has_role(Role.MEDICO, Role.ADMIN_GLOBAL) is True
     assert user.has_role(Role.FATURAMENTO) is False
     assert user.has_permission(Permission.PRONTUARIO_VIEW) is True
-    assert user.has_permission(Permission.BILLING_CONSOLIDATE) is False
+    assert user.has_permission(Permission.AMBULATORY_CONSOLIDATE) is False
 
 
 def test_decode_valid_access_token() -> None:
@@ -188,11 +188,11 @@ def test_require_permission_guard() -> None:
     view_guard = require_permission(Permission.PRONTUARIO_VIEW)
     assert view_guard(medico_user) == medico_user
 
-    billing_guard = require_permission(Permission.BILLING_CONSOLIDATE)
+    ambulatory_guard = require_permission(Permission.AMBULATORY_CONSOLIDATE)
     with pytest.raises(ForbiddenError) as exc_info:
-        billing_guard(medico_user)
+        ambulatory_guard(medico_user)
     assert exc_info.value.status_code == 403
-    assert "billing:consolidate" in str(exc_info.value)
+    assert "ambulatory:consolidate" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

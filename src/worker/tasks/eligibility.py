@@ -6,12 +6,12 @@ from uuid import UUID
 
 from src.core.context import tenant_context
 from src.core.errors import NotFoundError
-from src.modules.billing import (
+from src.modules.ambulatory import (
     ElegibilidadeNotifierPort,
     EligibilityProviderPort,
     RequisicaoElegibilidade,
 )
-from src.modules.billing.composition import build_elegibilidade_service
+from src.modules.ambulatory.composition import build_elegibilidade_service
 from src.modules.identity.composition import get_identity_reader
 from src.modules.queue.composition import build_fila_service_for_session
 from src.worker.context import get_db_session_from_ctx, get_valkey_from_ctx
@@ -77,8 +77,6 @@ async def _executar_validacao_elegibilidade(
     paciente_uuid: UUID,
     cpf: str | None,
     cns: str | None,
-    operadora_id: str | None,
-    numero_carteirinha: str | None,
     modo_publico_sus: bool | None,
     provider: EligibilityProviderPort | None,
     notifier: ElegibilidadeNotifierPort | None,
@@ -95,8 +93,6 @@ async def _executar_validacao_elegibilidade(
         paciente_id=paciente_uuid,
         cpf=cpf,
         cns=cns,
-        operadora_id=operadora_id,
-        numero_carteirinha=numero_carteirinha,
     )
     resultado = await service.avaliar_elegibilidade(req)
 
@@ -158,8 +154,6 @@ async def validar_elegibilidade_task(
                 paciente_uuid=paciente_uuid,
                 cpf=cpf,
                 cns=cns,
-                operadora_id=operadora_id,
-                numero_carteirinha=numero_carteirinha,
                 modo_publico_sus=modo_publico_sus,
                 provider=provider,
                 notifier=notifier,

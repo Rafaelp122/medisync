@@ -2,27 +2,28 @@
 
 import logging
 
-from src.core.errors import TenantInvalidoError, ValidationError
-from src.modules.billing.application.dtos import (
+from src.core.errors import TenantInvalidoError
+from src.modules.ambulatory.application.dtos import (
     RequisicaoElegibilidade,
     ResultadoElegibilidade,
 )
-from src.modules.billing.application.ports import (
+from src.modules.ambulatory.application.ports import (
     ElegibilidadeFalhaEvent,
     ElegibilidadeNotifierPort,
     EligibilityProviderPort,
     LoggingElegibilidadeNotifier,
 )
 
-logger = logging.getLogger("medisync.billing.service")
+logger = logging.getLogger("medisync.ambulatory.service")
 
 
 class ElegibilidadeService:
-    """Orquestra avaliação de cobertura de convênio/SUS com notificação assíncrona.
+    """Orquestra avaliação de cobertura e qualificação SUS com notificação assíncrona.
 
     Regras: RN03 (Elegibilidade concorrente em background), RF-02, RF-05, RT-01.
-    Documentação: docs/explanation/domains/billing-domain.md e
-    docs/adrs/ADR-003-Elegibilidade-Assincrona-ARQ.md
+    Decisões: ADR-012.
+    Documentação: docs/explanation/domains/ambulatory-domain.md e
+    docs/adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md
     """
 
     def __init__(
@@ -38,8 +39,8 @@ class ElegibilidadeService:
     ) -> ResultadoElegibilidade:
         """Avalia cobertura junto ao provedor e dispara alerta à espera se reprovado.
 
-        Regras: RN03 (Elegibilidade concorrente), RF-02, RF-05.
-        Documentação: docs/explanation/domains/billing-domain.md
+        Regras: RN03 (Elegibilidade concorrente), RF-02, RF-05, ADR-012.
+        Documentação: docs/explanation/domains/ambulatory-domain.md
         """
         if requisicao.organizacao_id <= 0:
             raise TenantInvalidoError(
@@ -47,29 +48,12 @@ class ElegibilidadeService:
                 "ser positivo; esperado valor > 0."
             )
 
-        if requisicao.operadora_id is not None and not requisicao.operadora_id.strip():
-            raise ValidationError(
-                f"Identificador de operadora '{requisicao.operadora_id}' inválido; "
-                "esperado identificador alfanumérico não-vazio."
-            )
-
-        if (
-            requisicao.numero_carteirinha is not None
-            and not requisicao.numero_carteirinha.strip()
-        ):
-            raise ValidationError(
-                f"Número de carteirinha '{requisicao.numero_carteirinha}' inválido "
-                f"para a operadora '{requisicao.operadora_id or 'NÃO INFORMADA'}'; "
-                "esperado identificador alfanumérico não-vazio."
-            )
-
         resultado = await self._provider.verificar_elegibilidade(requisicao)
 
         if not resultado.aprovado:
             motivo_falha = resultado.motivo or (
-                f"Elegibilidade não confirmada para operadora "
-                f"'{requisicao.operadora_id or 'NÃO INFORMADA'}' e carteirinha "
-                f"'{requisicao.numero_carteirinha or 'NÃO INFORMADA'}'."
+                f"Elegibilidade SUS não confirmada para paciente "
+                f"'{requisicao.paciente_id}'."
             )
             evento = ElegibilidadeFalhaEvent(
                 atendimento_id=requisicao.atendimento_id,

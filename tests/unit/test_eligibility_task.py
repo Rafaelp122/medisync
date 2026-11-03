@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from src.modules.billing import (
+from src.modules.ambulatory import (
     ElegibilidadeNotifierPort,
     EligibilityProviderPort,
     ResultadoElegibilidade,

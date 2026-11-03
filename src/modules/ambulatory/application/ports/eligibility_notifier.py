@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
-from src.modules.billing.domain.enums import StatusElegibilidade
+from src.modules.ambulatory.domain.enums import StatusElegibilidade
 
-logger = logging.getLogger("medisync.billing.eligibility")
+logger = logging.getLogger("medisync.ambulatory.eligibility")
 
 
 @dataclass(frozen=True)
