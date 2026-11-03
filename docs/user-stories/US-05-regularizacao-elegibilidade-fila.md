@@ -12,27 +12,27 @@
 
 ## 1. Narrativa da Regra (User Voice)
 
-**Como** paciente com pendência temporária de convênio ou divergência cadastral (Juliana Silva),  
-**Quero** permanecer na esteira virtual enquanto regularizo minha cobertura sem ser sumariamente expulsa da unidade,  
-**Para que**, ao confirmar a autorização ou optar por contingência particular/SUS, eu seja promovida a apta preservando meu tempo de espera original na fila.
+**Como** paciente com divergência cadastral demográfica ou contingência assistencial (Juliana Silva),  
+**Quero** permanecer na esteira virtual enquanto regularizo meus dados cadastrais sem ser sumariamente expulsa da unidade,  
+**Para que**, ao regularizar ou ser reabilitada pela regulação municipal, eu seja promovida a apta preservando integralmente meu tempo de espera original na fila ($T_0$).
 
 ---
 
 ## 2. Critérios de Aceite Formais (Gherkin)
 
-### Cenário 1: Reprovação temporária não expulsa o paciente da unidade
-- **Dado que** a validação com a operadora de saúde resultou em rejeição cadastral ou timeout de 15 segundos,
-- **Quando** o resultado da elegibilidade é registrado,
-- **Então** o atendimento permanece aguardando regularização ou opção de contingência,
-- **E** NÃO é disponibilizado para a equipe médica enquanto a cobertura estiver pendente,
+### Cenário 1: Divergência demográfica não expulsa o paciente da unidade
+- **Dado que** o acolhimento identificou pendência temporária de dados demográficos ou contingência de sistema,
+- **Quando** o resultado da contingência é registrado,
+- **Então** o atendimento permanece retido para conferência cadastral sem descarte assistencial,
+- **E** NÃO é disponibilizado para a equipe médica enquanto a pendência estiver ativa,
 - **E** os médicos plantonistas continuam convocando normalmente os demais pacientes aptos da fila (desvio temporário RN03).
 
-### Cenário 2: Regularização recupera antiguidade original (Score Imutável)
-- **Dado que** o paciente regulariza sua autorização de convênio ou migra para contingência 20 minutos após o ingresso inicial,
-- **Quando** o sistema processa a aprovação da elegibilidade,
-- **Então** o atendimento transiciona para apto para atendimento médico,
-- **E** a priorização do paciente na fila é calculada com base no carimbo de data/hora do acolhimento inicial,
-- **E** o paciente assume imediatamente a posição prioritária que lhe cabia por antiguidade clínica, sem ser penalizado pela lentidão do convênio.
+### Cenário 2: Regularização recupera antiguidade original (Score Imutável $T_0$)
+- **Dado que** a pendência demográfica é sanada ou a contingência é regularizada 20 minutos após o acolhimento inicial,
+- **Quando** o sistema processa a regularização em `POST /api/v1/fila/atendimentos/{atendimento_id}/regularizar`,
+- **Então** o atendimento transiciona para `APTO_PARA_CHAMADA`,
+- **E** a priorização do paciente na fila é calculada com base no carimbo de data/hora do acolhimento inicial ($T_0$),
+- **E** o paciente assume imediatamente a posição prioritária que lhe cabia por antiguidade clínica, sem penalização por atrasos administrativos.
 
 ---
 

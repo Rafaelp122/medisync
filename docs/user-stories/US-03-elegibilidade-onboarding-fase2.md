@@ -3,7 +3,8 @@
 > **Requisito Base:** RF-02  
 > **Invariantes Relacionadas:** RN03, RN-REG-02 (CFM 1.821/2007 e 2.314/2022)  
 > **Personas:** Juliana Silva (Paciente) e Patrícia Mendes (Faturamento)  
-> **Módulos:** `identity`, `billing`, `queue`, `worker`  
+> **Módulos:** `identity`, `ambulatory`, `queue`, `worker`  
+
 > **Status de Qualidade:** 🟢 **Conforme**
 
 ---
@@ -70,8 +71,8 @@
 ## 4. Checklist de Inspeção de Código
 
 - [x] **Modelo:** Suporte a `nome_social` e dados completos do CFM em `Paciente` (`src/modules/identity/domain/models/paciente.py`).
-- [x] **Worker ARQ:** Tarefa `validar_elegibilidade_task` com idempotência e timeout de 15s (`src/worker/tasks/eligibility.py`).
-- [x] **Adaptadores:** `SusEligibilityAdapter` (no-op) e `PrivateInsuranceGatewayAdapter` (`src/modules/billing/infrastructure/adapters/`).
+- [x] **Adaptadores:** `SusEligibilityAdapter` (no-op no SUS / ADR-012) (`src/modules/ambulatory/infrastructure/adapters/`).
+
 - [x] **Débito NC-IDN-01:** Dependência `validar_intake_fase2` aceitar polimorfismo de token JWT OTP (Resolvido na Issue #76).
 - [x] **Frontend (Fase 2 & ViaCEP):** Formulário em `frontend/src/features/onboarding/components/enriquecimento-fase2-form.tsx` com autopreenchimento assíncrono e timeout de 5000ms (`frontend/src/features/onboarding/api/use-via-cep.ts`).
 - [x] **Frontend Hook:** `frontend/src/features/onboarding/api/use-enrichment-fase2.ts` integrando com SDK Hey API.

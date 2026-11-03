@@ -2,9 +2,9 @@
 
 > **Requisito Base:** RF-08  
 > **Invariantes Relacionadas:** RN-NEG-01 (Fluxo Financeiro Não Obstrutivo)  
-> **Persona:** Patrícia Mendes (Coordenadora de Faturamento e Regulação)  
-> **Módulos:** `billing`, `consultation`, `queue`  
-> **Status de Qualidade:** 🔴 **Não Conforme** *(NC-BIL-02 / Issue #78)*
+> **Persona:** Patrícia Mendes (Coordenadora de Regulação e Produção Ambulatorial)  
+> **Módulos:** `ambulatory`, `consultation`, `queue`  
+> **Status de Qualidade:** 🟢 **Conforme**
 
 ---
 
@@ -62,10 +62,8 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [ ] **Modelo de Faturamento:** Criar entidade rica FaturaAtendimento com multi-tenant PostgreSQL RLS no pacote domain/models do módulo billing.
-- [ ] **Serviço de Liquidação:** Implementar `LiquidacaoService` com suporte a SUS (SIGTAP) e Particular (`src/modules/billing/application/services/`).
-- [ ] **Porta Inter-módulos:** Criar interface `LiquidacaoPort` em `consultation` para acionamento na conclusão do PEP sem acoplamento direto.
-- [ ] **Composition Root de Billing:** Criar `src/modules/billing/composition.py` (resolvendo também NC-BIL-03).
-- [ ] **Testes Automatizados:**
-  - Criar testes unitários para o modelo de fatura.
-  - Criar testes de integração para o fluxo de liquidação SUS e Particular.
+- [x] **Modelo de Produção Ambulatorial:** Entidade rica `ProducaoAmbulatorial` com multi-tenant PostgreSQL RLS (`src/modules/ambulatory/domain/models/producao_ambulatorial.py`) e migração `0012_producao_ambulatorial_bpa.py`.
+- [x] **Serviço de Consolidação e BPA-I:** `ProducaoAmbulatorialService` com suporte a SIGTAP `03.01.01.025-0` e BPA-I / SISAB (`src/modules/ambulatory/application/services/producao_service.py`).
+- [x] **Composition Root de Ambulatory:** `src/modules/ambulatory/composition.py` exportando `ProducaoServiceDep`.
+- [x] **Testes Automatizados:** Testes unitários para o modelo e serviço em `tests/unit/test_ambulatory_production_service.py`.
+

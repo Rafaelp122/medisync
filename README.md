@@ -124,8 +124,9 @@ src/
 │   └── telemetry.py                   # Instrumentação Prometheus e métricas operacionais
 │
 └── modules/
+    ├── ambulatory/                    # Produção ambulatorial SUS (BPA-I/SISAB) e qualificação cadastral
     ├── auth/                          # Autenticação Argon2id, lockout, OTP passwordless e revogação
-    ├── billing/                       # Elegibilidade assíncrona e modo SUS no-op
+
     ├── consultation/                  # PEP SOAP, LiveKit WebRTC e assinatura digital ICP-Brasil
     ├── identity/                      # Cadastro bifásico, dependentes e isolamento de tenant
     ├── queue/                         # Fila dinâmica ZSET 64-bit, scripts Lua e ring timeout 45s
