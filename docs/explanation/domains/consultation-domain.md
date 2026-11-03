@@ -10,12 +10,15 @@ Vocabulário ubíquo: `evolução` (SOAP), `documento clínico`, `item de prescr
 
 Entrada via RF-07 (consulta, PEP e assinatura). Saída alimenta auditoria RN07 e validação pública de documentos via QR + hash.
 
-Escopo termina no registro. Fila decide ordem, triagem decide prioridade, billing decide cobertura; consulta decide apenas o que o médico registra e assina.
+Escopo termina no registro. Fila decide ordem, triagem decide prioridade, ambulatory consolida a produção ambulatorial SUS; consulta decide apenas o que o médico registra e assina.
 
 ## 2. Regras
 
 - **RN06 — Ato médico nunca interrompido por tempo.** `marcar_finalizado`/`validar_pode_excluir` travam registro, nunca derrubam chamada; backend emite JWT através de `TeleconsultaService` desacoplado do SFU. [Fonte](../product-specification.md) (RN06)
 - **RN07 — PEP append-only com UTC e prova criptográfica.** `EvolucaoClinica`/`DocumentoClinico` carimbam `registrado_em`/`assinado_em` em UTC, hash SHA-256 de 64 hex, assinatura PAdES; guarda canônica em `src/modules/consultation/domain/s3_keys.py`. Casos de uso (`salvar_evolucao_soap`, `emitir_documento`, `assinar`, `finalizar_consulta`) persistem atomicamente eventos na tabela `audit_events` via `AuditTrailPort` (`SqlAuditTrailAdapter`) antes do `commit()`. Catálogo canônico: [Catálogo de Eventos](../../reference/audit/event-catalog.md). Provas vivas: `tests/unit/test_consultation_audit_events.py` e `tests/integration/test_clinical_audit_integration.py`. [Fonte](../product-specification.md) (RN07)
+- **RN08 — Governança de IA no Prontuário e Supervisão Humana (CFM nº 2.454/2026).** Sugestões de notas SOAP, hipóteses CID-10 e prescrições emitidas por IA copiloto atuam exclusivamente como auxílio orientativo; ratificação ou alteração médica gera diff forense imutável com eventos `IA_SUGESTAO_GERADA` e `IA_DECISAO_MEDICA_REGISTRADA`. [Fonte](../product-specification.md) (RN08)
+- **RN09 — Trava Temporal Anti-Fraude em Atestados (CFM nº 2.314/2022 e RDC Anvisa nº 1.000/2025).** Emissão de atestado exige tempo decorrido $\ge 180\text{ s}$ (3 minutos) de consulta; tentativa anterior a 180s exige justificativa clínica circunstanciada e dispara evento `TRAVA_TEMPORAL_ATESTADO_VIOLADA`. [Fonte](../product-specification.md) (RN09)
+- **Procedimento SIGTAP 03.01.01.025-0 no Plano SOAP.** O registro do Plano terapêutico inclui a codificação SIGTAP da teleconsulta na Atenção Primária para integração com o BPA-I e SISAB (Nota Técnica nº 11/2024-MS). [Fonte](../product-specification.md) (RF-07)
 
 Guardiões: `__init__` rejeita `organizacao_id <= 0`, anamnese/conduta vazias, CID-10 fora do padrão, `chave_s3` vazia, hash fora de 64 hex (`ConsultaInvalidaError`).
 
@@ -121,7 +124,9 @@ Sem corrigir código. Divergência entre doc e guardião real exige atualizar do
 
 ## 8. Ver também
 
-- [Product Specification](../product-specification.md) — RN06, RN07 contratuais
+- [Product Specification](../product-specification.md) — RN06, RN07, RN08, RN09 contratuais
 - [Data Model](../architecture/data-model.md) — tabelas `evolucoes_clinicas`, `documentos_clinicos`, `documento_itens`, RLS por `organizacao_id`
 - [Compliance and Telemedicine](../architecture/compliance-and-telemedicine.md) — RN06, CFM 2.314/2022, PAdES ICP-Brasil
+- [ambulatory domain](./ambulatory-domain.md) — produção ambulatorial SUS e qualificação cadastral
+- [ADR-012: Transição 100% SUS](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md)
 - [Domains Index](./index.md) — visão conceitual por domínio

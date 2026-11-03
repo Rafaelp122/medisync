@@ -15,7 +15,7 @@
 
 O **MediSync Express** é uma plataforma de código aberto concebida para operar como **Infraestrutura Nacional de Pronto-Atendimento Virtual (UPA Digital 24/7)** para demandas de saúde de baixa e média complexidade clínica, sob regime de **demanda espontânea** (sem necessidade de agendamento prévio). O objetivo central é conectar cidadãos com queixas e sintomas agudos a grandes contingentes de médicos plantonistas (generalistas ou especialistas em Medicina de Família e Comunidade) em um ambiente digital seguro, resolutivo, altamente disponível e auditável.
 
-A solução foi projetada para implantações dedicadas de grande escala e alta concorrência, atendendo tanto a **redes públicas metropolitanas e estaduais de saúde (Centrais de UPA Digital e Telessaúde do SUS)** quanto a **grandes operadoras de saúde, cooperativas médicas e redes hospitalares de abrangência nacional**.
+A solução foi projetada para implantações públicas de grande escala e alta concorrência, atendendo a **redes públicas municipais, estaduais e Consórcios Públicos Intermunicipais de Saúde (Centrais de UPA Digital e Telessaúde do SUS)**.
 
 ### 1.1 A Esteira de Atendimento Integral
 
@@ -23,15 +23,14 @@ A experiência do paciente e do corpo clínico organiza-se em uma esteira contí
 
 ```mermaid
 flowchart LR
-    A["1. Acolhimento & Triagem<br/>(com TCLE Digital)"] --> B["2. Fila Dinâmica com<br/>Salvaguarda de Piora"]
-    B --> C["3. Validação Concorrente<br/>de Elegibilidade"]
-    C --> D["4. Teleconsulta Integrada<br/>(Vídeo + PEP + ICP-Brasil)"]
-    D --> E["5. Fechamento Contábil<br/>(SUS BPA/APAC ou TISS)"]
-    E --> F["6. Telemetria Operacional<br/>& Governança"]
+    A["1. Acolhimento & Triagem<br/>(com TCLE Digital)"] --> B["2. Fila Dinâmica com<br/>Salvaguarda SAMU 192"]
+    B --> C["3. Convocação & Teleconsulta<br/>(Vídeo + SOAP + ICP-Brasil)"]
+    C --> D["4. Produção Ambulatorial SUS<br/>(BPA-I, SISAB e SIGTAP)"]
+    D --> E["5. Telemetria Operacional<br/>& Governança Consorcial"]
 ```
 
 > **📌 FLUXO DE VALOR ASSISTENCIAL INTEGRAL**  
-> Acolhimento & Triagem Estruturada (com TCLE Digital) ➔ Fila Dinâmica com Salvaguarda de Deterioração Clínica ➔ Validação Concorrente de Elegibilidade (ou Isenção SUS) ➔ Teleconsulta Integrada (Vídeo + Prontuário SOAP + Prescrição Digital ICP-Brasil) ➔ Liquidação e Fechamento Contábil pós-consulta ➔ Telemetria Operacional, Governança & Auditoria Médica.
+> Acolhimento & Triagem Estruturada (com TCLE Digital) ➔ Fila Dinâmica com Salvaguarda SAMU 192 ➔ Convocação e Teleconsulta Integrada (Vídeo WebRTC + Prontuário SOAP + Prescrição Digital ICP-Brasil + SIGTAP 03.01.01.025-0) ➔ Consolidação da Produção Ambulatorial SUS (BPA-I / SISAB) ➔ Telemetria Operacional, Governança Consorcial & Auditoria Médica.
 
 ---
 
@@ -43,7 +42,7 @@ A modelagem do problema e dos direcionadores de negócio baseia-se na identifica
 * **Partes Afetadas**:
   * **Pacientes**: Enfrentam filas físicas degradantes de 4 a 8 horas em UPAs e prontos-socorros para queixas simples, sofrendo com a falta de transparência e o risco de contaminação cruzada.
   * **Médicos Plantonistas**: Sujeitos a sobrecarga extrema, ferramentas clínicas fragmentadas (vídeo em um aplicativo, prontuário em outro, receituário externo) e disputas de tela por pacientes (*overbooking*).
-  * **Equipes de Regulação e Faturamento**: Sofrem com glosas cadastrais, ausência de guias autorizadas e atendimentos médicos concluídos sem liquidação financeira auditável.
+  * **Equipes de Regulação e Produção Ambulatorial**: Enfrentam dificuldades no fechamento de lotes de BPA-I e SISAB, dados cadastrais inconsistentes e ausência de consolidação automática da produção ambulatorial nos pontos de telessaúde (CNES 160/006).
   * **Gestores de Saúde e Diretores Clínicos**: Carecem de telemetria em tempo real sobre tempo de espera, evasão de fila e capacidade assistencial instalada para tomada de decisão ágil.
 * **Impacto Observado**:
   * Sobrecarga das portas de emergência hospitalar por casos de atenção primária (fichas verdes e azuis que poderiam ser resolvidos virtualmente).
@@ -57,7 +56,7 @@ A modelagem do problema e dos direcionadores de negócio baseia-se na identifica
   * Controle estocástico de admissão (*backpressure*) protegendo o corpo médico contra colapso de capacidade.
   * Alocação atômica em milissegundos com descarte determinístico de chamadas sem resposta (*no-show*).
   * Preservação incondicional da soberania do ato médico (sem corte forçado de atendimento por tempo).
-  * Fechamento contábil automático pós-consulta, integrando o prontuário a lotes oficiais SUS (BPA/APAC) ou faturamento suplementar (TISS).
+  * Consolidação ambulatorial automática pós-consulta, integrando o prontuário a lotes oficiais SUS (BPA-I e SISAB) com codificação SIGTAP.
   * Aderência estrita às diretrizes universais de acessibilidade digital (WCAG 2.1 Nível AA).
 
 ---
@@ -66,13 +65,13 @@ A modelagem do problema e dos direcionadores de negócio baseia-se na identifica
 
 Para orientar a validação do produto no mundo real e medir o impacto direto na saúde e na gestão assistencial em larga escala, definem-se os seguintes objetivos estratégicos fundamentados na metodologia SMART:
 
-* **S (Específico)**: Disponibilizar uma plataforma de código aberto para Pronto-Atendimento Virtual 24/7 de alta concorrência capaz de absorver a demanda espontânea de atenção primária e urgências de baixa/média complexidade, desafogando a rede física de pronto-atendimento, eliminando barreiras burocráticas de entrada aos cidadãos e assegurando a sustentabilidade financeira das unidades operadoras.
+* **S (Específico)**: Disponibilizar uma plataforma de código aberto para Pronto-Atendimento Virtual 24/7 de alta concorrência capaz de absorver a demanda espontânea de atenção primária e urgências de baixa/média complexidade, desafogando a rede física de pronto-atendimento, eliminando barreiras burocráticas de entrada aos cidadãos e assegurando a sustentabilidade da gestão em saúde pública municipal e consorcial.
 * **M (Mensurável — Indicadores de Desfecho Assistencial e Econômico)**:
   * **Taxa de Resolutividade Clínica no PA Virtual:** $\ge 80\%$ das queixas acolhidas resolvidas integralmente na teleconsulta, sem necessidade de encaminhamento presencial imediato para unidades físicas de urgência.
   * **Cumprimento de SLA Assistencial:** $\ge 95\%$ dos pacientes admitidos atendidos dentro da janela temporal estipulada para seu nível de triagem clínica (ACR).
   * **Desafogamento da Rede Física de Urgência:** Redução observada de $\ge 25\%$ no volume de atendimentos de baixa complexidade (fichas verdes e azuis) em prontos-socorros físicos da rede vinculada.
   * **Índice de Abandono da Fila Virtual:** $\le 3{,}0\%$ de desistências voluntárias decorrentes de tempo de espera.
-  * **Eficiência Financeira e Prevenção de Glosas:** Índice de glosas cadastrais e de cobertura $< 0{,}5\%$, com $100\%$ das consultas concluídas integradas ao fechamento contábil (lotes SUS BPA/APAC ou faturamento suplementar TISS).
+  * **Eficiência da Produção Ambulatorial:** $100\%$ das consultas concluídas integradas com validação cadastral nos lotes oficiais do SUS (BPA-I / SISAB sob o procedimento SIGTAP `03.01.01.025-0`) vinculadas ao CNES 160/006 e faturamento pelo incentivo eMulti / SUS Digital.
   * **Satisfação e Acolhimento do Cidadão:** $\text{NPS} \ge 80$ e nota média de facilidade de uso $\ge 4{,}5 / 5{,}0$ nas avaliações pós-consulta.
 * **A (Alcançável)**: Delimitação estrita a queixas agudas de atenção primária e baixa/média gravidade clínica (Níveis 2 a 5 da taxonomia aberta ACR), com protocolo mandatório de encaminhamento imediato ao socorro pré-hospitalar físico (SAMU 192 / Bombeiros) para emergências críticas com risco de vida (Nível 1).
 * **R (Relevante)**: Conformidade integral com a Resolução CFM nº 2.314/2022 (telemedicina e soberania médica), Resolução CFM nº 1.821/2007 (prontuário e identificação civil com nome social), LGPD (Art. 11 para dados sensíveis de saúde), normas sanitárias de prescrição digital (Portaria SVS/MS nº 344/98 e RDC ANVISA nº 20/2011) e acessibilidade digital universal (WCAG 2.1 AA).
@@ -106,13 +105,13 @@ Para orientar a validação do produto no mundo real e medir o impacto direto na
   * Liberação imediata de sua tela caso o paciente chamado não atenda (*no-show*), sem travar seu plantão.
   * Respeito irrestrito ao seu tempo clínico: nenhuma intervenção de software pode desconectar uma consulta em andamento por atingir médias de tempo estimadas.
 
-#### 3. Patrícia Mendes (Gestora de Faturamento e Regulação)
-* **Perfil**: 38 anos, administradora hospitalar responsável pela sustentabilidade financeira e auditoria de contas da unidade de saúde.
-* **Contexto**: Monitora o ciclo de elegibilidade de convênios e pagamentos particulares para evitar atendimentos não faturáveis e glosas.
+#### 3. Patrícia Mendes (Reguladora e Coordenadora de Produção Ambulatorial SUS)
+* **Perfil**: 38 anos, sanitarista e coordenadora de regulação e produção ambulatorial do consórcio público intermunicipal de saúde.
+* **Contexto**: Gerencia a regulação do acesso dos cidadãos dos municípios consorciados e consolida os lotes de produção ambulatorial (BPA-I e SISAB) para faturamento e repasse de incentivos federais (eMulti / SUS Digital).
 * **Necessidades Críticas**:
-  * Validação de elegibilidade (carteirinha do convênio ou garantia de pagamento particular) realizada em segundo plano enquanto o paciente aguarda na fila.
-  * Garantia de que nenhuma consulta médica seja iniciada sem confirmação prévia de cobertura ou deferimento formal de contingência assistencial.
-  * Fechamento contábil automático e rastreável ao término de cada atendimento (consolidação em guias TISS ou produção ambulatorial SUS BPA/APAC).
+  * Integração cadastral transparente com o CADSUS/Gov.br, garantindo a qualificação unívoca do cidadão e município de residência sem atritos na porta de entrada.
+  * Monitoramento da taxa de ocupação da escala médica compartilhada entre os municípios do consórcio, otimizando despesas sob a LRF (teto de 54%).
+  * Fechamento e consolidação automática dos atendimentos em lotes BPA-I e alimentação do SISAB com procedimento SIGTAP `03.01.01.025-0` e CNES 160/006.
 
 #### 4. Carlos Drumond (Diretor Clínico e Gestor de Operações)
 * **Perfil**: 45 anos, médico e gestor hospitalar responsável pelo dimensionamento de escala médica, infraestrutura e governança clínica da instituição.
@@ -134,43 +133,49 @@ Para orientar a validação do produto no mundo real e medir o impacto direto na
 | **NEC-03** | Acessibilidade digital universal | Juliana Silva | Interface móvel em conformidade com critérios de contraste, legibilidade e suporte a tecnologias assistivas (WCAG 2.1 AA). |
 | **NEC-04** | Painel médico sem travamento e sem *overbooking* | Dr. Eduardo | Exatamente uma consulta ativa por médico; resolução determinística e liberação de tela caso paciente não atenda (*no-show*). |
 | **NEC-05** | Estação clínica unificada com assinatura digital | Dr. Eduardo | Videoconferência, histórico clínico, registro em prontuário e emissão com certificado digital ICP-Brasil em fluxo contínuo. |
-| **NEC-06** | Validação financeira e fechamento contábil | Patrícia Mendes | Confirmação assíncrona de cobertura em paralelo à fila e liquidação financeira auditável pós-consulta sem risco de glosas. |
-| **NEC-07** | Parametrização operacional e alternância de perfis | Carlos Drumond | Ajuste dinâmico de capacidade, TMA e configuração do perfil operacional da unidade (Público SUS vs. Suplementar Privado). |
+| **NEC-06** | Consolidação ambulatorial e conformidade SUS | Patrícia Mendes | Consolidação automatizada da produção ambulatorial pós-consulta (BPA-I e SISAB) sob o procedimento SIGTAP `03.01.01.025-0` e incentivo eMulti. |
+| **NEC-07** | Parametrização operacional e governança consorcial | Carlos Drumond | Ajuste dinâmico de capacidade, TMA, margem estocástica alfa e cotas de atendimento por município consorciado. |
 | **NEC-08** | Telemetria contínua e trilha de auditoria legal | Carlos Drumond | Visualização em tempo real de ocupação, abandonos e histórico imutável com carimbo de tempo para auditoria judicial. |
 
 ---
 
-## 5. Modelagem de Implantação e Perfis Operacionais
+## 5. Modelagem Federativa: Consórcios Intermunicipais e SUS Digital
 
-Para atender a realidade das instituições de saúde no Brasil, o MediSync Express adota um modelo de **implantação dedicada por organização operadora**, onde a infraestrutura é provisionada de forma isolada e configurada sob um de dois perfis operacionais nativos:
+Para viabilizar pronto-atendimento virtual 24/7 de alta resolutividade sem colapsar as finanças municipais, o MediSync Express adota o modelo federativo de **Consórcios Públicos de Saúde (Lei Federal nº 11.107/2005)** integrado às diretrizes do **Programa SUS Digital (Portaria GM/MS nº 3.232/2024)** e ao incentivo federal **eMulti (Portaria GM/MS nº 635/2023)**.
 
 ```mermaid
 flowchart TD
-    subgraph ModoSUS["Perfil Operacional 1: Centrais de UPA Digital / Telessaúde SUS"]
-        S1["Identificação via CPF ou CNS"] --> S2["Validação Financeira No-Op (Gratuidade Universal)"]
-        S2 --> S3["Entrada Imediata como APTO PARA CHAMADA"]
-        S3 --> S4["Pós-Consulta: Consolidação em Lote BPA/APAC"]
+    subgraph Consorcio["Consórcio Público Intermunicipal de Saúde (Lei nº 11.107/2005)"]
+        M1["Município A (Tenant 1 - RLS)"] --> Hub["Central de Regulação e Escala Médica Unificada"]
+        M2["Município B (Tenant 2 - RLS)"] --> Hub
+        M3["Município C (Tenant 3 - RLS)"] --> Hub
     end
 
-    subgraph ModoPrivado["Perfil Operacional 2: Saúde Suplementar & Operadoras Nacionais"]
-        P1["Identificação + Carteira/Cartão"] --> P2["Validação Concorrente na Fila (Background)"]
-        P2 -->|Cobertura Aprovada| P3["Transição para APTO PARA CHAMADA"]
-        P2 -->|Falha ou Timeout| P4["Alerta de Regularização sem perda de posição clínica"]
-        P3 --> P5["Pós-Consulta: Captura Financeira / Guia TISS"]
+    subgraph EsteiraSUS["Esteira Assistencial 100% SUS (Portaria MS nº 3.232/2024)"]
+        Hub --> Acolhe["Acolhimento Gratuito Universal<br/>(CPF / CADSUS / Gov.br)"]
+        Acolhe --> Triagem["Triagem Aberta + Salvaguarda SAMU 192<br/>(CREMESP nº 278.262/2023)"]
+        Triagem --> Fila["Fila Dinâmica Multi-Tenant com ZSET<br/>(ADR-002 / ADR-003)"]
+        Fila --> Consulta["Teleconsulta Integrada<br/>(SOAP + Prescrição ICP-Brasil + SIGTAP 03.01.01.025-0)"]
+        Consulta --> Ambulatory["Produção Ambulatorial Consolidada<br/>(Lotes BPA-I, SISAB e eMulti R$ 2.500/mês)"]
     end
 ```
 
-### 5.1 Perfil Operacional 1: Centrais de UPA Digital e Telessaúde SUS
-* **Público-Alvo**: Secretarias Estaduais de Saúde, Consórcios Públicos de Saúde Intermunicipais e Centrais Nacionais de Regulação do SUS.
-* **Princípio**: Universalidade, equidade e gratuidade na porta de entrada.
-* **Operação**: A validação financeira atua como uma instrução nula (*no-op*). O cidadão informa CPF ou número do Cartão Nacional de Saúde (CNS), passa pela classificação de risco e avança diretamente para a fila de chamada médica, sem fricções ou barreiras de cobrança. Ao término da consulta, o procedimento é automaticamente consolidado no lote de produção da unidade para alimentação dos sistemas oficiais do Ministério da Saúde (BPA/APAC).
+### 5.1 O Desafio Fiscal da LRF (54%) e a Solução dos Consórcios Públicos
+O teto da Lei de Responsabilidade Fiscal (LRF - Lei Complementar nº 101/2000) limita a despesa de pessoal do Poder Executivo municipal a 54% da Receita Corrente Líquida. Em municípios de pequeno e médio porte, a manutenção de plantonistas médicos 24 horas por dia, 7 dias por semana, é financeiramente inviável de forma isolada.
+A adesão ao Consórcio Público Intermunicipal de Saúde (Lei nº 11.107/2005) permite o rateio solidário da capacidade médica contratada:
+* Uma única escala de plantão médico regional atende à demanda agregada de dezenas de municípios.
+* O custo per capita é reduzido substancialmente, permanecendo rigorosamente dentro dos limites prudenciais da LRF.
+* O rateio de despesas administrativas é complementado pelo incentivo federal eMulti de até R$ 2.500,00/mês por equipe multiprofissional em telessaúde.
 
-### 5.2 Perfil Operacional 2: Saúde Suplementar e Operadoras Nacionais
-* **Público-Alvo**: Grandes operadoras de planos de saúde, seguradoras e cooperativas médicas de atuação nacional.
-* **Princípio**: Sustentabilidade financeira, prevenção de glosas e agilidade assistencial.
-* **Operação**: O paciente informa os dados de convênio ou cartão de crédito na entrada, mas **não fica bloqueado em tela de cobrança**. Ele é imediatamente acolhido na fila de espera enquanto a verificação de elegibilidade ocorre em segundo plano. Caso a operadora aprove a cobertura, a consulta é liberada; se houver pendência, o paciente é alertado com antecedência sem ser expulso da fila. Ao finalizar a consulta, a fatura é liquidada e a guia TISS é gerada para cobrança.
+### 5.2 Universalidade e Gratuidade no SUS Digital (Portaria MS nº 3.232/2024)
+Em conformidade com o Art. 196 da Constituição Federal e com a Portaria GM/MS nº 3.232/2024, a plataforma garante:
+* **Gratuidade Universal na Entrada**: Vedada qualquer cobrança de taxa, copagamento ou barreira financeira ao cidadão.
+* **Zero Paywall / Zero Glosas**: Não há validação de operadoras de planos de saúde, cancelando integralmente a complexidade burocrática de arquivos XML TISS/TUSS e o risco de glosas financeiras.
+* **Classificação de Ponto de Telessaúde (CNES 160/006)**: Cada polo assistencial é devidamente registrado no Cadastro Nacional de Estabelecimentos de Saúde sob a tipologia regulamentada de Telessaúde.
+* **Procedimento SIGTAP Canônico**: Atendimentos registram o procedimento unificado `03.01.01.025-0` (Consulta de Profissional de Nível Superior na Atenção Primária / Teleconsulta na Atenção Básica) para integração direta com o BPA-I e alimentação da base nacional do SISAB.
 
-### 5.3 Segregação de Unidades Assistenciais e Polos Regionais (Multi-Unidade)
-Mesmo operando em infraestrutura dedicada para uma única instituição contratante, o sistema oferece isolamento de dados e governança distribuída entre suas diferentes unidades operacionais:
-* **Polos Regionais e Centrais de Atendimento:** Permite que uma secretaria estadual ou rede hospitalar opere múltiplos polos regionais ou filiais assistenciais sob a mesma gestão institucional.
-* **Isolamento e Segurança LGPD:** Médicos, operadores e pacientes de um polo assistencial acessam exclusivamente os dados pertinentes à sua respectiva unidade de atendimento, eliminando qualquer risco de contaminação cruzada de dados clínicos e assegurando conformidade estrita com o Art. 11 da LGPD e as normas éticas do CFM.
+### 5.3 Segregação Municipal Federativa via Row-Level Security (PostgreSQL RLS)
+Mesmo compartilhando a mesma infraestrutura computacional e escala médica no consórcio, o sistema garante:
+* **Isolamento de Dados Estrito (ADR-003)**: Cada município consorciado opera sob uma chave discriminadora `organizacao_id` com políticas ativas de Row-Level Security (RLS) no PostgreSQL 17.
+* **Privacidade e LGPD (Art. 11)**: Gestores e reguladores do Município A visualizam exclusivamente a fila e os prontuários de seus munícipes, eliminando qualquer risco de vazamento cruzado.
+* **Governança Consorcial Regional**: O Diretor Clínico e o Regulador Geral do consórcio mantêm visão analítica consolidada para dimensionamento dinâmico de capacidade e distribuição equitativa de plantões.

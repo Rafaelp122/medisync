@@ -41,7 +41,8 @@ Sete estados em `StatusAtendimento` (`src/modules/queue/domain/enums.py`), três
 
 ```mermaid
 stateDiagram-v2
-    [*] --> TRIADO_AGUARDANDO_ELEGIBILIDADE: __init__ default
+    [*] --> APTO_PARA_CHAMADA: Admissão direta SUS com TCLE
+    [*] --> TRIADO_AGUARDANDO_ELEGIBILIDADE: Contingência cadastral
     TRIADO_AGUARDANDO_ELEGIBILIDADE --> APTO_PARA_CHAMADA: promover_para_apto
     APTO_PARA_CHAMADA --> CHAMANDO_PACIENTE: iniciar_chamada
     CHAMANDO_PACIENTE --> EM_ATENDIMENTO: atender_chamada
@@ -75,14 +76,14 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 
 ## 4. Relações
 
-- Consome elegibilidade do billing. `EligibilityProviderPort` valida cobertura antes de `promover_para_apto`; queue nunca importa tabela de convênio, só a porta abstrata.
+- Admissão SUS direta e imediata (ADR-012). O acolhimento via `POST /api/v1/fila/admissao` valida TCLE e risco ACR, persistindo `Atendimento` em `APTO_PARA_CHAMADA` com score de 64 bits calculado e inserção atômica no ZSET `fila:{org}:aptos`, sem latência assíncrona ou dependência de workers externos.
 - Expõe alocação via porta tipada. `AllocationPort.alocar_chamada` esconde códigos Lua (`AlocacaoCodigo` 0/1/-1) atrás de enum; infra Valkey pluga sem tocar serviço.
 - Persiste em tabela `atendimentos` (FKs `organizacoes`, `pacientes`, `profissionais` com `RESTRICT`, RLS por `organizacao_id`, índices por status e fila). [Modelo](../architecture/data-model.md)
 - Notifica transbordo via porta abstrata. `QueueOverflowNotifierPort.emitir_transbordo` recebe `QueueOverflowEvent` imutável com motivo, carga e alpha; default loga, regulação externa pluga.
 - Publica ausência via `paciente_ausente_notifier`. Timeout vira evento de domínio, não só mudança de coluna; painel e métricas reagem sem polling.
 - Orquestra concorrência conforme desenho de filas e locks. [Concorrência](../architecture/concurrency-and-queues.md)
 - Notifica convocação médica protegida por taxa. Alocação despacha convocação ao paciente via porta `NotificationPort`, decorada na raiz de composição por `RateLimitedNotificationAdapter` sobre o cliente Valkey ativo (ou fallback em memória).
-- Worker de elegibilidade roda fora do request. `src/worker/tasks/eligibility.py` consome `EligibilityProviderPort` em background e devolve resultado; fila nunca bloqueia HTTP esperando convênio.
+- Auto-cura e reconciliação via sweeper. A tarefa periódica `reconciliar_fila_orphans_task` (`src/worker/tasks/sweeper.py`) varre o banco relacional a cada 60s e reinsere no ZSET qualquer atendimento em `APTO_PARA_CHAMADA` ausente no Valkey.
 - `FilaService` compõe admissão + alocação. `ingressar_fila` calcula score e insere no ZSET; `adquirir_proximo` puxa cabeça e delega lock ao `AlocacaoChamadaService`; backpressure avaliado antes de inserir com leitura e incremento da cota diária atômica no Valkey (`queue:admissoes:{org}:{today}`, TTL 48h).
 - Routers REST finos expõem as operações centrais da fila clínica em conformidade com ADR-001/ADR-008:
   - `POST /api/v1/fila/chamar-proximo`: Médico adquire atomicamente o próximo paciente via script Lua com retry automático e double-lock (RF-03).
@@ -131,8 +132,9 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `src/modules/queue/infrastructure/notifications/rate_limited_adapter.py`
 - `src/modules/queue/infrastructure/notifications/rate_limiter.py`
 - `src/modules/queue/infrastructure/notifications/logging_adapter.py`
-- `src/modules/billing/application/ports/eligibility_provider.py`
+- `src/modules/ambulatory/application/ports/eligibility_provider.py`
 - `tests/unit/test_queue_schemas.py`
+
 - `tests/unit/test_queue_store.py`
 - `tests/unit/test_admissao_service.py`
 - `tests/unit/test_alocacao_service.py`

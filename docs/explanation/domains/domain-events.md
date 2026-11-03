@@ -14,7 +14,8 @@ Sem fila de mensagens, sem tópico compartilhado, sem import cruzado de modelos.
 |---|---|---|---|
 | PacienteAusenteEvent | queue no timeout de ring | painel, métricas, telemetria | `src/modules/queue/application/ports/paciente_ausente_notifier.py` |
 | QueueOverflowEvent | queue na admissão suspensa | regulação, painel, ui | `src/modules/queue/application/ports/queue_overflow_notifier.py` |
-| ElegibilidadeFalhaEvent | billing na falha de cobertura | sala de espera, paciente | `src/modules/billing/application/ports/eligibility_notifier.py` |
+| ElegibilidadeFalhaEvent | ambulatory na falha de qualificação | sala de espera, paciente | `src/modules/ambulatory/application/ports/eligibility_notifier.py` |
+
 | AuditEvent | núcleo em toda transição | cfm, lgpd, perícia | `src/core/audit/models.py` |
 
 AuditEvent é caso à parte: tabela append-only, nunca notifier, nunca replay.
@@ -53,13 +54,14 @@ Consumidores lógicos: regulação recebe contingência, ui exibe mensagem pront
 
 ## 4. ElegibilidadeFalhaEvent — cobertura negada
 
-Emitido quando verificação de convênio falha ou expira.
+Emitido quando qualificação cadastral SUS falha ou expira.
 
-Produtor: `src/modules/billing/application/services/eligibility_service.py` valida via provedor, worker `src/worker/tasks/eligibility.py` roda fora do request.
+Produtor: `src/modules/ambulatory/application/services/eligibility_service.py` valida via provedor, worker `src/worker/tasks/eligibility.py` roda fora do request.
 
-Port e dto: `src/modules/billing/application/ports/eligibility_notifier.py` com `ElegibilidadeNotifierPort.notificar_falha`.
+Port e dto: `src/modules/ambulatory/application/ports/eligibility_notifier.py` com `ElegibilidadeNotifierPort.notificar_falha`.
 
-Provedor abstrato: `src/modules/billing/application/ports/eligibility_provider.py` separa verificação de alerta.
+Provedor abstrato: `src/modules/ambulatory/application/ports/eligibility_provider.py` separa verificação de alerta.
+
 
 Campos: atendimento, organização, paciente, motivo, status de elegibilidade, carimbo de disparo.
 
@@ -119,5 +121,5 @@ Divergência entre tabela e port real exige atualizar a tabela, nunca inventar c
 
 - [context map](./context-map.md) — quem consome e quem expõe cada port
 - [queue domain](./queue-domain.md) — ring de 45s e backpressure
-- [billing domain](./billing-domain.md) — elegibilidade e cobertura
+- [ambulatory domain](./ambulatory-domain.md) — produção ambulatorial SUS e qualificação cadastral
 - [product specification](../product-specification.md) — requisitos de notificação

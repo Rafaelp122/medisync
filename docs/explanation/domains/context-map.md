@@ -1,8 +1,8 @@
 # Context Map — Domínios Clínicos
 
-> Como triage, queue, consultation, billing e telemetry se conectam via ports abstratas, sem importar modelos uns dos outros.
+> Como triage, queue, consultation, ambulatory e telemetry se conectam via ports abstratas, sem importar modelos uns dos outros.
 
-Fluxo clínico corre em uma direção: triagem classifica, fila ordena e aloca, consulta executa o ato médico, faturamento valida cobertura. Telemetria observa como read model desacoplado e parametriza o plantão operacional.
+Fluxo clínico corre em uma direção: triagem classifica risco, fila ordena e aloca, consulta executa o ato médico, ambulatory consolida a produção ambulatorial SUS. Telemetria observa como read model desacoplado e parametriza o plantão operacional.
 
 Dependência de código corre na direção oposta quando precisa: quem precisa de dado declara uma port, quem detém o dado pluga o adaptador.
 
@@ -18,14 +18,14 @@ Cada aresta indica a port consumida para atravessar a fronteira.
 flowchart LR
     triage[triage<br/>classifica risco] -->|prioridade clinica<br/>sem import direto| queue[queue<br/>ordena e aloca]
     queue -->|AtendimentoReaderPort<br/>le resumo sem model| consultation[consultation<br/>ato medico]
-    consultation -->|EligibilityProviderPort<br/>valida cobertura| billing[billing<br/>elegibilidade]
-    queue -->|EligibilityProviderPort<br/>pre-condicao de apto| billing
+    consultation -->|EligibilityProviderPort<br/>qualificacao cadastral| ambulatory[ambulatory<br/>producao SUS]
+    queue -->|EligibilityProviderPort<br/>pre-condicao de apto| ambulatory
     queue -->|AllocationPort<br/>lock atomico interno| queue
     triage -->|EmergencyNotifierPort<br/>fuga samu 192| externo((samu externo))
     queue -.->|TelemetryReaderPort<br/>SQL somente-leitura| telemetry[telemetry<br/>read model e plantao]
 ```
 
-Leitura: triage produz prioridade que queue consome como inteiro, consultation lê estado da fila via reader, billing responde elegibilidade para queue e consultation, telemetry consome leitura agregada em downstream desacoplado.
+Leitura: triage produz prioridade que queue consome como inteiro, consultation lê estado da fila via reader, ambulatory qualifica cadastro para queue e consolida produção após consultation, telemetry consome leitura agregada em downstream desacoplado.
 
 Queue usa alocação tipada internamente, triage escapa para samu sem passar pela fila, telemetry agrega métricas analíticas e parametrização sem acoplamento reverso.
 
@@ -36,9 +36,9 @@ Tabela resumo, detalhe por módulo abaixo.
 | módulo | papel | consome | expõe | caminho da port |
 |---|---|---|---|---|
 | triage | classifica risco | nada de outro módulo | alerta de emergência | `src/modules/triage/application/ports/emergency_notifier.py` |
-| queue | ordena e aloca | elegibilidade do billing | alocação, ausência, transbordo | `src/modules/queue/application/ports/allocation_port.py` |
+| queue | ordena e aloca | qualificação cadastral | alocação, ausência, transbordo | `src/modules/queue/application/ports/allocation_port.py` |
 | consultation | ato médico | resumo de atendimento | evolução e pep | `src/modules/consultation/application/ports/atendimento_reader_port.py` |
-| billing | cobertura | nada de outro módulo | elegibilidade e falha | `src/modules/billing/application/ports/eligibility_provider.py` |
+| ambulatory | produção SUS e qualificação | nada de outro módulo | qualificação cadastral | `src/modules/ambulatory/application/ports/eligibility_provider.py` |
 | telemetry | read model e parametrização | SQL somente-leitura de atendimentos e Valkey | painel e config plantão | `src/modules/telemetry/application/ports/telemetry_reader_port.py` |
 
 ### 2.1 triage — origem, sem upstream
@@ -53,7 +53,7 @@ Downstream lógico: prioridade clínica alimenta score da fila, sem chamada de f
 
 ### 2.2 queue — centro gravitacional
 
-Consome `src/modules/billing/application/ports/eligibility_provider.py` antes de promover para apto.
+Consome `src/modules/ambulatory/application/ports/eligibility_provider.py` (porta de qualificação cadastral SUS) antes de promover para apto.
 
 Expõe `src/modules/queue/application/ports/allocation_port.py` para alocação atômica com enum tipado.
 
@@ -73,19 +73,20 @@ Implementação sql isolada em `src/modules/consultation/infrastructure/atendime
 
 Consumidor interno: `src/modules/consultation/application/services/evolucao_service.py` barra evolução em atendimento finalizado.
 
-Downstream lógico: atendimento concluído gera fato faturável, billing valida em seguida.
+Downstream lógico: atendimento concluído gera fato ambulatorial público, consolidado em lote BPA-I e SISAB.
 
-### 2.4 billing — autoridade de cobertura
+### 2.4 ambulatory — autoridade de produção ambulatorial SUS e qualificação cadastral
 
-Consome apenas provedor externo via abstração própria, nada de triage ou queue.
+Consome apenas provedores e bases públicas (CADSUS) via abstrações próprias, sem acoplamento a triage ou queue.
 
-Expõe `src/modules/billing/application/ports/eligibility_provider.py` para verificação assíncrona de convênio.
+Expõe `src/modules/ambulatory/application/ports/eligibility_provider.py` para qualificação cadastral pré-chamada.
 
-Expõe `src/modules/billing/application/ports/eligibility_notifier.py` para alerta de falha na sala de espera.
+Expõe `src/modules/ambulatory/application/ports/eligibility_notifier.py` para alertas cadastrais na sala de espera.
 
-Serviço que orquestra: `src/modules/billing/application/services/eligibility_service.py` com worker em `src/worker/tasks/eligibility.py`.
+Serviço que orquestra: `src/modules/ambulatory/application/services/eligibility_service.py` com worker em `src/worker/tasks/eligibility.py`. Transição estrutural para `src/modules/ambulatory/...` formalizada na [ADR-012](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md).
 
-Queue chama o provedor em background, nunca bloqueia http esperando convênio.
+
+Queue promove em background após qualificação SUS, sem qualquer trava ou cobrança privada.
 
 ### 2.5 telemetry — read model e parametrização operacional
 
@@ -104,7 +105,7 @@ Comunicação síncrona ocorre exclusivamente via ports abstratas e dtos imutáv
 
 Violação é bloqueada por `tach.toml` com `just tach` e pelo teste de arquitetura de routers finos.
 
-Sintoma de violação: import cruzado do tipo queue dentro de billing, ou consultation importando atendimento da fila.
+Sintoma de violação: import cruzado do tipo queue dentro de ambulatory/billing, ou consultation importando atendimento da fila.
 
 Correção: declarar port no consumidor, implementar adaptador na composição, injetar via dependência.
 
@@ -118,8 +119,8 @@ Ports que sustentam as arestas do diagrama:
 - `src/modules/queue/application/ports/queue_overflow_notifier.py`
 - `src/modules/queue/application/ports/notification_port.py`
 - `src/modules/consultation/application/ports/atendimento_reader_port.py`
-- `src/modules/billing/application/ports/eligibility_provider.py`
-- `src/modules/billing/application/ports/eligibility_notifier.py`
+- `src/modules/ambulatory/application/ports/eligibility_provider.py`
+- `src/modules/ambulatory/application/ports/eligibility_notifier.py`
 - `src/modules/telemetry/application/ports/telemetry_reader_port.py`
 - `src/modules/telemetry/application/ports/config_plantao_port.py`
 - `src/modules/telemetry/application/ports/telemetry_cache_port.py`
@@ -130,7 +131,8 @@ Ports que sustentam as arestas do diagrama:
 ## 5. Verificação
 
 ```bash
-ls src/modules/queue/application/ports/ src/modules/billing/application/ports/ src/modules/consultation/application/ports/ src/modules/triage/application/ports/ src/modules/telemetry/application/ports/
+ls src/modules/queue/application/ports/ src/modules/ambulatory/application/ports/ src/modules/consultation/application/ports/ src/modules/triage/application/ports/ src/modules/telemetry/application/ports/
+
 # allocation_port, eligibility_provider, atendimento_reader_port, emergency_notifier, telemetry_reader_port visiveis
 
 just tach
@@ -147,6 +149,7 @@ Divergência entre mapa e import real exige atualizar o mapa, nunca relaxar a fr
 - [queue domain](./queue-domain.md) — score, double-lock, backpressure
 - [triage domain](./triage-domain.md) — classificação e fuga samu
 - [consultation domain](./consultation-domain.md) — ato médico e evolução
-- [billing domain](./billing-domain.md) — elegibilidade e faturamento
+- [ambulatory domain](./ambulatory-domain.md) — produção ambulatorial SUS e qualificação cadastral
 - [domain events](./domain-events.md) — eventos ponto a ponto sem barramento
 - [product specification](../product-specification.md) — requisitos contratuais
+- [ADR-012: Transição 100% SUS](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md)
