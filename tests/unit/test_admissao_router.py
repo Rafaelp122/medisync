@@ -44,7 +44,7 @@ async def test_admissao_sucesso_com_token_intake() -> None:
             triagem_id=triagem_id,
             organizacao_id=org_id,
             paciente_id=paciente_id,
-            status_atendimento="TRIADO_AGUARDANDO_ELEGIBILIDADE",
+            status_atendimento="APTO_PARA_CHAMADA",
             prioridade_clinica=3,
             alerta_samu_disparado=False,
             instrucoes=None,
@@ -79,6 +79,7 @@ async def test_admissao_sucesso_com_token_intake() -> None:
             assert data["triagem_id"] == str(triagem_id)
             assert data["paciente_id"] == str(paciente_id)
             assert data["organizacao_id"] == org_id
+            assert data["status_atendimento"] == "APTO_PARA_CHAMADA"
             assert data["prioridade_clinica"] == 3
             assert data["tcle_hash"] == tcle_hash
             mock_service.admitir_paciente.assert_awaited_once()
@@ -100,7 +101,7 @@ async def test_admissao_sucesso_com_token_jwt_paciente() -> None:
             triagem_id=uuid4(),
             organizacao_id=org_id,
             paciente_id=paciente_id,
-            status_atendimento="TRIADO_AGUARDANDO_ELEGIBILIDADE",
+            status_atendimento="APTO_PARA_CHAMADA",
             prioridade_clinica=4,
             alerta_samu_disparado=False,
             instrucoes=None,

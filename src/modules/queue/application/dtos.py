@@ -125,8 +125,6 @@ class AdmissaoAtendimentoCommand:
     cota_diaria_maxima: int | None = 300
     cpf: str | None = None
     cns: str | None = None
-    operadora_id: str | None = None
-    numero_carteirinha: str | None = None
 
 
 @dataclass(frozen=True)
@@ -205,8 +203,6 @@ class RegularizacaoFilaCommand:
     atendimento_id: UUID
     motivo: str
     tipo_contingencia: str = "CONTINGENCIA_ASSISTENCIAL"
-    operadora_id: str | None = None
-    numero_carteirinha: str | None = None
 
 
 @dataclass(frozen=True)

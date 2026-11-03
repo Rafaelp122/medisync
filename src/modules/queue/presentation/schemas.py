@@ -42,12 +42,6 @@ class AdmissaoRequest(BaseModel):
     )
     cpf: str | None = Field(default=None, description="CPF do paciente (opcional)")
     cns: str | None = Field(default=None, description="Cartão Nacional de Saúde (SUS)")
-    operadora_id: str | None = Field(
-        default=None, description="Código da operadora de saúde"
-    )
-    numero_carteirinha: str | None = Field(
-        default=None, description="Número da carteirinha do plano"
-    )
 
     def to_command(self, organizacao_id: int) -> AdmissaoAtendimentoCommand:
         """Convert request into application command."""
@@ -62,8 +56,6 @@ class AdmissaoRequest(BaseModel):
             medicos_ativos=self.medicos_ativos,
             cpf=self.cpf,
             cns=self.cns,
-            operadora_id=self.operadora_id,
-            numero_carteirinha=self.numero_carteirinha,
         )
 
 
@@ -241,14 +233,6 @@ class RegularizacaoFilaRequest(BaseModel):
         default="CONTINGENCIA_ASSISTENCIAL",
         description="Tipo de contingência assistencial acionada",
     )
-    operadora_id: str | None = Field(
-        default=None,
-        description="Código da operadora de saúde (opcional)",
-    )
-    numero_carteirinha: str | None = Field(
-        default=None,
-        description="Número da carteirinha do plano (opcional)",
-    )
 
     def to_command(
         self, organizacao_id: int, atendimento_id: UUID
@@ -259,8 +243,6 @@ class RegularizacaoFilaRequest(BaseModel):
             atendimento_id=atendimento_id,
             motivo=self.motivo,
             tipo_contingencia=self.tipo_contingencia,
-            operadora_id=self.operadora_id,
-            numero_carteirinha=self.numero_carteirinha,
         )
 
 

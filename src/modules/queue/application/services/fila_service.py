@@ -172,12 +172,14 @@ class FilaService:
             )
 
         # 3. Atomic persistence of Atendimento + Triagem aggregate
+        now = datetime.now(UTC)
         atendimento = Atendimento(
             organizacao_id=command.organizacao_id,
             paciente_id=command.paciente_id,
             prioridade_clinica=triage_eval.prioridade_clinica,
             tcle_hash=triage_eval.tcle_hash,
-            status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
+            status=StatusAtendimento.APTO_PARA_CHAMADA,
+            data_entrada_fila=now,
         )
         self._db_session.add(atendimento)
         await self._db_session.flush()
@@ -215,31 +217,17 @@ class FilaService:
         # Increment daily admission quota atomically in Valkey (RN05 / NC-QUE-01)
         await self._controle_admissao.incrementar_admissoes_hoje(command.organizacao_id)
 
-        # 4. Schedule asynchronous eligibility verification in ARQ worker
-        # (NC-BIL-01, RF-02)
-        if self._arq_pool is not None:
-            await self._arq_pool.enqueue_job(
-                "validar_elegibilidade_task",
-                organizacao_id=command.organizacao_id,
-                atendimento_id=str(atendimento.id),
-                paciente_id=str(command.paciente_id),
-                cpf=command.cpf,
-                cns=command.cns,
-                operadora_id=command.operadora_id,
-                numero_carteirinha=command.numero_carteirinha,
-                _job_id=f"elegibilidade:{atendimento.id}",
-            )
-            logger.info(
-                "Enqueued validar_elegibilidade_task for attendance %s in ARQ pool",
-                atendimento.id,
-            )
+        # 4. Immediate ingestion into virtual queue ZSET (ADR-012, RN01)
+        score = calcular_score(triage_eval.prioridade_clinica, now)
+        k_fila = f"fila:{command.organizacao_id}:aptos"
+        await self._valkey.zadd(k_fila, {str(atendimento.id): score})  # pyright: ignore[reportUnknownMemberType]
 
         logger.info(
-            "Patient %s admitted to attendance %s with triage %s (priority=%d)",
+            "Patient %s admitted directly to SUS queue %s (status=%s, score=%d)",
             command.paciente_id,
-            atendimento.id,
-            triagem_id,
-            triage_eval.prioridade_clinica,
+            k_fila,
+            atendimento.status,
+            score,
         )
 
         return AdmissaoAtendimentoResult(
@@ -1082,45 +1070,7 @@ class FilaService:
                 mensagem="Atendimento já está apto para chamada na fila virtual.",
             )
 
-        # 1. Se o paciente optou por reenviar dados de convênio para revalidação externa
-        if cmd.tipo_contingencia in ("CONVENIO_REAPRESENTADO", "REVALIDAR_CONVENIO"):
-            if (
-                self._arq_pool is not None
-                and cmd.operadora_id
-                and cmd.numero_carteirinha
-            ):
-                ts_now = int(datetime.now(UTC).timestamp())
-                await self._arq_pool.enqueue_job(
-                    "validar_elegibilidade_task",
-                    organizacao_id=cmd.organizacao_id,
-                    atendimento_id=str(atendimento.id),
-                    paciente_id=str(atendimento.paciente_id),
-                    operadora_id=cmd.operadora_id,
-                    numero_carteirinha=cmd.numero_carteirinha,
-                    _job_id=f"elegibilidade:{atendimento.id}:{ts_now}",
-                )
-            return RegularizacaoFilaResult(
-                atendimento_id=atendimento.id,
-                promovido=False,
-                status=atendimento.status,
-                score=score,
-                tipo_contingencia=cmd.tipo_contingencia,
-                mensagem="Revalidação de convênio enfileirada para processamento.",
-            )
-
-        # 2. Contingência assistencial (ou liberação administrativa imediata)
-        if self._arq_pool is not None and cmd.operadora_id and cmd.numero_carteirinha:
-            ts_now = int(datetime.now(UTC).timestamp())
-            await self._arq_pool.enqueue_job(
-                "validar_elegibilidade_task",
-                organizacao_id=cmd.organizacao_id,
-                atendimento_id=str(atendimento.id),
-                paciente_id=str(atendimento.paciente_id),
-                operadora_id=cmd.operadora_id,
-                numero_carteirinha=cmd.numero_carteirinha,
-                _job_id=f"elegibilidade:{atendimento.id}:{ts_now}",
-            )
-
+        # Liberação assistencial imediata no SUS (Art. 196 CF/88 / ADR-012)
         atendimento.promover_para_apto()
         await self._db_session.commit()
         await self._db_session.refresh(atendimento)
