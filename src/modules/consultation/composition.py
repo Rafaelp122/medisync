@@ -104,6 +104,7 @@ class QueueStoreAtendimentoReaderAdapter:
             tcle_hash=snapshot.tcle_hash,
             is_terminal=snapshot.is_terminal,
             paciente_id=snapshot.paciente_id,
+            criado_em=snapshot.criado_em,
         )
 
     async def concluir_atendimento(self, atendimento_id: UUID) -> None:

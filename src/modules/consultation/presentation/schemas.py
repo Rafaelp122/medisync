@@ -26,6 +26,30 @@ class RegistrarSOAPRequest(BaseModel):
         default=None,
         description="Avaliação (A): Código CID-10 principal da hipótese diagnóstica",
     )
+    codigo_sigtap: str = Field(
+        default="03.01.01.025-0",
+        description="Código do procedimento na tabela unificada SIGTAP/SUS",
+    )
+    ia_utilizada: bool = Field(
+        default=False,
+        description="Indica se houve copilot/sugestão de IA no SOAP (CFM 2.454/2026)",
+    )
+    ia_modelo: str | None = Field(
+        default=None,
+        description="Identificador do modelo LLM assistencial utilizado",
+    )
+    ia_sugestao_bruta: str | None = Field(
+        default=None,
+        description="Texto original sugerido pela IA antes da revisão médica",
+    )
+    ia_diff_modificacao: str | None = Field(
+        default=None,
+        description="Diff unificado das alterações feitas pelo médico",
+    )
+    ia_ratificada_pelo_medico: bool = Field(
+        default=True,
+        description="Ratificação obrigatória pelo médico sob CFM nº 2.454/2026",
+    )
     organizacao_id: int | None = Field(
         default=None,
         description="Identificador da organização de saúde",
@@ -45,6 +69,12 @@ class EvolucaoSOAPResponse(BaseModel):
     exame_fisico_virtual: str | None
     cid10_principal: str | None
     conduta: str
+    codigo_sigtap: str = "03.01.01.025-0"
+    ia_utilizada: bool = False
+    ia_modelo: str | None = None
+    ia_sugestao_bruta: str | None = None
+    ia_diff_modificacao: str | None = None
+    ia_ratificada_pelo_medico: bool = True
     registrado_em: datetime
     finalizado_em: datetime | None = None
     is_finalizado: bool
@@ -98,6 +128,10 @@ class EmitirDocumentoRequest(BaseModel):
     sha256_hash: str | None = Field(
         default=None, description="Hash SHA-256 do documento"
     )
+    justificativa_tempo_inferior: str | None = Field(
+        default=None,
+        description="Justificativa para consulta < 180s (CFM 2.314/2022)",
+    )
     organizacao_id: int | None = Field(
         default=None, description="Identificador da organização"
     )
@@ -115,6 +149,7 @@ class DocumentoClinicoResponse(BaseModel):
     tipo_documento: str
     chave_s3: str
     sha256_hash: str | None = None
+    justificativa_tempo_inferior: str | None = None
     assinado_em: datetime | None = None
     finalizado_em: datetime | None = None
     is_finalizado: bool

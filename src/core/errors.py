@@ -137,6 +137,48 @@ class TenantInvalidoError(BadRequestError):
         super().__init__(detail, title=self.title, code=self.code)
 
 
+class IANaoRatificadaError(DomainError):
+    """Raised when clinical AI was used but unconfirmed by attending physician."""
+
+    status_code: int = 422
+    title: str = "IA Não Ratificada"
+    code: str = "IA_NAO_RATIFICADA"
+
+    def __init__(
+        self,
+        detail: str = (
+            "Sugestão de IA para o plano SOAP não foi ratificada pelo médico "
+            "assistente conforme Resolução CFM nº 2.454/2026."
+        ),
+    ) -> None:
+        super().__init__(detail, title=self.title, code=self.code)
+
+
+class TravaAntiFraudeAtestadoError(DomainError):
+    """Raised when medical certificate is issued before minimum consultation floor."""
+
+    status_code: int = 422
+    title: str = "Trava Anti-Fraude de Atestado Violada"
+    code: str = "TRAVA_TEMPORAL_ATESTADO_VIOLADA"
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail, title=self.title, code=self.code)
+
+
+class MfaCodigoInvalidoError(DomainError):
+    """Raised when second-factor TOTP verification fails or expired."""
+
+    status_code: int = 401
+    title: str = "Código MFA Inválido"
+    code: str = "MFA_CODIGO_INVALIDO"
+
+    def __init__(
+        self,
+        detail: str = "Código TOTP de segundo fator fornecido é inválido ou expirou.",
+    ) -> None:
+        super().__init__(detail, title=self.title, code=self.code)
+
+
 def create_problem_response(
     status: int,
     title: str,

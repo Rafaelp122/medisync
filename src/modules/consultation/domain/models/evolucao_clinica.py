@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -33,7 +34,7 @@ class EvolucaoClinica(Base):
     """Registro de evolução clínica estruturada SOAP do Prontuário Eletrônico.
 
     Garante imutabilidade sob CFM nº 1.821/2007 e CFM nº 2.314/2022.
-    Regras: RN06 (Ato Médico) e docs/explanation/domains/consultation-domain.md.
+    Regras: RN06 (Ato Médico), CFM 2.454/2026 e consultation-domain.md.
     """
 
     __tablename__ = "evolucoes_clinicas"
@@ -63,6 +64,16 @@ class EvolucaoClinica(Base):
     exame_fisico_virtual: Mapped[str | None] = mapped_column(Text, nullable=True)
     cid10_principal: Mapped[str | None] = mapped_column(String(10), nullable=True)
     conduta: Mapped[str] = mapped_column(Text, nullable=False)
+    codigo_sigtap: Mapped[str] = mapped_column(
+        String(16), default="03.01.01.025-0", nullable=False
+    )
+    ia_utilizada: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    ia_modelo: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ia_sugestao_bruta: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ia_diff_modificacao: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ia_ratificada_pelo_medico: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
     registrado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -83,6 +94,12 @@ class EvolucaoClinica(Base):
         *,
         exame_fisico_virtual: str | None = None,
         cid10_principal: str | None = None,
+        codigo_sigtap: str = "03.01.01.025-0",
+        ia_utilizada: bool = False,
+        ia_modelo: str | None = None,
+        ia_sugestao_bruta: str | None = None,
+        ia_diff_modificacao: str | None = None,
+        ia_ratificada_pelo_medico: bool = True,
         registrado_em: datetime | None = None,
         finalizado_em: datetime | None = None,
         id: UUID | None = None,
@@ -129,6 +146,12 @@ class EvolucaoClinica(Base):
             exame_fisico_virtual=clean_exame,
             cid10_principal=clean_cid10,
             conduta=conduta.strip(),
+            codigo_sigtap=codigo_sigtap.strip() if codigo_sigtap else "03.01.01.025-0",
+            ia_utilizada=ia_utilizada,
+            ia_modelo=ia_modelo.strip() if ia_modelo else None,
+            ia_sugestao_bruta=ia_sugestao_bruta,
+            ia_diff_modificacao=ia_diff_modificacao,
+            ia_ratificada_pelo_medico=ia_ratificada_pelo_medico,
             registrado_em=registrado_em or datetime.now(UTC),
             finalizado_em=finalizado_em,
         )
@@ -159,11 +182,17 @@ class EvolucaoClinica(Base):
         conduta: str,
         exame_fisico_virtual: str | None = None,
         cid10_principal: str | None = None,
+        codigo_sigtap: str | None = None,
+        ia_utilizada: bool | None = None,
+        ia_modelo: str | None = None,
+        ia_sugestao_bruta: str | None = None,
+        ia_diff_modificacao: str | None = None,
+        ia_ratificada_pelo_medico: bool | None = None,
     ) -> None:
         """Atualiza a anotação SOAP enquanto a consulta estiver em andamento (RN06).
 
         Garante integridade clínica sob CFM nº 1.821/2007 e CFM nº 2.314/2022.
-        Regras: RN06 (Ato Médico) e docs/explanation/domains/consultation-domain.md.
+        Regras: RN06 (Ato Médico), CFM 2.454/2026 e consultation-domain.md.
         """
         if self.is_finalizado:
             raise ConsultaFinalizadaError(
@@ -197,6 +226,18 @@ class EvolucaoClinica(Base):
             else None
         )
         self.cid10_principal = clean_cid10
+        if codigo_sigtap is not None:
+            self.codigo_sigtap = codigo_sigtap.strip()
+        if ia_utilizada is not None:
+            self.ia_utilizada = ia_utilizada
+        if ia_modelo is not None:
+            self.ia_modelo = ia_modelo.strip() if ia_modelo else None
+        if ia_sugestao_bruta is not None:
+            self.ia_sugestao_bruta = ia_sugestao_bruta
+        if ia_diff_modificacao is not None:
+            self.ia_diff_modificacao = ia_diff_modificacao
+        if ia_ratificada_pelo_medico is not None:
+            self.ia_ratificada_pelo_medico = ia_ratificada_pelo_medico
         self.registrado_em = datetime.now(UTC)
 
     def validar_pode_excluir(self, status_atendimento: str | None = None) -> None:

@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
-from src.core.errors import NotFoundError
+from src.core.errors import NotFoundError, TravaAntiFraudeAtestadoError
 from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
     DocumentoAssinadoResult,
@@ -120,6 +120,54 @@ class DocumentoService:
         """Check whether the underlying attendance reached terminal status in DB."""
         return await is_atendimento_terminal(self._atendimento_reader, atendimento_id)
 
+    async def _validar_trava_antifraude_atestado(
+        self, command: EmitirDocumentoClinicoCommand
+    ) -> None:
+        """Aplica piso temporal de 180s sob CFM 2.314/2022 para prevenção de fraudes.
+
+        Regras: CFM nº 2.314/2022, RN06 e consultation-domain.md.
+        """
+        if self._atendimento_reader is None:
+            return
+
+        resumo = await self._atendimento_reader.obter_resumo(command.atendimento_id)
+        if resumo is None:
+            return
+
+        inicio_raw = resumo.chamada_iniciada_em or resumo.criado_em
+        if inicio_raw is None:
+            return
+
+        inicio_utc = (
+            inicio_raw
+            if inicio_raw.tzinfo is not None
+            else inicio_raw.replace(tzinfo=UTC)
+        )
+        now = datetime.now(UTC)
+        duracao_segundos = max(0.0, (now - inicio_utc).total_seconds())
+
+        justificativa = (command.justificativa_tempo_inferior or "").strip()
+        if duracao_segundos < 180.0 and len(justificativa) < 15:
+            if self._audit_trail is not None:
+                await self._audit_trail.record_event(
+                    organizacao_id=command.organizacao_id,
+                    tipo_evento="TRAVA_ATESTADO_VIOLADA",
+                    ator_tipo=AtorTipo.PROFISSIONAL.value,
+                    ator_papel=AtorPapel.MEDICO.value,
+                    ator_id=command.medico_id,
+                    atendimento_id=command.atendimento_id,
+                    payload={
+                        "duracao_segundos": duracao_segundos,
+                        "justificativa": justificativa,
+                    },
+                )
+            raise TravaAntiFraudeAtestadoError(
+                f"Emissão de atestado bloqueada: consulta durou "
+                f"{duracao_segundos:.0f}s (inferior ao piso de 180s) e "
+                f"justificativa '{justificativa}' é insuficiente; "
+                "esperado mínimo de 15 caracteres circunstanciando a emissão célere."
+            )
+
     async def emitir_documento(
         self, command: EmitirDocumentoClinicoCommand
     ) -> DocumentoClinico:
@@ -137,6 +185,9 @@ class DocumentoService:
                 "Sua emissão por telemedicina é expressamente vedada "
                 f"(tipos restritos: {sorted(_PROHIBITED_DOC_TYPES)})."
             )
+
+        if tipo_str in {TipoDocumentoClinico.ATESTADO_MEDICO, "ATESTADO"}:
+            await self._validar_trava_antifraude_atestado(command)
 
         # Check if consultation is already finalized
         stmt = select(EvolucaoClinica).where(
@@ -181,6 +232,7 @@ class DocumentoService:
             tipo_documento=tipo_str,
             chave_s3=chave_s3,
             sha256_hash=sha256_hash,
+            justificativa_tempo_inferior=command.justificativa_tempo_inferior,
             id=new_doc_id,
         )
         self._session.add(doc)
