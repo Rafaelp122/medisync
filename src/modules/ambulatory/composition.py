@@ -1,32 +1,37 @@
-"""Billing composition root: eligibility service and adapter providers."""
+"""Ambulatory composition root: providers for eligibility and
+production services (ADR-012).
+"""
 
-from src.modules.billing.application.ports.eligibility_notifier import (
+from typing import Annotated
+
+from fastapi import Depends
+
+from src.core.database import DbSessionDep
+from src.modules.ambulatory.application.ports.eligibility_notifier import (
     ElegibilidadeNotifierPort,
     LoggingElegibilidadeNotifier,
 )
-from src.modules.billing.application.ports.eligibility_provider import (
+from src.modules.ambulatory.application.ports.eligibility_provider import (
     EligibilityProviderPort,
 )
-from src.modules.billing.application.services.eligibility_service import (
+from src.modules.ambulatory.application.services.eligibility_service import (
     ElegibilidadeService,
 )
-from src.modules.billing.infrastructure.adapters.private_gateway_adapter import (
-    PrivateInsuranceGatewayAdapter,
+from src.modules.ambulatory.application.services.producao_service import (
+    ProducaoAmbulatorialService,
 )
-from src.modules.billing.infrastructure.adapters.sus_adapter import (
+from src.modules.ambulatory.infrastructure.adapters.sus_adapter import (
     SusEligibilityAdapter,
 )
 
 
-def get_eligibility_provider(is_sus: bool) -> EligibilityProviderPort:
-    """Resolve eligibility provider based on clinic operational mode."""
-    if is_sus:
-        return SusEligibilityAdapter()
-    return PrivateInsuranceGatewayAdapter()
+def get_eligibility_provider(is_sus: bool = True) -> EligibilityProviderPort:
+    """Resolve eligibility provider for public SUS instances."""
+    return SusEligibilityAdapter()
 
 
 def build_elegibilidade_service(
-    is_sus: bool,
+    is_sus: bool = True,
     provider: EligibilityProviderPort | None = None,
     notifier: ElegibilidadeNotifierPort | None = None,
 ) -> ElegibilidadeService:
@@ -37,3 +42,15 @@ def build_elegibilidade_service(
         provider=resolved_provider,
         notifier=resolved_notifier,
     )
+
+
+def get_producao_ambulatorial_service(
+    session: DbSessionDep,
+) -> ProducaoAmbulatorialService:
+    """Resolve ProducaoAmbulatorialService para rotas e injeção de dependência."""
+    return ProducaoAmbulatorialService(session=session)
+
+
+ProducaoServiceDep = Annotated[
+    ProducaoAmbulatorialService, Depends(get_producao_ambulatorial_service)
+]
