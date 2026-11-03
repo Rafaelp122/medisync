@@ -33,19 +33,17 @@ export function MedicalRecordsPane({
   const getPrioridadeBadge = (prioridade: number) => {
     switch (prioridade) {
       case 1:
-        return <Badge variant="destructive">Nível 1 — Emergência (Vermelho)</Badge>;
+        return <Badge variant="destructive">Vermelho: Emergência Imediata (SAMU 192)</Badge>;
       case 2:
-        return <Badge variant="warning">Nível 2 — Muito Urgente (Laranja)</Badge>;
+        return <Badge variant="warning">Laranja: Muito Urgente</Badge>;
       case 3:
         return (
-          <Badge className="bg-amber-400 text-slate-950 hover:bg-amber-400">
-            Nível 3 — Urgente (Amarelo)
-          </Badge>
+          <Badge className="bg-amber-400 text-slate-950 hover:bg-amber-400">Amarelo: Urgente</Badge>
         );
       case 4:
-        return <Badge variant="success">Nível 4 — Pouco Urgente (Verde)</Badge>;
+        return <Badge variant="success">Verde: Pouco Urgente</Badge>;
       default:
-        return <Badge variant="secondary">Nível 5 — Não Urgente (Azul)</Badge>;
+        return <Badge variant="secondary">Azul: Não Urgente</Badge>;
     }
   };
 

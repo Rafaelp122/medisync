@@ -64,18 +64,6 @@ export type AdmissaoRequest = {
      * Cartão Nacional de Saúde (SUS)
      */
     cns?: string | null;
-    /**
-     * Operadora Id
-     *
-     * Código da operadora de saúde
-     */
-    operadora_id?: string | null;
-    /**
-     * Numero Carteirinha
-     *
-     * Número da carteirinha do plano
-     */
-    numero_carteirinha?: string | null;
 };
 
 /**
@@ -180,6 +168,38 @@ export type AssinarDocumentoResponse = {
      * Status
      */
     status?: string;
+};
+
+/**
+ * AutenticarCadsusRequest
+ *
+ * Payload to authenticate patient via CADSUS / Gov.br civil registry.
+ */
+export type AutenticarCadsusRequest = {
+    /**
+     * Cpf
+     *
+     * CPF do paciente (opcional se CNS fornecido)
+     */
+    cpf?: string | null;
+    /**
+     * Cns
+     *
+     * Cartão Nacional de Saúde (CNS) de 15 dígitos
+     */
+    cns?: string | null;
+    /**
+     * Data Nascimento
+     *
+     * Data de nascimento do paciente (AAAA-MM-DD)
+     */
+    data_nascimento?: string | null;
+    /**
+     * Nome Mae
+     *
+     * Nome completo da mãe para desambiguação
+     */
+    nome_mae?: string | null;
 };
 
 /**
@@ -597,6 +617,10 @@ export type DocumentoClinicoResponse = {
      */
     sha256_hash?: string | null;
     /**
+     * Justificativa Tempo Inferior
+     */
+    justificativa_tempo_inferior?: string | null;
+    /**
      * Assinado Em
      */
     assinado_em?: string | null;
@@ -645,6 +669,12 @@ export type EmitirDocumentoRequest = {
      */
     sha256_hash?: string | null;
     /**
+     * Justificativa Tempo Inferior
+     *
+     * Justificativa para consulta < 180s (CFM 2.314/2022)
+     */
+    justificativa_tempo_inferior?: string | null;
+    /**
      * Organizacao Id
      *
      * Identificador da organização
@@ -690,6 +720,30 @@ export type EvolucaoSoapResponse = {
      * Conduta
      */
     conduta: string;
+    /**
+     * Codigo Sigtap
+     */
+    codigo_sigtap?: string;
+    /**
+     * Ia Utilizada
+     */
+    ia_utilizada?: boolean;
+    /**
+     * Ia Modelo
+     */
+    ia_modelo?: string | null;
+    /**
+     * Ia Sugestao Bruta
+     */
+    ia_sugestao_bruta?: string | null;
+    /**
+     * Ia Diff Modificacao
+     */
+    ia_diff_modificacao?: string | null;
+    /**
+     * Ia Ratificada Pelo Medico
+     */
+    ia_ratificada_pelo_medico?: boolean;
     /**
      * Registrado Em
      */
@@ -1240,6 +1294,80 @@ export type MedicoTmaResponse = {
 };
 
 /**
+ * MfaAtivarRequest
+ *
+ * Payload to confirm TOTP setup and activate MFA.
+ */
+export type MfaAtivarRequest = {
+    /**
+     * Codigo
+     *
+     * Código numérico de 6 dígitos gerado pelo aplicativo autenticador
+     */
+    codigo: string;
+};
+
+/**
+ * MfaAtivarResponse
+ *
+ * Response returned upon successful MFA activation.
+ */
+export type MfaAtivarResponse = {
+    /**
+     * Ativo
+     *
+     * Indica se o MFA foi ativado com sucesso
+     */
+    ativo?: boolean;
+    /**
+     * Mensagem
+     *
+     * Mensagem de confirmação
+     */
+    mensagem?: string;
+};
+
+/**
+ * MfaSetupResponse
+ *
+ * Response containing TOTP secret and QR Code URI.
+ */
+export type MfaSetupResponse = {
+    /**
+     * Secret
+     *
+     * Chave secreta Base32 do autenticador
+     */
+    secret: string;
+    /**
+     * Uri
+     *
+     * URI otpauth:// para escaneamento de QR Code
+     */
+    uri: string;
+};
+
+/**
+ * MfaVerificarLoginRequest
+ *
+ * Payload to complete two-factor authentication login.
+ */
+export type MfaVerificarLoginRequest = {
+    /**
+     * Temp Token
+     *
+     * Token temporário emitido na primeira etapa de autenticação
+     */
+    temp_token: string;
+    /**
+     * Codigo
+     *
+     * Código TOTP de 6 dígitos do autenticador
+     */
+    codigo: string;
+};
+
+/**
  * PainelTelemetriaResponse
  *
  * Aggregated operational telemetry dashboard response (RF-10).
@@ -1513,6 +1641,42 @@ export type RegistrarSoapRequest = {
      */
     cid10_principal?: string | null;
     /**
+     * Codigo Sigtap
+     *
+     * Código do procedimento na tabela unificada SIGTAP/SUS
+     */
+    codigo_sigtap?: string;
+    /**
+     * Ia Utilizada
+     *
+     * Indica se houve copilot/sugestão de IA no SOAP (CFM 2.454/2026)
+     */
+    ia_utilizada?: boolean;
+    /**
+     * Ia Modelo
+     *
+     * Identificador do modelo LLM assistencial utilizado
+     */
+    ia_modelo?: string | null;
+    /**
+     * Ia Sugestao Bruta
+     *
+     * Texto original sugerido pela IA antes da revisão médica
+     */
+    ia_sugestao_bruta?: string | null;
+    /**
+     * Ia Diff Modificacao
+     *
+     * Diff unificado das alterações feitas pelo médico
+     */
+    ia_diff_modificacao?: string | null;
+    /**
+     * Ia Ratificada Pelo Medico
+     *
+     * Ratificação obrigatória pelo médico sob CFM nº 2.454/2026
+     */
+    ia_ratificada_pelo_medico?: boolean;
+    /**
      * Organizacao Id
      *
      * Identificador da organização de saúde
@@ -1538,18 +1702,6 @@ export type RegularizacaoFilaRequest = {
      * Tipo de contingência assistencial acionada
      */
     tipo_contingencia?: string;
-    /**
-     * Operadora Id
-     *
-     * Código da operadora de saúde (opcional)
-     */
-    operadora_id?: string | null;
-    /**
-     * Numero Carteirinha
-     *
-     * Número da carteirinha do plano (opcional)
-     */
-    numero_carteirinha?: string | null;
 };
 
 /**
@@ -1700,6 +1852,12 @@ export type TokenResponse = {
      * Tempo de vida do refresh token em segundos
      */
     refresh_expires_in: number;
+    /**
+     * Mfa Requerido
+     *
+     * Indica se é necessária autenticação de segundo fator (MFA/TOTP)
+     */
+    mfa_requerido?: boolean;
 };
 
 /**
@@ -1993,6 +2151,72 @@ export type LoginApiV1AuthLoginPostResponses = {
 
 export type LoginApiV1AuthLoginPostResponse = LoginApiV1AuthLoginPostResponses[keyof LoginApiV1AuthLoginPostResponses];
 
+export type MfaSetupApiV1AuthMfaSetupPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/mfa/setup';
+};
+
+export type MfaSetupApiV1AuthMfaSetupPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: MfaSetupResponse;
+};
+
+export type MfaSetupApiV1AuthMfaSetupPostResponse = MfaSetupApiV1AuthMfaSetupPostResponses[keyof MfaSetupApiV1AuthMfaSetupPostResponses];
+
+export type MfaActivateApiV1AuthMfaActivatePostData = {
+    body: MfaAtivarRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/mfa/activate';
+};
+
+export type MfaActivateApiV1AuthMfaActivatePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MfaActivateApiV1AuthMfaActivatePostError = MfaActivateApiV1AuthMfaActivatePostErrors[keyof MfaActivateApiV1AuthMfaActivatePostErrors];
+
+export type MfaActivateApiV1AuthMfaActivatePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: MfaAtivarResponse;
+};
+
+export type MfaActivateApiV1AuthMfaActivatePostResponse = MfaActivateApiV1AuthMfaActivatePostResponses[keyof MfaActivateApiV1AuthMfaActivatePostResponses];
+
+export type MfaVerifyApiV1AuthMfaVerifyPostData = {
+    body: MfaVerificarLoginRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/mfa/verify';
+};
+
+export type MfaVerifyApiV1AuthMfaVerifyPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MfaVerifyApiV1AuthMfaVerifyPostError = MfaVerifyApiV1AuthMfaVerifyPostErrors[keyof MfaVerifyApiV1AuthMfaVerifyPostErrors];
+
+export type MfaVerifyApiV1AuthMfaVerifyPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: TokenResponse;
+};
+
+export type MfaVerifyApiV1AuthMfaVerifyPostResponse = MfaVerifyApiV1AuthMfaVerifyPostResponses[keyof MfaVerifyApiV1AuthMfaVerifyPostResponses];
+
 export type RefreshTokenApiV1AuthRefreshPostData = {
     body: RefreshTokenRequest;
     path?: never;
@@ -2108,6 +2332,31 @@ export type VerifyOtpApiV1AuthPatientOtpVerifyPostResponses = {
 };
 
 export type VerifyOtpApiV1AuthPatientOtpVerifyPostResponse = VerifyOtpApiV1AuthPatientOtpVerifyPostResponses[keyof VerifyOtpApiV1AuthPatientOtpVerifyPostResponses];
+
+export type PostAuthPacienteCadsusData = {
+    body: AutenticarCadsusRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/patient/cadsus';
+};
+
+export type PostAuthPacienteCadsusErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostAuthPacienteCadsusError = PostAuthPacienteCadsusErrors[keyof PostAuthPacienteCadsusErrors];
+
+export type PostAuthPacienteCadsusResponses = {
+    /**
+     * Successful Response
+     */
+    200: VerificarOtpResponse;
+};
+
+export type PostAuthPacienteCadsusResponse = PostAuthPacienteCadsusResponses[keyof PostAuthPacienteCadsusResponses];
 
 export type IntakeFase1ApiV1OnboardingFase1PostData = {
     body: Fase1Request;

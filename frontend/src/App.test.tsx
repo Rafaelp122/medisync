@@ -76,7 +76,7 @@ describe("App (Orquestração de Sessão, Persistência e Abas)", () => {
     // Sala de Espera Virtual DEVE estar visível com dados da fila
     expect(screen.getByRole("heading", { name: /sala de espera virtual/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /sua posição na fila/i })).toBeInTheDocument();
-    expect(screen.getByText(/nível 2 — muito urgente \(laranja\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/laranja: muito urgente/i)).toBeInTheDocument();
   });
 
   it("IT-APP-03: Botão 'Desistir do atendimento' cancela a fila e permite voltar ao início", async () => {

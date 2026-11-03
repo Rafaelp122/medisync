@@ -28,12 +28,17 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  /* Manchester Clinical Protocol Triage Palette (WCAG 2.1 AA >= 4.5:1) */
-  --color-manchester-red: oklch(0.55 0.22 25);
-  --color-manchester-orange: oklch(0.68 0.19 50);
-  --color-manchester-yellow: oklch(0.82 0.16 85);
-  --color-manchester-green: oklch(0.58 0.17 142);
-  --color-manchester-blue: oklch(0.52 0.19 240);
+  /* ACR SUS Clinical Protocol Triage Palette (Portaria GM/MS nº 2.048/2002, WCAG 2.1 AA >= 4.5:1) */
+  --color-acr-red: oklch(0.55 0.22 25);
+  --color-acr-orange: oklch(0.68 0.19 50);
+  --color-acr-yellow: oklch(0.82 0.16 85);
+  --color-acr-green: oklch(0.58 0.17 142);
+  --color-acr-blue: oklch(0.52 0.19 240);
+  --color-manchester-red: var(--color-acr-red);
+  --color-manchester-orange: var(--color-acr-orange);
+  --color-manchester-yellow: var(--color-acr-yellow);
+  --color-manchester-green: var(--color-acr-green);
+  --color-manchester-blue: var(--color-acr-blue);
 }
 
 :root {

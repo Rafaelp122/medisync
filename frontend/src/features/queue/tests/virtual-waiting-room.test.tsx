@@ -80,7 +80,7 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
     });
     expect(getByTestId("tempo-estimado")).toHaveTextContent("Aproximadamente 15 minutos");
     expect(getByTestId("atendimento-id-completo")).toHaveTextContent(MOCK_SESSION.atendimentoId);
-    expect(getByText(/urgente \(amarelo\)/i)).toBeInTheDocument();
+    expect(getByText(/amarelo: urgente/i)).toBeInTheDocument();
     expect(getByText(/sentiu piora nos sintomas\?/i)).toBeInTheDocument();
   });
 
@@ -117,7 +117,7 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
     await waitFor(() => {
       expect(queryByRole("dialog")).not.toBeInTheDocument();
     });
-    expect(getByText(/muito urgente \(laranja\)/i)).toBeInTheDocument();
+    expect(getByText(/laranja: muito urgente/i)).toBeInTheDocument();
   });
 
   it("IT-WAIT-03: Acionamento de piora com emergência máxima SAMU 192 (RF-06 / RN04)", async () => {
