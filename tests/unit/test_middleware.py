@@ -167,12 +167,13 @@ def test_security_headers_debug_mode_vs_production_mode():
     }
 
     # Produção: estrito, sem unsafe-inline, sem cdn externo, sem ws: texto claro
-    assert "'unsafe-inline'" not in prod_directives.get("script-src", [])
-    assert "https://cdn.jsdelivr.net" not in prod_directives.get("script-src", [])
-    assert "ws:" not in prod_directives.get("connect-src", [])
-    assert "wss:" in prod_directives.get("connect-src", [])
+    assert prod_directives["script-src"] == ["'self'"]
+    assert prod_directives["connect-src"] == ["'self'", "wss:", "https:"]
 
     # Debug: relaxado para Swagger UI e ws: local
-    assert "'unsafe-inline'" in debug_directives.get("script-src", [])
-    assert "https://cdn.jsdelivr.net" in debug_directives.get("script-src", [])
-    assert "ws:" in debug_directives.get("connect-src", [])
+    assert debug_directives["script-src"] == [
+        "'self'",
+        "'unsafe-inline'",
+        "https://cdn.jsdelivr.net",
+    ]
+    assert debug_directives["connect-src"] == ["'self'", "wss:", "ws:", "https:"]
