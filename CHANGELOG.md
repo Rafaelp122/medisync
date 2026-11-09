@@ -1,3 +1,13 @@
+## v0.14.1 (2026-11-09)
+
+### Fix
+
+- **review**: sanar apontamentos da revisao hostil e desacoplar rotas (#141)
+
+### Refactor
+
+- **frontend**: decomposicao de rotas canonicas e TanStack Router com guards de acesso (#141)
+
 ## v0.14.0 (2026-11-09)
 
 ### Feat
