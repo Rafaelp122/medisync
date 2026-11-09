@@ -38,6 +38,7 @@ class TokenPairDTO:
     expires_in: int = 900
     refresh_expires_in: int = 604800
     mfa_requerido: bool = False
+    mfa_setup_requerido: bool = False
 
 
 @dataclass(frozen=True)

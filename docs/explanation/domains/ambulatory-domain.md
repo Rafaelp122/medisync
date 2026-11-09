@@ -43,6 +43,7 @@ Ao finalizar a consulta, a rotina de consolidação ambulatorial gera o lote de 
 ## 4. Relações
 
 - Expõe aptidão via porta tipada. `EligibilityProviderPort.verificar_elegibilidade` devolve `ResultadoElegibilidade` com `SUS-ISENTO`; o módulo `queue` consome a porta sem acoplamento à infraestrutura concreta.
+- Pureza de portas e desacoplamento de telemetria. A camada de aplicação define contratos abstratos (`typing.Protocol`) em `src/modules/ambulatory/application/ports/eligibility_notifier.py` (`ElegibilidadeNotifierPort`) e DTO imutável (`ElegibilidadeFalhaEvent`). O adaptador concreto de notificação e telemetria estruturada reside estritamente em `src/modules/ambulatory/infrastructure/adapters/logging_eligibility_notifier.py` (`LoggingElegibilidadeNotifier`), preservando a pureza hexagonal contra o acoplamento de bibliotecas de infraestrutura dentro de portas de aplicação.
 - Sem paywall ou travas financeiras. A validação não realiza chamadas a operadoras privadas nem expõe o paciente a cancelamento por recusa de crédito.
 - Multi-tenancy federativo por Consórcio. Os lotes ambulatoriais são agregados e particionados por `organizacao_id` (município consorciado sob RLS PostgreSQL), garantindo que cada prefeitura receba o espelho exato de sua produção. [Modelo](../architecture/data-model.md)
 - Worker assíncrono executa fora do request. `src/worker/tasks/eligibility.py` promove o atendimento e orquestra a transição atômica no Valkey (`fila:{org}:aptos`).
@@ -52,6 +53,7 @@ Ao finalizar a consulta, a rotina de consolidação ambulatorial gera o lote de 
 
 - Poda completa de planos privados (ADR-012). Elimina esquemas XML de TISS/TUSS, gateways de pagamento com cartão e risco de glosas administrativas.
 - SUS é isenção e direito universal. O código `SUS-ISENTO` documenta a gratuidade constitucional do Art. 196 da CF/88.
+- Pureza estrita das portas de aplicação (ADR-001). A porta `ElegibilidadeNotifierPort` é um `Protocol` puro desacoplado de qualquer biblioteca de logging ou saída de infraestrutura; o adaptador padrão de telemetria estruturada (`LoggingElegibilidadeNotifier`) foi extraído para a infraestrutura concreta (`src/modules/ambulatory/infrastructure/adapters/logging_eligibility_notifier.py`) e injetado pelo composition root (`composition.py`).
 - Rateio em Consórcios Públicos (Lei nº 11.107/2005). Viabiliza escala médica compartilhada para pequenos municípios contornarem o teto fiscal de 54% de despesa com pessoal da LRF.
 - Incentivo Financeiro eMulti. Cada equipe multiprofissional homologada vinculada ao CNES de telessaúde qualifica o consórcio para o repasse federal de até R$ 2.500,00 mensais (Portaria GM/MS nº 635/2023).
 - DTOs imutáveis ponta a ponta. Todas as estruturas de dados de entrada e resultado de produção ambulatorial são declaradas com imutabilidade estrita.
@@ -64,6 +66,7 @@ Ao finalizar a consulta, a rotina de consolidação ambulatorial gera o lote de 
 - `src/modules/ambulatory/application/ports/eligibility_notifier.py`
 - `src/modules/ambulatory/application/services/eligibility_service.py`
 - `src/modules/ambulatory/infrastructure/adapters/sus_adapter.py`
+- `src/modules/ambulatory/infrastructure/adapters/logging_eligibility_notifier.py`
 - `src/worker/tasks/eligibility.py`
 - `src/modules/ambulatory/composition.py`
 - `tests/unit/test_ambulatory_production.py`

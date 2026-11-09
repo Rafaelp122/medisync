@@ -8,9 +8,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { CadsusLoginForm } from "@/features/auth/components/cadsus-login-form";
-import { DoctorLoginForm } from "@/features/auth/components/doctor-login-form";
-import { ManagerLoginForm } from "@/features/auth/components/manager-login-form";
+import {
+  type PerfilAuth,
+  TripartiteAuthCard,
+} from "@/features/auth/components/tripartite-auth-card";
 import { DoctorWorkstation } from "@/features/consultation/components/doctor-workstation";
 import { PosConsultaSummary } from "@/features/consultation/components/pos-consulta-summary";
 import type { AcolhimentoConcluidoData } from "@/features/onboarding/components/acolhimento-fase1-form";
@@ -43,7 +44,7 @@ const LazyLiveKitVideoCall = lazy(
 
 const queryClient = new QueryClient();
 
-type AppModo = "acolhimento" | "otp" | "cadsus" | "medico" | "gestor";
+type AppModo = "acolhimento" | "otp" | "login";
 
 export function App() {
   const [session, setSession] = useState<StoredPatientSession | null>(() => getStoredSession());
@@ -54,19 +55,37 @@ export function App() {
     getStoredManagerSession(),
   );
 
+  const [initialPerfil] = useState<PerfilAuth>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const modeParam = params.get("mode");
+      if (modeParam === "doctor" || modeParam === "medico") return "medico";
+      if (modeParam === "gestor" || modeParam === "manager") return "gestor";
+      if (modeParam === "cadsus") return "cidadao";
+    }
+    return "cidadao";
+  });
+
   const [modo, setModo] = useState<AppModo>(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const modeParam = params.get("mode");
       if (modeParam === "otp") return "otp";
-      if (modeParam === "cadsus") return "cadsus";
-      if (modeParam === "doctor" || modeParam === "medico") return "medico";
-      if (modeParam === "gestor" || modeParam === "manager") return "gestor";
+      if (
+        modeParam === "login" ||
+        modeParam === "cadsus" ||
+        modeParam === "doctor" ||
+        modeParam === "medico" ||
+        modeParam === "gestor" ||
+        modeParam === "manager"
+      ) {
+        return "login";
+      }
     }
     const storedDoctor = getStoredDoctorSession();
-    if (storedDoctor) return "medico";
+    if (storedDoctor) return "login";
     const storedManager = getStoredManagerSession();
-    if (storedManager) return "gestor";
+    if (storedManager) return "login";
     return "acolhimento";
   });
 
@@ -84,6 +103,13 @@ export function App() {
     saveStoredSession(newSession);
     startSafeViewTransition(() => {
       setSession(newSession);
+    });
+  };
+
+  const handlePatientAuthenticated = (patientSession: StoredPatientSession) => {
+    saveStoredSession(patientSession);
+    startSafeViewTransition(() => {
+      setSession(patientSession);
     });
   };
 
@@ -173,7 +199,7 @@ export function App() {
   const handleTabKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
       e.preventDefault();
-      const modos: AppModo[] = ["acolhimento", "otp", "cadsus", "medico", "gestor"];
+      const modos: AppModo[] = ["acolhimento", "otp", "login"];
       const currentIndex = modos.indexOf(modo);
       const nextIndex =
         e.key === "ArrowRight"
@@ -272,12 +298,7 @@ export function App() {
             <IngressoConfirmadoCard session={session} onEncerrarSessao={handleEncerrarSessao} />
           )
         ) : (
-          <div
-            className={cn(
-              "w-full mx-auto space-y-4",
-              modo === "medico" ? "max-w-[1600px]" : "max-w-xl",
-            )}
-          >
+          <div className="w-full max-w-xl mx-auto space-y-4">
             <div className="flex justify-center overflow-x-auto pb-1">
               <div
                 role="tablist"
@@ -321,53 +342,19 @@ export function App() {
 
                 <button
                   type="button"
-                  id="tab-cadsus"
+                  id="tab-login"
                   role="tab"
-                  aria-selected={modo === "cadsus"}
-                  aria-controls="panel-cadsus"
-                  onClick={() => setModo("cadsus")}
+                  aria-selected={modo === "login"}
+                  aria-controls="panel-login"
+                  onClick={() => setModo("login")}
                   className={cn(
                     "min-h-[44px] px-3.5 py-2 rounded-md font-medium transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    modo === "cadsus"
+                    modo === "login"
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  Acesso Cidadão (CADSUS)
-                </button>
-
-                <button
-                  type="button"
-                  id="tab-medico"
-                  role="tab"
-                  aria-selected={modo === "medico"}
-                  aria-controls="panel-medico"
-                  onClick={() => setModo("medico")}
-                  className={cn(
-                    "min-h-[44px] px-3.5 py-2 rounded-md font-medium transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    modo === "medico"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  Estação Médica (Dr. Eduardo Rocha)
-                </button>
-
-                <button
-                  type="button"
-                  id="tab-gestor"
-                  role="tab"
-                  aria-selected={modo === "gestor"}
-                  aria-controls="panel-gestor"
-                  onClick={() => setModo("gestor")}
-                  className={cn(
-                    "min-h-[44px] px-3.5 py-2 rounded-md font-medium transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    modo === "gestor"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  Regulação Municipal (Gestor)
+                  Acesso por Perfil (SUS)
                 </button>
               </div>
             </div>
@@ -397,36 +384,21 @@ export function App() {
 
             <div
               role="tabpanel"
-              id="panel-cadsus"
-              aria-labelledby="tab-cadsus"
-              hidden={modo !== "cadsus"}
+              id="panel-login"
+              aria-labelledby="tab-login"
+              hidden={modo !== "login"}
             >
-              {modo === "cadsus" && (
+              {modo === "login" && (
                 <div className="max-w-md mx-auto">
-                  <CadsusLoginForm
-                    onSuccess={handleOtpAuthenticated}
+                  <TripartiteAuthCard
+                    initialPerfil={initialPerfil}
+                    onPatientAuthenticated={handlePatientAuthenticated}
+                    onDoctorAuthenticated={handleDoctorLogin}
+                    onManagerAuthenticated={handleManagerLogin}
                     onAlternarOtp={() => setModo("otp")}
                   />
                 </div>
               )}
-            </div>
-
-            <div
-              role="tabpanel"
-              id="panel-medico"
-              aria-labelledby="tab-medico"
-              hidden={modo !== "medico"}
-            >
-              {modo === "medico" && <DoctorLoginForm onLoginSuccess={handleDoctorLogin} />}
-            </div>
-
-            <div
-              role="tabpanel"
-              id="panel-gestor"
-              aria-labelledby="tab-gestor"
-              hidden={modo !== "gestor"}
-            >
-              {modo === "gestor" && <ManagerLoginForm onLoginSuccess={handleManagerLogin} />}
             </div>
           </div>
         )}

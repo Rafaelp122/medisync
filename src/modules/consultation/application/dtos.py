@@ -203,3 +203,15 @@ class DocumentoAssinadoResult:
     assinado_em: datetime
     tamanho_bytes: int
     status: str = "ASSINADO"
+
+
+@dataclass(frozen=True)
+class FinalizarConsultaResult:
+    """Service result for consultation finalization (ADR-008)."""
+
+    atendimento_id: UUID
+    is_finalizado: bool
+    status: str = "FINALIZADO"
+    mensagem: str = (
+        "Consulta finalizada com sucesso. Registros PEP travados de forma imutável."
+    )

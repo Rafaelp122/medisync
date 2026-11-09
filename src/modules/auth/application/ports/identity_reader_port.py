@@ -24,6 +24,9 @@ class PacienteAuthLookupDTO(Protocol):
     @property
     def nome_completo(self) -> str: ...
 
+    @property
+    def nome_mae(self) -> str | None: ...
+
 
 @dataclass(frozen=True)
 class PacienteAuthLookupData:
@@ -34,6 +37,7 @@ class PacienteAuthLookupData:
     telefone: str
     cpf: str | None
     nome_completo: str
+    nome_mae: str | None = None
 
 
 @runtime_checkable
@@ -55,8 +59,9 @@ class IdentityReaderPort(Protocol):
         cpf: str | None = None,
         data_nascimento: date | None = None,
         cns: str | None = None,
+        nome_mae: str | None = None,
     ) -> PacienteAuthLookupDTO | None:
-        """Look up patient record via CADSUS/Gov.br credentials (CPF, CNS)."""
+        """Look up patient record via CADSUS/Gov.br credentials (CPF, CNS, nome_mae)."""
         ...
 
 

@@ -17,6 +17,18 @@ class Role(StrEnum):
     PACIENTE = "PACIENTE"
 
 
+ROLES_REQUIRING_MFA: frozenset[str] = frozenset(
+    {
+        "MEDICO",
+        "GESTOR_UNIDADE",
+        "GESTOR_CONSORCIO",
+        "REGULADOR_MUNICIPAL",
+        "AUDITOR_PRODUCAO",
+        "ADMIN_GLOBAL",
+    }
+)
+
+
 class Permission(StrEnum):
     """Fine-grained application permissions."""
 

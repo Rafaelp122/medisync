@@ -10,7 +10,6 @@ from src.modules.ambulatory.application.ports import (
     ElegibilidadeFalhaEvent,
     ElegibilidadeNotifierPort,
     EligibilityProviderPort,
-    LoggingElegibilidadeNotifier,
 )
 from src.modules.ambulatory.application.services import ElegibilidadeService
 from src.modules.ambulatory.domain.enums import (
@@ -19,6 +18,7 @@ from src.modules.ambulatory.domain.enums import (
     TipoProcedimentoAmbulatorial,
 )
 from src.modules.ambulatory.infrastructure.adapters import (
+    LoggingElegibilidadeNotifier,
     SusEligibilityAdapter,
 )
 

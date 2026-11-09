@@ -56,12 +56,18 @@ class TokenResponse(BaseModel):
         default=False,
         description="Indica se é necessária autenticação de segundo fator (MFA/TOTP)",
     )
+    mfa_setup_requerido: bool = Field(
+        default=False,
+        description=(
+            "Indica se é necessária configuração inicial de segundo fator (MFA/TOTP)"
+        ),
+    )
 
 
 class MfaSetupResponse(BaseModel):
     """Response containing TOTP secret and QR Code URI."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
 
     secret: str = Field(description="Chave secreta Base32 do autenticador")
     uri: str = Field(description="URI otpauth:// para escaneamento de QR Code")

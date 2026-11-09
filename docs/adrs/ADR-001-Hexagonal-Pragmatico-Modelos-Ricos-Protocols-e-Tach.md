@@ -91,7 +91,7 @@ Adotamos a **Opção 3: Hexagonal Pragmático com Modelos Ricos no SQLAlchemy 2.
   * `presentation → application + composition + core` (nunca `domain.models`, `infrastructure`, `sqlalchemy`).
   * `composition → application + domain + infrastructure + core` — único lugar que importa adaptadores concretos.
   * `infrastructure → application + domain + core`; `application → domain + core`; `domain → core`.
-  * `worker → core + queue/billing` camadas (`application/domain/infrastructure`).
+  * `worker → core + queue/ambulatory` camadas (`application/domain/infrastructure`).
 * **Router fino (guard `tests/architecture/test_routers_are_thin.py`, AST sem deps novas)**:
   * Sem `import sqlalchemy/infrastructure/domain.models`; sem `.commit()/.refresh()/text()/select()`.
   * Sem `HTTPException` — só `presentation/dependencies.py` pode levantar HTTP (ex.: `exigir_rate_limit` → 429).

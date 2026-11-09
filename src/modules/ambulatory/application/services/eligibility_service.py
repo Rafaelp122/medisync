@@ -11,7 +11,6 @@ from src.modules.ambulatory.application.ports import (
     ElegibilidadeFalhaEvent,
     ElegibilidadeNotifierPort,
     EligibilityProviderPort,
-    LoggingElegibilidadeNotifier,
 )
 
 logger = logging.getLogger("medisync.ambulatory.service")
@@ -32,7 +31,7 @@ class ElegibilidadeService:
         notifier: ElegibilidadeNotifierPort | None = None,
     ) -> None:
         self._provider = provider
-        self._notifier = notifier or LoggingElegibilidadeNotifier()
+        self._notifier = notifier
 
     async def avaliar_elegibilidade(
         self, requisicao: RequisicaoElegibilidade
@@ -62,6 +61,7 @@ class ElegibilidadeService:
                 motivo=motivo_falha,
                 status=resultado.status,
             )
-            await self._notifier.notificar_falha(evento)
+            if self._notifier is not None:
+                await self._notifier.notificar_falha(evento)
 
         return resultado

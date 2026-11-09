@@ -93,7 +93,7 @@ def test_ambulatory_service_resolution() -> None:
         SusEligibilityAdapter,
     )
 
-    sus_service = build_elegibilidade_service(is_sus=True)
+    sus_service = build_elegibilidade_service()
     assert isinstance(
         sus_service._provider,  # pyright: ignore[reportPrivateUsage]
         SusEligibilityAdapter,

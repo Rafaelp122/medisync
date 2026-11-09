@@ -32,7 +32,7 @@ Este catálogo define a taxonomia canônica dos 16 eventos clínicos e operacion
 | `DOCUMENTO_CLINICO_EMITIDO` | `consultation` | `PROFISSIONAL` | `MEDICO` | Emissão de receita, atestado ou laudo com validação da Portaria SVS/MS nº 344/98. |
 | `DOCUMENTO_CLINICO_ASSINADO` | `consultation` | `PROFISSIONAL` | `MEDICO` | Assinatura digital ICP-Brasil PAdES via PSC com hash SHA-256 e storage S3. |
 | `CONSULTA_FINALIZADA` | `consultation` | `PROFISSIONAL` | `MEDICO` | Encerramento formal do ato médico com trancamento imutável de prontuário e documentos. |
-| `IA_SUGESTAO_GERADA` | `consultation` | `SISTEMA` | `SISTEMA` | Geração de sugestão preliminar SOAP/CID-10 por copiloto de IA (CFM nº 2.454/2026). |
+| `IA_SUGESTAO_GERADA` | `consultation` | `SISTEMA` | `SISTEMA` | Geração de sugestão preliminar SOAP/CID-10 por copiloto de IA (CFM nº 2.454/2026). *Nota: No presente estágio, a salvaguarda e o diff forense preconizados pelo CFM nº 2.454/2026 são registrados atomicamente no evento `IA_DECISAO_MEDICA_REGISTRADA`.* |
 | `IA_DECISAO_MEDICA_REGISTRADA` | `consultation` | `PROFISSIONAL` | `MEDICO` | Ratificação, edição ou recusa médica com diff forense de sugestão de IA (CFM nº 2.454/2026). |
 | `TRAVA_TEMPORAL_ATESTADO_VIOLADA` | `consultation` | `PROFISSIONAL` | `MEDICO` | Tentativa de emissão de atestado com menos de 180s de teleconsulta (CFM nº 2.314/2022, RN09). |
 | `PRODUCAO_AMBULATORIAL_CONSOLIDADA` | `ambulatory` | `SISTEMA` | `WORKER_ARQ` | Consolidação pós-consulta em lote BPA-I / SISAB sob SIGTAP 03.01.01.025-0 e CNES 160/006. |
@@ -49,8 +49,29 @@ O schema da trilha de auditoria é normalizado conforme o modelo `AuditEvent`:
 - `atendimento_id`: UUIDv7 correlacionando eventos clínicos do atendimento (ou `null` para eventos transversais/administrativos).
 - `estado_anterior` / `novo_estado`: Transições de status da máquina de estados clínica.
 - `tcle_hash`: Hash SHA-256 (64 hex) do Termo de Consentimento Livre e Esclarecido.
-- `payload`: JSONB contendo metadados específicos do evento (ex.: `triagem_id`, `cid10`, `sha256_hash`, `chave_s3`, `codigo_autorizacao`, `sigtap`, `cnes`, `diff_forense`).
+- `payload`: JSONB contendo metadados específicos do evento (ex.: `triagem_id`, `cid10`, `sha256_hash`, `chave_s3`, `codigo_autorizacao`, `sigtap`, `cnes`, `diff_forense`, `duracao_segundos`, `justificativa`, `justificativa_aceita`).
 - `ip_origem`: Endereço IP do solicitante para rastreabilidade de acesso forense.
+
+### Especificação dos Payloads Forenses Críticos
+
+#### `IA_DECISAO_MEDICA_REGISTRADA` (CFM nº 2.454/2026, RN08)
+Registrado em `src/modules/consultation/application/services/evolucao_service.py` no método `salvar_evolucao_soap`:
+- **Ator**: `PROFISSIONAL` / `MEDICO` (`ator_id` = UUID do médico plantonista).
+- **Atendimento**: `atendimento_id` = UUID do atendimento ativo.
+- **Payload (`dict[str, Any]` em JSONB)**:
+  - `evolucao_id` (`str`): UUID da evolução clínica persistida.
+  - `ia_modelo` (`str`): Identificador do modelo de IA copiloto (ex.: `"clinical-assist-v1"`).
+  - `ia_ratificada` (`bool`): `True` se o médico ratificou a sugestão integralmente ou com ajustes; `False` se rejeitada.
+  - `diff_forense` (`str | None`): Texto do diff unificado (`unified_diff` no formato difflib: `--- sugestao_ia` / `+++ plano_ratificado`) comprovando a intervenção humana soberana (*Human-in-the-Loop*), ou `None` se sem modificações textuais.
+
+#### `TRAVA_TEMPORAL_ATESTADO_VIOLADA` (CFM nº 2.314/2022, RDC Anvisa nº 1.000/2025, RN09)
+Registrado em `src/modules/consultation/application/services/documento_service.py` no método `emitir_documento`:
+- **Ator**: `PROFISSIONAL` / `MEDICO` (`ator_id` = UUID do médico plantonista).
+- **Atendimento**: `atendimento_id` = UUID do atendimento ativo.
+- **Payload (`dict[str, Any]` em JSONB)**:
+  - `duracao_segundos` (`float`): Tempo decorrido de teleconsulta em segundos no momento do acionamento (ex.: `42.5`).
+  - `justificativa` (`str`): Justificativa clínica circunstanciada fornecida pelo médico.
+  - `justificativa_aceita` (`bool`): `True` se a justificativa tiver $\ge 15$ caracteres (emissão excepcional autorizada pelo CFM); `False` se vazia ou $< 15$ caracteres (bloqueio mandatório com HTTP 422 `TRAVA_TEMPORAL_ATESTADO_VIOLADA`).
 
 ## Onde no código
 
@@ -64,6 +85,8 @@ O schema da trilha de auditoria é normalizado conforme o modelo `AuditEvent`:
 - Prova viva: `tests/integration/test_clinical_audit_integration.py:test_pep_workflow_full_audit_trail_reconstruction`
 - Prova viva: `tests/unit/test_queue_audit_events.py:test_admitir_paciente_records_admissao_audit_event`
 - Prova viva: `tests/unit/test_consultation_audit_events.py:test_salvar_evolucao_soap_records_evolucao_audit_event`
+- Prova viva: `tests/unit/test_clinical_ai_governance.py:test_evolucao_com_ia_registra_evento_auditoria_e_diff`
+- Prova viva: `tests/unit/test_trava_antifraude_atestado.py:test_emissao_atestado_inferior_180s_sem_justificativa_bloqueada`
 - Ver: `rg -n "record_event" src/modules/queue/application/services/`
 - Ver: `rg -n "record_event" src/modules/consultation/application/services/`
 
@@ -71,6 +94,7 @@ O schema da trilha de auditoria é normalizado conforme o modelo `AuditEvent`:
 
 ```bash
 uv run pytest tests/unit/test_audit_port_adapter.py tests/unit/test_queue_audit_events.py tests/unit/test_consultation_audit_events.py
+uv run pytest tests/unit/test_clinical_ai_governance.py tests/unit/test_trava_antifraude_atestado.py
 uv run pytest tests/integration/test_clinical_audit_integration.py
 ```
 

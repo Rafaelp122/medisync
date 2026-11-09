@@ -125,6 +125,18 @@ describe("Consultation Schemas (Zod Validation - US-09, US-10, CFM 2.314/2022)",
         expect(result.error.issues[0]?.message).toMatch(/ao menos um medicamento/i);
       }
     });
+
+    it("valida emissão de atestado médico mesmo com lista vazia de medicamentos", () => {
+      const validAtestado = {
+        tipo_documento: "ATESTADO_MEDICO",
+        itens: [],
+        justificativa_tempo_inferior:
+          "Consulta rápida com paciente previamente conhecido no ambulatório",
+      };
+
+      const result = emitirDocumentoSchema.safeParse(validAtestado);
+      expect(result.success).toBe(true);
+    });
   });
 
   describe("assinarDocumentoSchema", () => {

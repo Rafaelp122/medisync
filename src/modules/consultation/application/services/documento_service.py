@@ -125,7 +125,8 @@ class DocumentoService:
     ) -> None:
         """Aplica piso temporal de 180s sob CFM 2.314/2022 para prevenção de fraudes.
 
-        Regras: CFM nº 2.314/2022, RN06 e consultation-domain.md.
+        Regras: CFM nº 2.314/2022, RN06 e
+        docs/explanation/domains/consultation-domain.md.
         """
         if self._atendimento_reader is None:
             return
@@ -146,12 +147,15 @@ class DocumentoService:
         now = datetime.now(UTC)
         duracao_segundos = max(0.0, (now - inicio_utc).total_seconds())
 
+        if duracao_segundos >= 180.0:
+            return
+
         justificativa = (command.justificativa_tempo_inferior or "").strip()
-        if duracao_segundos < 180.0 and len(justificativa) < 15:
+        if len(justificativa) >= 15:
             if self._audit_trail is not None:
                 await self._audit_trail.record_event(
                     organizacao_id=command.organizacao_id,
-                    tipo_evento="TRAVA_ATESTADO_VIOLADA",
+                    tipo_evento="TRAVA_TEMPORAL_ATESTADO_VIOLADA",
                     ator_tipo=AtorTipo.PROFISSIONAL.value,
                     ator_papel=AtorPapel.MEDICO.value,
                     ator_id=command.medico_id,
@@ -159,14 +163,31 @@ class DocumentoService:
                     payload={
                         "duracao_segundos": duracao_segundos,
                         "justificativa": justificativa,
+                        "justificativa_aceita": True,
                     },
                 )
-            raise TravaAntiFraudeAtestadoError(
-                f"Emissão de atestado bloqueada: consulta durou "
-                f"{duracao_segundos:.0f}s (inferior ao piso de 180s) e "
-                f"justificativa '{justificativa}' é insuficiente; "
-                "esperado mínimo de 15 caracteres circunstanciando a emissão célere."
+            return
+
+        if self._audit_trail is not None:
+            await self._audit_trail.record_event(
+                organizacao_id=command.organizacao_id,
+                tipo_evento="TRAVA_TEMPORAL_ATESTADO_VIOLADA",
+                ator_tipo=AtorTipo.PROFISSIONAL.value,
+                ator_papel=AtorPapel.MEDICO.value,
+                ator_id=command.medico_id,
+                atendimento_id=command.atendimento_id,
+                payload={
+                    "duracao_segundos": duracao_segundos,
+                    "justificativa": justificativa,
+                    "justificativa_aceita": False,
+                },
             )
+        raise TravaAntiFraudeAtestadoError(
+            f"Emissão de atestado bloqueada: consulta durou "
+            f"{duracao_segundos:.0f}s (inferior ao piso de 180s) e "
+            f"justificativa '{justificativa}' é insuficiente; "
+            "esperado mínimo de 15 caracteres circunstanciando a emissão célere."
+        )
 
     async def emitir_documento(
         self, command: EmitirDocumentoClinicoCommand

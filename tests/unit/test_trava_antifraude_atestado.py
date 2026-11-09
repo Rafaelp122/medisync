@@ -3,11 +3,11 @@
 """
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, cast
-from unittest.mock import AsyncMock
+from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid4
 
 import pytest
+from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
 from src.core.errors import TravaAntiFraudeAtestadoError
 from src.modules.consultation.application.dtos import (
     CriarItemPrescricaoDTO,
@@ -29,6 +29,8 @@ from src.modules.consultation.infrastructure.memory_signed_cache import (
 from tests.doubles import (
     FakeAddedResult,
     FakeAsyncSession,
+    FakeAtendimentoReader,
+    FakeAuditTrail,
     FakeICPBrasilSigner,
     FakeMemoryStorage,
     FakePDFGenerator,
@@ -56,7 +58,11 @@ def _make_resumo_com_inicio(
     )
 
 
-def _build_service(session: FakeAsyncSession, reader: Any) -> DocumentoService:
+def _build_service(
+    session: FakeAsyncSession,
+    reader: FakeAtendimentoReader,
+    audit_trail: AuditTrailPort | None = None,
+) -> DocumentoService:
     return DocumentoService(
         session=cast("AsyncSession", session),
         pdf_generator=FakePDFGenerator(),
@@ -64,6 +70,7 @@ def _build_service(session: FakeAsyncSession, reader: Any) -> DocumentoService:
         storage=FakeMemoryStorage(),
         cache=MemorySignedCache(),
         atendimento_reader=reader,
+        audit_trail=audit_trail,
     )
 
 
@@ -71,13 +78,13 @@ def _build_service(session: FakeAsyncSession, reader: Any) -> DocumentoService:
 async def test_emissao_atestado_inferior_180s_sem_justificativa_bloqueada() -> None:
     atendimento_id = uuid4()
     medico_id = uuid4()
-    reader = AsyncMock()
-    reader.obter_resumo.return_value = _make_resumo_com_inicio(
-        atendimento_id, segundos_atras=35
+    reader = FakeAtendimentoReader(
+        resumo=_make_resumo_com_inicio(atendimento_id, segundos_atras=35)
     )
+    fake_audit = FakeAuditTrail()
 
     session = FakeAsyncSession(results=[FakeResult(None)])
-    svc = _build_service(session, reader)
+    svc = _build_service(session, reader, audit_trail=fake_audit)
 
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
@@ -95,6 +102,18 @@ async def test_emissao_atestado_inferior_180s_sem_justificativa_bloqueada() -> N
     assert "inferior ao piso de 180s" in str(exc_info.value)
     assert "mínimo de 15 caracteres" in str(exc_info.value)
 
+    events = fake_audit.get_events_by_type("TRAVA_TEMPORAL_ATESTADO_VIOLADA")
+    assert len(events) == 1
+    evt = events[0]
+    assert evt["organizacao_id"] == 1
+    assert evt["atendimento_id"] == atendimento_id
+    assert evt["ator_tipo"] == AtorTipo.PROFISSIONAL.value
+    assert evt["ator_papel"] == AtorPapel.MEDICO.value
+    assert evt["ator_id"] == medico_id
+    assert evt["payload"]["justificativa_aceita"] is False
+    assert evt["payload"]["justificativa"] == ""
+    assert evt["payload"]["duracao_segundos"] >= 0.0
+
 
 @pytest.mark.asyncio
 async def test_emissao_atestado_inferior_180s_com_justificativa_curta_bloqueada() -> (
@@ -102,13 +121,13 @@ async def test_emissao_atestado_inferior_180s_com_justificativa_curta_bloqueada(
 ):
     atendimento_id = uuid4()
     medico_id = uuid4()
-    reader = AsyncMock()
-    reader.obter_resumo.return_value = _make_resumo_com_inicio(
-        atendimento_id, segundos_atras=50
+    reader = FakeAtendimentoReader(
+        resumo=_make_resumo_com_inicio(atendimento_id, segundos_atras=50)
     )
+    fake_audit = FakeAuditTrail()
 
     session = FakeAsyncSession(results=[FakeResult(None)])
-    svc = _build_service(session, reader)
+    svc = _build_service(session, reader, audit_trail=fake_audit)
 
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
@@ -124,6 +143,12 @@ async def test_emissao_atestado_inferior_180s_com_justificativa_curta_bloqueada(
     assert exc_info.value.status_code == 422
     assert "urgente rápido" in str(exc_info.value)
 
+    events = fake_audit.get_events_by_type("TRAVA_TEMPORAL_ATESTADO_VIOLADA")
+    assert len(events) == 1
+    evt = events[0]
+    assert evt["payload"]["justificativa_aceita"] is False
+    assert evt["payload"]["justificativa"] == "urgente rápido"
+
 
 @pytest.mark.asyncio
 async def test_emissao_atestado_inferior_180s_com_justificativa_valida_permitida() -> (
@@ -131,10 +156,10 @@ async def test_emissao_atestado_inferior_180s_com_justificativa_valida_permitida
 ):
     atendimento_id = uuid4()
     medico_id = uuid4()
-    reader = AsyncMock()
-    reader.obter_resumo.return_value = _make_resumo_com_inicio(
-        atendimento_id, segundos_atras=60
+    reader = FakeAtendimentoReader(
+        resumo=_make_resumo_com_inicio(atendimento_id, segundos_atras=60)
     )
+    fake_audit = FakeAuditTrail()
 
     added_entities: list[object] = []
     session = FakeAsyncSession(
@@ -144,7 +169,7 @@ async def test_emissao_atestado_inferior_180s_com_justificativa_valida_permitida
         ],
         added_entities,
     )
-    svc = _build_service(session, reader)
+    svc = _build_service(session, reader, audit_trail=fake_audit)
 
     justificativa = (
         "Atendimento complementar referente a retorno imediato pós-exame presencial."
@@ -162,15 +187,27 @@ async def test_emissao_atestado_inferior_180s_com_justificativa_valida_permitida
     assert doc.tipo_documento == TipoDocumentoClinico.ATESTADO_MEDICO
     assert doc.justificativa_tempo_inferior == justificativa
 
+    events = fake_audit.get_events_by_type("TRAVA_TEMPORAL_ATESTADO_VIOLADA")
+    assert len(events) == 1
+    evt = events[0]
+    assert evt["organizacao_id"] == 1
+    assert evt["atendimento_id"] == atendimento_id
+    assert evt["ator_tipo"] == AtorTipo.PROFISSIONAL.value
+    assert evt["ator_papel"] == AtorPapel.MEDICO.value
+    assert evt["ator_id"] == medico_id
+    assert evt["payload"]["justificativa_aceita"] is True
+    assert evt["payload"]["justificativa"] == justificativa
+    assert evt["payload"]["duracao_segundos"] >= 0.0
+
 
 @pytest.mark.asyncio
 async def test_emissao_atestado_superior_180s_sem_justificativa_permitida() -> None:
     atendimento_id = uuid4()
     medico_id = uuid4()
-    reader = AsyncMock()
-    reader.obter_resumo.return_value = _make_resumo_com_inicio(
-        atendimento_id, segundos_atras=250
+    reader = FakeAtendimentoReader(
+        resumo=_make_resumo_com_inicio(atendimento_id, segundos_atras=250)
     )
+    fake_audit = FakeAuditTrail()
 
     added_entities: list[object] = []
     session = FakeAsyncSession(
@@ -180,7 +217,7 @@ async def test_emissao_atestado_superior_180s_sem_justificativa_permitida() -> N
         ],
         added_entities,
     )
-    svc = _build_service(session, reader)
+    svc = _build_service(session, reader, audit_trail=fake_audit)
 
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
@@ -194,16 +231,17 @@ async def test_emissao_atestado_superior_180s_sem_justificativa_permitida() -> N
 
     assert doc.tipo_documento == TipoDocumentoClinico.ATESTADO_MEDICO
     assert doc.justificativa_tempo_inferior is None
+    assert len(fake_audit.get_events_by_type("TRAVA_TEMPORAL_ATESTADO_VIOLADA")) == 0
 
 
 @pytest.mark.asyncio
 async def test_emissao_receita_inferior_180s_nao_aciona_trava() -> None:
     atendimento_id = uuid4()
     medico_id = uuid4()
-    reader = AsyncMock()
-    reader.obter_resumo.return_value = _make_resumo_com_inicio(
-        atendimento_id, segundos_atras=20
+    reader = FakeAtendimentoReader(
+        resumo=_make_resumo_com_inicio(atendimento_id, segundos_atras=20)
     )
+    fake_audit = FakeAuditTrail()
 
     added_entities: list[object] = []
     session = FakeAsyncSession(
@@ -213,7 +251,7 @@ async def test_emissao_receita_inferior_180s_nao_aciona_trava() -> None:
         ],
         added_entities,
     )
-    svc = _build_service(session, reader)
+    svc = _build_service(session, reader, audit_trail=fake_audit)
 
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
@@ -233,3 +271,4 @@ async def test_emissao_receita_inferior_180s_nao_aciona_trava() -> None:
     doc = await svc.emitir_documento(cmd)
 
     assert doc.tipo_documento == TipoDocumentoClinico.RECEITA_SIMPLES
+    assert len(fake_audit.get_events_by_type("TRAVA_TEMPORAL_ATESTADO_VIOLADA")) == 0

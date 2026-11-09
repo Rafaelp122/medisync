@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.consultation.application.dtos import (
     DocumentoAssinadoResult,
+    FinalizarConsultaCommand,
     RegistrarEvolucaoSOAPCommand,
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
@@ -32,6 +33,13 @@ from src.modules.consultation.application.services.evolucao_service import (
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.composition import build_pep_service_for_session
 from src.modules.consultation.domain.models import EvolucaoClinica
+
+from tests.doubles import (
+    FakeAsyncSession,
+    FakeAtendimentoReader,
+    FakeProducaoAmbulatorialPort,
+    FakeResult,
+)
 
 
 @pytest.fixture
@@ -238,3 +246,120 @@ def test_build_pep_service_for_session(mock_session: AsyncMock) -> None:
     assert isinstance(svc, PEPService)
     assert isinstance(svc.documento_service, DocumentoService)
     assert isinstance(svc.evolucao_service, EvolucaoService)
+    assert svc.producao_port is not None
+
+
+@pytest.mark.asyncio
+async def test_pep_service_finalizar_consulta_dispara_consolidacao_ambulatorial() -> (
+    None
+):
+    """finalizar_consulta triggers ambulatory BPA-I consolidation when port given."""
+    atend_id = uuid4()
+    medico_id = uuid4()
+    paciente_id = uuid4()
+
+    evolucao = EvolucaoClinica(
+        organizacao_id=1,
+        atendimento_id=atend_id,
+        medico_id=medico_id,
+        anamnese="Paciente com tosse",
+        conduta="Prescrito xarope",
+        codigo_sigtap="03.01.01.025-0",
+    )
+
+    fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
+    resumo = AtendimentoResumoDTO(
+        atendimento_id=atend_id,
+        organizacao_id=1,
+        medico_id=medico_id,
+        paciente_id=paciente_id,
+        status="EM_ATENDIMENTO",
+        tcle_hash="h" * 64,
+        is_terminal=False,
+    )
+    fake_reader = FakeAtendimentoReader(resumo=resumo)
+    fake_producao = FakeProducaoAmbulatorialPort()
+
+    svc = PEPService(
+        session=fake_session,  # pyright: ignore[reportArgumentType]
+        pdf_generator=MagicMock(spec=PDFGeneratorPort),
+        signer=AsyncMock(spec=ICPBrasilSignerPort),
+        storage=AsyncMock(spec=StoragePort),
+        documento_service=AsyncMock(spec=DocumentoService),
+        atendimento_reader=fake_reader,
+        producao_port=fake_producao,
+    )
+
+    cmd = FinalizarConsultaCommand(
+        atendimento_id=atend_id,
+        organizacao_id=1,
+        medico_id=medico_id,
+    )
+
+    result = await svc.finalizar_consulta(cmd)
+
+    assert result.atendimento_id == atend_id
+    assert result.is_finalizado is True
+    assert fake_session.commits == 1
+
+    # Verificação da consolidação ambulatorial BPA-I (ADR-012, US-11)
+    assert len(fake_producao.consolidacoes) == 1
+    consolidacao = fake_producao.consolidacoes[0]
+    assert consolidacao["organizacao_id"] == 1
+    assert consolidacao["atendimento_id"] == atend_id
+    assert consolidacao["profissional_id"] == medico_id
+    assert consolidacao["paciente_id"] == paciente_id
+    assert consolidacao["codigo_sigtap"] == "03.01.01.025-0"
+
+
+@pytest.mark.asyncio
+async def test_pep_service_finalizar_consulta_tolera_falha_na_producao() -> None:
+    """finalizar_consulta completes even if ambulatory consolidation fails."""
+    atend_id = uuid4()
+    medico_id = uuid4()
+    paciente_id = uuid4()
+
+    evolucao = EvolucaoClinica(
+        organizacao_id=1,
+        atendimento_id=atend_id,
+        medico_id=medico_id,
+        anamnese="Paciente com febre",
+        conduta="Prescrito antitermico",
+        codigo_sigtap="03.01.01.025-0",
+    )
+
+    fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
+    resumo = AtendimentoResumoDTO(
+        atendimento_id=atend_id,
+        organizacao_id=1,
+        medico_id=medico_id,
+        paciente_id=paciente_id,
+        status="EM_ATENDIMENTO",
+        tcle_hash="h" * 64,
+        is_terminal=False,
+    )
+    fake_reader = FakeAtendimentoReader(resumo=resumo)
+    failing_producao = AsyncMock(spec=FakeProducaoAmbulatorialPort)
+    failing_producao.consolidar_teleconsulta.side_effect = RuntimeError(
+        "BPA-I service error"
+    )
+
+    svc = PEPService(
+        session=fake_session,  # pyright: ignore[reportArgumentType]
+        pdf_generator=MagicMock(spec=PDFGeneratorPort),
+        signer=AsyncMock(spec=ICPBrasilSignerPort),
+        storage=AsyncMock(spec=StoragePort),
+        documento_service=AsyncMock(spec=DocumentoService),
+        atendimento_reader=fake_reader,
+        producao_port=failing_producao,
+    )
+
+    cmd = FinalizarConsultaCommand(
+        atendimento_id=atend_id,
+        organizacao_id=1,
+        medico_id=medico_id,
+    )
+
+    result = await svc.finalizar_consulta(cmd)
+    assert result.is_finalizado is True
+    assert fake_session.commits == 1

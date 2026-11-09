@@ -188,16 +188,9 @@ async def finalizar_consulta(
         organizacao_id=org_id,
         medico_id=current_user.usuario_id,
     )
-    evolucao = await service.finalizar_consulta(cmd)
+    resultado = await service.finalizar_consulta(cmd)
 
-    return FinalizarConsultaResponse(
-        status="FINALIZADO",
-        atendimento_id=atendimento_id,
-        is_finalizado=evolucao.is_finalizado,
-        mensagem=(
-            "Consulta finalizada com sucesso. Registros PEP travados de forma imutável."
-        ),
-    )
+    return FinalizarConsultaResponse.model_validate(resultado)
 
 
 @consultation_router.get(

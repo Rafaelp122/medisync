@@ -15,6 +15,7 @@ from redis.asyncio import Redis
 from src.core.authz.roles import Role
 from src.core.authz.token import create_access_token
 from src.core.errors import TenantInvalidoError
+from src.core.privacy import mascarar_cns, mascarar_cpf
 from src.core.uuid7 import uuid7
 from src.modules.auth.application.dtos import (
     SolicitarOtpInputDTO,
@@ -428,6 +429,7 @@ class PatientAuthService:
         cpf: str | None = None,
         data_nascimento: date | None = None,
         cns: str | None = None,
+        nome_mae: str | None = None,
     ) -> VerificarOtpOutputDTO:
         """Autenticação sem senha via CADSUS/Gov.br por desambiguação de dados civis.
 
@@ -457,12 +459,15 @@ class PatientAuthService:
             cpf=clean_cpf,
             data_nascimento=data_nascimento,
             cns=clean_cns,
+            nome_mae=nome_mae,
         )
         if paciente is None:
+            cpf_masked = mascarar_cpf(clean_cpf) if clean_cpf else "N/A"
+            cns_masked = mascarar_cns(clean_cns) if clean_cns else "N/A"
             raise PacienteNaoEncontradoError(
-                f"Paciente com dados civis informados (CPF: {clean_cpf or 'N/A'}, "
-                f"CNS: {clean_cns or 'N/A'}) não encontrado na organização "
-                f"'{organizacao_id}'."
+                "Paciente com dados civis informados "
+                f"(CPF: {cpf_masked}, CNS: {cns_masked}) "
+                f"não encontrado na organização '{organizacao_id}'."
             )
 
         token = create_access_token(

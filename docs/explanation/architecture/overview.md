@@ -129,7 +129,7 @@ src/
 │
 └── modules/
     ├── auth/                          # Autenticação JWT, Argon2id, RBAC e lockout OWASP
-    ├── billing/                       # Elegibilidade, regras de cobertura de convênios e SUS
+    ├── ambulatory/                    # Produção ambulatorial SUS, BPA-I, SISAB e qualificação cadastral
     ├── consultation/                  # Teleconsulta WebRTC, PEP e prescrição assinada ICP-Brasil
     ├── identity/                      # Identidade, organizações, profissionais e pacientes
     ├── queue/                         # Fila dinâmica, controle de admissão e locks atômicos Lua
@@ -137,7 +137,7 @@ src/
     └── triage/                        # Acolhimento, triagem de Manchester e acionamento SAMU 192
 ```
 
-- **Composition Roots (ADR-001 §7)**: Centralizam a injeção de dependências concretas (`auth`, `consultation`, `identity`, `queue`, `telemetry`, `triage`). Routers recebem serviços via dependências tipadas (`*Dep`). Detalhes em [Composition Root e Dependências](../concepts/composition-root-and-dependencies.md).
+- **Composition Roots (ADR-001 §7)**: Centralizam a injeção de dependências concretas (`auth`, `ambulatory`, `consultation`, `identity`, `queue`, `telemetry`, `triage`). Routers recebem serviços via dependências tipadas (`*Dep`). Detalhes em [Composition Root e Dependências](../concepts/composition-root-and-dependencies.md).
 - **Roteadores Agregados (ADR-001 §7.1 / Issue #68)**: Cada módulo agrega rotas em `presentation/routers/__init__.py`, exportando `http_router` sob `/api/v1`. O Composition Root `src/main.py` monta 1 router HTTP por módulo.
 
 ### 4. Governança de Fronteiras Modulares com Tach
@@ -153,6 +153,7 @@ A integridade arquitetural do monólito modular é fiscalizada pelo **Tach** via
 - Impl: `src/core/database.py`
 - Impl: `src/core/valkey.py`
 - Impl: `src/modules/queue/composition.py`
+- Impl: `src/modules/ambulatory/composition.py`
 - Impl: `src/modules/consultation/composition.py`
 - Impl: `src/modules/auth/composition.py`
 - Impl: `src/modules/identity/composition.py`

@@ -2,6 +2,7 @@
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.core.audit import AuditTrailPort
 from src.modules.ambulatory.application.dtos import (
     BpaProducaoDTO,
     ConsolidarTeleconsultaCommand,
@@ -19,9 +20,14 @@ class ProducaoAmbulatorialService:
     Regras: docs/explanation/domains/ambulatory-domain.md, US-11 e ADR-012.
     """
 
-    def __init__(self, session: AsyncSession) -> None:
-        """Inicializa serviço com sessão assíncrona do SQLAlchemy."""
+    def __init__(
+        self,
+        session: AsyncSession,
+        audit_trail: AuditTrailPort | None = None,
+    ) -> None:
+        """Inicializa serviço com sessão assíncrona do SQLAlchemy e auditoria."""
         self._session = session
+        self._audit_trail = audit_trail
 
     @staticmethod
     def converter_para_bpa_dto(producao: ProducaoAmbulatorial) -> BpaProducaoDTO:
@@ -65,6 +71,26 @@ class ProducaoAmbulatorialService:
             carater_atendimento=cmd.carater_atendimento,
         )
         self._session.add(producao)
+        await self._session.flush()
+
+        if self._audit_trail is not None:
+            await self._audit_trail.record_event(
+                organizacao_id=organizacao_id,
+                tipo_evento="PRODUCAO_AMBULATORIAL_CONSOLIDADA",
+                ator_tipo="SISTEMA",
+                ator_papel="WORKER",
+                ator_id=None,
+                atendimento_id=cmd.atendimento_id,
+                estado_anterior=None,
+                novo_estado="CONSOLIDADO",
+                payload={
+                    "producao_id": str(producao.id),
+                    "cnes": producao.cnes,
+                    "codigo_sigtap": producao.codigo_sigtap,
+                    "competencia": producao.competencia,
+                },
+            )
+
         await self._session.commit()
 
         return self.converter_para_bpa_dto(producao)

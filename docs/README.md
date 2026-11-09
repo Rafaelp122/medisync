@@ -71,7 +71,7 @@ flowchart LR
     * Comunicação inter-módulos em duas vias: *Ports & Adapters* (síncrona) e *Event Bus em memória* (assíncrona);
     * Isolamento estrito de fronteiras e módulos auditado via **Tach** (`tach check`);
   * **Topologia C4**: Diagramas de Contexto (Nível 1) e Contêineres (Nível 2);
-  * Decomposição Modular do Código (`src/` dividido em módulos verticais: `auth`, `identity`, `triage`, `queue`, `consultation`, `telemetry`, `billing`);
+  * Decomposição Modular do Código (`src/` dividido em módulos verticais: `auth`, `identity`, `triage`, `queue`, `consultation`, `telemetry`, `ambulatory`);
   * Matriz de Requisitos Não Funcionais (FURPS+ / ISO 25010: fila $\le 200\text{ ms}$, resiliência do worker, WebRTC $\le 150\text{ ms}$, segurança TLS 1.3/AES-256 e acessibilidade WCAG 2.1 AA).
 
 ### 📄 [04. Especificações Vivas & Catálogo de User Stories](user-stories/README.md)

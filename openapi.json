@@ -3175,7 +3175,7 @@
           "status": {
             "type": "string",
             "title": "Status",
-            "default": "TRIADO_AGUARDANDO_ELEGIBILIDADE"
+            "default": "APTO_PARA_CHAMADA"
           },
           "mensagem": {
             "type": "string",
@@ -4614,6 +4614,12 @@
             "type": "boolean",
             "title": "Mfa Requerido",
             "description": "Indica se \u00e9 necess\u00e1ria autentica\u00e7\u00e3o de segundo fator (MFA/TOTP)",
+            "default": false
+          },
+          "mfa_setup_requerido": {
+            "type": "boolean",
+            "title": "Mfa Setup Requerido",
+            "description": "Indica se \u00e9 necess\u00e1ria configura\u00e7\u00e3o inicial de segundo fator (MFA/TOTP)",
             "default": false
           }
         },

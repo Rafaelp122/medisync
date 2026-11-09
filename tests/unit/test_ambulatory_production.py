@@ -3,8 +3,8 @@
 Conforme RF-02, RF-05, RT-01 e ADR-012.
 """
 
+import logging
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -111,7 +111,9 @@ async def test_elegibilidade_service_does_not_notify_on_approval() -> None:
 
 
 @pytest.mark.asyncio
-async def test_logging_elegibilidade_notifier() -> None:
+async def test_logging_elegibilidade_notifier(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """LoggingElegibilidadeNotifier logs structured warning."""
     notifier = LoggingElegibilidadeNotifier()
     evento = ElegibilidadeFalhaEvent(
@@ -122,18 +124,23 @@ async def test_logging_elegibilidade_notifier() -> None:
         status=StatusElegibilidade.REJEITADO,
         disparado_em=datetime.now(UTC),
     )
-    with patch(
-        "src.modules.ambulatory.application.ports.eligibility_notifier.logger.warning"
-    ) as mock_log:
+    with caplog.at_level(logging.WARNING):
         await notifier.notificar_falha(evento)
 
-    mock_log.assert_called_once()
-    assert "Event ELEGIBILIDADE_FALHA" in str(mock_log.call_args[0][0])
+    assert "Event ELEGIBILIDADE_FALHA" in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_elegibilidade_service_tenant_invalido_raises() -> None:
-    service = ElegibilidadeService(provider=AsyncMock())
+    service = ElegibilidadeService(
+        provider=FakeEligibilityProvider(
+            ResultadoElegibilidade(
+                aprovado=True,
+                status=StatusElegibilidade.APROVADO,
+                codigo_autorizacao="SUS-ISENTO",
+            )
+        )
+    )
     req = RequisicaoElegibilidade(
         organizacao_id=0,
         atendimento_id=uuid4(),

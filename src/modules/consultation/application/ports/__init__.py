@@ -24,6 +24,9 @@ from src.modules.consultation.application.ports.pdf_generator_port import (
     DocumentoPDFPayload,
     PDFGeneratorPort,
 )
+from src.modules.consultation.application.ports.producao_ambulatorial_port import (
+    ProducaoAmbulatorialPort,
+)
 from src.modules.consultation.application.ports.signed_cache_port import (
     SignedCachePort,
 )
@@ -44,6 +47,7 @@ __all__ = [
     "ICPBrasilSignerPort",
     "LiveKitMediaPort",
     "PDFGeneratorPort",
+    "ProducaoAmbulatorialPort",
     "SignatureMetadataDTO",
     "SignedCachePort",
     "StoragePort",

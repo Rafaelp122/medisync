@@ -23,17 +23,41 @@ class IdentityDirectoryDTO:
     paciente_data_nascimento: date | None
     paciente_endereco: str | None
     paciente_nome_social: str | None = None
+    cnes: str | None = None
+
+
+class PacienteAuthLookupDTO(Protocol):
+    """Structural protocol for patient authentication lookup data."""
+
+    @property
+    def id(self) -> UUID: ...
+
+    @property
+    def organizacao_id(self) -> int: ...
+
+    @property
+    def telefone(self) -> str: ...
+
+    @property
+    def cpf(self) -> str | None: ...
+
+    @property
+    def nome_completo(self) -> str: ...
+
+    @property
+    def nome_mae(self) -> str | None: ...
 
 
 @dataclass(frozen=True)
-class PacienteAuthLookupDTO:
-    """Patient authentication lookup data."""
+class PacienteAuthLookupData:
+    """Concrete immutable representation of patient lookup data."""
 
     id: UUID
     organizacao_id: int
     telefone: str
     cpf: str | None
     nome_completo: str
+    nome_mae: str | None = None
 
 
 @runtime_checkable
@@ -72,6 +96,7 @@ class IdentityReaderPort(Protocol):
         cpf: str | None = None,
         data_nascimento: date | None = None,
         cns: str | None = None,
+        nome_mae: str | None = None,
     ) -> PacienteAuthLookupDTO | None:
-        """Look up patient record via CADSUS/Gov.br credentials (CPF, CNS)."""
+        """Look up patient record via CADSUS/Gov.br credentials (CPF, CNS, nome_mae)."""
         ...

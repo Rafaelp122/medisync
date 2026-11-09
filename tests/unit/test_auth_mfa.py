@@ -18,9 +18,7 @@ from src.modules.auth.application.ports.auth_rate_limiter_port import (
     AuthRateLimiterPort,
 )
 from src.modules.auth.application.ports.identity_reader_port import (
-    IdentityReaderPort,
     PacienteAuthLookupData,
-    PacienteAuthLookupDTO,
 )
 from src.modules.auth.application.ports.password_hasher_port import (
     PasswordHasherPort,
@@ -43,8 +41,11 @@ from src.modules.auth.domain.totp import (
     verify_totp_code,
 )
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
+from src.modules.auth.infrastructure.valkey_token_revocation import (
+    MemoryTokenRevocation,
+)
 
-from tests.doubles import FakeAsyncSession, FakeResult
+from tests.doubles import FakeAsyncSession, FakeIdentityReader, FakeResult
 
 
 class FakePasswordHasher(PasswordHasherPort):
@@ -86,30 +87,6 @@ class FakeAuthRateLimiter(AuthRateLimiterPort):
         self.reset_keys.append(chave)
 
 
-class FakeIdentityReader(IdentityReaderPort):
-    """Named fake implementation of IdentityReaderPort."""
-
-    def __init__(self, paciente: PacienteAuthLookupDTO | None = None) -> None:
-        self.paciente = paciente
-
-    async def buscar_paciente_por_telefone(
-        self,
-        organizacao_id: int,
-        telefone: str,
-        cpf: str | None = None,
-    ) -> PacienteAuthLookupDTO | None:
-        return self.paciente
-
-    async def buscar_paciente_cadsus(
-        self,
-        organizacao_id: int,
-        cpf: str | None = None,
-        data_nascimento: date | None = None,
-        cns: str | None = None,
-    ) -> PacienteAuthLookupDTO | None:
-        return self.paciente
-
-
 TEST_JWT_SECRET = "super-secret-key-for-testing-purposes-123456"
 
 
@@ -142,6 +119,7 @@ def _make_auth_service(
         hasher=FakePasswordHasher(),
         token_service=token_service or JWTTokenService(secret_key=TEST_JWT_SECRET),
         rate_limiter=FakeAuthRateLimiter(),
+        revocation=MemoryTokenRevocation(),
     )
 
 
@@ -265,6 +243,7 @@ async def test_autenticar_medico_mfa_ativo_exige_segundo_fator() -> None:
     tokens = await service.autenticar(cmd)
 
     assert tokens.mfa_requerido is True
+    assert tokens.mfa_setup_requerido is False
     assert tokens.refresh_token == ""
     assert tokens.access_token is not None
 
@@ -272,6 +251,107 @@ async def test_autenticar_medico_mfa_ativo_exige_segundo_fator() -> None:
     assert payload.sub == cred.usuario_id
     assert payload.org_id == cred.organizacao_id
     assert payload.mfa_pending is True
+
+
+@pytest.mark.asyncio
+async def test_autenticar_medico_mfa_inativo_exige_mfa_setup_requerido() -> None:
+    """Médico com MFA inativo recebe token temporário.
+
+    Valida mfa_requerido=True e mfa_setup_requerido=True.
+    """
+    cred = _make_credencial(
+        papel="MEDICO",
+        senha_pura="senha123",
+        mfa_secret=None,
+        mfa_ativo=False,
+    )
+    session = FakeAsyncSession(results=[FakeResult(cred)])
+    token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
+    service = _make_auth_service(session, token_service=token_svc)
+
+    cmd = LoginCommand(
+        identificador=cred.identificador,
+        senha="senha123",
+        organizacao_id=cred.organizacao_id,
+        client_ip="127.0.0.1",
+    )
+    tokens = await service.autenticar(cmd)
+
+    assert tokens.mfa_requerido is True
+    assert tokens.mfa_setup_requerido is True
+    assert tokens.refresh_token == ""
+    assert tokens.access_token is not None
+
+    payload = token_svc.validar_mfa_token(tokens.access_token)
+    assert payload.sub == cred.usuario_id
+    assert payload.org_id == cred.organizacao_id
+    assert payload.mfa_pending is True
+
+
+@pytest.mark.asyncio
+async def test_autenticar_gestor_mfa_inativo_exige_mfa_setup_requerido() -> None:
+    """Gestor com MFA inativo recebe token temporário exigindo setup."""
+    cred = _make_credencial(
+        papel="GESTOR_UNIDADE",
+        senha_pura="senha123",
+        mfa_secret=None,
+        mfa_ativo=False,
+    )
+    session = FakeAsyncSession(results=[FakeResult(cred)])
+    token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
+    service = _make_auth_service(session, token_service=token_svc)
+
+    cmd = LoginCommand(
+        identificador=cred.identificador,
+        senha="senha123",
+        organizacao_id=cred.organizacao_id,
+        client_ip="127.0.0.1",
+    )
+    tokens = await service.autenticar(cmd)
+
+    assert tokens.mfa_requerido is True
+    assert tokens.mfa_setup_requerido is True
+    assert tokens.refresh_token == ""
+    assert tokens.access_token is not None
+
+    payload = token_svc.validar_mfa_token(tokens.access_token)
+    assert payload.sub == cred.usuario_id
+    assert payload.org_id == cred.organizacao_id
+    assert payload.mfa_pending is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "papel",
+    [
+        "MEDICO",
+        "GESTOR_UNIDADE",
+        "GESTOR_CONSORCIO",
+        "REGULADOR_MUNICIPAL",
+        "AUDITOR_PRODUCAO",
+        "ADMIN_GLOBAL",
+    ],
+)
+async def test_roles_requiring_mfa_bloqueiam_acesso_direto(papel: str) -> None:
+    """Todas as funções em ROLES_REQUIRING_MFA exigem MFA mesmo sem ter ativado."""
+    cred = _make_credencial(
+        papel=papel,
+        senha_pura="senha123",
+        mfa_ativo=False,
+    )
+    session = FakeAsyncSession(results=[FakeResult(cred)])
+    token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
+    service = _make_auth_service(session, token_service=token_svc)
+
+    cmd = LoginCommand(
+        identificador=cred.identificador,
+        senha="senha123",
+        organizacao_id=cred.organizacao_id,
+        client_ip="127.0.0.1",
+    )
+    tokens = await service.autenticar(cmd)
+    assert tokens.mfa_requerido is True
+    assert tokens.mfa_setup_requerido is True
 
 
 @pytest.mark.asyncio

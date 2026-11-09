@@ -61,7 +61,8 @@ class Organizacao(Base):
         digits = clean_digits(cnpj)
         if len(digits) != 14:
             raise ValidationError(
-                "CNPJ inválido: deve conter exatamente 14 dígitos numéricos."
+                f"CNPJ '{cnpj}' inválido: possui {len(digits)} dígitos; "
+                "esperados exatamente 14 dígitos numéricos."
             )
 
         super().__init__(

@@ -1,7 +1,12 @@
 import { z } from "zod";
+import {
+  zAutenticarCadsusRequest,
+  zLoginRequest,
+  zMfaVerificarLoginRequest,
+} from "@/api/generated/zod.gen";
 import { validarCNS, validarCPF } from "@/lib/validators";
 
-export const cadsusAuthSchema = z.object({
+export const cadsusAuthSchema = zAutenticarCadsusRequest.extend({
   cpf: z
     .string()
     .min(11, "CPF deve conter 11 dígitos")
@@ -30,7 +35,8 @@ export const cadsusAuthSchema = z.object({
 
 export type CadsusAuthFormData = z.infer<typeof cadsusAuthSchema>;
 
-export const doctorLoginSchema = z.object({
+export const doctorLoginSchema = zLoginRequest.extend({
+  identificador: z.string().optional(),
   crm: z.string().min(3, "CRM deve conter pelo menos 3 dígitos").max(10, "CRM inválido"),
   uf: z.string().length(2, "UF deve conter 2 letras").toUpperCase(),
   senha: z.string().min(1, "Senha obrigatória"),
@@ -38,14 +44,16 @@ export const doctorLoginSchema = z.object({
 
 export type DoctorLoginFormData = z.infer<typeof doctorLoginSchema>;
 
-export const managerLoginSchema = z.object({
+export const managerLoginSchema = zLoginRequest.extend({
+  identificador: z.string().optional(),
   email: z.string().email("E-mail institucional inválido"),
   senha: z.string().min(1, "Senha obrigatória"),
 });
 
 export type ManagerLoginFormData = z.infer<typeof managerLoginSchema>;
 
-export const mfaVerifySchema = z.object({
+export const mfaVerifySchema = zMfaVerificarLoginRequest.extend({
+  temp_token: z.string().optional(),
   codigo: z
     .string()
     .length(6, "Código TOTP deve ter exatamente 6 dígitos")

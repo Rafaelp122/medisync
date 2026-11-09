@@ -252,7 +252,7 @@ export const zFase1Request = z.object({
 export const zFase1Response = z.object({
     paciente_id: z.uuid(),
     token: z.string(),
-    status: z.string().optional().default('TRIADO_AGUARDANDO_ELEGIBILIDADE'),
+    status: z.string().optional().default('APTO_PARA_CHAMADA'),
     mensagem: z.string(),
     is_novo_paciente: z.boolean()
 });
@@ -658,7 +658,8 @@ export const zTokenResponse = z.object({
     token_type: z.string().optional().default('bearer'),
     expires_in: z.int(),
     refresh_expires_in: z.int(),
-    mfa_requerido: z.boolean().optional().default(false)
+    mfa_requerido: z.boolean().optional().default(false),
+    mfa_setup_requerido: z.boolean().optional().default(false)
 });
 
 /**

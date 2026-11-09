@@ -5,7 +5,7 @@
 > **Requisito Base:** RF-05  
 > **Invariantes Relacionadas:** RN01 (Prevalência Clínica), RN03 (Desvio Temporário e Preservação de Antiguidade)  
 > **Personas:** Juliana Silva (Paciente) e Patrícia Mendes (Faturamento)  
-> **Módulos:** `queue`, `billing`  
+> **Módulos:** `queue`, `ambulatory`  
 > **Status de Qualidade:** 🟢 **Conforme** *(Resolução NC-QUE-04: preservação de timestamp de acolhimento original e endpoint REST de regularização/contingência)*
 
 ---

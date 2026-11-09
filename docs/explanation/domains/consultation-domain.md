@@ -16,8 +16,8 @@ Escopo termina no registro. Fila decide ordem, triagem decide prioridade, ambula
 
 - **RN06 — Ato médico nunca interrompido por tempo.** `marcar_finalizado`/`validar_pode_excluir` travam registro, nunca derrubam chamada; backend emite JWT através de `TeleconsultaService` desacoplado do SFU. [Fonte](../product-specification.md) (RN06)
 - **RN07 — PEP append-only com UTC e prova criptográfica.** `EvolucaoClinica`/`DocumentoClinico` carimbam `registrado_em`/`assinado_em` em UTC, hash SHA-256 de 64 hex, assinatura PAdES; guarda canônica em `src/modules/consultation/domain/s3_keys.py`. Casos de uso (`salvar_evolucao_soap`, `emitir_documento`, `assinar`, `finalizar_consulta`) persistem atomicamente eventos na tabela `audit_events` via `AuditTrailPort` (`SqlAuditTrailAdapter`) antes do `commit()`. Catálogo canônico: [Catálogo de Eventos](../../reference/audit/event-catalog.md). Provas vivas: `tests/unit/test_consultation_audit_events.py` e `tests/integration/test_clinical_audit_integration.py`. [Fonte](../product-specification.md) (RN07)
-- **RN08 — Governança de IA no Prontuário e Supervisão Humana (CFM nº 2.454/2026).** Sugestões de notas SOAP, hipóteses CID-10 e prescrições emitidas por IA copiloto atuam exclusivamente como auxílio orientativo; ratificação ou alteração médica gera diff forense imutável com eventos `IA_SUGESTAO_GERADA` e `IA_DECISAO_MEDICA_REGISTRADA`. [Fonte](../product-specification.md) (RN08)
-- **RN09 — Trava Temporal Anti-Fraude em Atestados (CFM nº 2.314/2022 e RDC Anvisa nº 1.000/2025).** Emissão de atestado exige tempo decorrido $\ge 180\text{ s}$ (3 minutos) de consulta; tentativa anterior a 180s exige justificativa clínica circunstanciada e dispara evento `TRAVA_TEMPORAL_ATESTADO_VIOLADA`. [Fonte](../product-specification.md) (RN09)
+- **RN08 — Governança de IA no Prontuário e Supervisão Humana (CFM nº 2.454/2026).** Sugestões de notas SOAP, hipóteses CID-10 e prescrições emitidas por IA copiloto atuam exclusivamente como auxílio orientativo. Ao salvar a evolução clínica, o sistema calcula atomicamente o diff unificado (`unified_diff`) entre a sugestão bruta da IA e a conduta ratificada pelo profissional, persistindo o evento forense `IA_DECISAO_MEDICA_REGISTRADA` com o modelo de IA ratificado (`ia_modelo`), o indicador de ratificação (`ia_ratificada`) e o texto completo do `diff_forense`. Prova viva: `tests/unit/test_clinical_ai_governance.py`. [Fonte](../product-specification.md) (RN08)
+- **RN09 — Trava Temporal Anti-Fraude em Atestados (CFM nº 2.314/2022 e RDC Anvisa nº 1.000/2025).** A emissão de atestado exige tempo decorrido $\ge 180\text{ s}$ (3 minutos) de teleconsulta. Tentativa anterior a 180s exige justificativa clínica circunstanciada com no mínimo 15 caracteres ($\ge 15$), disparando obrigatoriamente o evento forense `TRAVA_TEMPORAL_ATESTADO_VIOLADA` com `duracao_segundos`, `justificativa` e `justificativa_aceita = True`. Justificativas ausentes ou com menos de 15 caracteres são bloqueadas com erro HTTP 422 `TRAVA_TEMPORAL_ATESTADO_VIOLADA` e evento forense gravado com `justificativa_aceita = False`. Prova viva: `tests/unit/test_trava_antifraude_atestado.py`. [Fonte](../product-specification.md) (RN09)
 - **Procedimento SIGTAP 03.01.01.025-0 no Plano SOAP.** O registro do Plano terapêutico inclui a codificação SIGTAP da teleconsulta na Atenção Primária para integração com o BPA-I e SISAB (Nota Técnica nº 11/2024-MS). [Fonte](../product-specification.md) (RF-07)
 
 Guardiões: `__init__` rejeita `organizacao_id <= 0`, anamnese/conduta vazias, CID-10 fora do padrão, `chave_s3` vazia, hash fora de 64 hex (`ConsultaInvalidaError`).
@@ -71,6 +71,8 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - Erros de domínio tipados. `ConsultaFinalizadaError` para mutação/exclusão pós-trava, `ConsultaInvalidaError` para dado inválido; borda converte em 4xx sem vazar stack.
 - Gate CFM nº 2.314/2022 na Estação Médica. O frontend bloqueia preventivamente a emissão de receitas digitais e a finalização da consulta até que o médico confirme a conferência visual de RG/CNH/CNS em vídeo ou registre justificativa clínica formal em caso de emergência.
 - Imutabilidade visual do PEP (CFM nº 1.821/2007). Ao concluir o atendimento, todos os painéis clínicos (SOAP, prescrições, conferência de identidade) entram em modo imutável somente leitura (`isReadOnly`), impossibilitando edições posteriores na UI.
+- Governança forense de IA copiloto (CFM nº 2.454/2026). A trilha forense calcula o diff unificado (`diff_forense`) entre a sugestão bruta da IA e o texto final assinado pelo médico assistente, persistindo o evento `IA_DECISAO_MEDICA_REGISTRADA` com modelo ratificado e prova de intervenção humana obrigatória.
+- Trava temporal e auditoria anti-fraude de atestados (CFM nº 2.314/2022, RN09). A emissão de atestados médicos exige duração de teleconsulta $\ge 180\text{ s}$; emissões precoces disparam `TRAVA_TEMPORAL_ATESTADO_VIOLADA` e requerem justificativa clínica circunstanciada de no mínimo 15 caracteres (`justificativa_aceita = True`), barrando justificativas curtas com HTTP 422.
 
 ## 6. Onde no código
 
@@ -96,6 +98,8 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - `tests/unit/test_consultation_models.py`
 - `tests/unit/test_evolucao_service.py`
 - `tests/unit/test_documento_service.py`
+- `tests/unit/test_clinical_ai_governance.py`
+- `tests/unit/test_trava_antifraude_atestado.py`
 - `tests/unit/test_livekit_token.py`
 - `tests/unit/test_livekit_dependencies.py`
 
@@ -116,8 +120,11 @@ rg -n "def marcar_finalizado|def adicionar_item|def validar_pode_excluir" src/mo
 # documento_clinico.py:159 marcar_finalizado, :163 adicionar_item, :181 validar_pode_excluir
 # evolucao_clinica.py:129 marcar_finalizado, :133 validar_pode_excluir
 
-pytest tests/unit/test_consultation_models.py -q --no-cov
+uv run pytest tests/unit/test_consultation_models.py -q --no-cov
 # 58 passed (2026-10-07)
+
+uv run pytest tests/unit/test_clinical_ai_governance.py tests/unit/test_trava_antifraude_atestado.py -q --no-cov
+# 14 passed (2026-11-07)
 ```
 
 Sem corrigir código. Divergência entre doc e guardião real exige atualizar doc, nunca relaxar trava clínica.

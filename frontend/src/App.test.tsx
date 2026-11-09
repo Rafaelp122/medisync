@@ -58,6 +58,7 @@ describe("App (Orquestração de Sessão, Persistência e Abas)", () => {
     expect(
       screen.getByRole("tab", { name: /já tenho atendimento \(telefone\)/i }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /acesso por perfil \(sus\)/i })).toBeInTheDocument();
 
     // Card de sessão ativa NÃO deve estar presente
     expect(
@@ -200,13 +201,17 @@ describe("App (Orquestração de Sessão, Persistência e Abas)", () => {
     expect(screen.getByRole("heading", { name: /sala de espera virtual/i })).toBeInTheDocument();
   });
 
-  it("IT-APP-06: Alternar para aba 'Estação Médica' exibe login e permite autenticar", async () => {
+  it("IT-APP-06: Alternar para aba 'Acesso por Perfil' exibe login e permite autenticar médico", async () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const tabMedico = screen.getByRole("tab", { name: /estação médica/i });
-    expect(tabMedico).toBeInTheDocument();
+    const tabPerfil = screen.getByRole("tab", { name: /acesso por perfil/i });
+    expect(tabPerfil).toBeInTheDocument();
 
+    await user.click(tabPerfil);
+
+    // Seleciona a aba Médico no TripartiteAuthCard
+    const tabMedico = screen.getByRole("tab", { name: /^médico$/i });
     await user.click(tabMedico);
 
     // Deve exibir o card de login do médico
@@ -229,8 +234,10 @@ describe("App (Orquestração de Sessão, Persistência e Abas)", () => {
     await user.click(btnSair);
 
     await waitFor(() => {
-      expect(screen.getByRole("tablist")).toBeInTheDocument();
-      expect(screen.getByRole("heading", { name: /acesso à estação médica/i })).toBeInTheDocument();
+      expect(screen.getByRole("tablist", { name: /opções de atendimento/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("tablist", { name: /seleção de perfil de acesso sus/i }),
+      ).toBeInTheDocument();
     });
   });
 });

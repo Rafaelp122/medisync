@@ -1,13 +1,14 @@
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.errors import NotFoundError
 from src.modules.identity.application.ports.identity_reader_port import (
     IdentityDirectoryDTO,
     IdentityReaderPort,
+    PacienteAuthLookupData,
     PacienteAuthLookupDTO,
 )
 from src.modules.identity.domain.models import Organizacao, Paciente, Profissional
@@ -77,6 +78,7 @@ class SqlIdentityReader(IdentityReaderPort):
             paciente_data_nascimento=pac.data_nascimento,
             paciente_endereco=endereco_fmt,
             paciente_nome_social=pac.nome_social,
+            cnes=org.cnes if org is not None else None,
         )
 
     async def obter_modo_sus(self, organizacao_id: int) -> bool:
@@ -112,12 +114,13 @@ class SqlIdentityReader(IdentityReaderPort):
         if pac is None:
             return None
 
-        return PacienteAuthLookupDTO(
+        return PacienteAuthLookupData(
             id=pac.id,
             organizacao_id=pac.organizacao_id,
             telefone=pac.telefone,
             cpf=pac.cpf,
             nome_completo=pac.nome_completo or "",
+            nome_mae=pac.nome_mae,
         )
 
     async def buscar_paciente_cadsus(
@@ -126,6 +129,7 @@ class SqlIdentityReader(IdentityReaderPort):
         cpf: str | None = None,
         data_nascimento: date | None = None,
         cns: str | None = None,
+        nome_mae: str | None = None,
     ) -> PacienteAuthLookupDTO | None:
         stmt = select(Paciente).where(Paciente.organizacao_id == organizacao_id)
         if cpf is not None:
@@ -134,15 +138,18 @@ class SqlIdentityReader(IdentityReaderPort):
             stmt = stmt.where(Paciente.data_nascimento == data_nascimento)
         if cns is not None:
             stmt = stmt.where(Paciente.cns == cns)
+        if nome_mae is not None and nome_mae.strip():
+            stmt = stmt.where(func.lower(Paciente.nome_mae) == nome_mae.strip().lower())
 
         pac = (await self._session.execute(stmt)).scalars().first()
         if pac is None:
             return None
 
-        return PacienteAuthLookupDTO(
+        return PacienteAuthLookupData(
             id=pac.id,
             organizacao_id=pac.organizacao_id,
             telefone=pac.telefone,
             cpf=pac.cpf,
             nome_completo=pac.nome_completo or "",
+            nome_mae=pac.nome_mae,
         )

@@ -2,8 +2,9 @@
 
 import asyncio
 import queue as queue_module
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
+from datetime import date
 from typing import Any, cast
 from uuid import UUID
 
@@ -12,6 +13,14 @@ from src.core.uuid7 import uuid7
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
     AtendimentoResumoDTO,
+)
+from src.modules.consultation.application.ports.producao_ambulatorial_port import (
+    ProducaoAmbulatorialPort,
+)
+from src.modules.identity.application.ports.identity_reader_port import (
+    IdentityDirectoryDTO,
+    IdentityReaderPort,
+    PacienteAuthLookupDTO,
 )
 
 
@@ -509,3 +518,145 @@ class FakeAtendimentoReader(AtendimentoReaderPort):
                 tcle_hash=self.resumo.tcle_hash,
                 is_terminal=self.resumo.is_terminal,
             )
+
+
+class FakeIdentityReader(IdentityReaderPort):
+    """Canonical in-memory test double implementing IdentityReaderPort."""
+
+    def __init__(
+        self,
+        paciente: PacienteAuthLookupDTO | None = None,
+        pacientes: Sequence[PacienteAuthLookupDTO] | None = None,
+        diretorio: IdentityDirectoryDTO | None = None,
+        modo_sus: bool = False,
+        organizacoes_ativas: list[int] | None = None,
+    ) -> None:
+        self.paciente: PacienteAuthLookupDTO | None = paciente
+        self.pacientes: Sequence[PacienteAuthLookupDTO] | None = pacientes
+        self.diretorio = diretorio
+        self.modo_sus = modo_sus
+        self.organizacoes_ativas = organizacoes_ativas or []
+        self.lookups: list[dict[str, object]] = []
+
+    async def obter_dados_diretorio(
+        self,
+        organizacao_id: int,
+        medico_id: UUID,
+        paciente_id: UUID,
+    ) -> IdentityDirectoryDTO:
+        if self.diretorio is not None:
+            return self.diretorio
+        return IdentityDirectoryDTO(
+            organizacao_id=organizacao_id,
+            organizacao_nome="Org Teste",
+            organizacao_cnpj=None,
+            medico_id=medico_id,
+            medico_nome="Dr. Teste",
+            medico_crm="123456",
+            medico_crm_uf="SP",
+            paciente_id=paciente_id,
+            paciente_nome="Paciente Teste",
+            paciente_cpf=None,
+            paciente_data_nascimento=None,
+            paciente_endereco=None,
+        )
+
+    async def obter_modo_sus(self, organizacao_id: int) -> bool:
+        return self.modo_sus
+
+    async def listar_organizacoes_ativas(self) -> list[int]:
+        return list(self.organizacoes_ativas)
+
+    async def buscar_paciente_por_telefone(
+        self,
+        organizacao_id: int,
+        telefone: str,
+        cpf: str | None = None,
+    ) -> PacienteAuthLookupDTO | None:
+        self.lookups.append(
+            {
+                "organizacao_id": organizacao_id,
+                "telefone": telefone,
+                "cpf": cpf,
+            }
+        )
+        if self.pacientes is not None:
+            for p in self.pacientes:
+                if (
+                    p.organizacao_id == organizacao_id
+                    and p.telefone == telefone
+                    and (cpf is None or p.cpf == cpf)
+                ):
+                    return p
+            return None
+        return self.paciente
+
+    async def buscar_paciente_cadsus(
+        self,
+        organizacao_id: int,
+        cpf: str | None = None,
+        data_nascimento: date | None = None,
+        cns: str | None = None,
+        nome_mae: str | None = None,
+    ) -> PacienteAuthLookupDTO | None:
+        self.lookups.append(
+            {
+                "organizacao_id": organizacao_id,
+                "cpf": cpf,
+                "data_nascimento": data_nascimento,
+                "cns": cns,
+                "nome_mae": nome_mae,
+            }
+        )
+        if self.pacientes is not None:
+            for p in self.pacientes:
+                if p.organizacao_id != organizacao_id:
+                    continue
+                if cpf is not None and p.cpf != cpf:
+                    continue
+                if cns is not None and getattr(p, "cns", None) != cns:
+                    continue
+                if (
+                    data_nascimento is not None
+                    and getattr(p, "data_nascimento", None) != data_nascimento
+                ):
+                    continue
+                if (
+                    nome_mae is not None
+                    and p.nome_mae is not None
+                    and p.nome_mae.strip().lower() != nome_mae.strip().lower()
+                ):
+                    continue
+                return p
+            return None
+        return self.paciente
+
+
+class FakeProducaoAmbulatorialPort(ProducaoAmbulatorialPort):
+    """Canonical in-memory test double implementing ProducaoAmbulatorialPort."""
+
+    def __init__(self) -> None:
+        self.consolidacoes: list[dict[str, Any]] = []
+
+    async def consolidar_teleconsulta(
+        self,
+        *,
+        organizacao_id: int,
+        atendimento_id: UUID,
+        profissional_id: UUID,
+        paciente_id: UUID,
+        cnes: str | None = None,
+        codigo_sigtap: str = "03.01.01.025-0",
+        carater_atendimento: str = "02",
+    ) -> None:
+        self.consolidacoes.append(
+            {
+                "organizacao_id": organizacao_id,
+                "atendimento_id": atendimento_id,
+                "profissional_id": profissional_id,
+                "paciente_id": paciente_id,
+                "cnes": cnes,
+                "codigo_sigtap": codigo_sigtap,
+                "carater_atendimento": carater_atendimento,
+            }
+        )

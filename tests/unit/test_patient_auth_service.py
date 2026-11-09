@@ -14,9 +14,7 @@ from src.modules.auth.application.dtos import (
     VerificarOtpInputDTO,
 )
 from src.modules.auth.application.ports.identity_reader_port import (
-    IdentityReaderPort,
     PacienteAuthLookupData,
-    PacienteAuthLookupDTO,
 )
 from src.modules.auth.application.services.patient_auth_service import (
     PatientAuthService,
@@ -29,45 +27,7 @@ from src.modules.auth.domain.exceptions import (
 )
 from src.modules.identity.infrastructure.fake_sms_adapter import FakeSmsSenderAdapter
 
-
-class FakeIdentityReader(IdentityReaderPort):
-    """Scripted in-memory double satisfying IdentityReaderPort."""
-
-    def __init__(self, paciente: PacienteAuthLookupDTO | None = None) -> None:
-        self.paciente = paciente
-        self.lookups: list[dict[str, object]] = []
-
-    async def buscar_paciente_por_telefone(
-        self,
-        organizacao_id: int,
-        telefone: str,
-        cpf: str | None = None,
-    ) -> PacienteAuthLookupDTO | None:
-        self.lookups.append(
-            {
-                "organizacao_id": organizacao_id,
-                "telefone": telefone,
-                "cpf": cpf,
-            }
-        )
-        return self.paciente
-
-    async def buscar_paciente_cadsus(
-        self,
-        organizacao_id: int,
-        cpf: str | None = None,
-        data_nascimento: date | None = None,
-        cns: str | None = None,
-    ) -> PacienteAuthLookupDTO | None:
-        self.lookups.append(
-            {
-                "organizacao_id": organizacao_id,
-                "cpf": cpf,
-                "data_nascimento": data_nascimento,
-                "cns": cns,
-            }
-        )
-        return self.paciente
+from tests.doubles import FakeIdentityReader
 
 
 @pytest.fixture
@@ -345,3 +305,100 @@ async def test_sem_identity_reader_raises_value_error() -> None:
             organizacao_id=1,
             dados=SolicitarOtpInputDTO(telefone="11987654321"),
         )
+
+
+def test_mascarar_cns() -> None:
+    from src.core.privacy import mascarar_cns
+
+    assert mascarar_cns("898001234567890") == "898********7890"
+    assert mascarar_cns("898 0012 3456 7890") == "898********7890"
+    assert mascarar_cns("123") == "***"
+    assert mascarar_cns("") == "***"
+
+
+@pytest.mark.asyncio
+async def test_autenticar_cadsus_mascaramento_cpf_cns_no_erro(
+    fake_identity_reader: FakeIdentityReader,
+) -> None:
+    fake_identity_reader.paciente = None
+    service = PatientAuthService(identity_reader=fake_identity_reader)
+
+    # 1. Test error with CPF and CNS masks PII in exception detail
+    with pytest.raises(PacienteNaoEncontradoError) as exc_info:
+        await service.autenticar_cadsus_govbr(
+            organizacao_id=1,
+            cpf="11144477735",
+            cns="898001234567890",
+        )
+    err_msg = str(exc_info.value.detail)
+    assert "111.***.***-35" in err_msg
+    assert "898********7890" in err_msg
+    assert "11144477735" not in err_msg
+    assert "898001234567890" not in err_msg
+
+    # 2. Test error with only CPF masks CPF and marks CNS as N/A
+    with pytest.raises(PacienteNaoEncontradoError) as exc_info2:
+        await service.autenticar_cadsus_govbr(
+            organizacao_id=1,
+            cpf="11144477735",
+        )
+    err_msg2 = str(exc_info2.value.detail)
+    assert "111.***.***-35" in err_msg2
+    assert "CNS: N/A" in err_msg2
+
+
+@pytest.mark.asyncio
+async def test_autenticar_cadsus_desambiguacao_nome_mae(
+    fake_identity_reader: FakeIdentityReader,
+) -> None:
+    paciente_carlos = PacienteAuthLookupData(
+        id=uuid7(),
+        organizacao_id=1,
+        telefone="11987654321",
+        cpf="11144477735",
+        nome_completo="Carlos Silva",
+        nome_mae="Maria Aparecida da Silva",
+    )
+    fake_identity_reader.paciente = paciente_carlos
+    service = PatientAuthService(identity_reader=fake_identity_reader)
+
+    res = await service.autenticar_cadsus_govbr(
+        organizacao_id=1,
+        cpf="11144477735",
+        data_nascimento=date(1990, 5, 15),
+        nome_mae="Maria Aparecida da Silva",
+    )
+    assert res.paciente_id == paciente_carlos.id
+    assert len(fake_identity_reader.lookups) == 1
+    assert fake_identity_reader.lookups[0]["nome_mae"] == "Maria Aparecida da Silva"
+
+
+@pytest.mark.asyncio
+async def test_autenticar_cadsus_filtro_por_nome_mae_com_multiplos_pacientes(
+    fake_identity_reader: FakeIdentityReader,
+) -> None:
+    p1 = PacienteAuthLookupData(
+        id=uuid7(),
+        organizacao_id=1,
+        telefone="11987654321",
+        cpf="11144477735",
+        nome_completo="Carlos Silva",
+        nome_mae="Joana da Silva",
+    )
+    p2 = PacienteAuthLookupData(
+        id=uuid7(),
+        organizacao_id=1,
+        telefone="11987654322",
+        cpf="11144477735",
+        nome_completo="Carlos Silva",
+        nome_mae="Maria Aparecida da Silva",
+    )
+    fake_identity_reader.pacientes = [p1, p2]
+    service = PatientAuthService(identity_reader=fake_identity_reader)
+
+    res = await service.autenticar_cadsus_govbr(
+        organizacao_id=1,
+        cpf="11144477735",
+        nome_mae="maria aparecida da silva",
+    )
+    assert res.paciente_id == p2.id

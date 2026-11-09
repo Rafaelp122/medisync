@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.authz.roles import ROLES_REQUIRING_MFA
 from src.core.errors import ConflictError, MfaCodigoInvalidoError, NotFoundError
 from src.modules.auth.application.dtos import (
     CadastrarCredencialCommand,
@@ -42,27 +43,6 @@ from src.modules.auth.domain.totp import (
 )
 
 
-class _LocalMemoryRevocation:
-    """In-memory revocation store used as zero-dependency fallback."""
-
-    def __init__(self) -> None:
-        self._revoked: set[str] = set()
-
-    async def revogar(self, jti: str, exp_segundos: int = 86400 * 7) -> None:
-        """Revoga identificador de token jti em memória local (fallback).
-
-        Regras: RN-AUT-05 (auth-domain.md).
-        """
-        self._revoked.add(jti)
-
-    async def is_revogado(self, jti: str) -> bool:
-        """Verifica se jti está na lista de revogação local.
-
-        Regras: RN-AUT-05 (auth-domain.md).
-        """
-        return jti in self._revoked
-
-
 class AuthService:
     """Authentication and session lifecycle application service (OWASP compliant)."""
 
@@ -72,7 +52,7 @@ class AuthService:
         hasher: PasswordHasherPort,
         token_service: TokenServicePort,
         rate_limiter: AuthRateLimiterPort,
-        revocation: TokenRevocationPort | None = None,
+        revocation: TokenRevocationPort,
         max_attempts: int = 5,
         window_seconds: int = 900,
     ) -> None:
@@ -80,7 +60,7 @@ class AuthService:
         self._hasher = hasher
         self._token_service = token_service
         self._rate_limiter = rate_limiter
-        self._revocation: TokenRevocationPort = revocation or _LocalMemoryRevocation()
+        self._revocation = revocation
 
         self._max_attempts = max_attempts
         self._window_seconds = window_seconds
@@ -197,13 +177,23 @@ class AuthService:
 
         await self._session.commit()
 
-        # 8. Check if MFA is required (active and role in MEDICO / GESTOR_UNIDADE)
-        if cred.mfa_ativo and cred.papel in {"MEDICO", "GESTOR_UNIDADE"}:
+        # 8. Check if MFA is required (roles in ROLES_REQUIRING_MFA)
+        if cred.papel in ROLES_REQUIRING_MFA:
             temp_token = self._token_service.gerar_mfa_token(
                 usuario_id=cred.usuario_id,
                 organizacao_id=cred.organizacao_id,
                 papel=cred.papel,
             )
+            if cred.mfa_ativo:
+                return TokenPairDTO(
+                    access_token=temp_token,
+                    refresh_token="",
+                    token_type="bearer",  # noqa: S106
+                    expires_in=300,
+                    refresh_expires_in=0,
+                    mfa_requerido=True,
+                    mfa_setup_requerido=False,
+                )
             return TokenPairDTO(
                 access_token=temp_token,
                 refresh_token="",
@@ -211,6 +201,7 @@ class AuthService:
                 expires_in=300,
                 refresh_expires_in=0,
                 mfa_requerido=True,
+                mfa_setup_requerido=True,
             )
 
         # 9. Issue JWT token pair

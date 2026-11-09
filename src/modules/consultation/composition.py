@@ -5,6 +5,7 @@ Routers and tests must resolve PEPService via get_pep_service/PEPServiceDep
 and LiveKit service via get_teleconsulta_service/TeleconsultaServiceDep.
 """
 
+import contextlib
 import logging
 from functools import lru_cache
 from typing import Annotated
@@ -16,6 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.audit import AuditTrailPort, SqlAuditTrailAdapter
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
+from src.modules.ambulatory.application.dtos import ConsolidarTeleconsultaCommand
+from src.modules.ambulatory.application.services.producao_service import (
+    ProducaoAmbulatorialService,
+)
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
     AtendimentoResumoDTO,
@@ -32,6 +37,9 @@ from src.modules.consultation.application.ports.livekit_media_port import (
 )
 from src.modules.consultation.application.ports.pdf_generator_port import (
     PDFGeneratorPort,
+)
+from src.modules.consultation.application.ports.producao_ambulatorial_port import (
+    ProducaoAmbulatorialPort,
 )
 from src.modules.consultation.application.ports.signed_cache_port import (
     SignedCachePort,
@@ -165,6 +173,56 @@ class IdentityDocumentDirectoryAdapter:
             organizacao_cnpj=dto.organizacao_cnpj,
             paciente_data_nascimento=nasc_str,
             paciente_endereco=dto.paciente_endereco,
+            cnes=dto.cnes,
+        )
+
+
+class AmbulatoryProducaoAdapter(ProducaoAmbulatorialPort):
+    """Adapts ProducaoAmbulatorialService for consultation (ADR-012)."""
+
+    def __init__(
+        self,
+        producao_service: ProducaoAmbulatorialService,
+        directory: DocumentDirectoryPort | None = None,
+    ) -> None:
+        self._producao_service = producao_service
+        self._directory = directory
+
+    async def consolidar_teleconsulta(
+        self,
+        *,
+        organizacao_id: int,
+        atendimento_id: UUID,
+        profissional_id: UUID,
+        paciente_id: UUID,
+        cnes: str | None = None,
+        codigo_sigtap: str = "03.01.01.025-0",
+        carater_atendimento: str = "02",
+    ) -> None:
+        cnes_final = cnes
+        if not cnes_final and self._directory is not None:
+            dados = None
+            with contextlib.suppress(Exception):
+                dados = await self._directory.obter_dados_verificacao(
+                    organizacao_id=organizacao_id,
+                    medico_id=profissional_id,
+                    atendimento_id=atendimento_id,
+                )
+            cnes_final = getattr(dados, "cnes", None)
+
+        cnes_final = cnes_final or "0000000"
+
+        cmd = ConsolidarTeleconsultaCommand(
+            atendimento_id=atendimento_id,
+            profissional_id=profissional_id,
+            paciente_id=paciente_id,
+            cnes=cnes_final,
+            codigo_sigtap=codigo_sigtap,
+            carater_atendimento=carater_atendimento,
+        )
+        await self._producao_service.consolidar_teleconsulta(
+            cmd,
+            organizacao_id=organizacao_id,
         )
 
 
@@ -268,6 +326,7 @@ def build_pep_service_for_session(
     evolucao_service: EvolucaoService | None = None,
     documento_service: DocumentoService | None = None,
     audit_trail: AuditTrailPort | None = None,
+    producao_port: ProducaoAmbulatorialPort | None = None,
 ) -> PEPService:
     """Build PEPService with all mandatory ports wired (outside request scope)."""
     reader = (
@@ -285,6 +344,18 @@ def build_pep_service_for_session(
     stor = storage if storage is not None else get_storage()
     cache = signed_cache if signed_cache is not None else get_signed_cache()
     audit = audit_trail if audit_trail is not None else SqlAuditTrailAdapter(session)
+
+    prod_port = (
+        producao_port
+        if producao_port is not None
+        else AmbulatoryProducaoAdapter(
+            producao_service=ProducaoAmbulatorialService(
+                session=session,
+                audit_trail=audit,
+            ),
+            directory=directory,
+        )
+    )
 
     doc_svc = (
         documento_service
@@ -318,6 +389,7 @@ def build_pep_service_for_session(
         atendimento_reader=reader,
         evolucao_service=ev_svc,
         audit_trail=audit,
+        producao_port=prod_port,
     )
 
 

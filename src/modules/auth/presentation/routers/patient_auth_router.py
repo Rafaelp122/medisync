@@ -78,5 +78,6 @@ async def post_auth_paciente_cadsus(
         cpf=body.cpf,
         data_nascimento=body.data_nascimento,
         cns=body.cns,
+        nome_mae=body.nome_mae,
     )
     return VerificarOtpResponse.model_validate(result)

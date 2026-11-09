@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
+from src.core.audit import AtorPapel, AtorTipo
 from src.core.errors import IANaoRatificadaError
 from src.modules.consultation.application.dtos import RegistrarEvolucaoSOAPCommand
 from src.modules.consultation.application.ports.atendimento_reader_port import (
@@ -13,8 +14,9 @@ from src.modules.consultation.application.ports.atendimento_reader_port import (
 from src.modules.consultation.application.services.evolucao_service import (
     EvolucaoService,
 )
+from src.modules.consultation.domain.models import EvolucaoClinica
 
-from tests.doubles import FakeAsyncSession, FakeResult
+from tests.doubles import FakeAsyncSession, FakeAuditTrail, FakeResult
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,8 +71,13 @@ async def test_evolucao_aceita_ia_ratificada_com_diff_automatico() -> None:
     atendimento_id = uuid4()
     medico_id = uuid4()
     reader.obter_resumo.return_value = _make_resumo_nao_terminal(atendimento_id)
+    fake_audit = FakeAuditTrail()
 
-    svc = EvolucaoService(session=cast("AsyncSession", session), reader=reader)
+    svc = EvolucaoService(
+        session=cast("AsyncSession", session),
+        reader=reader,
+        audit_trail=fake_audit,
+    )
 
     sugestao_bruta = "Conduta sugerida: Repouso e hidratação oral."
     conduta_final = (
@@ -100,6 +107,71 @@ async def test_evolucao_aceita_ia_ratificada_com_diff_automatico() -> None:
     assert "+++ plano_ratificado" in evolucao.ia_diff_modificacao
     assert evolucao.codigo_sigtap == "03.01.01.025-0"
 
+    # Verificação de registro forense na trilha de auditoria (CFM nº 2.454/2026)
+    events = fake_audit.get_events_by_type("IA_DECISAO_MEDICA_REGISTRADA")
+    assert len(events) == 1
+    evt = events[0]
+    assert evt["organizacao_id"] == 1
+    assert evt["atendimento_id"] == atendimento_id
+    assert evt["ator_tipo"] == AtorTipo.PROFISSIONAL.value
+    assert evt["ator_papel"] == AtorPapel.MEDICO.value
+    assert evt["ator_id"] == medico_id
+    assert evt["payload"]["evolucao_id"] == str(evolucao.id)
+    assert evt["payload"]["ia_modelo"] == "clinical-assist-v1"
+    assert evt["payload"]["ia_ratificada"] is True
+    assert evt["payload"]["diff_forense"] == evolucao.ia_diff_modificacao
+    assert "--- sugestao_ia" in evt["payload"]["diff_forense"]
+    assert "+++ plano_ratificado" in evt["payload"]["diff_forense"]
+
+
+@pytest.mark.asyncio
+async def test_evolucao_update_com_ia_registra_evento_auditoria() -> None:
+    atendimento_id = uuid4()
+    medico_id = uuid4()
+    existing = EvolucaoClinica(
+        organizacao_id=1,
+        atendimento_id=atendimento_id,
+        medico_id=medico_id,
+        anamnese="Anamnese inicial",
+        conduta="Conduta inicial",
+    )
+    session = FakeAsyncSession(results=[FakeResult(existing)])
+    reader = AsyncMock()
+    reader.obter_resumo.return_value = _make_resumo_nao_terminal(atendimento_id)
+    fake_audit = FakeAuditTrail()
+
+    svc = EvolucaoService(
+        session=cast("AsyncSession", session),
+        reader=reader,
+        audit_trail=fake_audit,
+    )
+
+    cmd = RegistrarEvolucaoSOAPCommand(
+        atendimento_id=atendimento_id,
+        organizacao_id=1,
+        medico_id=medico_id,
+        anamnese="Anamnese atualizada",
+        conduta="Prescrição ajustada com IA",
+        ia_utilizada=True,
+        ia_modelo="gemini-2.0-flash",
+        ia_sugestao_bruta="Prescrição sugerida pela IA",
+        ia_ratificada_pelo_medico=True,
+    )
+
+    evolucao = await svc.salvar_evolucao_soap(cmd)
+    assert evolucao.id == existing.id
+
+    ia_events = fake_audit.get_events_by_type("IA_DECISAO_MEDICA_REGISTRADA")
+    assert len(ia_events) == 1
+    evt = ia_events[0]
+    assert evt["payload"]["evolucao_id"] == str(existing.id)
+    assert evt["payload"]["ia_modelo"] == "gemini-2.0-flash"
+    assert evt["payload"]["ia_ratificada"] is True
+    assert evt["payload"]["diff_forense"] is not None
+    assert evt["payload"]["diff_forense"] == evolucao.ia_diff_modificacao
+    assert "--- sugestao_ia" in evt["payload"]["diff_forense"]
+    assert "+++ plano_ratificado" in evt["payload"]["diff_forense"]
+
 
 @pytest.mark.asyncio
 async def test_evolucao_persiste_codigo_sigtap_customizado() -> None:
@@ -108,8 +180,13 @@ async def test_evolucao_persiste_codigo_sigtap_customizado() -> None:
     atendimento_id = uuid4()
     medico_id = uuid4()
     reader.obter_resumo.return_value = _make_resumo_nao_terminal(atendimento_id)
+    fake_audit = FakeAuditTrail()
 
-    svc = EvolucaoService(session=cast("AsyncSession", session), reader=reader)
+    svc = EvolucaoService(
+        session=cast("AsyncSession", session),
+        reader=reader,
+        audit_trail=fake_audit,
+    )
 
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
@@ -126,3 +203,4 @@ async def test_evolucao_persiste_codigo_sigtap_customizado() -> None:
     assert evolucao.codigo_sigtap == "03.01.01.004-8"
     assert evolucao.ia_utilizada is False
     assert evolucao.ia_diff_modificacao is None
+    assert len(fake_audit.get_events_by_type("IA_DECISAO_MEDICA_REGISTRADA")) == 0

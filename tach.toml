@@ -77,6 +77,8 @@ depends_on = ["src.core", "src.modules.consultation.application", "src.modules.c
 path = "src.modules.consultation.composition"
 depends_on = [
     "src.core",
+    "src.modules.ambulatory.application",
+    "src.modules.ambulatory.composition",
     "src.modules.consultation.application",
     "src.modules.consultation.domain",
     "src.modules.consultation.infrastructure",

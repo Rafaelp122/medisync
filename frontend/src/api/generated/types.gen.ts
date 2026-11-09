@@ -1858,6 +1858,12 @@ export type TokenResponse = {
      * Indica se é necessária autenticação de segundo fator (MFA/TOTP)
      */
     mfa_requerido?: boolean;
+    /**
+     * Mfa Setup Requerido
+     *
+     * Indica se é necessária configuração inicial de segundo fator (MFA/TOTP)
+     */
+    mfa_setup_requerido?: boolean;
 };
 
 /**

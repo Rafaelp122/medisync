@@ -29,7 +29,7 @@ O esquema físico, índices e políticas de segurança por linha não dependem d
 - **Snapshots Forenses Imutáveis (CFM 2.314/2022 e 1.821/2007)**: Na conclusão do atendimento e emissão de documentos médicos, os dados civis e de endereço do paciente (fundamentais para SAMU 192 e dispensação) e o CRM/UF do profissional são congelados no registro. Mutações cadastrais posteriores não retroagem sobre prontuários finalizados.
 - **Ciclo de Vida Governado pela Raiz do Agregado**: A entidade `atendimentos` atua como raiz de agregado. Entidades dependentes (`triagens`, `evolucoes_clinicas` e `documentos_clinicos`) possuem integridade referencial com `ON DELETE RESTRICT`, impedindo exclusões acidentais.
 - **Chaves Primárias em UUIDv7 (RFC 9562)**: Todas as entidades clínicas utilizam UUIDv7. Isso combina a eficiência de inserção e localidade de índice B-Tree (equivalente a inteiros sequenciais) com proteção anti-enumeração (anti-IDOR) e ordenação cronológica precisa para filas.
-- **Máquina de Estados Clínicos (RN03)**: A transição de estados de atendimento segue ciclo rigoroso e determinístico (`TRIADO_AGUARDANDO_ELEGIBILIDADE` $\to$ `APTO_PARA_CHAMADA` $\to$ `CHAMANDO_PACIENTE` $\to$ `EM_ATENDIMENTO` $\to$ `CONCLUIDO` / `PACIENTE_AUSENTE`), com invariantes encapsuladas no modelo rico de domínio.
+- **Máquina de Estados Clínicos (RN03)**: A transição de estados de atendimento segue ciclo rigoroso e determinístico (admissão direta no SUS em `APTO_PARA_CHAMADA` $\to$ `CHAMANDO_PACIENTE` $\to$ `EM_ATENDIMENTO` $\to$ `CONCLUIDO` / `PACIENTE_AUSENTE`), com invariantes encapsuladas no modelo rico de domínio.
 
 ### 2. Agregados Clínicos e Relacionamentos
 

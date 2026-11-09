@@ -6,10 +6,10 @@ from typing import Annotated
 
 from fastapi import Depends
 
+from src.core.audit import SqlAuditTrailAdapter
 from src.core.database import DbSessionDep
 from src.modules.ambulatory.application.ports.eligibility_notifier import (
     ElegibilidadeNotifierPort,
-    LoggingElegibilidadeNotifier,
 )
 from src.modules.ambulatory.application.ports.eligibility_provider import (
     EligibilityProviderPort,
@@ -20,23 +20,25 @@ from src.modules.ambulatory.application.services.eligibility_service import (
 from src.modules.ambulatory.application.services.producao_service import (
     ProducaoAmbulatorialService,
 )
+from src.modules.ambulatory.infrastructure.adapters.logging_eligibility_notifier import (  # noqa: E501
+    LoggingElegibilidadeNotifier,
+)
 from src.modules.ambulatory.infrastructure.adapters.sus_adapter import (
     SusEligibilityAdapter,
 )
 
 
-def get_eligibility_provider(is_sus: bool = True) -> EligibilityProviderPort:
+def get_eligibility_provider() -> EligibilityProviderPort:
     """Resolve eligibility provider for public SUS instances."""
     return SusEligibilityAdapter()
 
 
 def build_elegibilidade_service(
-    is_sus: bool = True,
     provider: EligibilityProviderPort | None = None,
     notifier: ElegibilidadeNotifierPort | None = None,
 ) -> ElegibilidadeService:
     """Build ElegibilidadeService outside request scope (worker/task tooling)."""
-    resolved_provider = provider or get_eligibility_provider(is_sus=is_sus)
+    resolved_provider = provider or get_eligibility_provider()
     resolved_notifier = notifier or LoggingElegibilidadeNotifier()
     return ElegibilidadeService(
         provider=resolved_provider,
@@ -48,7 +50,10 @@ def get_producao_ambulatorial_service(
     session: DbSessionDep,
 ) -> ProducaoAmbulatorialService:
     """Resolve ProducaoAmbulatorialService para rotas e injeção de dependência."""
-    return ProducaoAmbulatorialService(session=session)
+    return ProducaoAmbulatorialService(
+        session=session,
+        audit_trail=SqlAuditTrailAdapter(session),
+    )
 
 
 ProducaoServiceDep = Annotated[

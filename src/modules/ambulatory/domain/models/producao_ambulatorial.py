@@ -86,6 +86,7 @@ class ProducaoAmbulatorial(Base):
         carater_atendimento: str = "02",
         competencia: str | None = None,
         consolidado_em: datetime | None = None,
+        id: UUID | None = None,
     ) -> None:
         """Inicializa registro de produção ambulatorial validando restrições do SUS."""
         cnes_limpo = cnes.strip()
@@ -98,6 +99,7 @@ class ProducaoAmbulatorial(Base):
         comp = competencia or now.strftime("%Y%m")
 
         super().__init__(
+            id=id or uuid7(),
             organizacao_id=organizacao_id,
             atendimento_id=atendimento_id,
             profissional_id=profissional_id,

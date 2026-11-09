@@ -105,7 +105,7 @@ Comunicação síncrona ocorre exclusivamente via ports abstratas e dtos imutáv
 
 Violação é bloqueada por `tach.toml` com `just tach` e pelo teste de arquitetura de routers finos.
 
-Sintoma de violação: import cruzado do tipo queue dentro de ambulatory/billing, ou consultation importando atendimento da fila.
+Sintoma de violação: import cruzado do tipo queue dentro de ambulatory, ou consultation importando atendimento da fila.
 
 Correção: declarar port no consumidor, implementar adaptador na composição, injetar via dependência.
 

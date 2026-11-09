@@ -39,7 +39,7 @@ class EvolucaoService:
     def _resolver_diff_ia(self, command: RegistrarEvolucaoSOAPCommand) -> str | None:
         """Calcula o diff da sugestão de IA versus a conduta médica ratificada.
 
-        Regras: CFM nº 2.454/2026 e consultation-domain.md.
+        Regras: CFM nº 2.454/2026 e docs/explanation/domains/consultation-domain.md.
         """
         if not command.ia_utilizada:
             return None
@@ -66,13 +66,39 @@ class EvolucaoService:
                 diff = "".join(diff_lines)
         return diff
 
+    async def _registrar_auditoria_ia_se_utilizada(
+        self,
+        command: RegistrarEvolucaoSOAPCommand,
+        evolucao_id: UUID,
+        diff_ia: str | None,
+    ) -> None:
+        """Registra auditoria forense do uso de IA conforme CFM nº 2.454/2026.
+
+        Regras: docs/explanation/domains/consultation-domain.md.
+        """
+        if self._audit_trail is not None and command.ia_utilizada:
+            await self._audit_trail.record_event(
+                organizacao_id=command.organizacao_id,
+                tipo_evento="IA_DECISAO_MEDICA_REGISTRADA",
+                ator_tipo=AtorTipo.PROFISSIONAL.value,
+                ator_papel=AtorPapel.MEDICO.value,
+                ator_id=command.medico_id,
+                atendimento_id=command.atendimento_id,
+                payload={
+                    "evolucao_id": str(evolucao_id),
+                    "ia_modelo": command.ia_modelo,
+                    "ia_ratificada": command.ia_ratificada_pelo_medico,
+                    "diff_forense": diff_ia,
+                },
+            )
+
     async def salvar_evolucao_soap(
         self, command: RegistrarEvolucaoSOAPCommand
     ) -> EvolucaoClinica:
         """Registra ou atualiza evolução SOAP com governança de IA.
 
         Garante conformidade com CFM 1.821/2007, 2.314/2022 e 2.454/2026.
-        Regras: RN06 (Ato Médico) e consultation-domain.md.
+        Regras: RN06 (Ato Médico) e docs/explanation/domains/consultation-domain.md.
         """
         diff_ia = self._resolver_diff_ia(command)
 
@@ -122,6 +148,11 @@ class EvolucaoService:
                         "ia_utilizada": existing.ia_utilizada,
                     },
                 )
+            await self._registrar_auditoria_ia_se_utilizada(
+                command=command,
+                evolucao_id=existing.id,
+                diff_ia=diff_ia,
+            )
             await self._session.commit()
             return existing
 
@@ -193,6 +224,11 @@ class EvolucaoService:
                         "ia_utilizada": existing_retry.ia_utilizada,
                     },
                 )
+            await self._registrar_auditoria_ia_se_utilizada(
+                command=command,
+                evolucao_id=existing_retry.id,
+                diff_ia=diff_ia,
+            )
             await self._session.commit()
             return existing_retry
 
@@ -211,8 +247,11 @@ class EvolucaoService:
                     "ia_utilizada": evolucao.ia_utilizada,
                 },
             )
-        await self._session.commit()
-        return evolucao
+        await self._registrar_auditoria_ia_se_utilizada(
+            command=command,
+            evolucao_id=evolucao.id,
+            diff_ia=diff_ia,
+        )
         await self._session.commit()
         return evolucao
 

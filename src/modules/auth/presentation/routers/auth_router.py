@@ -66,7 +66,7 @@ async def mfa_setup(
 ) -> MfaSetupResponse:
     """Gera o segredo Base32 e URI otpauth:// para MFA no app do usuário."""
     setup_dto = await service.gerar_mfa_secret(user.usuario_id, user.organizacao_id)
-    return MfaSetupResponse(secret=setup_dto.secret, uri=setup_dto.uri)
+    return MfaSetupResponse.model_validate(setup_dto)
 
 
 @auth_router.post(
