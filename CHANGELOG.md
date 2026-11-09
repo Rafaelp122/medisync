@@ -1,3 +1,26 @@
+## v0.14.0 (2026-11-09)
+
+### Feat
+
+- **ambulatory**: modelo e servico de producao ambulatorial SUS BPA-I (US-11 / #78)
+- **frontend**: telas de autenticacao tripartida, LiveKit real, pos-consulta e painel do gestor (#132, #133, #134, #135)
+- **consultation**: guardioes clinicos 2026 (governanca de IA e trava 180s) e migracao 0011 (ADR-012 / #136)
+- **auth**: autenticacao tripartida com CADSUS e MFA/TOTP RFC 6238 nativo (ADR-012 / #135)
+
+### Fix
+
+- **review**: sanar apontamentos da revisao hostil da transicao 100% SUS (ADR-012)
+
+### Refactor
+
+- **ambulatory**: remover adapter privado de adapters __init__.py
+- **ambulatory**: transicao de billing para ambulatory e migracao 0010 de CNES
+- **frontend**: unificar configurações e constantes em módulo único tipado com Zod (settings.ts)
+
+### Perf
+
+- **queue**: admissao direta SUS constitucional sem latencia artificial e refatoracao do SusEligibilityAdapter (#137)
+
 ## v0.13.0 (2026-11-02)
 
 ### Feat
