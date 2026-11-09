@@ -15,11 +15,11 @@ O componente orquestrador (`VirtualWaitingRoom`) encapsula quatro salvaguardas e
 ## Procedimento
 
 ### 1. Inicialização e Restauração de Sessão
-Para que o paciente acesse a sala de espera, a sessão ativa deve conter `atendimentoId`, `token` e `pacienteId`. O `App.tsx` restaura a sessão do `localStorage` e renderiza automaticamente o componente:
+Para que o paciente acesse a sala de espera, a sessão ativa deve conter `atendimentoId`, `token` e `pacienteId`. A rota canônica `/fila` (`frontend/src/routes/fila.tsx`) valida a sessão através de Route Guard declarativo (`beforeLoad`) e renderiza a sala de espera:
 
 ```bash
-# Conferir chave canônica de sessão e restauração no App
-rg -n "MEDISYNC_SESSION_KEY|VirtualWaitingRoom" frontend/src/App.tsx
+# Conferir rota /fila e validação de sessão
+rg -n "getStoredSession|VirtualWaitingRoom|filaRoute" frontend/src/routes/fila.tsx
 ```
 
 ### 2. Acompanhamento em Tempo Real via WebSocket
@@ -67,7 +67,7 @@ Execute os testes de unidade e integração de tela da fila virtual:
 pnpm --dir frontend test src/features/queue/
 ```
 
-Valide a orquestração de sessão e transição no `App.tsx`:
+Valide a orquestração de rotas declarativas e transição no `App.test.tsx`:
 
 ```bash
 pnpm --dir frontend test src/App.test.tsx

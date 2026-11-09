@@ -1,7 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
 import { DoctorWorkstation } from "../components/doctor-workstation";
@@ -19,6 +19,10 @@ import {
 } from "./fixtures";
 
 describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     // Configura os handlers padrão para teleconsulta
     server.use(
@@ -413,5 +417,20 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
       },
       { timeout: 5000 },
     );
+  });
+
+  it("IT-DOC-11: Desconecta a sessão médica por inatividade clínica (Auto-Logout)", async () => {
+    vi.useFakeTimers();
+    const handleLogout = vi.fn();
+    renderWithProviders(<DoctorWorkstation onLogout={handleLogout} idleTimeoutMs={5000} />);
+
+    // Antes do timeout, onLogout não foi chamado
+    expect(handleLogout).not.toHaveBeenCalled();
+
+    // Avança o timer além do limite de inatividade
+    await vi.advanceTimersByTimeAsync(5000);
+
+    // onLogout deve ter sido invocado automaticamente
+    expect(handleLogout).toHaveBeenCalledTimes(1);
   });
 });

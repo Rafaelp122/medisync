@@ -59,6 +59,7 @@ Adotamos a **Opção 3: Arquitetura de Frontend SPA/PWA com React 19, Hey API e 
 
 ### 4.1 Pilha Tecnológica Base
 * **Runtime & Bundler**: Node.js v24+, `pnpm`, Vite e React 19 (modo SPA com suporte a Service Worker / PWA).
+* **Roteamento Declarativo Tipado**: `@tanstack/react-router` em modo code-based puro, garantindo rotas 100% tipadas em tempo de compilação sem geradores externos de build.
 * **Design System & Estilos**: Tailwind CSS com tokens semânticos clínicos (`globals.css`) e primitivas acessíveis do `shadcn/ui` (Radix UI).
 * **Contratos de API, Schemas e Mocks**: `@hey-api/openapi-ts` configurado com 4 plugins oficiais:
   1. `@hey-api/client-fetch`: cliente HTTP nativo ultraleve baseado no `fetch` do navegador e tipos TypeScript estritos (`types.gen.ts`).
@@ -79,10 +80,30 @@ Adotamos a **Opção 3: Arquitetura de Frontend SPA/PWA com React 19, Hey API e 
 ### 4.3 Estratégia de Testes (O Troféu de Testes)
 * **Estático**: `tsc --noEmit` em modo estrito (`strict: true`) e ESLint sobre os contratos gerados pelo Hey API.
 * **Unitário (Vitest)**: Exclusivo para funções puras de negócio (cálculo de score clínico, validação algorítmica de CPF/CNS, sanitização e refinamentos de schemas Zod).
-* **Integração de Componentes (Vitest + React Testing Library + MSW v2)**: Renderização de telas completas em ambiente `jsdom` com simulação de rede na camada HTTP via Mock Service Worker (MSW v2) usando factories tipadas de `@/api/generated/msw.gen`. Proibido mockar componentes ou hooks internos. Contagens regressivas locais utilizam `vi.useFakeTimers()` e `await vi.advanceTimersByTimeAsync()`, com teardown obrigatório em `afterEach(() => vi.useRealTimers())` e `afterEach(() => server.resetHandlers())`.
+* **Integração de Componentes e Rotas (Vitest + React Testing Library + MSW v2)**: Renderização de telas e rotas completas em ambiente `jsdom` com simulação de rede na camada HTTP via Mock Service Worker (MSW v2) usando factories tipadas de `@/api/generated/msw.gen`. Para testes de navegação cliente e Route Guards, utiliza-se `createMemoryHistory({ initialEntries })` sem acoplamento a APIs de janela (`window.location`). Proibido mockar componentes ou hooks internos. Contagens regressivas locais utilizam `vi.useFakeTimers()` e `await vi.advanceTimersByTimeAsync()`, com teardown obrigatório em `afterEach(() => vi.useRealTimers())` e `afterEach(() => server.resetHandlers())`.
 * **End-to-End & Colaboração (Playwright)**: Jornadas assistenciais completas no Chromium/Firefox com locators acessíveis (`getByRole`, `getByLabel`) e asserções web-first sem `sleep()` arbitrário. O timeout de 45 segundos de No-Show ([US-07](../user-stories/US-07-alocacao-chamada-medica.md)/[US-08](../user-stories/US-08-atendimento-chamada-no-show.md)) é testado determinística e instantaneamente via `page.clock.install()` invocado **obrigatoriamente antes de `page.goto()`**, avançando com `await page.clock.fastForward(45_000)`. A colaboração em tempo real médico-paciente utiliza múltiplos contextos isolados de navegador (`browser.newContext()`) com encerramento explícito (`await context.close()`).
 * **Acessibilidade Clínica Automatizada (WCAG 2.1 AA)**: Auditoria contínua com `@axe-core/playwright` configurado com tags canônicas `['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']` e validação de supressão de animações para pacientes sensíveis sob `@media (prefers-reduced-motion: reduce)`.
 * **Padrões Canônicos**: Detalhados em [Frontend Testing Patterns](../reference/testing/frontend-testing-patterns.md).
+
+### 4.4 Decomposição em Rotas Declarativas, Route Guards e Deep Linking (Issue #141)
+Para eliminar monolitos de estado (*god components*) na raiz do frontend, a navegação é orquestrada por rotas tipadas em `frontend/src/routes/`:
+1. **9 Rotas Canônicas Tipadas:**
+   - `/`: Recepção Virtual do Cidadão (`HomeLanding`), focada no paciente com cards assistenciais imediatos e link discreto de rodapé para a Área do Profissional.
+   - `/triagem`: Acolhimento e triagem clínica estruturada com TCLE digital (`ProgressiveOnboardingWizard`).
+   - `/otp`: Reconexão rápida passwordless por SMS/WhatsApp (`AuthOtpCard`).
+   - `/login`: Portal de credenciais da equipe médica e de gestão (`TripartiteAuthCard`).
+   - `/fila`: Sala de espera virtual do paciente, protegida por guarda de sessão com `atendimentoId`.
+   - `/chamada`: Teleconsulta LiveKit SFU em tela cheia com proteção contra vazamento de tokens na URL.
+   - `/pos-consulta`: Resumo de encerramento do atendimento e download de documentos ICP-Brasil.
+   - `/medico`: Estação de trabalho clínica do médico plantonista protegida por guarda de CRM e token médico.
+   - `/gestor`: Painel operacional de telemetria da gestão e consórcios intermunicipais.
+2. **Route Guards Síncronos (`beforeLoad`):**
+   - Interceptação de transição antes da renderização de componentes com `throw redirect({ to: '...' })`.
+   - Leitura de sessões isolada nos helpers puros de `frontend/src/lib/session-storage.ts`.
+3. **Passagem Segura de Credenciais de Mídia:**
+   - Tokens WebRTC de chamada (`LiveKitTokenResponse`) são passados via *Router Navigation State* e *Session Storage*, impedindo exposição em query strings ou URLs (ADR-010).
+4. **Composition Root Enxuto:**
+   - `frontend/src/App.tsx` atua exclusivamente como composição global de providers (`QueryClientProvider` e `RouterProvider`) em menos de 30 linhas.
 
 ---
 

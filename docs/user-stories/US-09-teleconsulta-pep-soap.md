@@ -44,14 +44,15 @@
 - **E** a interface do prontuário bloqueia preventivamente o comando de finalização e a assinatura de prescrições enquanto a identidade não for confirmada,
 - **E** a confirmação é registrada com carimbo de tempo oficial na evolução clínica do atendimento (ADR-007).
 
-### Cenário 5: Estação Médica Clínica Single-Pane (3 colunas integradas sem troca de abas)
-- **Dado que** o médico Dr. Eduardo Rocha acessa a estação clínica de telemedicina (`frontend/src/features/consultation/`),
+### Cenário 5: Estação Médica Clínica Single-Pane e Topologia de Rotas Teleconsulta (Issue #141)
+- **Dado que** o médico Dr. Eduardo Rocha acessa a rota protegida `/medico` (`frontend/src/routes/medico.tsx`) e a paciente acessa a sala de teleconsulta em `/chamada` (`frontend/src/routes/chamada.tsx`),
 - **Quando** aloca um paciente da fila virtual via "Chamar Próximo Paciente",
-- **Então** o sistema renderiza simultaneamente a tela unificada em 3 colunas:
+- **Então** o sistema renderiza simultaneamente a tela unificada do médico em 3 colunas:
   1. **Coluna 1 (Esquerda):** Mídia WebRTC LiveKit, badge passivo de TMA decorrido (RN06) e Gate CFM nº 2.314/2022 com conferência visual de RG/CNH/CNS;
   2. **Coluna 2 (Centro):** Prontuário Eletrônico com classificação Manchester e histórico de documentos clínicos emitidos;
   3. **Coluna 3 (Direita):** Editor SOAP estruturado, prescritor digital com salvaguarda da Portaria 344/98 e acionamento de conclusão com assinatura ICP-Brasil;
-- **E** todas as atualizações de formulários e controles WebRTC ocorrem sem perda de foco, sem re-renders indesejados da árvore e sem navegação entre abas.
+- **E** todas as atualizações de formulários e controles WebRTC ocorrem sem perda de foco, sem re-renders indesejados da árvore e sem navegação entre abas,
+- **E** ao finalizar a consulta médica ou desconectar a chamada, a paciente é automaticamente redirecionada para a rota pós-consulta `/pos-consulta` (`frontend/src/routes/pos-consulta.tsx`).
 
 ---
 
@@ -81,6 +82,7 @@
 - [x] **Imutabilidade e Salvaguarda:** Guardas de finalização bloqueiam alterações pós-fechamento e exigem verificação de identidade antes da emissão de prescrição digital (`PEPService.salvar_soap()`).
 - [x] **Apresentação Backend:** Router fino `consultation_router.py` integrado em `/api/v1/consultations`.
 - [x] **Frontend Workstation Single-Pane:**
+  - Rotas dedicadas: `/medico` (`frontend/src/routes/medico.tsx`), `/chamada` (`frontend/src/routes/chamada.tsx`) e `/pos-consulta` (`frontend/src/routes/pos-consulta.tsx`) (Issue #141)
   - Componente mestre: `frontend/src/features/consultation/components/doctor-workstation.tsx`
   - Painéis compostos: `video-pane.tsx`, `medical-records-pane.tsx`, `soap-editor.tsx`, `prescription-builder.tsx`, `cfm-identity-gate.tsx`, `finalize-consultation-modal.tsx`, `tma-timer-badge.tsx`
   - Hooks TanStack Query: `frontend/src/features/consultation/api/`

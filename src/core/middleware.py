@@ -170,15 +170,63 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
             logger.info(msg, extra={"extra_fields": log_extra})
 
 
-def setup_middlewares(app: FastAPI) -> None:
+def get_security_headers(debug: bool = False) -> dict[str, str]:
+    """Generates security headers tailored to runtime environment (OWASP ASVS v4.0)."""
+    script_src = (
+        "'self' 'unsafe-inline' https://cdn.jsdelivr.net" if debug else "'self'"
+    )
+    style_src = "'self' 'unsafe-inline' https://cdn.jsdelivr.net" if debug else "'self'"
+    connect_src = "'self' wss: ws: https:" if debug else "'self' wss: https:"
+
+    return {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(self), microphone=(self), geolocation=()",
+        "Content-Security-Policy": (
+            "default-src 'self'; "
+            f"script-src {script_src}; "
+            f"style-src {style_src}; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' data:; "
+            f"connect-src {connect_src}; "
+            "frame-ancestors 'none'; "
+            "object-src 'none'; "
+            "base-uri 'self'"
+        ),
+    }
+
+
+SECURITY_HEADERS: dict[str, str] = get_security_headers(debug=False)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Enforces essential HTTP security headers (CSP, Frame, Sniffing)."""
+
+    def __init__(self, app: Any, debug: bool = False) -> None:
+        super().__init__(app)
+        self.headers = get_security_headers(debug=debug)
+
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        response = await call_next(request)
+        for header_name, header_value in self.headers.items():
+            response.headers.setdefault(header_name, header_value)
+        return response
+
+
+def setup_middlewares(app: FastAPI, debug: bool = False) -> None:
     """Setup middlewares in correct execution order (outermost first).
 
     Execution order on incoming request:
-    1. RequestIDMiddleware (generates / binds request_id)
-    2. TenantResolutionMiddleware (binds tenant_id)
-    3. StructuredLoggingMiddleware (tracks latency & logs)
+    1. SecurityHeadersMiddleware (applies security headers to all responses)
+    2. RequestIDMiddleware (generates / binds request_id)
+    3. TenantResolutionMiddleware (binds tenant_id)
+    4. StructuredLoggingMiddleware (tracks latency & logs)
     """
     # Note: In Starlette, add_middleware prepends, so we add in reverse order of entry
     app.add_middleware(StructuredLoggingMiddleware)
     app.add_middleware(TenantResolutionMiddleware)
     app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware, debug=debug)

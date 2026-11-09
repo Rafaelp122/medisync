@@ -1,4 +1,4 @@
-import type { AdmissaoResponse } from "@/api/generated/types.gen";
+import type { AdmissaoResponse, LiveKitTokenResponse } from "@/api/generated/types.gen";
 import { settings } from "@/config/settings";
 
 export const MEDISYNC_SESSION_KEY = settings.storage.patientSession;
@@ -170,7 +170,7 @@ export function clearStoredDoctorSession(): void {
   }
 }
 
-export const MEDISYNC_MANAGER_SESSION_KEY = "medisync_manager_session";
+export const MEDISYNC_MANAGER_SESSION_KEY = settings.storage.managerSession;
 
 /**
  * Contrato da sessão do gestor municipal / regulação persistida no navegador.
@@ -244,5 +244,64 @@ export function clearStoredManagerSession(): void {
     window.localStorage.removeItem(MEDISYNC_MANAGER_SESSION_KEY);
   } catch {
     // Ignora erros de storage
+  }
+}
+
+export const MEDISYNC_CALL_DATA_KEY = settings.storage.callData;
+
+/**
+ * Recupera dados de conexão WebRTC da chamada ativa persistidos no sessionStorage.
+ */
+export function getStoredCallData(): LiveKitTokenResponse | null {
+  if (typeof window === "undefined" || !window.sessionStorage) {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(MEDISYNC_CALL_DATA_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<LiveKitTokenResponse>;
+    if (!parsed || typeof parsed !== "object" || !parsed.token || !parsed.server_url) {
+      clearStoredCallData();
+      return null;
+    }
+
+    return parsed as LiveKitTokenResponse;
+  } catch {
+    clearStoredCallData();
+    return null;
+  }
+}
+
+/**
+ * Persiste temporariamente os dados de conexão WebRTC no sessionStorage.
+ */
+export function saveStoredCallData(data: LiveKitTokenResponse): void {
+  if (typeof window === "undefined" || !window.sessionStorage) {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(MEDISYNC_CALL_DATA_KEY, JSON.stringify(data));
+  } catch {
+    // Tratamento silencioso
+  }
+}
+
+/**
+ * Remove atomicamente os dados da chamada encerrada do sessionStorage.
+ */
+export function clearStoredCallData(): void {
+  if (typeof window === "undefined" || !window.sessionStorage) {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem(MEDISYNC_CALL_DATA_KEY);
+  } catch {
+    // Ignora erros
   }
 }

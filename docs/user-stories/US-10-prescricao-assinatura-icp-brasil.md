@@ -12,7 +12,7 @@
 
 **Como** médico prescrevendo medicamentos em ambiente digital (Dr. Eduardo Rocha),  
 **Quero** que a plataforma valide salvaguardas farmacêuticas legais, gere um documento PDF/A-1b inviolável e o assine com certificado digital ICP-Brasil PAdES contendo QR Code do ITI,  
-**Para que** a paciente (Juliana) consiga dispensar a receita em qualquer farmácia do Brasil e o ato médico esteja plenamente blindado contra falsificações.
+**Para que** a paciente (Juliana) acesse os documentos na rota pós-consulta (`/pos-consulta`) e consiga dispensar a receita em qualquer farmácia do Brasil, com o ato médico plenamente blindado contra falsificações.
 
 ---
 
@@ -67,6 +67,7 @@
 - [x] **Compilador PDF/A:** ReportLab gerando PDF/A-1b com QR Code do ITI (`src/modules/consultation/infrastructure/pdf_generator.py`).
 - [x] **Assinador ICP-Brasil:** Adaptador PyHanko aplicando assinatura digital padrão ICP-Brasil PAdES (`src/modules/consultation/infrastructure/pyhanko_signer.py`).
 - [x] **Armazenamento em Nuvem:** Adaptador MinIO/S3 com chaves canônicas e portal de validação público (`src/modules/consultation/infrastructure/s3_storage.py`).
+- [x] **Frontend Pós-Consulta (Issue #141):** Rota `/pos-consulta` (`frontend/src/routes/pos-consulta.tsx`) para visualização de documentos assinados e download seguro.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_pyhanko_signer.py`
   - `tests/unit/test_pdf_generator.py`

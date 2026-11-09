@@ -63,3 +63,110 @@ def test_extract_tenant_from_auth_header():
         secret_key="wrong_secret_key_1234567890123456",
     )
     assert extract_tenant_from_auth_header(f"Bearer {bad_secret_token}") is None
+
+
+def test_security_headers_middleware_applies_all_headers():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.core.middleware import SECURITY_HEADERS, SecurityHeadersMiddleware
+
+    app = FastAPI()
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    @app.get("/test-headers")
+    def sample_endpoint():
+        return {"status": "ok"}
+
+    client = TestClient(app)
+    response = client.get("/test-headers")
+
+    assert response.status_code == 200
+    for header_name, header_value in SECURITY_HEADERS.items():
+        assert response.headers.get(header_name.lower()) == header_value
+
+
+def test_setup_middlewares_includes_security_headers():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.core.middleware import setup_middlewares
+
+    app = FastAPI()
+    setup_middlewares(app)
+
+    @app.get("/ping")
+    def ping_endpoint():
+        return {"ping": "pong"}
+
+    client = TestClient(app)
+    response = client.get("/ping")
+
+    assert response.status_code == 200
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert response.headers.get("x-frame-options") == "DENY"
+    assert response.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+    assert "default-src 'self'" in response.headers.get("content-security-policy", "")
+    assert "camera=(self)" in response.headers.get("permissions-policy", "")
+
+
+def test_security_headers_preserves_custom_headers():
+    from fastapi import FastAPI, Response
+    from fastapi.testclient import TestClient
+    from src.core.middleware import SecurityHeadersMiddleware
+
+    app = FastAPI()
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    @app.get("/custom-header")
+    def custom_endpoint(response: Response):
+        response.headers["x-frame-options"] = "SAMEORIGIN"
+        return {"status": "ok"}
+
+    client = TestClient(app)
+    response = client.get("/custom-header")
+    assert response.status_code == 200
+    assert response.headers.get("x-frame-options") == "SAMEORIGIN"
+    assert response.headers.get("x-content-type-options") == "nosniff"
+
+
+def test_security_headers_applied_on_unhandled_error():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.core.middleware import setup_middlewares
+
+    app = FastAPI()
+    setup_middlewares(app)
+
+    @app.get("/error")
+    def crash_endpoint():
+        raise RuntimeError("simulated crash")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/error")
+
+    assert response.status_code == 500
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert response.headers.get("x-frame-options") == "DENY"
+    assert "default-src 'self'" in response.headers.get("content-security-policy", "")
+
+
+def test_security_headers_debug_mode_vs_production_mode():
+    from src.core.middleware import get_security_headers
+
+    prod_headers = get_security_headers(debug=False)
+    debug_headers = get_security_headers(debug=True)
+
+    prod_csp = prod_headers["Content-Security-Policy"]
+    debug_csp = debug_headers["Content-Security-Policy"]
+
+    # Produção: estrito, sem unsafe-inline, sem cdn externo, sem ws: texto claro
+    assert "'unsafe-inline'" not in prod_csp
+    assert "cdn.jsdelivr.net" not in prod_csp
+    assert (
+        "ws:" not in prod_csp.split("connect-src")[1]
+    )  # garante que ws: não está no connect-src
+    assert "wss:" in prod_csp
+
+    # Debug: relaxado para Swagger UI e ws: local
+    assert "'unsafe-inline'" in debug_csp
+    assert "cdn.jsdelivr.net" in debug_csp
+    assert "ws:" in debug_csp

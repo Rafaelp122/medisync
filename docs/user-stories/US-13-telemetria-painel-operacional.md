@@ -22,9 +22,10 @@
 
 ## 2. Critérios de Aceite Formais (Gherkin)
 
-### Cenário 1: Consulta do Painel com métricas consolidadas (Caso Feliz)
+### Cenário 1: Consulta do Painel no Dashboard Gerencial (`/gestor`) (Caso Feliz - Issue #141)
 - **Dado que** o plantão possui atendimentos em andamento, concluídos e ausências registradas,
-- **Quando** o gestor acessa o painel operacional em `GET /api/v1/telemetria/painel`,
+- **E** o gestor acessa a rota protegida `/gestor` (`frontend/src/routes/gestor.tsx`) com sessão ativa (caso contrário o guard `beforeLoad` redireciona para `/login`),
+- **Quando** o painel operacional consulta `GET /api/v1/telemetria/painel`,
 - **Então** o sistema apresenta os indicadores consolidados de desempenho:
   1. Tempo Médio de Espera (TME) geral e estratificado pelos 5 níveis de triagem;
   2. Tempo Médio de Atendimento (TMA) real geral e detalhado por médico plantonista;
@@ -87,6 +88,7 @@
 - [x] **Acesso Clínico ao Painel (NC-TEL-02):** Dependência `require_telemetry_view_auth` permitindo `Role.MEDICO`, `Role.GESTOR_UNIDADE` e `Role.ADMIN_GLOBAL` no `GET /painel`, mantendo `config-plantao` restrito à gestão (`src/modules/telemetry/presentation/dependencies.py`).
 - [x] **Isolamento RLS Multi-Tenant (NC-SEC-01):** Tabela `configuracoes_plantao` coberta na suíte de testes de segurança com PostgreSQL real (`tests/integration/test_rls_security.py`).
 - [x] **Apresentação:** Router fino `telemetry_router.py` montado em `/api/v1/telemetria/painel`.
+- [x] **Frontend Rota & Painel Gestor (Issue #141):** Rota declarativa `/gestor` (`frontend/src/routes/gestor.tsx`) com guard `beforeLoad` validando sessão de gestor e redirecionamento para `/login`.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_telemetry_service.py`
   - `tests/unit/test_telemetry_infra.py`

@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Lock, LogOut, PhoneCall, Users } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { getActiveTenantId } from "@/api/client";
 import type { ChamarProximoResponse, DocumentoClinicoResponse } from "@/api/generated/types.gen";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -27,6 +27,7 @@ export interface DoctorWorkstationProps {
   token?: string;
   organizacaoId?: number;
   onLogout?: () => void;
+  idleTimeoutMs?: number;
 }
 
 /**
@@ -44,7 +45,36 @@ export function DoctorWorkstation({
   token,
   organizacaoId,
   onLogout,
+  idleTimeoutMs = 15 * 60 * 1000,
 }: DoctorWorkstationProps) {
+  // Inatividade Clínica (Auto-Logout em estações de pronto atendimento compartilhadas)
+  // Regras: CFM nº 2.314/2022, LGPD Art. 11, OWASP Session Management
+  useEffect(() => {
+    if (!onLogout) return;
+
+    let timer: ReturnType<typeof setTimeout>;
+
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        onLogout();
+      }, idleTimeoutMs);
+    };
+
+    const activityEvents = ["mousemove", "keydown", "click", "scroll", "touchstart"] as const;
+    for (const event of activityEvents) {
+      window.addEventListener(event, resetTimer, { passive: true });
+    }
+
+    resetTimer();
+
+    return () => {
+      clearTimeout(timer);
+      for (const event of activityEvents) {
+        window.removeEventListener(event, resetTimer);
+      }
+    };
+  }, [onLogout, idleTimeoutMs]);
   const [atendimentoAtivo, setAtendimentoAtivo] = useState<ChamarProximoResponse | null>(null);
   const [identidadeVerificada, setIdentidadeVerificada] = useState(false);
   const [documentoPendente, setDocumentoPendente] = useState<DocumentoClinicoResponse | null>(null);

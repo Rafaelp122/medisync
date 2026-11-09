@@ -74,7 +74,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # 2. Setup HTTP middlewares pipeline
-    setup_middlewares(app)
+    setup_middlewares(app, debug=settings.DEBUG)
 
     # 3. Configure CORSMiddleware
     cors_origins = ["*"] if settings.DEBUG else settings.CORS_ORIGINS
