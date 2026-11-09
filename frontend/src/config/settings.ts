@@ -111,6 +111,12 @@ export const storageSchema = z
     /** Chave da sessão corporativa do médico plantonista (LocalStorage) */
     doctorSession: z.string().default("medisync_doctor_session"),
 
+    /** Chave da sessão corporativa do gestor municipal / regulação (LocalStorage) */
+    managerSession: z.string().default("medisync_manager_session"),
+
+    /** Chave dos dados temporários de conexão WebRTC LiveKit (SessionStorage) */
+    callData: z.string().default("medisync_call_data"),
+
     /** Chave do tenant selecionado no navegador (LocalStorage) */
     tenantId: z.string().default("tenant_id"),
 

@@ -42,11 +42,12 @@
 - **Quando** submeto a requisição,
 - **Então** o sistema rejeita a admissão com HTTP 422 e mensagem explicativa sobre a obrigatoriedade legal do consentimento (LGPD Art. 11 / CFM 2.314).
 
-### Cenário 4: Persistência local da sessão e proteção contra abandono (Issue #113)
+### Cenário 4: Rota declarativa `/fila`, persistência local da sessão e proteção contra abandono (Issue #113, Issue #141)
 - **Dado que** concluí com sucesso a triagem e recebi o identificador do atendimento e a credencial provisória de acesso,
-- **Quando** recarrego a página acidentalmente (F5) ou fecho temporariamente a aba do navegador,
-- **Então** o sistema recupera atomicamente a credencial e o estado de admissão do storage local do navegador (`localStorage` sob a chave `medisync_session`),
-- **E** restaura a visualização direta da fila no Card Canônico de Ingresso Confirmado sem obrigar a paciente a reiniciar o formulário clínico do zero e ocultando as abas de seleção de modo.
+- **Quando** a admissão é confirmada,
+- **Então** o sistema navega declarativamente para a rota `/fila` (`frontend/src/routes/fila.tsx`),
+- **E** quando recarrego a página acidentalmente (F5) ou fecho temporariamente a aba do navegador,
+- **Então** o guard `beforeLoad` valida a sessão em `localStorage` sob a chave `medisync_session` e restaura a visualização direta da fila virtual sem reiniciar o formulário clínico do zero.
 
 ### Cenário 5: Proteção de Privacidade e Anti-Enumeração de Pacientes (LGPD Art. 11)
 - **Dado que** inicio o acolhimento emergencial informando CPF e telefone celular,
@@ -92,7 +93,7 @@
 - [x] **Apresentação:** Router fino `admissao_router.py` montado em `/api/v1/fila/admissao` com `AdmissaoResponse` expondo `tcle_hash` validado via `model_validate` (ADR-001).
 - [x] **Frontend (Fase 1 & TCLE):** `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx` e `frontend/src/features/onboarding/components/tcle-dialog.tsx` com cálculo de hash forense nativo Web Crypto API (`frontend/src/lib/validators.ts:calcularHashTcle`).
 - [x] **Frontend Hooks:** `frontend/src/features/onboarding/api/use-intake-fase1.ts` e `frontend/src/features/onboarding/api/use-admitir-paciente.ts`.
-- [x] **Sessão & Interceptor (Issue #113):** Persistência segura em `frontend/src/lib/session-storage.ts` (`medisync_session`) e injeção do cabeçalho `Authorization: Bearer <token>` em `frontend/src/api/client.ts`.
+- [x] **Sessão & Roteamento (Issue #113, Issue #141):** Persistência em `frontend/src/lib/session-storage.ts`, rotas declarativas `/triagem` (`frontend/src/routes/triagem.tsx`) e `/fila` (`frontend/src/routes/fila.tsx`) com guard `beforeLoad` e orquestração em `frontend/src/router.tsx`.
 - [x] **Testes Automatizados:**
   - Backend: `tests/unit/test_triage_model.py`, `tests/unit/test_admissao_service.py`, `tests/integration/test_admissao_integrada_flow.py`
   - Frontend Unitários: `frontend/src/lib/validators.test.ts`, `frontend/src/features/onboarding/schemas/onboarding-schema.test.ts`, `frontend/src/lib/session-storage.test.ts`, `frontend/src/api/client.test.ts`

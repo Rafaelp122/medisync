@@ -10,7 +10,7 @@
 
 ## 1. Narrativa da História (User Voice)
 
-**Como** médico plantonista ativo (Dr. Eduardo Rocha),  
+**Como** médico plantonista ativo na estação de telemedicina (`/medico`) (Dr. Eduardo Rocha),  
 **Quero** clicar em *"Chamar Próximo"* e receber instantaneamente o paciente mais prioritário da fila com garantia de exclusividade absoluta,  
 **Para que** eu nunca dispute o mesmo paciente com outro médico (zero overbooking) e inicie a chamada com segurança em menos de 10 milissegundos.
 
@@ -19,7 +19,7 @@
 ## 2. Critérios de Aceite Formais (Gherkin)
 
 ### Cenário 1: Convocação atômica do paciente mais prioritário (Caso Feliz)
-- **Dado que** estou autenticado como médico (`Role.MEDICO`) e não possuo nenhuma consulta ativa em andamento,
+- **Dado que** estou autenticado como médico (`Role.MEDICO`) na rota protegida `/medico` (`frontend/src/routes/medico.tsx`) e não possuo nenhuma consulta ativa em andamento,
 - **E** a fila possui pacientes nos Níveis 3 e 2 aguardando aptos,
 - **Quando** solicito o próximo atendimento em `POST /api/v1/fila/chamar-proximo`,
 - **Então** o sistema aloca com exclusividade o paciente apto de maior urgência clínica e maior tempo de espera,
@@ -84,6 +84,7 @@
 - [x] **Latência Submilisegundo:** Tempo de resposta comprovado em suíte de teste de estresse concorrente.
 - [x] **Agendamento do Timeout:** Enfileiramento do job ARQ `ring_timeout_task` com `_defer_by=45` (`src/worker/tasks/ring_timeout.py`).
 - [x] **Apresentação:** Router fino `alocacao_router.py` montado em `/api/v1/fila/chamar-proximo` com `ChamarProximoResponse` validado via `model_validate` e expondo `paciente_id` e `prioridade_clinica` (ADR-001/ADR-008).
+- [x] **Frontend Rota & Workstation (Issue #141):** Rota declarativa `/medico` (`frontend/src/routes/medico.tsx`) com guard `beforeLoad` validando sessão médica e estação single-pane.
 - [x] **Frontend Ring Modal (RF-03, RN02):** Modal fullscreen `IncomingCallRingModal` com contagem regressiva de 45 segundos, chime sonoro sintetizado em Web Audio API e auto-dismiss (`frontend/src/features/queue/components/incoming-call-ring-modal.tsx`).
 - [x] **Testes Automatizados:**
   - Backend: `tests/unit/test_queue_schemas.py`, `tests/unit/test_alocacao_service.py`, `tests/unit/test_alocacao_router.py`, `tests/integration/test_alocar_chamada_concurrency.py`, `tests/integration/test_ring_timeout_flow.py`

@@ -199,7 +199,31 @@ No endpoint `POST /consultations/{atendimento_id}/livekit/token`:
 
 ---
 
-## 6. Rastreabilidade de Implementação
+## 6. Hardening de Borda HTTP e Proteção de Sessão (OWASP ASVS v4.0)
+
+Para mitigar riscos de exfiltração de credenciais, sequestro de clique (*clickjacking*) e injeções maliciosas, o sistema adota medidas combinadas de borda e cliente:
+
+### 6.1 Middleware de Cabeçalhos de Segurança HTTP (`src/core/middleware.py:SecurityHeadersMiddleware`)
+Todas as respostas HTTP emitidas pela API passam pelo `SecurityHeadersMiddleware`, que injeta:
+* **`Content-Security-Policy`**: Restringe fontes de script, estilo, mídia e conexões WebSockets. Em produção (`DEBUG=False`), opera com restrição estrita (`'self'`, sem `'unsafe-inline'`, sem CDNs e conexões `connect-src 'self' wss: https:`). Em desenvolvimento local (`DEBUG=True`), habilita relaxamento estrito para o Swagger UI e `ws:` local. Em todos os perfis, bloqueia frames (`frame-ancestors 'none'`) e objetos (`object-src 'none'`).
+* **`X-Content-Type-Options: nosniff`**: Impede que navegadores executem arquivos interpretando tipos MIME incorretos.
+* **`X-Frame-Options: DENY`**: Bloqueia ataques de clickjacking em toda a aplicação.
+* **`Referrer-Policy: strict-origin-when-cross-origin`**: Previne vazamento de URLs internas em requisições de saída.
+* **`Permissions-Policy: camera=(self), microphone=(self), geolocation=()`**: Autoriza acesso a periféricos de áudio e vídeo estritamente na mesma origem (essencial para LiveKit WebRTC).
+* **Delegação de HSTS ao Proxy Reverso:** Conforme padrão OWASP ASVS 14.4.1, o cabeçalho `Strict-Transport-Security` (`max-age=31536000; includeSubDomains; preload`) é injetado pelo Reverse Proxy/Ingress Gateway (Traefik/Cloudflare/Nginx) na terminação TLS de produção, mantendo a aplicação desacoplada de certificados locais em desenvolvimento.
+
+### 6.2 Encerramento por Inatividade Clínica (`frontend/src/features/consultation/components/doctor-workstation.tsx`)
+Conforme a Resolução CFM nº 2.314/2022 e LGPD Art. 11, estações médicas em prontos-socorros operam em ambientes compartilhados. O componente `DoctorWorkstation` monitora a interação do usuário (`mousemove`, `keydown`, `click`, `scroll`, `touchstart`) e dispara o auto-logout imediato após 15 minutos de inatividade ininterrupta (`idleTimeoutMs = 900_000`), sincronizado ao tempo de vida do access token corporativo.
+
+### 6.3 Roteiro de Médio Prazo: Cookies HttpOnly e Memória Volátil (Issue #144)
+Para eliminar por completo a superfície de ataque por XSS contra credenciais em `localStorage`, a arquitetura planeja a migração para o padrão *Token Handler*:
+* **Refresh Token em Cookie HttpOnly:** Atributos `Secure; SameSite=Strict; Path=/api/v1/auth`, invisível a scripts maliciosos no navegador.
+* **Access Token em Memória Volátil:** Armazenado exclusivamente em closure JavaScript, com renovação transparente em background (*silent refresh*) em 401 ou reload de página.
+* **Planejamento Formal:** Especificado na Issue #144 (`[Security/Compliance]: Migração de Sessões para Cookies HttpOnly, SameSite=Strict e Access Tokens em Memória Volátil`).
+
+---
+
+## 7. Rastreabilidade de Implementação
 
 A arquitetura descrita é implementada e auditada através das seguintes issues do repositório:
 
@@ -210,3 +234,5 @@ A arquitetura descrita é implementada e auditada através das seguintes issues 
 * **[Issue #12](https://github.com/Rafaelp122/medisync/issues/12)**: `feat(identity): implement progressive 2-phase onboarding API and dependent management` (Cadastro Progressivo do Paciente).
 * **[Issue #40](https://github.com/Rafaelp122/medisync/issues/40)**: `fix(identity): implementar prova de posse via intake token no onboarding Fase 2 e dependentes` (Blindagem contra IDOR no Onboarding e Dependentes).
 * **[Issue #42](https://github.com/Rafaelp122/medisync/issues/42)**: `feat(security): blindar emissão de tokens LiveKit e autenticar WebSockets com códigos 4401/4403 e guards ReBAC` (Segurança em WebSockets e LiveKit SFU).
+* **[Issue #141](https://github.com/Rafaelp122/medisync/issues/141)**: `refactor(frontend): decomposição de rotas canônicas e TanStack Router com guards de acesso`.
+* **[Issue #144](https://github.com/Rafaelp122/medisync/issues/144)**: `feat(security): migração de sessões para Cookies HttpOnly, SameSite=Strict e tokens em memória volátil`.

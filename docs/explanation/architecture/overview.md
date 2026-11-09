@@ -87,7 +87,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     subgraph ClientLayer["Camada de Cliente"]
-        WebPWA["Frontend Web SPA / PWA<br/>[TypeScript + Tailwind + WebRTC]"]
+        WebPWA["Frontend Web SPA / PWA<br/>[TypeScript + React 19 + TanStack Router + WebRTC]"]
     end
 
     subgraph AppLayer["Camada de Aplicação (Backend)"]
@@ -114,6 +114,20 @@ flowchart TD
     Worker -->|Consome Tarefas| Cache
     Worker -->|Persiste Transições| DB
 ```
+
+### 2.1 Topologia de Roteamento SPA/PWA e Deep Linking (ADR-011 / Issue #141)
+
+O frontend adota o **TanStack Router (`@tanstack/react-router`)** com roteamento declarativo e 100% tipado (*code-based*), eliminando god components e estabelecendo rotas canônicas finas (< 85 linhas, média < 55 linhas):
+- **`/`**: Recepção Virtual do Cidadão (`HomeLanding`), com cards assistenciais de urgência e link discreto no rodapé para a Área do Profissional.
+- **`/triagem`**: Acolhimento e triagem clínica estruturada com TCLE digital (`ProgressiveOnboardingWizard`).
+- **`/otp`**: Reconexão rápida passwordless por SMS/WhatsApp (`AuthOtpCard`).
+- **`/login`**: Portal de credenciais da equipe médica e de gestão (`TripartiteAuthCard`).
+- **`/fila`**: Sala de espera virtual (`VirtualWaitingRoom`) protegida por Route Guard (`beforeLoad`) que valida sessão com `atendimentoId`.
+- **`/chamada`**: Sala de teleconsulta LiveKit SFU em tela cheia com proteção contra vazamento de credenciais JWT em URLs.
+- **`/pos-consulta`**: Sumário de encerramento (`PosConsultaSummary`) e download de receitas ICP-Brasil.
+- **`/medico`**: Estação clínica do médico plantonista (`DoctorWorkstation`) restrita a sessões médicas (redireciona para `/login` se ausente).
+- **`/gestor`**: Painel de telemetria operacional (`PainelGestor`) restrito ao perfil de gestão (redireciona para `/login` se ausente).
+- **`*` (Catch-all)**: Redirecionamento determinístico para `/` em rotas não mapeadas.
 
 ### 3. Decomposição Modular dos 7 Bounded Contexts (`src/modules/`)
 
@@ -150,6 +164,8 @@ A integridade arquitetural do monólito modular é fiscalizada pelo **Tach** via
 ## Onde no código
 
 - Impl: `src/main.py:app`
+- Impl: `frontend/src/router.tsx:createAppRouter`
+- Impl: `frontend/src/App.tsx:App`
 - Impl: `src/core/database.py`
 - Impl: `src/core/valkey.py`
 - Impl: `src/modules/queue/composition.py`
@@ -160,12 +176,14 @@ A integridade arquitetural do monólito modular é fiscalizada pelo **Tach** via
 - Impl: `src/modules/triage/composition.py`
 - Impl: `src/modules/telemetry/composition.py`
 - Spec: `tach.toml`
+- Spec: `docs/adrs/ADR-011-Arquitetura-Frontend-SPA-PWA-e-Estrategia-de-Testes.md`
 - Spec: `docs/reference/architecture-standards/tach-boundaries-matrix.md`
 - Spec: `docs/reference/database/schema-and-rls.md`
 - Spec: `docs/reference/valkey/keys-dictionary.md`
 - Spec: `docs/reference/worker/arq-tasks.md`
 - Spec: `docs/reference/api/websocket-channels.md`
 - Spec: `docs/adrs/ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md`
+- Prova viva: `frontend/src/App.test.tsx`
 - Prova viva: `tests/architecture/test_main_composition_root.py`
 - Prova viva: `tests/architecture/test_routers_are_thin.py`
 - Prova viva: `tests/architecture/test_services_and_composition.py`

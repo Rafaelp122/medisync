@@ -19,14 +19,15 @@
 ## 2. Critérios de Aceite Formais (Gherkin)
 
 ### Cenário 1: Paciente ingressa na teleconsulta dentro dos 45 segundos (Caso Feliz)
-- **Dado que** o atendimento está no status de chamada ativa (`CHAMANDO_PACIENTE`) com contagem regressiva de 45 segundos,
+- **Dado que** o atendimento está no status de chamada ativa (`CHAMANDO_PACIENTE`) com contagem regressiva de 45 segundos na rota `/fila` (`frontend/src/routes/fila.tsx`),
 - **Quando** a paciente clica em entrar na consulta e solicita o token de acesso à sala em `POST /api/v1/consultations/{atendimento_id}/livekit/token`,
 - **Então** o sistema valida que o atendimento está aguardando o ingresso da paciente,
 - **E** transiciona o atendimento para `EM_ATENDIMENTO`,
 - **E** persiste atomicamente o evento auditável 'CHAMADA_ATENDIDA' na trilha append-only (ADR-007),
 - **E** cancela e neutraliza a contagem regressiva de no-show de 45 segundos,
 - **E** promove o lock temporário de chamada em lock de consulta médica ativa,
-- **E** retorna o token assinado e metadados de conexão à sala de videoconferência (HTTP 200 OK).
+- **E** retorna o token assinado e metadados de conexão à sala de videoconferência (HTTP 200 OK),
+- **E** navega a paciente declarativamente da rota `/fila` para a rota `/chamada` (`frontend/src/routes/chamada.tsx`) repassando as credenciais da sala.
 
 ### Cenário 2: Paciente não ingressa em 45 segundos (Resolução Determinística de No-Show)
 - **Dado que** a chamada foi iniciada e decorreram 45 segundos sem que a paciente tenha ingressado na teleconsulta,
@@ -36,7 +37,8 @@
 - **E** persiste atomicamente o evento auditável 'TIMEOUT_CHAMADA_NO_SHOW' na trilha append-only (ADR-007),
 - **E** desfaz a reserva temporária do médico e do atendimento,
 - **E** notifica o médico via canal em tempo real de que a paciente não compareceu,
-- **E** libera imediatamente o painel do médico para convocar o próximo paciente da fila.
+- **E** libera imediatamente o painel do médico para convocar o próximo paciente da fila,
+- **E** no frontend, o modal fecha automaticamente mantendo a paciente na rota `/fila` com feedback visual de ausência sem travar a interface.
 
 ### Cenário 3: Tentativa de ingresso após expiração do tempo (No-Show já consolidado)
 - **Dado que** o atendimento já transicionou para `PACIENTE_AUSENTE` após a expiração dos 45 segundos,
@@ -88,6 +90,7 @@
 - [x] **Worker de No-Show:** Tarefa assíncrona `ring_timeout_task` libera locks e transiciona para `PACIENTE_AUSENTE` (`src/worker/tasks/ring_timeout.py`).
 - [x] **Integração de Ingresso (NC-QUE-03):** Acionar `Atendimento.atender_chamada()` e neutralização do timeout na emissão de token LiveKit do paciente em `TeleconsultaService` (`src/modules/consultation/application/services/teleconsulta_service.py`).
 - [x] **Frontend Teleconsulta Hook (RF-03):** Hook headless `useAtenderChamada` para emissão do token LiveKit via Hey API (`frontend/src/features/queue/api/use-atender-chamada.ts`).
+- [x] **Frontend Rotas Declarativas (Issue #141):** Roteamento tipado com transição de `/fila` para `/chamada` (`frontend/src/routes/chamada.tsx`) e proteção por guard `beforeLoad`.
 - [x] **Frontend No-Show Determinístico:** Auto-dismiss da chamada após 45 segundos e exibição de card de ausência sem travar a interface (`frontend/src/features/queue/components/incoming-call-ring-modal.tsx`).
 - [x] **Testes Automatizados:**
   - Backend: `tests/unit/test_atendimento_model.py`, `tests/unit/test_livekit_dependencies.py`, `tests/integration/test_ring_timeout_flow.py`, `tests/integration/test_livekit_lifecycle.py`
