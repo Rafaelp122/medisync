@@ -1,11 +1,6 @@
-import { createRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { PosConsultaSummary } from "@/features/consultation/components/pos-consulta-summary";
-import {
-  clearStoredCallData,
-  clearStoredSession,
-  getStoredSession,
-  type StoredPatientSession,
-} from "@/lib/session-storage";
+import { createRoute, redirect } from "@tanstack/react-router";
+import { PostConsultationPage } from "@/features/consultation/pages/post-consultation-page";
+import { getStoredSession, type StoredPatientSession } from "@/lib/session-storage";
 import { rootRoute } from "./root";
 
 export const posConsultaRoute = createRoute({
@@ -18,24 +13,8 @@ export const posConsultaRoute = createRoute({
     }
     return { session };
   },
-  component: PosConsultaPage,
+  component: function RouteComponent() {
+    const { session } = posConsultaRoute.useRouteContext() as { session: StoredPatientSession };
+    return <PostConsultationPage session={session} />;
+  },
 });
-
-function PosConsultaPage() {
-  const navigate = useNavigate();
-  const { session } = posConsultaRoute.useRouteContext() as { session: StoredPatientSession };
-
-  const handleNovaConsulta = () => {
-    clearStoredSession();
-    clearStoredCallData();
-    navigate({ to: "/" });
-  };
-
-  return (
-    <PosConsultaSummary
-      atendimentoId={session.atendimentoId ?? ""}
-      token={session.token}
-      onNovaConsulta={handleNovaConsulta}
-    />
-  );
-}

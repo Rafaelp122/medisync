@@ -160,7 +160,7 @@ def test_security_headers_debug_mode_vs_production_mode():
 
     # Produção: estrito, sem unsafe-inline, sem cdn externo, sem ws: texto claro
     assert "'unsafe-inline'" not in prod_csp
-    assert "cdn.jsdelivr.net" not in prod_csp
+    assert "https://cdn.jsdelivr.net" not in prod_csp
     assert (
         "ws:" not in prod_csp.split("connect-src")[1]
     )  # garante que ws: não está no connect-src
@@ -168,5 +168,5 @@ def test_security_headers_debug_mode_vs_production_mode():
 
     # Debug: relaxado para Swagger UI e ws: local
     assert "'unsafe-inline'" in debug_csp
-    assert "cdn.jsdelivr.net" in debug_csp
+    assert "https://cdn.jsdelivr.net" in debug_csp
     assert "ws:" in debug_csp

@@ -1,10 +1,6 @@
-import { createRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { PainelGestor } from "@/features/telemetry/components/painel-gestor";
-import {
-  clearStoredManagerSession,
-  getStoredManagerSession,
-  type StoredManagerSession,
-} from "@/lib/session-storage";
+import { createRoute, redirect } from "@tanstack/react-router";
+import { TelemetryDashboardPage } from "@/features/telemetry/pages/telemetry-dashboard-page";
+import { getStoredManagerSession, type StoredManagerSession } from "@/lib/session-storage";
 import { rootRoute } from "./root";
 
 export const gestorRoute = createRoute({
@@ -17,25 +13,10 @@ export const gestorRoute = createRoute({
     }
     return { managerSession };
   },
-  component: GestorPage,
+  component: function RouteComponent() {
+    const { managerSession } = gestorRoute.useRouteContext() as {
+      managerSession: StoredManagerSession;
+    };
+    return <TelemetryDashboardPage managerSession={managerSession} />;
+  },
 });
-
-function GestorPage() {
-  const navigate = useNavigate();
-  const { managerSession } = gestorRoute.useRouteContext() as {
-    managerSession: StoredManagerSession;
-  };
-
-  const handleManagerLogout = () => {
-    clearStoredManagerSession();
-    navigate({ to: "/login" });
-  };
-
-  return (
-    <PainelGestor
-      token={managerSession.token}
-      gestorNome={managerSession.nome}
-      onLogout={handleManagerLogout}
-    />
-  );
-}

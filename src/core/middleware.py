@@ -11,6 +11,7 @@ from starlette.middleware.base import (
     BaseHTTPMiddleware,
     RequestResponseEndpoint,
 )
+from starlette.types import ASGIApp
 
 from src.core.context import (
     reset_current_request_id,
@@ -171,7 +172,11 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
 
 
 def get_security_headers(debug: bool = False) -> dict[str, str]:
-    """Generates security headers tailored to runtime environment (OWASP ASVS v4.0)."""
+    """Gera mapa de cabeçalhos HTTP estritos de proteção de borda.
+
+    Regras: docs/explanation/architecture/security-and-authorization.md §6.1,
+    OWASP ASVS v4.0 e ADR-010.
+    """
     script_src = (
         "'self' 'unsafe-inline' https://cdn.jsdelivr.net" if debug else "'self'"
     )
@@ -201,9 +206,13 @@ SECURITY_HEADERS: dict[str, str] = get_security_headers(debug=False)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Enforces essential HTTP security headers (CSP, Frame, Sniffing)."""
+    """Injeta cabeçalhos HTTP de segurança estrita em todas as respostas da API.
 
-    def __init__(self, app: Any, debug: bool = False) -> None:
+    Regras: docs/explanation/architecture/security-and-authorization.md §6.1,
+    OWASP ASVS v4.0 e ADR-010.
+    """
+
+    def __init__(self, app: ASGIApp, debug: bool = False) -> None:
         super().__init__(app)
         self.headers = get_security_headers(debug=debug)
 

@@ -1,14 +1,13 @@
 import { createRoute, redirect } from "@tanstack/react-router";
 import { HomeLanding } from "@/features/home/components/home-landing";
+import { entrySearchSchema } from "@/features/onboarding/schemas/entry-search-schema";
 import { getStoredDoctorSession, getStoredManagerSession } from "@/lib/session-storage";
 import { rootRoute } from "./root";
 
 export const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  validateSearch: (search: Record<string, unknown>) => ({
-    mode: typeof search.mode === "string" ? search.mode : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>) => entrySearchSchema.parse(search),
   beforeLoad: ({ search }) => {
     // Retrocompatibilidade para deep links legados baseados em query params
     if (search.mode === "otp") {

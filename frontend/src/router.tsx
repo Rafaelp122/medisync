@@ -1,10 +1,11 @@
-import { QueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   createBrowserHistory,
   createRouter,
   Navigate,
   type RouterHistory,
 } from "@tanstack/react-router";
+import { defaultQueryClient } from "@/lib/query-client";
 import { chamadaRoute } from "@/routes/chamada";
 import { filaRoute } from "@/routes/fila";
 import { gestorRoute } from "@/routes/gestor";
@@ -32,7 +33,7 @@ export { isReducedMotionPreferred } from "@/lib/view-transitions";
 
 export function createAppRouter(
   history?: RouterHistory,
-  queryClient: QueryClient = new QueryClient(),
+  queryClient: QueryClient = defaultQueryClient,
 ) {
   return createRouter({
     routeTree,

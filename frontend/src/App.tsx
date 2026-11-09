@@ -1,15 +1,8 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
+import { defaultQueryClient } from "@/lib/query-client";
 import { router } from "@/router";
-
-const defaultQueryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5_000,
-      retry: 1,
-    },
-  },
-});
 
 export interface AppProps {
   customRouter?: typeof router;
