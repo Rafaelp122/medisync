@@ -87,25 +87,16 @@ def test_telemetry_cache_resolution() -> None:
         assert isinstance(cache_valkey, ValkeyTelemetryCache)
 
 
-def test_billing_service_resolution() -> None:
-    from src.modules.billing.composition import build_elegibilidade_service
-    from src.modules.billing.infrastructure.adapters.private_gateway_adapter import (
-        PrivateInsuranceGatewayAdapter,
-    )
-    from src.modules.billing.infrastructure.adapters.sus_adapter import (
+def test_ambulatory_service_resolution() -> None:
+    from src.modules.ambulatory.composition import build_elegibilidade_service
+    from src.modules.ambulatory.infrastructure.adapters.sus_adapter import (
         SusEligibilityAdapter,
     )
 
-    sus_service = build_elegibilidade_service(is_sus=True)
+    sus_service = build_elegibilidade_service()
     assert isinstance(
         sus_service._provider,  # pyright: ignore[reportPrivateUsage]
         SusEligibilityAdapter,
-    )
-
-    private_service = build_elegibilidade_service(is_sus=False)
-    assert isinstance(
-        private_service._provider,  # pyright: ignore[reportPrivateUsage]
-        PrivateInsuranceGatewayAdapter,
     )
 
 

@@ -94,10 +94,7 @@ async def test_admitir_paciente_records_admissao_audit_event(
     )
 
     result = await fila_service.admitir_paciente(cmd)
-    assert (
-        result.status_atendimento
-        == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
-    )
+    assert result.status_atendimento == StatusAtendimento.APTO_PARA_CHAMADA.value
 
     events = fake_audit_trail.get_events_by_type("ADMISSAO_PACIENTE")
     assert len(events) == 1
@@ -107,7 +104,7 @@ async def test_admitir_paciente_records_admissao_audit_event(
     assert evt["ator_papel"] == AtorPapel.PACIENTE.value
     assert evt["ator_id"] == paciente_id
     assert evt["tcle_hash"] == tcle_hash
-    assert evt["novo_estado"] == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
+    assert evt["novo_estado"] == StatusAtendimento.APTO_PARA_CHAMADA.value
     assert evt["payload"]["prioridade_clinica"] == PrioridadeClinica.POUCO_URGENTE
 
 

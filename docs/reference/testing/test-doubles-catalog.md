@@ -24,8 +24,9 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 | `FakeICPBrasilSigner` | `ICPBrasilSignerPort` (`src.modules.consultation`) | `assinar_pdf(pdf_bytes, credenciais, metadata)` | `calls: list[tuple]` (histórico de invocações com bytes e credenciais), `signed_suffix: bytes`. |
 | `FakeMemoryStorage` | `StoragePort` (`src.modules.consultation`) | `salvar_documento()`, `obter_documento()`, `gerar_url_pre_assinada()` | `contains(chave) -> bool`, `clear()`, dicionário `_storage: dict[str, bytes]`. Lança erro se chave ausente. |
 | `FakeArqPool` / `FakeArqJob` | `arq.connections.ArqRedis` | `enqueue_job(function_name, *args, **kwargs)` | `enqueued_jobs: list[dict]` (registros de jobs enfileirados com args e kwargs), `default_job_id: str`. |
-| `FakeEligibilityProvider` | `EligibilityProviderPort` (`src.modules.billing`) | `verificar_elegibilidade(requisicao)` | `requisicoes: list[Any]` (histórico de requisições enviadas), `resultado: ResultadoElegibilidade`. |
-| `FakeElegibilidadeNotifier` | `ElegibilidadeNotifierPort` (`src.modules.billing`) | `notificar_falha(evento)` | `eventos_falha: list[ElegibilidadeFalhaEvent]` (histórico ordenado de alertas de recusa/timeout emitidos). |
+| `FakeEligibilityProvider` | `EligibilityProviderPort` (`src.modules.ambulatory`) | `verificar_elegibilidade(requisicao)` | `requisicoes: list[Any]` (histórico de requisições enviadas), `resultado: ResultadoElegibilidade`. |
+| `FakeElegibilidadeNotifier` | `ElegibilidadeNotifierPort` (`src.modules.ambulatory`) | `notificar_falha(evento)` | `eventos_falha: list[ElegibilidadeFalhaEvent]` (histórico ordenado de alertas de recusa/timeout emitidos). |
+
 | `MemoryTokenRevocation` | `TokenRevocationPort` (`src.modules.auth`) | `revogar(jti, exp_segundos)`, `is_revogado(jti)` | `_revoked: set[str]` (conjunto em memória de identificadores JWT invalidados). |
 | `FakeAtendimentoReader` | `AtendimentoReaderPort` (`src.modules.consultation`) | `obter_resumo()`, `concluir_atendimento()`, `atender_chamada()` | `resumo: AtendimentoResumoDTO | None`, `chamada_atendida: bool`, `atendimento_concluido: bool`. |
 | `FakeValkey` / `FakePubSub` | Protocolo Valkey / Redis Pub/Sub | `publish(canal, msg)`, `pubsub()`, `subscribe()`, `listen()` | Filas thread-safe `queue.Queue` em memória para testes de WebSockets e SSE sem infraestrutura externa. |
@@ -78,12 +79,13 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Spec: `src/modules/consultation/application/ports/icp_brasil_signer_port.py:ICPBrasilSignerPort`
 - Spec: `src/modules/consultation/application/ports/storage_port.py:StoragePort`
 - Spec: `src/modules/consultation/application/ports/atendimento_reader_port.py:AtendimentoReaderPort`
-- Spec: `src/modules/billing/application/ports/eligibility_provider.py:EligibilityProviderPort`
-- Spec: `src/modules/billing/application/ports/eligibility_notifier.py:ElegibilidadeNotifierPort`
+- Spec: `src/modules/ambulatory/application/ports/eligibility_provider.py:EligibilityProviderPort`
+- Spec: `src/modules/ambulatory/application/ports/eligibility_notifier.py:ElegibilidadeNotifierPort`
 - Spec: `src/modules/auth/application/ports/token_revocation_port.py:TokenRevocationPort`
 - Prova viva: `tests/unit/test_factories.py:test_seed_clinical_scenario_with_fake_session`
 - Prova viva: `tests/unit/test_pyhanko_signer.py:test_fake_icp_brasil_signer_success`
-- Prova viva: `tests/unit/test_billing_eligibility.py:test_elegibilidade_service_emits_failure_event_on_rejection`
+- Prova viva: `tests/unit/test_ambulatory_production.py:test_elegibilidade_service_emits_failure_event_on_rejection`
+
 - Prova viva: `tests/unit/test_token_revocation.py:test_memory_token_revocation`
 - Prova viva: `tests/unit/test_documento_service.py:test_emitir_gera_chave_canonica_sem_legado`
 - Prova viva: `tests/unit/test_livekit_dependencies.py:test_validar_acesso_livekit_paciente_ausente_retorna_conflict_error`

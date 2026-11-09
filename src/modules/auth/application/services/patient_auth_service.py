@@ -6,6 +6,7 @@ import json
 import logging
 import secrets
 import time
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from redis.asyncio import Redis
 from src.core.authz.roles import Role
 from src.core.authz.token import create_access_token
 from src.core.errors import TenantInvalidoError
+from src.core.privacy import mascarar_cns, mascarar_cpf
 from src.core.uuid7 import uuid7
 from src.modules.auth.application.dtos import (
     SolicitarOtpInputDTO,
@@ -418,5 +420,69 @@ class PatientAuthService:
             token_type="bearer",  # noqa: S106
             expires_in=self._access_token_expire_minutes * 60,
             paciente_id=paciente_id,
+            role=Role.PACIENTE.value,
+        )
+
+    async def autenticar_cadsus_govbr(
+        self,
+        organizacao_id: int,
+        cpf: str | None = None,
+        data_nascimento: date | None = None,
+        cns: str | None = None,
+        nome_mae: str | None = None,
+    ) -> VerificarOtpOutputDTO:
+        """Autenticação sem senha via CADSUS/Gov.br por desambiguação de dados civis.
+
+        Regras: ADR-005, RF-01, CFM nº 2.314/2022 e auth-domain.md.
+        """
+        if self._identity_reader is None:
+            raise ValueError(
+                "IdentityReaderPort não configurado no PatientAuthService."
+            )
+        if organizacao_id <= 0:
+            raise TenantInvalidoError(
+                f"Identificador da organização '{organizacao_id}' deve ser "
+                "positivo; esperado valor > 0."
+            )
+
+        clean_cpf = validate_cpf(cpf) if cpf else None
+        clean_cns = cns.strip() if cns and cns.strip() else None
+
+        if not clean_cpf and not clean_cns:
+            raise PacienteNaoEncontradoError(
+                "Desambiguação CADSUS exige ao menos CPF ou CNS válido para "
+                "autenticação sem senha."
+            )
+
+        paciente = await self._identity_reader.buscar_paciente_cadsus(
+            organizacao_id=organizacao_id,
+            cpf=clean_cpf,
+            data_nascimento=data_nascimento,
+            cns=clean_cns,
+            nome_mae=nome_mae,
+        )
+        if paciente is None:
+            cpf_masked = mascarar_cpf(clean_cpf) if clean_cpf else "N/A"
+            cns_masked = mascarar_cns(clean_cns) if clean_cns else "N/A"
+            raise PacienteNaoEncontradoError(
+                "Paciente com dados civis informados "
+                f"(CPF: {cpf_masked}, CNS: {cns_masked}) "
+                f"não encontrado na organização '{organizacao_id}'."
+            )
+
+        token = create_access_token(
+            usuario_id=paciente.id,
+            organizacao_id=organizacao_id,
+            papel=Role.PACIENTE.value,
+            secret_key=self._secret_key,
+            algorithm=self._algorithm,
+            expire_minutes=self._access_token_expire_minutes,
+        )
+
+        return VerificarOtpOutputDTO(
+            access_token=token,
+            token_type="bearer",  # noqa: S106
+            expires_in=self._access_token_expire_minutes * 60,
+            paciente_id=paciente.id,
             role=Role.PACIENTE.value,
         )

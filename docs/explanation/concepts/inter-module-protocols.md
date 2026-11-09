@@ -40,8 +40,9 @@ confirmado via busca de imports no código.
 | `src/modules/queue/application/ports/paciente_ausente_notifier.py` | queue | `src/worker/tasks/ring_timeout.py` |
 | `src/modules/queue/application/ports/queue_overflow_notifier.py` | queue | `src/modules/queue/application/services/controle_admissao_service.py` |
 | `src/modules/queue/application/ports/triage_port.py` | queue | `src/modules/queue/application/services/fila_service.py`, `src/modules/queue/composition.py` |
-| `src/modules/billing/application/ports/eligibility_provider.py` | billing | `src/modules/billing/application/services/eligibility_service.py`, `src/worker/tasks/eligibility.py` |
-| `src/modules/billing/application/ports/eligibility_notifier.py` | billing | `src/modules/billing/application/services/eligibility_service.py`, `src/worker/tasks/eligibility.py` |
+| `src/modules/ambulatory/application/ports/eligibility_provider.py` | ambulatory | `src/modules/ambulatory/application/services/eligibility_service.py`, `src/worker/tasks/eligibility.py` |
+| `src/modules/ambulatory/application/ports/eligibility_notifier.py` | ambulatory | `src/modules/ambulatory/application/services/eligibility_service.py`, `src/worker/tasks/eligibility.py` |
+
 | `src/modules/consultation/application/ports/atendimento_reader_port.py` | consultation | `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/application/services/evolucao_service.py`, `src/modules/consultation/application/policies/clinical_access_policy.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/atendimento_reader_sql.py` |
 | `src/modules/consultation/application/ports/signed_cache_port.py` | consultation | `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/services/document_validation_service.py`, `src/modules/consultation/composition.py` |
 | `src/modules/consultation/application/ports/pdf_generator_port.py` | consultation | `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/pdf_generator.py` |
@@ -73,7 +74,8 @@ dentro da fila. Mesmo vale para consulta, triagem e auth:
 - `src/modules/consultation/application/services/documento_service.py` consome `icp_brasil_signer_port`, `pdf_generator_port`, `signed_cache_port` e `storage_port`.
 - `src/modules/consultation/application/services/document_validation_service.py` consome `document_directory_port`, `signed_cache_port` e `storage_port`.
 - `src/modules/consultation/application/services/evolucao_service.py` consome `atendimento_reader_port`.
-- `src/modules/billing/application/services/eligibility_service.py` consome `eligibility_provider` e `eligibility_notifier` do próprio billing.
+- `src/modules/ambulatory/application/services/eligibility_service.py` consome `eligibility_provider` e `eligibility_notifier` do próprio ambulatory.
+
 - `src/modules/triage/application/services/triage_service.py` consome `emergency_notifier` do próprio triage.
 - `src/modules/auth/application/services/auth_service.py` consome `auth_rate_limiter_port`, `password_hasher_port` e `token_service_port`.
 
@@ -109,8 +111,9 @@ instanciam service com construtor direto. Há 6 raízes:
 - `src/modules/identity/composition.py` expõe onboarding e dependentes sem ports externos.
 - `src/modules/triage/composition.py` fia triagem e notificador de emergência SAMU.
 - `src/modules/telemetry/composition.py` fia telemetria e agregação de métricas operacionais.
+- `src/modules/ambulatory/composition.py` fia provedor e serviço de elegibilidade ambulatorial SUS.
 
-Apenas billing não possui composition root (expõe ports consumidos por service próprio e por worker). A fiação de
+A fiação de
 fila usa `get_lua_manager` e `get_notification_adapter`;
 a de consulta usa `get_storage`, `get_pdf_generator`,
 `get_signer`, `get_signed_cache`, `get_atendimento_reader`
@@ -149,7 +152,7 @@ flowchart LR
 
 Cruzamento entre módulos acontece fora de services, em
 pontos permitidos: `src/worker/tasks/eligibility.py`
-consome ports de billing e lê domínio de fila;
+consome ports de ambulatory e lê domínio de fila;
 `src/worker/tasks/ring_timeout.py` consome notifier de
 fila. Isso mantém o grafo de application acíclico e
 auditável pelo guarda de fronteiras.
@@ -161,7 +164,8 @@ regressão e um comando prova o grafo:
 
 - `tach.toml` declara que cada `application` depende só
   de `core` mais domínio próprio; `worker` pode puxar
-  queue e billing. Comando `just tach` valida o grafo.
+  queue e ambulatory. Comando `just tach` valida o grafo.
+
   Definição do comando em `justfile`.
 - `tests/architecture/test_routers_are_thin.py` varre
   routers e falha em import proibido ou instanciação

@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { calcularHashTcle, mascararCNS, mascararCPF, mascararTelefoneBR } from "@/lib/validators";
+import { startSafeViewTransition } from "@/lib/view-transitions";
 import { useAdmitirPaciente } from "../api/use-admitir-paciente";
 import { useIntakeFase1 } from "../api/use-intake-fase1";
 import { type IntakeFase1FormData, intakeFase1Schema } from "../schemas/onboarding-schema";
@@ -105,22 +106,9 @@ export function AcolhimentoFase1Form({
   };
 
   const mudarMicroEtapa = (novaEtapa: "identificacao" | "triagem") => {
-    const prefersReducedMotion =
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    if (
-      !prefersReducedMotion &&
-      typeof document !== "undefined" &&
-      "startViewTransition" in document
-    ) {
-      document.startViewTransition(() => {
-        setMicroEtapa(novaEtapa);
-      });
-    } else {
+    startSafeViewTransition(() => {
       setMicroEtapa(novaEtapa);
-    }
+    });
   };
 
   const avancarParaTriagem = async () => {

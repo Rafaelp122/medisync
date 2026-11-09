@@ -21,7 +21,8 @@ class SqlAtendimentoReader:
     async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
         res = await self._session.execute(
             text(
-                "SELECT id, organizacao_id, paciente_id, medico_id, status, tcle_hash "
+                "SELECT id, organizacao_id, paciente_id, medico_id, status, tcle_hash, "
+                "chamada_iniciada_em, criado_em "
                 "FROM atendimentos WHERE id = :id"
             ),
             {"id": atendimento_id},
@@ -44,6 +45,8 @@ class SqlAtendimentoReader:
             paciente_id=raw_pac
             if isinstance(raw_pac, UUID) or raw_pac is None
             else UUID(str(raw_pac)),
+            chamada_iniciada_em=row.get("chamada_iniciada_em"),
+            criado_em=row.get("criado_em"),
         )
 
     async def concluir_atendimento(self, atendimento_id: UUID) -> None:

@@ -30,6 +30,8 @@ from src.modules.triage.infrastructure.adapters.samu_emergency_notifier_adapter 
 def mock_valkey() -> AsyncMock:
     valkey = AsyncMock(spec=Redis)
     valkey.zcard = AsyncMock(return_value=2)
+    valkey.zadd = AsyncMock(return_value=1)
+    valkey.zrank = AsyncMock(return_value=0)
     return valkey
 
 
@@ -105,6 +107,7 @@ async def test_admitir_paciente_success(
     fila_service: FilaService,
     mock_db_session: AsyncMock,
     mock_arq_pool: AsyncMock,
+    mock_valkey: AsyncMock,
 ) -> None:
     pac_id = uuid4()
     cmd = AdmissaoAtendimentoCommand(
@@ -120,13 +123,15 @@ async def test_admitir_paciente_success(
     assert isinstance(result, AdmissaoAtendimentoResult)
     assert result.organizacao_id == 1
     assert result.paciente_id == pac_id
+    assert result.status_atendimento == "APTO_PARA_CHAMADA"
     assert result.prioridade_clinica in (3, 4)
     assert result.alerta_samu_disparado is False
     assert result.tcle_hash is not None
     assert len(result.tcle_hash) == 64
     assert mock_db_session.add.call_count == 2
     mock_db_session.commit.assert_awaited_once()
-    mock_arq_pool.enqueue_job.assert_awaited_once()
+    mock_valkey.zadd.assert_awaited_once()
+    mock_arq_pool.enqueue_job.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -152,8 +157,9 @@ async def test_admitir_paciente_emergencia_critica_raises(
 
 
 @pytest.mark.asyncio
-async def test_admitir_paciente_enqueues_validar_elegibilidade_task(
+async def test_admitir_paciente_sus_direto_vai_para_apto_e_zset_sem_worker(
     fila_service: FilaService,
+    mock_valkey: AsyncMock,
     mock_arq_pool: AsyncMock,
 ) -> None:
     pac_id = uuid4()
@@ -166,22 +172,12 @@ async def test_admitir_paciente_enqueues_validar_elegibilidade_task(
         tcle_texto="Termo concordado",
         cpf="12345678901",
         cns="123456789012345",
-        operadora_id="UNIMED",
-        numero_carteirinha="998877",
     )
 
     result = await fila_service.admitir_paciente(cmd)
-    mock_arq_pool.enqueue_job.assert_awaited_once_with(
-        "validar_elegibilidade_task",
-        organizacao_id=1,
-        atendimento_id=str(result.atendimento_id),
-        paciente_id=str(pac_id),
-        cpf="12345678901",
-        cns="123456789012345",
-        operadora_id="UNIMED",
-        numero_carteirinha="998877",
-        _job_id=f"elegibilidade:{result.atendimento_id}",
-    )
+    assert result.status_atendimento == "APTO_PARA_CHAMADA"
+    mock_valkey.zadd.assert_awaited_once()
+    mock_arq_pool.enqueue_job.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -237,6 +233,7 @@ async def test_fila_service_admitir_paciente_direct_success(
     mock_db_session: AsyncMock,
     mock_arq_pool: AsyncMock,
     mock_controle_admissao: MagicMock,
+    mock_valkey: AsyncMock,
 ) -> None:
     """Verifica admissão executada diretamente pelo FilaService (Fase 2)."""
     pac_id = uuid4()
@@ -253,12 +250,14 @@ async def test_fila_service_admitir_paciente_direct_success(
     assert isinstance(result, AdmissaoAtendimentoResult)
     assert result.organizacao_id == 1
     assert result.paciente_id == pac_id
+    assert result.status_atendimento == "APTO_PARA_CHAMADA"
     assert result.prioridade_clinica in (3, 4)
     assert result.alerta_samu_disparado is False
     assert mock_db_session.add.call_count == 2
     mock_db_session.commit.assert_awaited_once()
     mock_controle_admissao.incrementar_admissoes_hoje.assert_awaited_once_with(1)
-    mock_arq_pool.enqueue_job.assert_awaited_once()
+    mock_valkey.zadd.assert_awaited_once()
+    mock_arq_pool.enqueue_job.assert_not_called()
 
 
 @pytest.mark.asyncio

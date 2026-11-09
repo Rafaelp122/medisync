@@ -24,10 +24,10 @@
 - **Quando** submeto o formulário de admissão em `POST /api/v1/fila/admissao`,
 - **Então** o sistema registra a comprovação imutável do consentimento com carimbo de data/hora oficial UTC,
 - **E** estratifica o risco clínico preliminar segundo a taxonomia aberta ACR em 5 níveis (ex: Nível 3 - Urgente),
-- **E** admite o atendimento na unidade aguardando a validação de elegibilidade,
+- **E** admite o atendimento diretamente como apto para chamada (`APTO_PARA_CHAMADA`) pelo Art. 196 da CF/88 (ADR-012),
+- **E** calcula o score determinístico de 64 bits e insere atomicamente no ZSET do Valkey `fila:{org}:aptos`,
 - **E** persiste atomicamente o evento auditável 'ADMISSAO_PACIENTE' na trilha append-only (ADR-007 / CFM nº 2.314/2022),
-- **E** inicia a verificação assíncrona de cobertura em segundo plano sem bloquear a paciente,
-- **E** retorna confirmação de admissão (HTTP 201 Created) com identificador do atendimento e credencial provisória de acesso.
+- **E** retorna confirmação de admissão (HTTP 201 Created) com status `APTO_PARA_CHAMADA`, identificador do atendimento e credencial provisória de acesso.
 
 ### Cenário 2: Detecção de Emergência Iminente (Salvaguarda SAMU 192)
 - **Dado que** minhas respostas na triagem inicial acusam sinais clínicos de Nível 1 (Risco Crítico / Vermelho),

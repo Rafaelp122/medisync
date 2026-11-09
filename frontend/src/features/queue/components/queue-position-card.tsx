@@ -19,17 +19,17 @@ const PRIORIDADE_LABELS: Record<
   number,
   { label: string; variant: "nivel1" | "nivel2" | "nivel3" | "nivel4" | "nivel5" }
 > = {
-  1: { label: "Nível 1 — Emergência (Vermelho)", variant: "nivel1" },
-  2: { label: "Nível 2 — Muito Urgente (Laranja)", variant: "nivel2" },
-  3: { label: "Nível 3 — Urgente (Amarelo)", variant: "nivel3" },
-  4: { label: "Nível 4 — Pouco Urgente (Verde)", variant: "nivel4" },
-  5: { label: "Nível 5 — Não Urgente (Azul)", variant: "nivel5" },
+  1: { label: "Vermelho: Emergência Imediata (SAMU 192)", variant: "nivel1" },
+  2: { label: "Laranja: Muito Urgente", variant: "nivel2" },
+  3: { label: "Amarelo: Urgente", variant: "nivel3" },
+  4: { label: "Verde: Pouco Urgente", variant: "nivel4" },
+  5: { label: "Azul: Não Urgente", variant: "nivel5" },
 };
 
 /**
  * Card de Posição em Tempo Real e Estimativa de Espera (RF-03, RN01).
  *
- * Apresenta a classificação de risco Manchester/ACR, a posição ordinal na fila
+ * Apresenta a classificação de risco ACR SUS (Portaria GM/MS nº 2.048/2002), a posição ordinal na fila
  * calculada no Valkey e o Tempo Médio de Atendimento (TMA) estimado.
  *
  * @see docs/user-stories/US-07-alocacao-chamada-medica.md

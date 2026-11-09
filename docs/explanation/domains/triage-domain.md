@@ -14,8 +14,8 @@ Escopo termina na decisão. Fila, chamada e consulta pertencem a outros domínio
 
 ## 2. Regras
 
-- **RN01 — 5 níveis alimentam score da fila via dado.** `classificar_risco_clinico` devolve 1 (Emergência) a 5 (Não Urgente); queue ordena por esse inteiro. [Fonte](../product-specification.md) (RN01)
-- **RN04 — Nível 1 bloqueia PA Virtual e dispara SAMU 192.** `disparar_alerta_samu` marca flag + `self._notifier` emite instrução 192. [Fonte](../product-specification.md) (RN04)
+- **RN01 — 5 níveis alimentam score da fila via dado.** `classificar_risco_clinico` devolve 1 (Emergência) a 5 (Não Urgente); queue ordena por esse inteiro sob taxonomia clínica aberta (ACR). [Fonte](../product-specification.md) (RN01)
+- **RN04 — Nível 1 bloqueia PA Virtual e dispara SAMU 192 (Parecer CREMESP nº 278.262/2023).** De-Manchesterização via checklist eliminatório de Red Flags (rebaixamento de consciência, dor torácica aguda, dispneia em repouso, convulsão ativa); `disparar_alerta_samu` marca flag + `self._notifier` emite instrução 192 e impede admissão virtual. [Fonte](../product-specification.md) (RN04)
 - **RN07 — TCLE vinculado por hash, acolhimento ágil <45s.** `calcular_hash_tcle` (SHA-256) amarra termo aceito ao prontuário, append-only UTC. [Fonte](../product-specification.md) (RN07)
 
 Guardiões: `__init__` rejeita `organizacao_id <= 0`, queixa vazia, prioridade fora de 1–5, dor fora de 0–10 (`TriagemInvalidaError`) e valida rigorosamente a coerência clínica da prioridade contra `classificar_risco_clinico(queixa, sintomas, escala_dor)`.
@@ -101,4 +101,6 @@ Sem corrigir código. Divergência entre doc e guardião real exige atualizar do
 - [Product Specification](../product-specification.md) — RN01, RN04, RN07 contratuais
 - [Data Model](../architecture/data-model.md) — tabela `triagens`, RLS por `organizacao_id`
 - [Concurrency and Queues](../architecture/concurrency-and-queues.md) — como queue consome prioridade via dado
+- [ambulatory domain](./ambulatory-domain.md) — produção ambulatorial SUS e qualificação cadastral
+- [ADR-012: Transição 100% SUS](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md)
 - [Domains Index](./index.md) — visão conceitual por domínio

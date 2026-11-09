@@ -316,17 +316,12 @@ async def test_regularizar_reenvio_convenio_enfileira_tarefa_assincrona() -> Non
     cmd = RegularizacaoFilaCommand(
         organizacao_id=1,
         atendimento_id=paciente.id,
-        tipo_contingencia="CONVENIO_REAPRESENTADO",
-        motivo="Carteirinha corrigida pelo paciente",
-        operadora_id="BRADESCO-SAUDE",
-        numero_carteirinha="987654321",
+        tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
+        motivo="Liberação assistencial imediata pelo acolhimento SUS",
     )
 
     result = await fila_service.regularizar_atendimento(cmd)
 
-    assert result.promovido is False
-    assert result.status == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
-    mock_arq_pool.enqueue_job.assert_awaited_once()
-    assert (
-        mock_arq_pool.enqueue_job.call_args.kwargs["operadora_id"] == "BRADESCO-SAUDE"
-    )
+    assert result.promovido is True
+    assert result.status == StatusAtendimento.APTO_PARA_CHAMADA.value
+    assert paciente.status == StatusAtendimento.APTO_PARA_CHAMADA.value

@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Lock, LogOut, PhoneCall, Users } from "lucide-react";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
+import { getActiveTenantId } from "@/api/client";
 import type { ChamarProximoResponse, DocumentoClinicoResponse } from "@/api/generated/types.gen";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -17,11 +18,14 @@ import { SoapEditor } from "./soap-editor";
 import { TmaTimerBadge } from "./tma-timer-badge";
 import { VideoPane } from "./video-pane";
 
+const LazyLiveKitVideoCall = lazy(() => import("./livekit-video-call"));
+
 export interface DoctorWorkstationProps {
   medicoId?: string;
   medicoNome?: string;
   crmUf?: string;
   token?: string;
+  organizacaoId?: number;
   onLogout?: () => void;
 }
 
@@ -38,6 +42,7 @@ export function DoctorWorkstation({
   medicoNome = "Dr. Eduardo Rocha",
   crmUf = "123456/SP",
   token,
+  organizacaoId,
   onLogout,
 }: DoctorWorkstationProps) {
   const [atendimentoAtivo, setAtendimentoAtivo] = useState<ChamarProximoResponse | null>(null);
@@ -69,10 +74,12 @@ export function DoctorWorkstation({
             setIsFinalizado(false);
 
             // Emite token LiveKit WebRTC para a sala médica
+            const tenantVal = Number(getActiveTenantId());
+            const fallbackOrgId = Number.isFinite(tenantVal) && tenantVal > 0 ? tenantVal : 1;
             emitirLivekitToken({
               token,
               atendimento_id: data.atendimento_id,
-              organizacao_id: 1,
+              organizacao_id: organizacaoId ?? fallbackOrgId,
               participant_id: medicoId,
               role: "medico",
               participant_name: medicoNome,
@@ -148,7 +155,7 @@ export function DoctorWorkstation({
           {atendimentoAtivo?.atendimento_id && (
             <TmaTimerBadge
               iniciadoEm={atendimentoAtivo.chamada_iniciada_em}
-              tmaPlanejadoSegundos={atendimentoAtivo.ttl_segundos ?? 900}
+              tmaPlanejadoSegundos={atendimentoAtivo.ttl_segundos ?? undefined}
             />
           )}
 
@@ -236,13 +243,32 @@ export function DoctorWorkstation({
             aria-label="Videoconferência e Identificação"
             className="lg:col-span-4 flex flex-col gap-3.5"
           >
-            <VideoPane
-              atendimentoId={atendimentoAtivo.atendimento_id}
-              pacienteNome="Juliana Silva (Paciente)"
-              medicoNome={medicoNome}
-              roomName={livekitData?.room_name}
-              isConnected={Boolean(livekitData?.token)}
-            />
+            {livekitData?.token ? (
+              <Suspense
+                fallback={
+                  <div className="h-64 flex items-center justify-center bg-slate-900 rounded-lg text-slate-400 text-xs">
+                    Conectando ao WebRTC LiveKit…
+                  </div>
+                }
+              >
+                <LazyLiveKitVideoCall
+                  wsUrl={livekitData.ws_url}
+                  token={livekitData.token}
+                  roomName={livekitData.room_name}
+                  participantName={medicoNome}
+                  remoteParticipantName="Juliana Silva (Paciente)"
+                  className="min-h-[300px]"
+                />
+              </Suspense>
+            ) : (
+              <VideoPane
+                atendimentoId={atendimentoAtivo.atendimento_id}
+                pacienteNome="Juliana Silva (Paciente)"
+                medicoNome={medicoNome}
+                roomName={livekitData?.room_name}
+                isConnected={false}
+              />
+            )}
 
             <CfmIdentityGate
               onVerificationChange={(verificado) => setIdentidadeVerificada(verificado)}
@@ -280,6 +306,17 @@ export function DoctorWorkstation({
               atendimentoId={atendimentoAtivo.atendimento_id}
               identidadeVerificada={identidadeVerificada}
               isReadOnly={isFinalizado}
+              duracaoSegundos={
+                atendimentoAtivo.chamada_iniciada_em
+                  ? Math.max(
+                      0,
+                      Math.floor(
+                        (Date.now() - new Date(atendimentoAtivo.chamada_iniciada_em).getTime()) /
+                          1000,
+                      ),
+                    )
+                  : 0
+              }
               onPrescriptionIssued={(doc) => setDocumentoPendente(doc)}
               token={token}
             />

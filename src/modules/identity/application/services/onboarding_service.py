@@ -144,7 +144,7 @@ class OnboardingService:
         return Fase1OutputDTO(
             paciente_id=paciente.id,
             token=token,
-            status="TRIADO_AGUARDANDO_ELEGIBILIDADE",
+            status="APTO_PARA_CHAMADA",
             mensagem="Acolhimento registrado com sucesso. Prossiga para a Fase 2.",
             is_novo_paciente=is_novo,
         )

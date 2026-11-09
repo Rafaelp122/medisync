@@ -121,7 +121,12 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
     ).toBeInTheDocument();
 
     // LiveKit SFU conectado
-    expect(screen.getByText(/livekit sfu conectado/i)).toBeInTheDocument();
+    await waitFor(
+      () => {
+        expect(screen.getByText(/livekit sfu conectado/i)).toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
     // Identificação do paciente
     expect(screen.getAllByText(/juliana silva/i).length).toBeGreaterThan(0);
     // Notas SOAP carregadas
@@ -402,6 +407,11 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
     });
 
     // A videoconferência continua plenamente conectada
-    expect(screen.getByText(/livekit sfu conectado/i)).toBeInTheDocument();
+    await waitFor(
+      () => {
+        expect(screen.getByText(/livekit sfu conectado/i)).toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
   });
 });

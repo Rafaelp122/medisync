@@ -448,3 +448,22 @@ def test_promover_para_apto_sem_tcle_hash_rejeita_com_offending_value() -> None:
     err_msg = str(exc_info.value)
     assert str(atendimento.id) in err_msg
     assert "tcle_hash ausente" in err_msg
+
+
+def test_criar_atendimento_admissao_direta_sus_apto() -> None:
+    now = datetime.now(UTC)
+    pac_id = uuid7()
+    atendimento = Atendimento(
+        organizacao_id=1,
+        paciente_id=pac_id,
+        tcle_hash=SAMPLE_TCLE_HASH,
+        status=StatusAtendimento.APTO_PARA_CHAMADA,
+        prioridade_clinica=PrioridadeClinica.URGENTE,
+        data_entrada_fila=now,
+    )
+
+    assert atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA
+    assert atendimento.prioridade_clinica == 3
+    assert atendimento.data_entrada_fila == now
+    assert atendimento.is_apto_para_chamada is True
+    assert atendimento.is_em_fila is True

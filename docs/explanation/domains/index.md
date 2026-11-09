@@ -8,7 +8,7 @@ Visão conceitual por domínio clínico — regras, invariantes e vocabulário u
 - [triage-domain.md](./triage-domain.md) — classificação de risco e salvaguarda SAMU.
 - [queue-domain.md](./queue-domain.md) — ordenação, alocação atômica e backpressure.
 - [consultation-domain.md](./consultation-domain.md) — ato médico, evolução e PEP.
-- [billing-domain.md](./billing-domain.md) — elegibilidade de convênio e faturamento.
+- [ambulatory-domain.md](./ambulatory-domain.md) — produção ambulatorial SUS, BPA-I, SISAB e SIGTAP.
 - [telemetry-domain.md](./telemetry-domain.md) — governança de plantão, parametrização estocástica e painel CQRS.
 
 ## Transversais

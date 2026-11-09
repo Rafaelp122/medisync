@@ -4,6 +4,7 @@ import type { LiveKitTokenResponse } from "@/api/generated/types.gen";
 import { SamuEmergencyModal } from "@/components/samu-emergency-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { settings } from "@/config/settings";
 import type { StoredPatientSession } from "@/lib/session-storage";
 import { cn } from "@/lib/utils";
 import { usePosicaoFila } from "../api/use-posicao-fila";
@@ -62,7 +63,7 @@ export function VirtualWaitingRoom({
   const { data: posicaoData } = usePosicaoFila({
     atendimentoId,
     token,
-    pollingInterval: chamadaAtiva ? false : 5000,
+    pollingInterval: chamadaAtiva ? false : settings.network.queuePollingIntervalMs,
     enabled: Boolean(atendimentoId && !isPacienteAusente && !isCancelado),
   });
 
@@ -313,7 +314,7 @@ export function VirtualWaitingRoom({
         atendimentoId={atendimentoId}
         pacienteId={session.pacienteId}
         token={token}
-        ttlSegundos={chamadaAtiva?.ttl_segundos ?? 45}
+        ttlSegundos={chamadaAtiva?.ttl_segundos ?? undefined}
         chamadaIniciadaEm={chamadaAtiva?.chamada_iniciada_em}
         onAtendido={handleAtendido}
         onNoShow={handleNoShow}

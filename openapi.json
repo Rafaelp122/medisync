@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MediSync Express",
-    "version": "0.7.0"
+    "version": "0.12.0"
   },
   "paths": {
     "/healthz": {
@@ -40,6 +40,122 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/mfa/setup": {
+      "post": {
+        "tags": [
+          "Authentication & Sessions (OWASP)"
+        ],
+        "summary": "Gera chave secreta e URI para app autenticador (TOTP)",
+        "description": "Gera o segredo Base32 e URI otpauth:// para MFA no app do usu\u00e1rio.",
+        "operationId": "mfa_setup_api_v1_auth_mfa_setup_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaSetupResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/mfa/activate": {
+      "post": {
+        "tags": [
+          "Authentication & Sessions (OWASP)"
+        ],
+        "summary": "Valida c\u00f3digo de 6 d\u00edgitos e ativa o segundo fator (MFA)",
+        "description": "Valida o primeiro c\u00f3digo TOTP de 6 d\u00edgitos e ativa o segundo fator.",
+        "operationId": "mfa_activate_api_v1_auth_mfa_activate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaAtivarRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaAtivarResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/mfa/verify": {
+      "post": {
+        "tags": [
+          "Authentication & Sessions (OWASP)"
+        ],
+        "summary": "Verifica\u00e7\u00e3o do segundo fator (MFA) e emiss\u00e3o de tokens de sess\u00e3o",
+        "description": "Troca token tempor\u00e1rio mfa_pending por tokens definitivos ap\u00f3s valida\u00e7\u00e3o TOTP.",
+        "operationId": "mfa_verify_api_v1_auth_mfa_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaVerificarLoginRequest"
               }
             }
           },
@@ -233,6 +349,48 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/VerificarOtpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificarOtpResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/patient/cadsus": {
+      "post": {
+        "tags": [
+          "Auth Paciente"
+        ],
+        "summary": "Autenticar paciente via CADSUS / Gov.br",
+        "description": "Autentica\u00e7\u00e3o sem senha via desambigua\u00e7\u00e3o de dados civis (CPF, CNS, Data de Nascimento).",
+        "operationId": "post_auth_paciente_cadsus",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutenticarCadsusRequest"
               }
             }
           },
@@ -1742,30 +1900,6 @@
             ],
             "title": "Cns",
             "description": "Cart\u00e3o Nacional de Sa\u00fade (SUS)"
-          },
-          "operadora_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Operadora Id",
-            "description": "C\u00f3digo da operadora de sa\u00fade"
-          },
-          "numero_carteirinha": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Numero Carteirinha",
-            "description": "N\u00famero da carteirinha do plano"
           }
         },
         "type": "object",
@@ -1921,6 +2055,77 @@
         ],
         "title": "AssinarDocumentoResponse",
         "description": "Result of digital signature application."
+      },
+      "AutenticarCadsusRequest": {
+        "properties": {
+          "cpf": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 14
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpf",
+            "description": "CPF do paciente (opcional se CNS fornecido)",
+            "examples": [
+              "11144477735"
+            ]
+          },
+          "cns": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 15
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cns",
+            "description": "Cart\u00e3o Nacional de Sa\u00fade (CNS) de 15 d\u00edgitos",
+            "examples": [
+              "898001234567890"
+            ]
+          },
+          "data_nascimento": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Nascimento",
+            "description": "Data de nascimento do paciente (AAAA-MM-DD)",
+            "examples": [
+              "1985-04-12"
+            ]
+          },
+          "nome_mae": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nome Mae",
+            "description": "Nome completo da m\u00e3e para desambigua\u00e7\u00e3o",
+            "examples": [
+              "Maria da Silva"
+            ]
+          }
+        },
+        "type": "object",
+        "title": "AutenticarCadsusRequest",
+        "description": "Payload to authenticate patient via CADSUS / Gov.br civil registry."
       },
       "CancelarFilaRequest": {
         "properties": {
@@ -2573,6 +2778,17 @@
             ],
             "title": "Sha256 Hash"
           },
+          "justificativa_tempo_inferior": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Justificativa Tempo Inferior"
+          },
           "assinado_em": {
             "anyOf": [
               {
@@ -2663,6 +2879,18 @@
             "title": "Sha256 Hash",
             "description": "Hash SHA-256 do documento"
           },
+          "justificativa_tempo_inferior": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Justificativa Tempo Inferior",
+            "description": "Justificativa para consulta < 180s (CFM 2.314/2022)"
+          },
           "organizacao_id": {
             "anyOf": [
               {
@@ -2734,6 +2962,54 @@
           "conduta": {
             "type": "string",
             "title": "Conduta"
+          },
+          "codigo_sigtap": {
+            "type": "string",
+            "title": "Codigo Sigtap",
+            "default": "03.01.01.025-0"
+          },
+          "ia_utilizada": {
+            "type": "boolean",
+            "title": "Ia Utilizada",
+            "default": false
+          },
+          "ia_modelo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ia Modelo"
+          },
+          "ia_sugestao_bruta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ia Sugestao Bruta"
+          },
+          "ia_diff_modificacao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ia Diff Modificacao"
+          },
+          "ia_ratificada_pelo_medico": {
+            "type": "boolean",
+            "title": "Ia Ratificada Pelo Medico",
+            "default": true
           },
           "registrado_em": {
             "type": "string",
@@ -2899,7 +3175,7 @@
           "status": {
             "type": "string",
             "title": "Status",
-            "default": "TRIADO_AGUARDANDO_ELEGIBILIDADE"
+            "default": "APTO_PARA_CHAMADA"
           },
           "mensagem": {
             "type": "string",
@@ -3591,6 +3867,97 @@
         "title": "MedicoTMAResponse",
         "description": "Average attendance time metrics per medical professional."
       },
+      "MfaAtivarRequest": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Codigo",
+            "description": "C\u00f3digo num\u00e9rico de 6 d\u00edgitos gerado pelo aplicativo autenticador",
+            "examples": [
+              "123456"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "codigo"
+        ],
+        "title": "MfaAtivarRequest",
+        "description": "Payload to confirm TOTP setup and activate MFA."
+      },
+      "MfaAtivarResponse": {
+        "properties": {
+          "ativo": {
+            "type": "boolean",
+            "title": "Ativo",
+            "description": "Indica se o MFA foi ativado com sucesso",
+            "default": true
+          },
+          "mensagem": {
+            "type": "string",
+            "title": "Mensagem",
+            "description": "Mensagem de confirma\u00e7\u00e3o",
+            "default": "Segundo fator de autentica\u00e7\u00e3o ativado com sucesso."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MfaAtivarResponse",
+        "description": "Response returned upon successful MFA activation."
+      },
+      "MfaSetupResponse": {
+        "properties": {
+          "secret": {
+            "type": "string",
+            "title": "Secret",
+            "description": "Chave secreta Base32 do autenticador"
+          },
+          "uri": {
+            "type": "string",
+            "title": "Uri",
+            "description": "URI otpauth:// para escaneamento de QR Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "secret",
+          "uri"
+        ],
+        "title": "MfaSetupResponse",
+        "description": "Response containing TOTP secret and QR Code URI."
+      },
+      "MfaVerificarLoginRequest": {
+        "properties": {
+          "temp_token": {
+            "type": "string",
+            "minLength": 10,
+            "title": "Temp Token",
+            "description": "Token tempor\u00e1rio emitido na primeira etapa de autentica\u00e7\u00e3o"
+          },
+          "codigo": {
+            "type": "string",
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Codigo",
+            "description": "C\u00f3digo TOTP de 6 d\u00edgitos do autenticador",
+            "examples": [
+              "123456"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "temp_token",
+          "codigo"
+        ],
+        "title": "MfaVerificarLoginRequest",
+        "description": "Payload to complete two-factor authentication login."
+      },
       "PainelTelemetriaResponse": {
         "properties": {
           "organizacao_id": {
@@ -3967,6 +4334,60 @@
             "title": "Cid10 Principal",
             "description": "Avalia\u00e7\u00e3o (A): C\u00f3digo CID-10 principal da hip\u00f3tese diagn\u00f3stica"
           },
+          "codigo_sigtap": {
+            "type": "string",
+            "title": "Codigo Sigtap",
+            "description": "C\u00f3digo do procedimento na tabela unificada SIGTAP/SUS",
+            "default": "03.01.01.025-0"
+          },
+          "ia_utilizada": {
+            "type": "boolean",
+            "title": "Ia Utilizada",
+            "description": "Indica se houve copilot/sugest\u00e3o de IA no SOAP (CFM 2.454/2026)",
+            "default": false
+          },
+          "ia_modelo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ia Modelo",
+            "description": "Identificador do modelo LLM assistencial utilizado"
+          },
+          "ia_sugestao_bruta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ia Sugestao Bruta",
+            "description": "Texto original sugerido pela IA antes da revis\u00e3o m\u00e9dica"
+          },
+          "ia_diff_modificacao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ia Diff Modificacao",
+            "description": "Diff unificado das altera\u00e7\u00f5es feitas pelo m\u00e9dico"
+          },
+          "ia_ratificada_pelo_medico": {
+            "type": "boolean",
+            "title": "Ia Ratificada Pelo Medico",
+            "description": "Ratifica\u00e7\u00e3o obrigat\u00f3ria pelo m\u00e9dico sob CFM n\u00ba 2.454/2026",
+            "default": true
+          },
           "organizacao_id": {
             "anyOf": [
               {
@@ -4003,30 +4424,6 @@
             "title": "Tipo Contingencia",
             "description": "Tipo de conting\u00eancia assistencial acionada",
             "default": "CONTINGENCIA_ASSISTENCIAL"
-          },
-          "operadora_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Operadora Id",
-            "description": "C\u00f3digo da operadora de sa\u00fade (opcional)"
-          },
-          "numero_carteirinha": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Numero Carteirinha",
-            "description": "N\u00famero da carteirinha do plano (opcional)"
           }
         },
         "type": "object",
@@ -4212,6 +4609,18 @@
             "type": "integer",
             "title": "Refresh Expires In",
             "description": "Tempo de vida do refresh token em segundos"
+          },
+          "mfa_requerido": {
+            "type": "boolean",
+            "title": "Mfa Requerido",
+            "description": "Indica se \u00e9 necess\u00e1ria autentica\u00e7\u00e3o de segundo fator (MFA/TOTP)",
+            "default": false
+          },
+          "mfa_setup_requerido": {
+            "type": "boolean",
+            "title": "Mfa Setup Requerido",
+            "description": "Indica se \u00e9 necess\u00e1ria configura\u00e7\u00e3o inicial de segundo fator (MFA/TOTP)",
+            "default": false
           }
         },
         "additionalProperties": false,

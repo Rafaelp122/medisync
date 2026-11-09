@@ -44,6 +44,7 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 401 | `TOKEN_REVOGADO` | Token revogado ou reutilizado após renovação (`TokenRevogadoError`) |
 | 401 | `TOKEN_ACOLHIMENTO_INVALIDO` | Token provisório de triagem expirado ou inválido (`TokenAcolhimentoInvalidoError`) |
 | 401 | `OTP_INVALIDO` | Código OTP incorreto ou expirado (`OtpInvalidoOuExpiradoError`) |
+| 401 | `MFA_CODIGO_INVALIDO` | Código de segundo fator (TOTP) incorreto ou expirado (`MfaCodigoInvalidoError`) |
 | 403 | `FORBIDDEN` | Acesso negado por falta de papel clínico ou escopo (`ForbiddenError`) |
 | 403 | `CONTA_DESATIVADA` | Usuário inativo tentando autenticar (`ContaDesativadaError`) |
 | 404 | `NOT_FOUND` | Recurso genérico não encontrado (`NotFoundError`) |
@@ -69,6 +70,8 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 422 | `CONSULTA_INVALIDA` | Violação de regra clínica em evolução/prescrição (`ConsultaInvalidaError`) |
 | 422 | `ASSINATURA_DIGITAL_INVALIDA` | Falha na assinatura digital ICP-Brasil (`AssinaturaDigitalInvalidaError`) |
 | 422 | `AUDITORIA_INVALIDA` | Inconsistência nos atributos do evento forense (`AuditoriaInvalidaError`) |
+| 422 | `TRAVA_TEMPORAL_ATESTADO_VIOLADA` | Emissão de atestado médico com tempo de consulta <180s sem justificativa circunstanciada - RN09 (`TravaTemporalAtestadoVioladaError`) |
+| 422 | `IA_NAO_RATIFICADA` | Submissão de sugestão de IA no prontuário sem ratificação médica expressa - CFM nº 2.454/2026, RN08 (`IaNaoRatificadaError`) |
 | 423 | `CONTA_BLOQUEADA` | Bloqueio temporário por tentativas falhas consecutivas (`ContaBloqueadaError`) |
 | 429 | `OTP_RATE_LIMIT_EXCEEDED` | Limite de requisições de OTP excedido (`OtpRateLimitExcedidoError`) |
 | 429 | `OTP_TENTATIVAS_EXCEDIDAS` | Máximo de 3 tentativas falhas de OTP excedido (`OtpTentativasExcedidasError`) |
@@ -118,5 +121,7 @@ rg -n "ADMISSAO_FILA_SUSPENSA|CONTA_BLOQUEADA|OTP_RATE_LIMIT_EXCEEDED|OTP_TENTAT
 - [Documentation standards](../architecture-standards/documentation-standards.md)
 - [Setup local](../../how-to/dev-environment/setup-local.md)
 - [Create module endpoint](../../how-to/backend/create-module-endpoint.md)
+- [ADR-012: Transição 100% SUS](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md)
+- [Catálogo de Eventos](../audit/event-catalog.md)
 - `docs/explanation/architecture/overview.md`
 - `docs/explanation/architecture/compliance-and-telemedicine.md`

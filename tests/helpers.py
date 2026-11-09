@@ -10,6 +10,9 @@ from src.core.config import get_settings
 from src.core.database import engine
 from src.modules.auth.application.services.auth_service import AuthService
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
+from src.modules.auth.infrastructure.valkey_token_revocation import (
+    MemoryTokenRevocation,
+)
 from src.modules.consultation.application.services.documento_service import (
     DocumentoService,
 )
@@ -88,11 +91,13 @@ def make_auth_service(session: AsyncSession, **overrides: Any) -> AuthService:
     hasher: Any = overrides.get("hasher", AsyncMock())
     token_service: Any = overrides.get("token_service", AsyncMock())
     rate_limiter: Any = overrides.get("rate_limiter", AsyncMock())
+    revocation: Any = overrides.get("revocation", MemoryTokenRevocation())
     return AuthService(
         session=session,
         hasher=hasher,
         token_service=token_service,
         rate_limiter=rate_limiter,
+        revocation=revocation,
     )
 
 
@@ -117,6 +122,7 @@ def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
             atendimento_reader = QueueStoreAtendimentoReaderAdapter(queue_store)
 
     audit_trail: Any = overrides.get("audit_trail")
+    producao_port: Any = overrides.get("producao_port")
     documento_service: Any = overrides.get("documento_service")
     if documento_service is None:
         directory: Any = overrides.get("directory")
@@ -146,6 +152,7 @@ def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
         atendimento_reader=atendimento_reader,
         evolucao_service=evolucao_service,
         audit_trail=audit_trail,
+        producao_port=producao_port,
     )
 
 

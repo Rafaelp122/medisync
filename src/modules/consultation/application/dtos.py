@@ -87,6 +87,12 @@ class RegistrarEvolucaoSOAPCommand:
     conduta: str  # Plano (P)
     exame_fisico_virtual: str | None = None  # Objetivo (O)
     cid10_principal: str | None = None  # Avaliação (A)
+    codigo_sigtap: str = "03.01.01.025-0"
+    ia_utilizada: bool = False
+    ia_modelo: str | None = None
+    ia_sugestao_bruta: str | None = None
+    ia_diff_modificacao: str | None = None
+    ia_ratificada_pelo_medico: bool = True
 
 
 @dataclass(frozen=True)
@@ -113,6 +119,7 @@ class EmitirDocumentoClinicoCommand:
     )
     chave_s3: str = ""
     sha256_hash: str = ""
+    justificativa_tempo_inferior: str | None = None
 
 
 @dataclass(frozen=True)
@@ -196,3 +203,15 @@ class DocumentoAssinadoResult:
     assinado_em: datetime
     tamanho_bytes: int
     status: str = "ASSINADO"
+
+
+@dataclass(frozen=True)
+class FinalizarConsultaResult:
+    """Service result for consultation finalization (ADR-008)."""
+
+    atendimento_id: UUID
+    is_finalizado: bool
+    status: str = "FINALIZADO"
+    mensagem: str = (
+        "Consulta finalizada com sucesso. Registros PEP travados de forma imutável."
+    )

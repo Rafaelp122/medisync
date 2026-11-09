@@ -13,8 +13,8 @@
 
 O pronto-atendimento virtual requer execução assíncrona de rotinas em segundo plano:
 1. Resolução de no-show via ring timeout de exatamente 45 segundos (RN02).
-2. Validação concorrente de elegibilidade de convênio (RF-02).
-3. Auto-cura e reconciliação da fila em memória com o banco relacional a cada 60 segundos.
+2. Auto-cura e reconciliação da fila em memória com o banco relacional a cada 60 segundos (ADR-002, RN03).
+3. Monitoramento e telemetria periódica de workers ativos.
 
 ---
 

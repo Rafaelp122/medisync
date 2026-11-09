@@ -7,6 +7,7 @@ from src.core.errors import DomainError, NotFoundError, ValidationError
 from src.modules.consultation.application.dtos import (
     DocumentoAssinadoResult,
     DownloadResult,
+    FinalizarConsultaResult,
     ProntuarioResumoDTO,
 )
 from src.modules.consultation.domain.exceptions import (
@@ -74,6 +75,19 @@ def test_finalizar_consulta_response_payload() -> None:
     assert data["status"] == "FINALIZADO"
     assert data["atendimento_id"] == str(atend)
     assert data["is_finalizado"] is True
+
+
+def test_finalizar_consulta_response_via_dto() -> None:
+    atend = uuid4()
+    dto = FinalizarConsultaResult(
+        atendimento_id=atend,
+        is_finalizado=True,
+    )
+    resp = FinalizarConsultaResponse.model_validate(dto)
+    assert resp.status == "FINALIZADO"
+    assert resp.atendimento_id == atend
+    assert resp.is_finalizado is True
+    assert "travados" in resp.mensagem
 
 
 def test_download_url_response_via_dto() -> None:

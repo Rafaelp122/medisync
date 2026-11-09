@@ -16,9 +16,7 @@ export const zAdmissaoRequest = z.object({
     tcle_hash: z.string().length(64).nullish(),
     medicos_ativos: z.int().gte(1).optional().default(1),
     cpf: z.string().nullish(),
-    cns: z.string().nullish(),
-    operadora_id: z.string().nullish(),
-    numero_carteirinha: z.string().nullish()
+    cns: z.string().nullish()
 });
 
 /**
@@ -61,6 +59,18 @@ export const zAssinarDocumentoResponse = z.object({
     assinado_em: z.iso.datetime(),
     tamanho_bytes: z.int(),
     status: z.string().optional().default('ASSINADO')
+});
+
+/**
+ * AutenticarCadsusRequest
+ *
+ * Payload to authenticate patient via CADSUS / Gov.br civil registry.
+ */
+export const zAutenticarCadsusRequest = z.object({
+    cpf: z.string().max(14).nullish(),
+    cns: z.string().max(15).nullish(),
+    data_nascimento: z.iso.date().nullish(),
+    nome_mae: z.string().max(200).nullish()
 });
 
 /**
@@ -207,6 +217,12 @@ export const zEvolucaoSoapResponse = z.object({
     exame_fisico_virtual: z.string().nullable(),
     cid10_principal: z.string().nullable(),
     conduta: z.string(),
+    codigo_sigtap: z.string().optional().default('03.01.01.025-0'),
+    ia_utilizada: z.boolean().optional().default(false),
+    ia_modelo: z.string().nullish(),
+    ia_sugestao_bruta: z.string().nullish(),
+    ia_diff_modificacao: z.string().nullish(),
+    ia_ratificada_pelo_medico: z.boolean().optional().default(true),
     registrado_em: z.iso.datetime(),
     finalizado_em: z.iso.datetime().nullish(),
     is_finalizado: z.boolean()
@@ -236,7 +252,7 @@ export const zFase1Request = z.object({
 export const zFase1Response = z.object({
     paciente_id: z.uuid(),
     token: z.string(),
-    status: z.string().optional().default('TRIADO_AGUARDANDO_ELEGIBILIDADE'),
+    status: z.string().optional().default('APTO_PARA_CHAMADA'),
     mensagem: z.string(),
     is_novo_paciente: z.boolean()
 });
@@ -326,6 +342,7 @@ export const zEmitirDocumentoRequest = z.object({
     itens: z.array(zItemPrescricaoRequest).optional(),
     chave_s3: z.string().nullish(),
     sha256_hash: z.string().nullish(),
+    justificativa_tempo_inferior: z.string().nullish(),
     organizacao_id: z.int().nullish()
 });
 
@@ -356,6 +373,7 @@ export const zDocumentoClinicoResponse = z.object({
     tipo_documento: z.string(),
     chave_s3: z.string(),
     sha256_hash: z.string().nullish(),
+    justificativa_tempo_inferior: z.string().nullish(),
     assinado_em: z.iso.datetime().nullish(),
     finalizado_em: z.iso.datetime().nullish(),
     is_finalizado: z.boolean(),
@@ -423,6 +441,45 @@ export const zMedicoTmaResponse = z.object({
     nome: z.string(),
     total_atendimentos: z.int(),
     tma_segundos: z.number()
+});
+
+/**
+ * MfaAtivarRequest
+ *
+ * Payload to confirm TOTP setup and activate MFA.
+ */
+export const zMfaAtivarRequest = z.object({
+    codigo: z.string().length(6)
+});
+
+/**
+ * MfaAtivarResponse
+ *
+ * Response returned upon successful MFA activation.
+ */
+export const zMfaAtivarResponse = z.object({
+    ativo: z.boolean().optional().default(true),
+    mensagem: z.string().optional().default('Segundo fator de autenticação ativado com sucesso.')
+});
+
+/**
+ * MfaSetupResponse
+ *
+ * Response containing TOTP secret and QR Code URI.
+ */
+export const zMfaSetupResponse = z.object({
+    secret: z.string(),
+    uri: z.string()
+});
+
+/**
+ * MfaVerificarLoginRequest
+ *
+ * Payload to complete two-factor authentication login.
+ */
+export const zMfaVerificarLoginRequest = z.object({
+    temp_token: z.string().min(10),
+    codigo: z.string().length(6)
 });
 
 /**
@@ -523,6 +580,12 @@ export const zRegistrarSoapRequest = z.object({
     conduta: z.string(),
     exame_fisico_virtual: z.string().nullish(),
     cid10_principal: z.string().nullish(),
+    codigo_sigtap: z.string().optional().default('03.01.01.025-0'),
+    ia_utilizada: z.boolean().optional().default(false),
+    ia_modelo: z.string().nullish(),
+    ia_sugestao_bruta: z.string().nullish(),
+    ia_diff_modificacao: z.string().nullish(),
+    ia_ratificada_pelo_medico: z.boolean().optional().default(true),
     organizacao_id: z.int().nullish()
 });
 
@@ -533,9 +596,7 @@ export const zRegistrarSoapRequest = z.object({
  */
 export const zRegularizacaoFilaRequest = z.object({
     motivo: z.string().min(3).max(500),
-    tipo_contingencia: z.string().optional().default('CONTINGENCIA_ASSISTENCIAL'),
-    operadora_id: z.string().nullish(),
-    numero_carteirinha: z.string().nullish()
+    tipo_contingencia: z.string().optional().default('CONTINGENCIA_ASSISTENCIAL')
 });
 
 /**
@@ -596,7 +657,9 @@ export const zTokenResponse = z.object({
     refresh_token: z.string(),
     token_type: z.string().optional().default('bearer'),
     expires_in: z.int(),
-    refresh_expires_in: z.int()
+    refresh_expires_in: z.int(),
+    mfa_requerido: z.boolean().optional().default(false),
+    mfa_setup_requerido: z.boolean().optional().default(false)
 });
 
 /**
@@ -736,6 +799,25 @@ export const zLoginApiV1AuthLoginPostBody = zLoginRequest;
  */
 export const zLoginApiV1AuthLoginPostResponse = zTokenResponse;
 
+/**
+ * Successful Response
+ */
+export const zMfaSetupApiV1AuthMfaSetupPostResponse = zMfaSetupResponse;
+
+export const zMfaActivateApiV1AuthMfaActivatePostBody = zMfaAtivarRequest;
+
+/**
+ * Successful Response
+ */
+export const zMfaActivateApiV1AuthMfaActivatePostResponse = zMfaAtivarResponse;
+
+export const zMfaVerifyApiV1AuthMfaVerifyPostBody = zMfaVerificarLoginRequest;
+
+/**
+ * Successful Response
+ */
+export const zMfaVerifyApiV1AuthMfaVerifyPostResponse = zTokenResponse;
+
 export const zRefreshTokenApiV1AuthRefreshPostBody = zRefreshTokenRequest;
 
 /**
@@ -768,6 +850,13 @@ export const zVerifyOtpApiV1AuthPatientOtpVerifyPostBody = zVerificarOtpRequest;
  * Successful Response
  */
 export const zVerifyOtpApiV1AuthPatientOtpVerifyPostResponse = zVerificarOtpResponse;
+
+export const zPostAuthPacienteCadsusBody = zAutenticarCadsusRequest;
+
+/**
+ * Successful Response
+ */
+export const zPostAuthPacienteCadsusResponse = zVerificarOtpResponse;
 
 export const zIntakeFase1ApiV1OnboardingFase1PostBody = zFase1Request;
 

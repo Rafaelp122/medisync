@@ -3,6 +3,7 @@ import { client, getActiveTenantId } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { obterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet } from "@/api/generated/sdk.gen";
 import type { PosicaoFilaResponse } from "@/api/generated/types.gen";
+import { settings } from "@/config/settings";
 
 export interface UsePosicaoFilaParams {
   atendimentoId?: string;
@@ -16,7 +17,12 @@ export interface UsePosicaoFilaParams {
  * Regras: RF-03, RN01, US-07, US-08 e ADR-011.
  */
 export function usePosicaoFila(
-  { atendimentoId, token, pollingInterval = 5000, enabled = true }: UsePosicaoFilaParams,
+  {
+    atendimentoId,
+    token,
+    pollingInterval = settings.network.queuePollingIntervalMs,
+    enabled = true,
+  }: UsePosicaoFilaParams,
   options?: Partial<UseQueryOptions<PosicaoFilaResponse, ProblemDetailsError>>,
 ) {
   return useQuery<PosicaoFilaResponse, ProblemDetailsError>({

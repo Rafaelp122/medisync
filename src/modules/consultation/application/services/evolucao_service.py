@@ -1,5 +1,4 @@
-"""SOAP evolution owner: salvar/obter evolucao with terminal guard via reader port."""
-
+import difflib
 from uuid import UUID
 
 from sqlalchemy import select
@@ -7,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
+from src.core.errors import IANaoRatificadaError
 from src.modules.consultation.application.dtos import RegistrarEvolucaoSOAPCommand
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
@@ -36,14 +36,72 @@ class EvolucaoService:
         """Return True when queue-owned attendance reached terminal status."""
         return await is_atendimento_terminal(self._reader, atendimento_id)
 
+    def _resolver_diff_ia(self, command: RegistrarEvolucaoSOAPCommand) -> str | None:
+        """Calcula o diff da sugestão de IA versus a conduta médica ratificada.
+
+        Regras: CFM nº 2.454/2026 e docs/explanation/domains/consultation-domain.md.
+        """
+        if not command.ia_utilizada:
+            return None
+        if not command.ia_ratificada_pelo_medico:
+            conduta_preview = command.conduta[:40].replace("\n", " ")
+            raise IANaoRatificadaError(
+                f"Sugestão de IA para o plano SOAP '{conduta_preview}...' não foi "
+                f"ratificada pelo médico assistente '{command.medico_id}' conforme "
+                "Resolução CFM nº 2.454/2026."
+            )
+        diff = command.ia_diff_modificacao
+        if not diff and command.ia_sugestao_bruta:
+            sugestao = command.ia_sugestao_bruta
+            conduta = command.conduta
+            if sugestao != conduta:
+                diff_lines = list(
+                    difflib.unified_diff(
+                        sugestao.splitlines(keepends=True),
+                        conduta.splitlines(keepends=True),
+                        fromfile="sugestao_ia",
+                        tofile="plano_ratificado",
+                    )
+                )
+                diff = "".join(diff_lines)
+        return diff
+
+    async def _registrar_auditoria_ia_se_utilizada(
+        self,
+        command: RegistrarEvolucaoSOAPCommand,
+        evolucao_id: UUID,
+        diff_ia: str | None,
+    ) -> None:
+        """Registra auditoria forense do uso de IA conforme CFM nº 2.454/2026.
+
+        Regras: docs/explanation/domains/consultation-domain.md.
+        """
+        if self._audit_trail is not None and command.ia_utilizada:
+            await self._audit_trail.record_event(
+                organizacao_id=command.organizacao_id,
+                tipo_evento="IA_DECISAO_MEDICA_REGISTRADA",
+                ator_tipo=AtorTipo.PROFISSIONAL.value,
+                ator_papel=AtorPapel.MEDICO.value,
+                ator_id=command.medico_id,
+                atendimento_id=command.atendimento_id,
+                payload={
+                    "evolucao_id": str(evolucao_id),
+                    "ia_modelo": command.ia_modelo,
+                    "ia_ratificada": command.ia_ratificada_pelo_medico,
+                    "diff_forense": diff_ia,
+                },
+            )
+
     async def salvar_evolucao_soap(
         self, command: RegistrarEvolucaoSOAPCommand
     ) -> EvolucaoClinica:
-        """Registra ou atualiza evolução SOAP com validação clínica.
+        """Registra ou atualiza evolução SOAP com governança de IA.
 
-        Garante conformidade com CFM nº 1.821/2007 e CFM nº 2.314/2022.
+        Garante conformidade com CFM 1.821/2007, 2.314/2022 e 2.454/2026.
         Regras: RN06 (Ato Médico) e docs/explanation/domains/consultation-domain.md.
         """
+        diff_ia = self._resolver_diff_ia(command)
+
         stmt = select(EvolucaoClinica).where(
             EvolucaoClinica.atendimento_id == command.atendimento_id
         )
@@ -66,6 +124,12 @@ class EvolucaoService:
                 conduta=command.conduta,
                 exame_fisico_virtual=command.exame_fisico_virtual,
                 cid10_principal=command.cid10_principal,
+                codigo_sigtap=command.codigo_sigtap,
+                ia_utilizada=command.ia_utilizada,
+                ia_modelo=command.ia_modelo,
+                ia_sugestao_bruta=command.ia_sugestao_bruta,
+                ia_diff_modificacao=diff_ia,
+                ia_ratificada_pelo_medico=command.ia_ratificada_pelo_medico,
             )
 
             await self._session.flush()
@@ -80,8 +144,15 @@ class EvolucaoService:
                     payload={
                         "evolucao_id": str(existing.id),
                         "cid10": existing.cid10_principal,
+                        "codigo_sigtap": existing.codigo_sigtap,
+                        "ia_utilizada": existing.ia_utilizada,
                     },
                 )
+            await self._registrar_auditoria_ia_se_utilizada(
+                command=command,
+                evolucao_id=existing.id,
+                diff_ia=diff_ia,
+            )
             await self._session.commit()
             return existing
 
@@ -99,6 +170,12 @@ class EvolucaoService:
             conduta=command.conduta,
             exame_fisico_virtual=command.exame_fisico_virtual,
             cid10_principal=command.cid10_principal,
+            codigo_sigtap=command.codigo_sigtap,
+            ia_utilizada=command.ia_utilizada,
+            ia_modelo=command.ia_modelo,
+            ia_sugestao_bruta=command.ia_sugestao_bruta,
+            ia_diff_modificacao=diff_ia,
+            ia_ratificada_pelo_medico=command.ia_ratificada_pelo_medico,
         )
         self._session.add(evolucao)
         try:
@@ -124,6 +201,12 @@ class EvolucaoService:
                 conduta=command.conduta,
                 exame_fisico_virtual=command.exame_fisico_virtual,
                 cid10_principal=command.cid10_principal,
+                codigo_sigtap=command.codigo_sigtap,
+                ia_utilizada=command.ia_utilizada,
+                ia_modelo=command.ia_modelo,
+                ia_sugestao_bruta=command.ia_sugestao_bruta,
+                ia_diff_modificacao=diff_ia,
+                ia_ratificada_pelo_medico=command.ia_ratificada_pelo_medico,
             )
             await self._session.flush()
             if self._audit_trail is not None:
@@ -137,8 +220,15 @@ class EvolucaoService:
                     payload={
                         "evolucao_id": str(existing_retry.id),
                         "cid10": existing_retry.cid10_principal,
+                        "codigo_sigtap": existing_retry.codigo_sigtap,
+                        "ia_utilizada": existing_retry.ia_utilizada,
                     },
                 )
+            await self._registrar_auditoria_ia_se_utilizada(
+                command=command,
+                evolucao_id=existing_retry.id,
+                diff_ia=diff_ia,
+            )
             await self._session.commit()
             return existing_retry
 
@@ -153,8 +243,15 @@ class EvolucaoService:
                 payload={
                     "evolucao_id": str(evolucao.id),
                     "cid10": command.cid10_principal,
+                    "codigo_sigtap": evolucao.codigo_sigtap,
+                    "ia_utilizada": evolucao.ia_utilizada,
                 },
             )
+        await self._registrar_auditoria_ia_se_utilizada(
+            command=command,
+            evolucao_id=evolucao.id,
+            diff_ia=diff_ia,
+        )
         await self._session.commit()
         return evolucao
 

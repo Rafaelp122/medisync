@@ -13,6 +13,7 @@ from src.modules.consultation.application.dtos import (
     DocumentoAssinadoResult,
     EmitirDocumentoClinicoCommand,
     FinalizarConsultaCommand,
+    FinalizarConsultaResult,
     ProntuarioResumoDTO,
     RegistrarEvolucaoSOAPCommand,
     TMAStatusDTO,
@@ -27,6 +28,9 @@ from src.modules.consultation.application.ports.icp_brasil_signer_port import (
 )
 from src.modules.consultation.application.ports.pdf_generator_port import (
     PDFGeneratorPort,
+)
+from src.modules.consultation.application.ports.producao_ambulatorial_port import (
+    ProducaoAmbulatorialPort,
 )
 from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.application.services.documento_service import (
@@ -61,6 +65,7 @@ class PEPService:
         atendimento_reader: AtendimentoReaderPort | None = None,
         evolucao_service: EvolucaoService | None = None,
         audit_trail: AuditTrailPort | None = None,
+        producao_port: ProducaoAmbulatorialPort | None = None,
     ) -> None:
         self._session = session
         self._pdf_generator = pdf_generator
@@ -69,6 +74,7 @@ class PEPService:
         self._reader = atendimento_reader
         self._documentos = documento_service
         self._audit_trail = audit_trail
+        self._producao_port = producao_port
         self._evolucao = evolucao_service or EvolucaoService(
             session=session, reader=atendimento_reader, audit_trail=audit_trail
         )
@@ -104,6 +110,14 @@ class PEPService:
         Regras: RN06 e docs/explanation/domains/consultation-domain.md.
         """
         return self._reader
+
+    @property
+    def producao_port(self) -> ProducaoAmbulatorialPort | None:
+        """Porta para consolidação ambulatorial BPA-I (SUS ADR-012).
+
+        Regras: US-11 e ADR-012 (Consolidação Ambulatorial SUS BPA-I).
+        """
+        return self._producao_port
 
     async def _is_terminal(self, atendimento_id: UUID) -> bool:
         """Return True when queue-owned attendance reached terminal status."""
@@ -164,7 +178,7 @@ class PEPService:
 
     async def finalizar_consulta(
         self, command: FinalizarConsultaCommand
-    ) -> EvolucaoClinica:
+    ) -> FinalizarConsultaResult:
         """Encerra a consulta clínica, bloqueando evolução SOAP e documentos.
 
         Assegura imutabilidade sob CFM nº 1.821/2007 e CFM nº 2.314/2022.
@@ -202,9 +216,26 @@ class PEPService:
         for doc in documentos:
             doc.marcar_finalizado()
 
-        with contextlib.suppress(Exception):
-            if self._reader is not None:
+        resumo = None
+        if self._reader is not None:
+            with contextlib.suppress(Exception):
+                resumo = await self._reader.obter_resumo(command.atendimento_id)
+            with contextlib.suppress(Exception):
                 await self._reader.concluir_atendimento(command.atendimento_id)
+
+        if (
+            self._producao_port is not None
+            and resumo is not None
+            and resumo.paciente_id is not None
+        ):
+            with contextlib.suppress(Exception):
+                await self._producao_port.consolidar_teleconsulta(
+                    organizacao_id=command.organizacao_id,
+                    atendimento_id=command.atendimento_id,
+                    profissional_id=command.medico_id,
+                    paciente_id=resumo.paciente_id,
+                    codigo_sigtap=evolucao.codigo_sigtap,
+                )
 
         await self._session.flush()
         if self._audit_trail is not None:
@@ -220,7 +251,10 @@ class PEPService:
                 payload={"evolucao_id": str(evolucao.id)},
             )
         await self._session.commit()
-        return evolucao
+        return FinalizarConsultaResult(
+            atendimento_id=command.atendimento_id,
+            is_finalizado=evolucao.is_finalizado,
+        )
 
     def calcular_tma_status(
         self,

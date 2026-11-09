@@ -37,7 +37,7 @@ class SqlDocumentDirectory(DocumentDirectoryPort):
     ) -> DadosVerificacaoDirectory:
         org_res = await self._session.execute(
             text(
-                "SELECT razao_social, nome_fantasia FROM organizacoes "
+                "SELECT razao_social, nome_fantasia, cnes FROM organizacoes "
                 "WHERE id = :org_id"
             ),
             {"org_id": organizacao_id},
@@ -126,4 +126,5 @@ class SqlDocumentDirectory(DocumentDirectoryPort):
             else None,
             paciente_data_nascimento=nasc_str,
             paciente_endereco=end_str,
+            cnes=str(org_row.get("cnes")) if org_row and org_row.get("cnes") else None,
         )

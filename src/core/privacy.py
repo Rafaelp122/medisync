@@ -15,6 +15,18 @@ def mascarar_cpf(cpf: str) -> str:
     return f"{digits[:3]}.***.***-{digits[-2:]}"
 
 
+def mascarar_cns(cns: str) -> str:
+    """Mascara dígitos centrais do CNS em conformidade com privacidade (LGPD Art. 11).
+
+    Exibe os 3 primeiros e 4 últimos dígitos de um CNS de 15 dígitos.
+    Regras: docs/explanation/architecture/security-and-authorization.md
+    """
+    digits = "".join(ch for ch in cns if ch.isdigit())
+    if len(digits) != 15:
+        return "***"
+    return f"{digits[:3]}********{digits[-4:]}"
+
+
 def _mascarar_token_nome(parte: str) -> str:
     if parte.lower() in _PREPOSICOES:
         return parte.lower()

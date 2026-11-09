@@ -28,7 +28,13 @@ def test_organizacao_model_attributes_and_defaults():
 
 
 def test_organizacao_invalid_cnpj_raises_validation_error():
-    with pytest.raises(ValidationError, match="CNPJ inválido"):
+    with pytest.raises(
+        ValidationError,
+        match=(
+            r"CNPJ '123' inválido: possui 3 dígitos; "
+            r"esperados exatamente 14 dígitos numéricos\."
+        ),
+    ):
         Organizacao(
             cnpj="123",  # Invalid length
             razao_social="Clínica Exemplo",

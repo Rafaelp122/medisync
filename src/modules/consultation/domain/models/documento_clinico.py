@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     String,
+    Text,
     event,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -47,7 +48,7 @@ class DocumentoClinico(Base):
     """Entidade agregadora de documentos clínicos da telemedicina.
 
     Emite receitas e atestados sob ICP-Brasil e Portaria SVS/MS nº 344/98.
-    Regras: Portaria 344/98, MP 2.200-2/2001 e ADR-006.
+    Regras: Portaria 344/98, MP 2.200-2/2001, CFM 2.314/2022 e ADR-006.
     """
 
     __tablename__ = "documentos_clinicos"
@@ -91,6 +92,9 @@ class DocumentoClinico(Base):
     )
     chave_s3: Mapped[str] = mapped_column(String(512), nullable=False)
     sha256_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    justificativa_tempo_inferior: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
     assinado_em: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -117,6 +121,7 @@ class DocumentoClinico(Base):
         chave_s3: str,
         sha256_hash: str | None = None,
         *,
+        justificativa_tempo_inferior: str | None = None,
         assinado_em: datetime | None = None,
         finalizado_em: datetime | None = None,
         id: UUID | None = None,
@@ -142,6 +147,12 @@ class DocumentoClinico(Base):
                 )
             clean_hash = ch
 
+        clean_justificativa = (
+            justificativa_tempo_inferior.strip()
+            if justificativa_tempo_inferior and justificativa_tempo_inferior.strip()
+            else None
+        )
+
         try:
             tipo_enum = (
                 tipo_documento
@@ -162,6 +173,7 @@ class DocumentoClinico(Base):
             tipo_documento=tipo_enum,
             chave_s3=chave_s3.strip(),
             sha256_hash=clean_hash,
+            justificativa_tempo_inferior=clean_justificativa,
             assinado_em=assinado_em,
             finalizado_em=finalizado_em,
         )

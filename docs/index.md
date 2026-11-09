@@ -46,7 +46,7 @@ Especificações comportamentais em Gherkin com checklist de código vivo, conso
 - [US-08](user-stories/US-08-atendimento-chamada-no-show.md): Atendimento da Chamada e Gestão de No-Show
 - [US-09](user-stories/US-09-teleconsulta-pep-soap.md): Teleconsulta Síncrona e Registro PEP SOAP
 - [US-10](user-stories/US-10-prescricao-assinatura-icp-brasil.md): Prescrição Eletrônica e Assinatura ICP-Brasil
-- [US-11](user-stories/US-11-liquidacao-fechamento-contabil.md): Conclusão de Consulta e Liquidação Contábil
+- [US-11](user-stories/US-11-liquidacao-fechamento-contabil.md): Conclusão de Atendimento e Consolidação Ambulatorial SUS (BPA-I)
 - [US-12](user-stories/US-12-parametrizacao-politicas-plantao.md): Parametrização e Políticas Operacionais do Plantão
 - [US-13](user-stories/US-13-telemetria-painel-operacional.md): Telemetria Operacional e Painel do Plantão (CQRS)
 

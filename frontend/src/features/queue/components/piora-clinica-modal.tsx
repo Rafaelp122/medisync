@@ -37,7 +37,7 @@ const SINTOMAS_ALARME = [
  * Modal de Salvaguarda de Piora Clínica e Reavaliação de Risco (RF-06, RN04).
  *
  * Permite ao paciente na sala de espera relatar agravamento dos sintomas,
- * recalculando o escore Manchester/ACR ou disparando escape SAMU 192 imediato.
+ * recalculando a classificação de risco ACR SUS (Portaria GM/MS nº 2.048/2002) ou disparando escape SAMU 192 imediato.
  *
  * @see docs/user-stories/US-06-deterioracao-clinica-escape-samu.md
  * @see docs/how-to/patient-virtual-waiting-room.md

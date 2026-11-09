@@ -21,6 +21,7 @@ class DadosVerificacaoDirectory:
     organizacao_cnpj: str | None = None
     paciente_data_nascimento: str | None = None
     paciente_endereco: str | None = None
+    cnes: str | None = None
 
 
 @runtime_checkable

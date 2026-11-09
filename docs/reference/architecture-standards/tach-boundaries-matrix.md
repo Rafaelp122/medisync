@@ -6,7 +6,7 @@
 
 O MediSync Express adota a arquitetura Hexagonal Pragmática (ADR-001) para conciliar desacoplamento modular, tipagem estrita e alta performance de execução.
 Para impedir a erosão arquitetural e o acoplamento desordenado entre domínios clínicos, o repositório emprega o `tach` (`tach.toml`) como linter arquitetural estrito no pipeline de integração contínua (`just tach`).
-A governança estabelece isolamento físico e lógico entre os módulos de negócio (`auth`, `identity`, `triage`, `queue`, `consultation`, `billing`, `telemetry`), a base compartilhada (`core`) e o executor assíncrono (`worker`).
+A governança estabelece isolamento físico e lógico entre os módulos de negócio (`auth`, `identity`, `triage`, `queue`, `consultation`, `ambulatory`, `telemetry`), a base compartilhada (`core`) e o executor assíncrono (`worker`).
 Qualquer violação das regras de dependência ou importação direta não autorizada entre camadas ou módulos causa falha imediata na checagem estática.
 A barreira estrutural garante que regras de transação (um commit por caso de uso no service) e o padrão de routers finos sejam rigorosamente respeitados.
 
@@ -34,10 +34,10 @@ A separação modular segue o princípio *Inside-Out* estrito (Stage B), onde ca
 | `src.modules.auth.infrastructure` | `src.core`, `auth.application`, `auth.domain` | Adaptador Valkey de revogação de tokens JWT. |
 | `src.modules.auth.composition` | `src.core`, `auth.*`, `identity.application`, `identity.composition` | Consome serviços de `identity` via composition. |
 | `src.modules.auth.presentation` | `src.core`, `auth.application`, `auth.composition` | Routers finos e schemas de autenticação. |
-| `src.modules.billing.domain` | `src.core` | Isolado. Enums e regras de elegibilidade de convênio. |
-| `src.modules.billing.application` | `src.core`, `billing.domain` | Define portas de elegibilidade e notificação de recusa. |
-| `src.modules.billing.infrastructure` | `src.core`, `billing.application`, `billing.domain` | Adaptadores de gateway privado e SUS isento. |
-| `src.modules.billing.composition` | `src.core`, `billing.application`, `billing.domain`, `billing.infrastructure` | Fornece `ElegibilidadeService` para worker e API. |
+| `src.modules.ambulatory.domain` | `src.core` | Isolado. Modelos de produção ambulatorial SUS, enums e regras de BPA-I / SISAB. |
+| `src.modules.ambulatory.application` | `src.core`, `ambulatory.domain` | Orquestra consolidação de teleconsulta, portas de elegibilidade e DTOs BPA-I. |
+| `src.modules.ambulatory.infrastructure` | `src.core`, `ambulatory.application`, `ambulatory.domain` | Adaptador SUS isento e adaptadores técnicos de notificação ambulatorial. |
+| `src.modules.ambulatory.composition` | `src.core`, `ambulatory.application`, `ambulatory.domain`, `ambulatory.infrastructure` | Fornece `ProducaoAmbulatorialService` e `ElegibilidadeService` para worker e API. |
 | `src.modules.consultation.domain` | `src.core` | Isolado. Modelos de prontuário, documentos e prescrições. |
 | `src.modules.consultation.application` | `src.core`, `consultation.domain` | Define portas de storage, PDF, assinatura e LiveKit. |
 | `src.modules.consultation.infrastructure` | `src.core`, `consultation.application`, `consultation.domain` | Adaptadores PyHanko, S3 MinIO e ReportLab. |
@@ -62,7 +62,7 @@ A separação modular segue o princípio *Inside-Out* estrito (Stage B), onde ca
 | `src.modules.telemetry.infrastructure` | `src.core`, `telemetry.application`, `telemetry.domain` | Agregações Valkey e repositórios analíticos. |
 | `src.modules.telemetry.composition` | `src.core`, `telemetry.application`, `telemetry.domain`, `telemetry.infrastructure` | Fornece dependências do painel e plantão. |
 | `src.modules.telemetry.presentation` | `src.core`, `telemetry.application`, `telemetry.composition` | Routers de métricas e painel em tempo real. |
-| `src.worker` | `src.core`, `queue.*`, `billing.*`, `identity.*` | Executa jobs em background (timeout de ring, elegibilidade). |
+| `src.worker` | `src.core`, `queue.*`, `ambulatory.*`, `identity.*` | Executa jobs em background (timeout de ring, consolidação e elegibilidade). |
 
 ### Proibição de Imports Cross-Module Diretos
 

@@ -55,6 +55,8 @@ class UsuarioCredencial(Base):
     bloqueado_ate: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mfa_ativo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -75,6 +77,8 @@ class UsuarioCredencial(Base):
         senha_hash: str,
         papel: str,
         ativo: bool = True,
+        mfa_secret: str | None = None,
+        mfa_ativo: bool = False,
         id: UUID | None = None,
     ) -> None:
         clean_ident = identificador.strip().lower()
@@ -86,6 +90,8 @@ class UsuarioCredencial(Base):
             senha_hash=senha_hash.strip(),
             papel=papel.strip().upper(),
             ativo=ativo,
+            mfa_secret=mfa_secret,
+            mfa_ativo=mfa_ativo,
             falhas_login_consecutivas=0,
             bloqueado_ate=None,
         )

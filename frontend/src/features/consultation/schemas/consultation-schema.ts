@@ -53,10 +53,20 @@ export const itemPrescricaoSchema = zItemPrescricaoRequest.extend({
  * Schema Zod de validação para emissão de documento clínico (receita ou atestado).
  * Regras: RF-07, US-10.
  */
-export const emitirDocumentoSchema = zEmitirDocumentoRequest.extend({
-  tipo_documento: z.string().default("RECEITA_SIMPLES"),
-  itens: z.array(itemPrescricaoSchema).min(1, "A receita deve conter ao menos um medicamento"),
-});
+export const emitirDocumentoSchema = zEmitirDocumentoRequest
+  .extend({
+    tipo_documento: z.string().default("RECEITA_SIMPLES"),
+    itens: z.array(itemPrescricaoSchema).optional().default([]),
+  })
+  .superRefine((data, ctx) => {
+    if (data.tipo_documento === "RECEITA_SIMPLES" && (!data.itens || data.itens.length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A receita deve conter ao menos um medicamento",
+        path: ["itens"],
+      });
+    }
+  });
 
 /**
  * Schema Zod de validação para assinatura digital ICP-Brasil via PSC em nuvem.

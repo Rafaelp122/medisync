@@ -23,7 +23,7 @@ O catálogo cumpre três propósitos estruturais:
 | :--- | :--- | :--- |
 | **Juliana Silva** | Paciente espontânea (com dor/sintomas) | Acolhimento rápido (< 45s), transparência sobre sua vez na fila, login sem fricção de senhas e escape imediato em caso de piora clínica. |
 | **Dr. Eduardo Rocha** | Médico plantonista | Zero overbooking de tela, alocação atômica justa (< 10ms), descarte rápido de no-show (45s), prontuário SOAP integrado e prescrição com salvaguardas legais. |
-| **Patrícia Mendes** | Coordenadora de faturamento e regulação | Validação assíncrona de convênio/SUS sem travar o paciente, e fechamento contábil confiável pós-consulta sem glosas cadastrais. |
+| **Patrícia Mendes** | Coordenadora de regulação e produção ambulatorial | Acolhimento universal SUS (Art. 196 CF/88) sem travar o paciente, e consolidação ambulatorial pós-consulta (BPA-I / SISAB) sem divergências cadastrais. |
 | **Carlos Drumond** | Diretor clínico e gestor operacional | Parametrização dinâmica do plantão (capacidade $\alpha$, médicos ativos) e telemetria operacional em tempo real (SLA $\ge 95\%$, TME e TMA real). |
 
 ---
@@ -44,7 +44,7 @@ O catálogo é estruturado entre **Jornadas Assistenciais e Operacionais Primár
 | **US-08** | [`US-08-atendimento-chamada-no-show.md`](./US-08-atendimento-chamada-no-show.md) | RF-03 | RN02, RN03 | Juliana / Eduardo | 🟢 **Conforme** |
 | **US-09** | [`US-09-teleconsulta-pep-soap.md`](./US-09-teleconsulta-pep-soap.md) | RF-07 | RN06, RN-REG-01 | Dr. Eduardo Rocha | 🟢 **Conforme** |
 | **US-10** | [`US-10-prescricao-assinatura-icp-brasil.md`](./US-10-prescricao-assinatura-icp-brasil.md) | RF-07 | Portaria 344/98 | Dr. Eduardo / Juliana | 🟢 **Conforme** |
-| **US-11** | [`US-11-liquidacao-fechamento-contabil.md`](./US-11-liquidacao-fechamento-contabil.md) | RF-08 | RN-NEG-01 | Patrícia Mendes | 🔴 **Não Conforme** *(Issue #78: ausência de liquidação e BPA/TISS)* |
+| **US-11** | [`US-11-liquidacao-fechamento-contabil.md`](./US-11-liquidacao-fechamento-contabil.md) | RF-08 | RN-NEG-01 | Patrícia Mendes | 🟢 **Conforme** |
 | **US-12** | [`US-12-parametrizacao-politicas-plantao.md`](./US-12-parametrizacao-politicas-plantao.md) | RF-09 | RN05 | Carlos Drumond | 🟢 **Conforme** |
 | **US-13** | [`US-13-telemetria-painel-operacional.md`](./US-13-telemetria-painel-operacional.md) | RF-10 | RNF-10, SMART 1-5 | Carlos Drumond / Dr. Eduardo Rocha | 🟢 **Conforme** *(Resoluções NC-TEL-01, NC-TEL-02 e NC-SEC-01 na Issue #87)* |
 | **US-14** | [`US-14-biometria-passkeys-webauthn.md`](./US-14-biometria-passkeys-webauthn.md) | RF-01, RF-07 | LGPD Art. 11, OWASP | Juliana Silva | 🔴 **Pendente (Backlog / Issue #115)** |

@@ -1,6 +1,7 @@
 """Port for reading attendance status without importing queue models."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
@@ -16,6 +17,8 @@ class AtendimentoResumoDTO:
     tcle_hash: str | None
     is_terminal: bool
     paciente_id: UUID | None = None
+    chamada_iniciada_em: datetime | None = None
+    criado_em: datetime | None = None
 
 
 @runtime_checkable

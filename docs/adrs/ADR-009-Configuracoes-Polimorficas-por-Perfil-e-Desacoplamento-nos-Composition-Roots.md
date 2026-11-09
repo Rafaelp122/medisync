@@ -76,6 +76,11 @@ Adotamos a **Opção 3: Hierarquia Polimórfica com Pydantic Settings e Fiação
 4. **Guardas Automatizados de Arquitetura**:
    - O teste AST `tests/architecture/test_services_and_composition.py` é executado em `just check` para barrar automaticamente qualquer violação dessas diretrizes.
 
+5. **Extensão e Conformidade no Cliente Web (`frontend/src/config/settings.ts`)**:
+   - Centralização unificada das variáveis Vite e constantes operacionais em `frontend/src/config/settings.ts:settings`.
+   - Validação em tempo de carga com schema Zod (`settingsSchema`) e imutabilidade profunda garantida via `deepFreeze()`.
+   - Eliminação de valores mágicos dispersos (SLA de TMA, tolerância de No-Show, cooldowns de OTP, timeouts de rede e chaves de storage) e fail-fast de recursos de demonstração em produção.
+
 ---
 
 ## 5. Consequências
