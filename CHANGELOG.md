@@ -1,3 +1,9 @@
+## v0.15.3 (2026-11-10)
+
+### Refactor
+
+- **consultation/ambulatory**: hardening de cache distribuído, composition root de ambulatory e blindagem de conclusão do PEP (#77)
+
 ## v0.15.2 (2026-11-10)
 
 ### Refactor
