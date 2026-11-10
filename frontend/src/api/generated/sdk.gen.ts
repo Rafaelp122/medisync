@@ -88,12 +88,12 @@ export const mfaVerifyApiV1AuthMfaVerifyPost = <ThrowOnError extends boolean = f
  *
  * Rotaciona o refresh token: invalida o token apresentado e emite um novo par.
  */
-export const refreshTokenApiV1AuthRefreshPost = <ThrowOnError extends boolean = false>(options: Options<RefreshTokenApiV1AuthRefreshPostData, ThrowOnError>): RequestResult<RefreshTokenApiV1AuthRefreshPostResponses, RefreshTokenApiV1AuthRefreshPostErrors, ThrowOnError> => (options.client ?? client).post<RefreshTokenApiV1AuthRefreshPostResponses, RefreshTokenApiV1AuthRefreshPostErrors, ThrowOnError>({
+export const refreshTokenApiV1AuthRefreshPost = <ThrowOnError extends boolean = false>(options?: Options<RefreshTokenApiV1AuthRefreshPostData, ThrowOnError>): RequestResult<RefreshTokenApiV1AuthRefreshPostResponses, RefreshTokenApiV1AuthRefreshPostErrors, ThrowOnError> => (options?.client ?? client).post<RefreshTokenApiV1AuthRefreshPostResponses, RefreshTokenApiV1AuthRefreshPostErrors, ThrowOnError>({
     url: '/api/v1/auth/refresh',
     ...options,
     headers: {
         'Content-Type': 'application/json',
-        ...options.headers
+        ...options?.headers
     }
 });
 
@@ -104,13 +104,13 @@ export const refreshTokenApiV1AuthRefreshPost = <ThrowOnError extends boolean = 
  *
  * Impede renovações e acessos subsequentes em toda a malha distribuída.
  */
-export const logoutApiV1AuthLogoutPost = <ThrowOnError extends boolean = false>(options: Options<LogoutApiV1AuthLogoutPostData, ThrowOnError>): RequestResult<LogoutApiV1AuthLogoutPostResponses, LogoutApiV1AuthLogoutPostErrors, ThrowOnError> => (options.client ?? client).post<LogoutApiV1AuthLogoutPostResponses, LogoutApiV1AuthLogoutPostErrors, ThrowOnError>({
+export const logoutApiV1AuthLogoutPost = <ThrowOnError extends boolean = false>(options?: Options<LogoutApiV1AuthLogoutPostData, ThrowOnError>): RequestResult<LogoutApiV1AuthLogoutPostResponses, LogoutApiV1AuthLogoutPostErrors, ThrowOnError> => (options?.client ?? client).post<LogoutApiV1AuthLogoutPostResponses, LogoutApiV1AuthLogoutPostErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/auth/logout',
     ...options,
     headers: {
         'Content-Type': 'application/json',
-        ...options.headers
+        ...options?.headers
     }
 });
 

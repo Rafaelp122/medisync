@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { setAccessToken } from "@/lib/auth-token";
 import type { StoredManagerSession } from "@/lib/session-storage";
 import { useCorporateLogin } from "../api/use-corporate-login";
 import { managerLoginSchema } from "../schemas/auth-schemas";
@@ -44,8 +45,8 @@ export function ManagerLoginForm({ onLoginSuccess, className }: ManagerLoginForm
   });
 
   const finalizarLogin = (token: string) => {
+    setAccessToken(token);
     const session: StoredManagerSession = {
-      token,
       usuarioId: "018f3a5b-9999-4444-8888-018f3a5b9999",
       nome: "Gestor da Regulação Municipal",
       email: email.trim().toLowerCase(),

@@ -24,8 +24,10 @@ Multitenancy estrito: credenciais corporativas são isoladas por `organizacao_id
 - **RN-AUT-02 — Lockout progressivo de 15 minutos após 5 falhas consecutivas.** `UsuarioCredencial.registrar_falha_login` incrementa contadores e bloqueia a conta ao atingir `max_falhas = 5` por 15 minutos. `is_bloqueado` auto-reseta falhas quando o tempo expira. Autenticação válida executa `registrar_sucesso_login()`, zerando as falhas. [Fonte](../product-specification.md) (RF-01)
 - **RN-AUT-03 — Autenticação passwordless de paciente por OTP SMS (6 dígitos).** `PatientAuthService.solicitar_otp` gera código numérico criptograficamente seguro via `secrets.SystemRandom().randint(100000, 999999)` com TTL de 5 minutos (300s), transmitido via `SmsSenderPort`. [Fonte](../product-specification.md) (RF-01)
 - **RN-AUT-04 — Rate limiting estrito de OTP e contenção de brute-force.** Janela deslizante de 15 minutos (900s) com limite de 3 solicitações de OTP por número telefônico (`OtpRateLimitExcedidoError`). Máximo de 3 tentativas de validação por código OTP gerado: as 2 primeiras falhas retornam HTTP 401 (`OtpInvalidoOuExpiradoError`); a 3ª falha invalida o OTP e levanta `OtpTentativasExcedidasError` (HTTP 429 Too Many Requests com cabeçalho `Retry-After: 900`). Ambas as violações de limite retornam HTTP 429 com `Retry-After`. [Fonte](../product-specification.md) (RF-01)
-- **RN-AUT-05 — Rotação de refresh token com revogação distribuída de uso único.** Cada refresh token consumido em `AuthService.rotacionar_refresh_token` é marcado como revogado via `TokenRevocationPort.revogar` com chave `auth:revoked:{jti}` pelo TTL restante. Reuso de token já revogado aborta o ciclo com `TokenRevogadoError`. [Fonte](../product-specification.md) (RF-01)
-- **RN-AUT-06 — Logout com revogação síncrona.** `AuthService.revogar_sessao` invalida imediatamente o refresh token e opcionalmente o access token no Valkey, assegurando encerramento instantâneo de sessão em nós concorrentes. [Fonte](../product-specification.md) (RF-01)
+- **RN-AUT-05 — Rotação de refresh token com transporte seguro via Cookie HttpOnly, SameSite=Strict e revogação de uso único.** Cada refresh token consumido em `AuthService.rotacionar_refresh_token` é marcado como revogado via `TokenRevocationPort.revogar` com chave `auth:revoked:{jti}` pelo TTL restante. O transporte prioritário é realizado via Cookie `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`, `Max-Age=604800` (7 dias) com fallback retrocompatível para payload JSON. Apresentações repetidas abortam o ciclo com `TokenRevogadoError`. Ausência de cookie e payload levanta `TokenInvalidoError` (HTTP 401). [Fonte](../product-specification.md) (RF-01, Issue #144)
+- **RN-AUT-06 — Logout com revogação síncrona e expurgo de cookie.** `AuthService.revogar_sessao` invalida imediatamente o refresh token no Valkey, e o presentation layer emite cabeçalho `Set-Cookie: refresh_token=; Max-Age=0; Path=/api/v1/auth; HttpOnly; SameSite=Strict`, eliminando a credencial persistente no navegador. [Fonte](../product-specification.md) (RF-01, Issue #144)
+- **RN-AUT-07 — Access tokens estritamente em memória volátil (OWASP ASVS V3.5.2 / LGPD Art. 46).** Tokens de acesso JWT de curta duração (15 minutos) residem exclusivamente na closure JavaScript (`frontend/src/lib/auth-token.ts`), sendo proibida sua gravação em `localStorage` ou `sessionStorage`. O reload de página (F5) reidrata o token através de silent refresh automático via cookie HttpOnly. Sessões de pacientes (`StoredPatientSession`) mantêm token de curta duração (60 min) em sessionStorage isolado. [Fonte](../product-specification.md) (RF-01, Issue #144)
+- **RN-AUT-08 — Atributos de segurança mandatórios para cookies (OWASP ASVS V3.4.1).** Todo cookie emitido para transporte de refresh token possui obrigatoriamente `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`, `Max-Age=604800` (7 dias) e flag `Secure` dinamicamente resolvida com base no cabeçalho `X-Forwarded-Proto` e no ambiente de execução (ativo em HTTPS e produção). [Fonte](../product-specification.md) (RF-01, Issue #144)
 
 Guardiões: `UsuarioCredencial` normaliza identificadores para minúsculas sem espaços, valida papéis e bloqueia autenticação de contas marcadas com `ativo = False` ou sob lockout ativo.
 
@@ -112,9 +114,13 @@ flowchart TD
 - `src/modules/auth/infrastructure/jwt_token_service.py`
 - `src/modules/auth/infrastructure/valkey_token_revocation.py`
 - `src/modules/auth/infrastructure/valkey_rate_limiter.py`
+- `src/modules/auth/presentation/helpers.py`
 - `src/modules/auth/presentation/routers/auth_router.py`
 - `src/modules/auth/presentation/routers/patient_auth_router.py`
 - `src/modules/auth/composition.py`
+- `frontend/src/lib/auth-token.ts`
+- `frontend/src/lib/session-storage.ts`
+- `frontend/src/api/client.ts`
 - `migrations/versions/0003_auth_credentials.py`
 
 Prova viva:

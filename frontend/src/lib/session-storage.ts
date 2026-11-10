@@ -99,7 +99,6 @@ export const MEDISYNC_DOCTOR_SESSION_KEY = settings.storage.doctorSession;
  * Contrato da sessão do médico plantonista persistida no navegador.
  */
 export interface StoredDoctorSession {
-  token: string;
   medicoId: string;
   medicoNome: string;
   crmUf: string;
@@ -124,10 +123,10 @@ export function getStoredDoctorSession(): StoredDoctorSession | null {
     if (
       !parsed ||
       typeof parsed !== "object" ||
-      typeof parsed.token !== "string" ||
       typeof parsed.medicoId !== "string" ||
-      !parsed.token.trim() ||
-      !parsed.medicoId.trim()
+      typeof parsed.medicoNome !== "string" ||
+      !parsed.medicoId.trim() ||
+      !parsed.medicoNome.trim()
     ) {
       clearStoredDoctorSession();
       return null;
@@ -176,7 +175,6 @@ export const MEDISYNC_MANAGER_SESSION_KEY = settings.storage.managerSession;
  * Contrato da sessão do gestor municipal / regulação persistida no navegador.
  */
 export interface StoredManagerSession {
-  token: string;
   usuarioId: string;
   nome: string;
   email: string;
@@ -201,10 +199,10 @@ export function getStoredManagerSession(): StoredManagerSession | null {
     if (
       !parsed ||
       typeof parsed !== "object" ||
-      typeof parsed.token !== "string" ||
       typeof parsed.usuarioId !== "string" ||
-      !parsed.token.trim() ||
-      !parsed.usuarioId.trim()
+      typeof parsed.email !== "string" ||
+      !parsed.usuarioId.trim() ||
+      !parsed.email.trim()
     ) {
       clearStoredManagerSession();
       return null;

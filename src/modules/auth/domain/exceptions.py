@@ -4,6 +4,7 @@ from src.core.errors import (
     DomainError,
     ForbiddenError,
     NotFoundError,
+    TokenInvalidoError,
     TokenRevogadoError,
     UnauthorizedError,
 )
@@ -64,17 +65,7 @@ class ContaDesativadaError(ForbiddenError):
         super().__init__(detail, title=self.title, code=self.code)
 
 
-class TokenInvalidoError(UnauthorizedError):
-    """Raised when JWT token signature, payload, or structure is invalid."""
-
-    title = "Token Inválido"
-    code = "TOKEN_INVALIDO"
-
-    def __init__(
-        self,
-        detail: str = "Token de autenticação inválido ou malformado.",
-    ) -> None:
-        super().__init__(detail, title=self.title, code=self.code)
+# TokenInvalidoError is re-exported from src.core.errors
 
 
 class TokenExpiradoError(UnauthorizedError):

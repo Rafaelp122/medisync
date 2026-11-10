@@ -1,15 +1,28 @@
 import { createRoute, redirect } from "@tanstack/react-router";
+import { silentRefreshToken } from "@/api/client";
 import { DoctorWorkstationPage } from "@/features/consultation/pages/doctor-workstation-page";
-import { getStoredDoctorSession, type StoredDoctorSession } from "@/lib/session-storage";
+import { getAccessToken } from "@/lib/auth-token";
+import {
+  clearStoredDoctorSession,
+  getStoredDoctorSession,
+  type StoredDoctorSession,
+} from "@/lib/session-storage";
 import { rootRoute } from "./root";
 
 export const medicoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/medico",
-  beforeLoad: () => {
+  beforeLoad: async () => {
     const doctorSession = getStoredDoctorSession();
-    if (!doctorSession?.token) {
+    if (!doctorSession) {
       throw redirect({ to: "/login" });
+    }
+    if (!getAccessToken()) {
+      await silentRefreshToken();
+      if (!getAccessToken()) {
+        clearStoredDoctorSession();
+        throw redirect({ to: "/login" });
+      }
     }
     return { doctorSession };
   },

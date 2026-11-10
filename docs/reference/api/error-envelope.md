@@ -40,7 +40,7 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 400 | `DEPENDENTE_AUTO_REFERENCIA` | Paciente indicado como dependente de si mesmo (`DependenteAutoReferenciaError`) |
 | 401 | `UNAUTHORIZED` | Ausência de credencial válida (`UnauthorizedError`) |
 | 401 | `CREDENCIAIS_INVALIDAS` | Identificador ou senha incorretos (`CredenciaisInvalidasError`) |
-| 401 | `TOKEN_INVALIDO`, `TOKEN_EXPIRADO` | JWT malformado, assinatura inválida ou expirado (`TokenInvalidoError`, `TokenExpiradoError`) |
+| 401 | `TOKEN_INVALIDO`, `TOKEN_EXPIRADO` | JWT malformado, assinatura inválida, expirado ou ausência de refresh token em cookie/corpo (`TokenInvalidoError`, `TokenExpiradoError`) |
 | 401 | `TOKEN_REVOGADO` | Token revogado ou reutilizado após renovação (`TokenRevogadoError`) |
 | 401 | `TOKEN_ACOLHIMENTO_INVALIDO` | Token provisório de triagem expirado ou inválido (`TokenAcolhimentoInvalidoError`) |
 | 401 | `OTP_INVALIDO` | Código OTP incorreto ou expirado (`OtpInvalidoOuExpiradoError`) |

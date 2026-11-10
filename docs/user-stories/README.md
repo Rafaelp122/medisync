@@ -40,13 +40,13 @@ O catálogo é estruturado entre **Jornadas Assistenciais e Operacionais Primár
 | **US-02** | [`US-02-autenticacao-passwordless-otp.md`](./US-02-autenticacao-passwordless-otp.md) | RF-01 (#44) | RN-REG-02 | Juliana Silva | 🟢 **Conforme** |
 | **US-03** | [`US-03-elegibilidade-onboarding-fase2.md`](./US-03-elegibilidade-onboarding-fase2.md) | RF-02 | RN03, RN-REG-02 | Juliana / Patrícia | 🟢 **Conforme** |
 | **US-06** | [`US-06-deterioracao-clinica-escape-samu.md`](./US-06-deterioracao-clinica-escape-samu.md) | RF-06 | RN04, RN-REG-01 | Juliana Silva | 🟢 **Conforme** |
-| **US-07** | [`US-07-alocacao-chamada-medica.md`](./US-07-alocacao-chamada-medica.md) | RF-03 | RN01, RN02 | Dr. Eduardo Rocha | 🟢 **Conforme** |
+| **US-07** | [`US-07-alocacao-chamada-medica.md`](./US-07-alocacao-chamada-medica.md) | RF-03 | RN01, RN02 | Dr. Eduardo Rocha | 🟢 **Conforme** *(Issue #144)* |
 | **US-08** | [`US-08-atendimento-chamada-no-show.md`](./US-08-atendimento-chamada-no-show.md) | RF-03 | RN02, RN03 | Juliana / Eduardo | 🟢 **Conforme** |
 | **US-09** | [`US-09-teleconsulta-pep-soap.md`](./US-09-teleconsulta-pep-soap.md) | RF-07 | RN06, RN-REG-01 | Dr. Eduardo Rocha | 🟢 **Conforme** |
 | **US-10** | [`US-10-prescricao-assinatura-icp-brasil.md`](./US-10-prescricao-assinatura-icp-brasil.md) | RF-07 | Portaria 344/98 | Dr. Eduardo / Juliana | 🟢 **Conforme** |
 | **US-11** | [`US-11-liquidacao-fechamento-contabil.md`](./US-11-liquidacao-fechamento-contabil.md) | RF-08 | RN-NEG-01 | Patrícia Mendes | 🟢 **Conforme** |
 | **US-12** | [`US-12-parametrizacao-politicas-plantao.md`](./US-12-parametrizacao-politicas-plantao.md) | RF-09 | RN05 | Carlos Drumond | 🟢 **Conforme** |
-| **US-13** | [`US-13-telemetria-painel-operacional.md`](./US-13-telemetria-painel-operacional.md) | RF-10 | RNF-10, SMART 1-5 | Carlos Drumond / Dr. Eduardo Rocha | 🟢 **Conforme** *(Resoluções NC-TEL-01, NC-TEL-02 e NC-SEC-01 na Issue #87)* |
+| **US-13** | [`US-13-telemetria-painel-operacional.md`](./US-13-telemetria-painel-operacional.md) | RF-10 | RNF-10, SMART 1-5 | Carlos Drumond / Dr. Eduardo Rocha | 🟢 **Conforme** *(Resoluções NC-TEL-01, NC-TEL-02 e NC-SEC-01 na Issue #87; Issue #144)* |
 | **US-14** | [`US-14-biometria-passkeys-webauthn.md`](./US-14-biometria-passkeys-webauthn.md) | RF-01, RF-07 | LGPD Art. 11, OWASP | Juliana Silva | 🔴 **Pendente (Backlog / Issue #115)** |
 | **US-15** | [`US-15-prova-de-vida-facial-liveness.md`](./US-15-prova-de-vida-facial-liveness.md) | RF-07 | Portaria 344/98, CFM 2.314 | Dr. Eduardo / Juliana | 🔴 **Pendente (Backlog / Issue #116)** |
 

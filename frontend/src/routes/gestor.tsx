@@ -1,15 +1,28 @@
 import { createRoute, redirect } from "@tanstack/react-router";
+import { silentRefreshToken } from "@/api/client";
 import { TelemetryDashboardPage } from "@/features/telemetry/pages/telemetry-dashboard-page";
-import { getStoredManagerSession, type StoredManagerSession } from "@/lib/session-storage";
+import { getAccessToken } from "@/lib/auth-token";
+import {
+  clearStoredManagerSession,
+  getStoredManagerSession,
+  type StoredManagerSession,
+} from "@/lib/session-storage";
 import { rootRoute } from "./root";
 
 export const gestorRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/gestor",
-  beforeLoad: () => {
+  beforeLoad: async () => {
     const managerSession = getStoredManagerSession();
-    if (!managerSession?.token) {
+    if (!managerSession) {
       throw redirect({ to: "/login" });
+    }
+    if (!getAccessToken()) {
+      await silentRefreshToken();
+      if (!getAccessToken()) {
+        clearStoredManagerSession();
+        throw redirect({ to: "/login" });
+      }
     }
     return { managerSession };
   },

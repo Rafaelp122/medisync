@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MediSync Express",
-    "version": "0.12.0"
+    "version": "0.14.0"
   },
   "paths": {
     "/healthz": {
@@ -197,11 +197,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshTokenRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshTokenRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -239,11 +246,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshTokenRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshTokenRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "204": {
@@ -4284,17 +4298,21 @@
       "RefreshTokenRequest": {
         "properties": {
           "refresh_token": {
-            "type": "string",
-            "minLength": 10,
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Refresh Token",
             "description": "Token de atualiza\u00e7\u00e3o v\u00e1lido emitido no login ou rota\u00e7\u00e3o anterior"
           }
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "refresh_token"
-        ],
         "title": "RefreshTokenRequest",
         "description": "Payload for rotating refresh token."
       },

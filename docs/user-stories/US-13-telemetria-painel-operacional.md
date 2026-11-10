@@ -24,7 +24,7 @@
 
 ### Cenário 1: Consulta do Painel no Dashboard Gerencial (`/gestor`) (Caso Feliz - Issue #141)
 - **Dado que** o plantão possui atendimentos em andamento, concluídos e ausências registradas,
-- **E** o gestor acessa a rota protegida `/gestor` (`frontend/src/routes/gestor.tsx`) com sessão ativa (caso contrário o guard `beforeLoad` redireciona para `/login`),
+- **E** o gestor acessa a rota protegida `/gestor` (`frontend/src/routes/gestor.tsx`) com sessão corporativa sem tokens em storage (Issue #144), access token mantido exclusivamente em memória volátil e reidratado via cookie HttpOnly silencioso no F5 (caso contrário o guard `beforeLoad` redireciona para `/login`),
 - **Quando** o painel operacional consulta `GET /api/v1/telemetria/painel`,
 - **Então** o sistema apresenta os indicadores consolidados de desempenho:
   1. Tempo Médio de Espera (TME) geral e estratificado pelos 5 níveis de triagem;
@@ -88,7 +88,7 @@
 - [x] **Acesso Clínico ao Painel (NC-TEL-02):** Dependência `require_telemetry_view_auth` permitindo `Role.MEDICO`, `Role.GESTOR_UNIDADE` e `Role.ADMIN_GLOBAL` no `GET /painel`, mantendo `config-plantao` restrito à gestão (`src/modules/telemetry/presentation/dependencies.py`).
 - [x] **Isolamento RLS Multi-Tenant (NC-SEC-01):** Tabela `configuracoes_plantao` coberta na suíte de testes de segurança com PostgreSQL real (`tests/integration/test_rls_security.py`).
 - [x] **Apresentação:** Router fino `telemetry_router.py` montado em `/api/v1/telemetria/painel`.
-- [x] **Frontend Rota & Painel Gestor (Issue #141):** Rota declarativa `/gestor` (`frontend/src/routes/gestor.tsx`) com guard `beforeLoad` validando sessão de gestor e redirecionamento para `/login`.
+- [x] **Frontend Rota & Painel Gestor (Issue #141 / Issue #144):** Rota declarativa `/gestor` (`frontend/src/routes/gestor.tsx`) com guard `beforeLoad` validando sessão de gestor e reidratação silenciosa de access token via cookie HttpOnly, sem persistência de credenciais em Web Storage.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_telemetry_service.py`
   - `tests/unit/test_telemetry_infra.py`

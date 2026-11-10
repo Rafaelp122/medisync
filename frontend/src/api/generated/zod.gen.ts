@@ -567,7 +567,7 @@ export const zProntuarioResponse = z.object({
  * Payload for rotating refresh token.
  */
 export const zRefreshTokenRequest = z.object({
-    refresh_token: z.string().min(10)
+    refresh_token: z.string().min(10).nullish()
 });
 
 /**
@@ -818,14 +818,20 @@ export const zMfaVerifyApiV1AuthMfaVerifyPostBody = zMfaVerificarLoginRequest;
  */
 export const zMfaVerifyApiV1AuthMfaVerifyPostResponse = zTokenResponse;
 
-export const zRefreshTokenApiV1AuthRefreshPostBody = zRefreshTokenRequest;
+/**
+ * Body
+ */
+export const zRefreshTokenApiV1AuthRefreshPostBody = zRefreshTokenRequest.nullable();
 
 /**
  * Successful Response
  */
 export const zRefreshTokenApiV1AuthRefreshPostResponse = zTokenResponse;
 
-export const zLogoutApiV1AuthLogoutPostBody = zRefreshTokenRequest;
+/**
+ * Body
+ */
+export const zLogoutApiV1AuthLogoutPostBody = zRefreshTokenRequest.nullable();
 
 /**
  * Successful Response

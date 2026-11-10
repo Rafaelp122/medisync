@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TokenResponse, VerificarOtpResponse } from "@/api/generated/types.gen";
+import { getAccessToken } from "@/lib/auth-token";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
 import { CadsusLoginForm } from "../components/cadsus-login-form";
@@ -172,9 +173,10 @@ describe("Tripartite Authentication Integration Tests (CADSUS, Doctor, Manager, 
       expect(handleSuccess).toHaveBeenCalledWith(
         expect.objectContaining({
           medicoNome: "Dr. Eduardo Rocha",
-          token: "mock-access-token-xyz",
+          crmUf: "123456/SP",
         }),
       );
+      expect(getAccessToken()).toBe("mock-access-token-xyz");
     });
   });
 

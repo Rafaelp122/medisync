@@ -122,7 +122,8 @@ class RefreshTokenRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    refresh_token: str = Field(
+    refresh_token: str | None = Field(
+        default=None,
         min_length=10,
         description="Token de atualização válido emitido no login ou rotação anterior",
     )

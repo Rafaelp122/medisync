@@ -215,11 +215,12 @@ Todas as respostas HTTP emitidas pela API passam pelo `SecurityHeadersMiddleware
 ### 6.2 Encerramento por Inatividade Clínica (`frontend/src/features/consultation/components/doctor-workstation.tsx`)
 Conforme a Resolução CFM nº 2.314/2022 e LGPD Art. 11, estações médicas em prontos-socorros operam em ambientes compartilhados. O componente `DoctorWorkstation` monitora a interação do usuário (`mousemove`, `keydown`, `click`, `scroll`, `touchstart`) e dispara o auto-logout imediato após 15 minutos de inatividade ininterrupta (`idleTimeoutMs = 900_000`), sincronizado ao tempo de vida do access token corporativo.
 
-### 6.3 Roteiro de Médio Prazo: Cookies HttpOnly e Memória Volátil (Issue #144)
-Para eliminar por completo a superfície de ataque por XSS contra credenciais em `localStorage`, a arquitetura planeja a migração para o padrão *Token Handler*:
-* **Refresh Token em Cookie HttpOnly:** Atributos `Secure; SameSite=Strict; Path=/api/v1/auth`, invisível a scripts maliciosos no navegador.
-* **Access Token em Memória Volátil:** Armazenado exclusivamente em closure JavaScript, com renovação transparente em background (*silent refresh*) em 401 ou reload de página.
-* **Planejamento Formal:** Especificado na Issue #144 (`[Security/Compliance]: Migração de Sessões para Cookies HttpOnly, SameSite=Strict e Access Tokens em Memória Volátil`).
+### 6.3 Padrão Token Handler: Cookies HttpOnly e Memória Volátil (Issue #144)
+Para eliminar por completo a superfície de ataque por XSS contra credenciais em `localStorage`, a arquitetura adota o padrão canônico *Token Handler*:
+* **Refresh Token em Cookie HttpOnly:** Emitido com atributos `HttpOnly; SameSite=Strict; Path=/api/v1/auth; Max-Age=604800` (7 dias) e flag `Secure` ativa em produção/HTTPS, invisível a scripts maliciosos no navegador (OWASP ASVS V3.4.1). Cada renovação rotaciona o token e invalida o JTI anterior no Valkey (`auth:revoked:{jti}`).
+* **Access Token em Memória Volátil:** Armazenado exclusivamente na closure JavaScript (`frontend/src/lib/auth-token.ts`), eliminando persistência em Web Storage corporativo (OWASP ASVS V3.5.2 / LGPD Art. 46).
+* **Silent Refresh e Mutex Anti-Loop:** O client HTTP (`frontend/src/api/client.ts`) intercepta respostas 401, compartilha uma promise singleton de renovação (`silentRefreshToken`) e repete a requisição com novo token e marcador anti-loop `X-Retry: 1`.
+* **Reidratação Transparente no F5:** As rotas protegidas (`/medico` e `/gestor`) reidratam o token em memória no hook `beforeLoad` através do cookie HttpOnly sem redirecionar o usuário para a tela de login. Falhas de refresh purgam imediatamente as sessões locais.
 
 ---
 
