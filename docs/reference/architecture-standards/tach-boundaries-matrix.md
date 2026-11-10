@@ -37,11 +37,11 @@ A separação modular segue o princípio *Inside-Out* estrito (Stage B), onde ca
 | `src.modules.ambulatory.domain` | `src.core` | Isolado. Modelos de produção ambulatorial SUS, enums e regras de BPA-I / SISAB. |
 | `src.modules.ambulatory.application` | `src.core`, `ambulatory.domain` | Orquestra consolidação de teleconsulta, portas de elegibilidade e DTOs BPA-I. |
 | `src.modules.ambulatory.infrastructure` | `src.core`, `ambulatory.application`, `ambulatory.domain` | Adaptador SUS isento e adaptadores técnicos de notificação ambulatorial. |
-| `src.modules.ambulatory.composition` | `src.core`, `ambulatory.application`, `ambulatory.domain`, `ambulatory.infrastructure` | Fornece `ProducaoAmbulatorialService` e `ElegibilidadeService` para worker e API. |
+| `src.modules.ambulatory.composition` | `src.core`, `ambulatory.application`, `ambulatory.domain`, `ambulatory.infrastructure` | Fornece `build_producao_ambulatorial_service`, `get_producao_ambulatorial_service` e `ElegibilidadeService` para worker, API e módulo de consulta. |
 | `src.modules.consultation.domain` | `src.core` | Isolado. Modelos de prontuário, documentos e prescrições. |
 | `src.modules.consultation.application` | `src.core`, `consultation.domain` | Define portas de storage, PDF, assinatura e LiveKit. |
 | `src.modules.consultation.infrastructure` | `src.core`, `consultation.application`, `consultation.domain` | Adaptadores PyHanko, S3 MinIO e ReportLab. |
-| `src.modules.consultation.composition` | `src.core`, `consultation.*`, `identity.app/comp`, `queue.app/comp` | Consome dados de profissional/paciente e fila. |
+| `src.modules.consultation.composition` | `src.core`, `consultation.*`, `identity.app/comp`, `queue.app/comp`, `ambulatory.app/comp` | Consome dados de profissional/paciente, fila e consolidação ambulatorial SUS via composition root de ambulatory. |
 | `src.modules.consultation.presentation` | `src.core`, `consultation.application`, `consultation.composition` | Routers finos de PEP, documentos e teleconsulta. |
 | `src.modules.identity.domain` | `src.core` | Isolado. Modelos de organizações, profissionais e pacientes. |
 | `src.modules.identity.application` | `src.core`, `identity.domain` | Define portas de busca de pacientes e profissionais. |

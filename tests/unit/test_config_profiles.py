@@ -36,6 +36,7 @@ def test_default_environment_is_development() -> None:
     assert settings.DEBUG is True
     assert settings.RATE_LIMIT_BACKEND == "valkey"
     assert settings.TOKEN_REVOCATION_BACKEND == "valkey"
+    assert settings.SIGNED_CACHE_BACKEND == "valkey"
 
 
 def test_test_environment_settings() -> None:
@@ -49,6 +50,7 @@ def test_test_environment_settings() -> None:
     assert settings.RATE_LIMIT_BACKEND == "memory"
     assert settings.TOKEN_REVOCATION_BACKEND == "memory"
     assert settings.VALIDATION_RATE_LIMIT_BACKEND == "memory"
+    assert settings.SIGNED_CACHE_BACKEND == "memory"
     assert settings.TELEMETRY_CACHE_BACKEND == "memory"
     assert settings.NOTIFICATION_PROVIDER == "fake"
     assert settings.POSTGRES_DB == "medisync"
@@ -118,6 +120,7 @@ def test_production_environment_succeeds_with_valid_config() -> None:
     assert prod.RATE_LIMIT_BACKEND == "valkey"
     assert prod.TOKEN_REVOCATION_BACKEND == "valkey"
     assert prod.VALIDATION_RATE_LIMIT_BACKEND == "valkey"
+    assert prod.SIGNED_CACHE_BACKEND == "valkey"
     assert prod.TELEMETRY_CACHE_BACKEND == "valkey"
 
 

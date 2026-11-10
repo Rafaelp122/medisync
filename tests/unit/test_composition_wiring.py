@@ -13,7 +13,16 @@ from src.modules.auth.infrastructure.valkey_token_revocation import (
     MemoryTokenRevocation,
     ValkeyTokenRevocation,
 )
-from src.modules.consultation.composition import get_validation_rate_limiter
+from src.modules.consultation.composition import (
+    get_signed_cache,
+    get_validation_rate_limiter,
+)
+from src.modules.consultation.infrastructure.memory_signed_cache import (
+    MemorySignedCache,
+)
+from src.modules.consultation.infrastructure.valkey_signed_cache import (
+    ValkeySignedCache,
+)
 from src.modules.consultation.infrastructure.valkey_validation_rate_limiter import (
     FakeValidationRateLimiter,
     ValkeyValidationRateLimiter,
@@ -76,6 +85,25 @@ def test_consultation_validation_rate_limiter_resolution() -> None:
         assert isinstance(limiter_valkey, ValkeyValidationRateLimiter)
 
 
+def test_consultation_signed_cache_resolution() -> None:
+    with (
+        patch("src.modules.consultation.composition.get_settings") as mock_settings,
+        patch(
+            "src.modules.consultation.infrastructure.valkey_signed_cache.get_valkey_pool"
+        ),
+    ):
+        get_signed_cache.cache_clear()
+        mock_settings.return_value = CommonSettings(SIGNED_CACHE_BACKEND="memory")
+        cache_mem = get_signed_cache()
+        assert isinstance(cache_mem, MemorySignedCache)
+
+        get_signed_cache.cache_clear()
+        mock_settings.return_value = CommonSettings(SIGNED_CACHE_BACKEND="valkey")
+        cache_valkey = get_signed_cache()
+        assert isinstance(cache_valkey, ValkeySignedCache)
+        get_signed_cache.cache_clear()
+
+
 def test_telemetry_cache_resolution() -> None:
     with patch("src.modules.telemetry.composition.get_settings") as mock_settings:
         mock_settings.return_value = CommonSettings(TELEMETRY_CACHE_BACKEND="memory")
@@ -98,6 +126,27 @@ def test_ambulatory_service_resolution() -> None:
         sus_service._provider,  # pyright: ignore[reportPrivateUsage]
         SusEligibilityAdapter,
     )
+
+
+def test_ambulatory_producao_service_builder() -> None:
+    from unittest.mock import AsyncMock
+
+    from src.modules.ambulatory.application.services.producao_service import (
+        ProducaoAmbulatorialService,
+    )
+    from src.modules.ambulatory.composition import (
+        build_producao_ambulatorial_service,
+        get_producao_ambulatorial_service,
+    )
+
+    mock_session = AsyncMock()
+    service = build_producao_ambulatorial_service(session=mock_session)
+    assert isinstance(service, ProducaoAmbulatorialService)
+    assert service._session is mock_session  # pyright: ignore[reportPrivateUsage]
+
+    dep_service = get_producao_ambulatorial_service(session=mock_session)
+    assert isinstance(dep_service, ProducaoAmbulatorialService)
+    assert dep_service._session is mock_session  # pyright: ignore[reportPrivateUsage]
 
 
 def test_queue_alocacao_wiring_with_arq() -> None:

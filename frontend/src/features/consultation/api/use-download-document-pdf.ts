@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { getActiveTenantId } from "@/api/client";
 
 export interface UseDownloadDocumentoPdfReturn {
-  downloadPdf: (documentoId: string, token?: string) => Promise<void>;
+  downloadPdf: (documentoId: string, token?: string, tipoDoc?: string) => Promise<void>;
   downloadingId: string | null;
   isDownloading: boolean;
 }
@@ -16,7 +16,7 @@ export function useDownloadDocumentoPdf(atendimentoId: string): UseDownloadDocum
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const downloadPdf = useCallback(
-    async (documentoId: string, token?: string) => {
+    async (documentoId: string, token?: string, tipoDoc?: string) => {
       try {
         setDownloadingId(documentoId);
         const headers: Record<string, string> = {
@@ -39,7 +39,8 @@ export function useDownloadDocumentoPdf(atendimentoId: string): UseDownloadDocum
         const blobUrl = window.URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = blobUrl;
-        link.download = `receita-${documentoId.substring(0, 8)}.pdf`;
+        const cleanTipo = (tipoDoc || "receita").toLowerCase().replace(/_/g, "-");
+        link.download = `${cleanTipo}-${documentoId.substring(0, 8)}.pdf`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

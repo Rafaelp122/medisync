@@ -1,5 +1,6 @@
 """Unit tests for PEPService: single facade, compilar_pdf, assinar_documento."""
 
+import logging
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -33,10 +34,16 @@ from src.modules.consultation.application.services.evolucao_service import (
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.composition import build_pep_service_for_session
 from src.modules.consultation.domain.models import EvolucaoClinica
+from src.modules.consultation.infrastructure.memory_signed_cache import (
+    MemorySignedCache,
+)
 
 from tests.doubles import (
     FakeAsyncSession,
     FakeAtendimentoReader,
+    FakeICPBrasilSigner,
+    FakeMemoryStorage,
+    FakePDFGenerator,
     FakeProducaoAmbulatorialPort,
     FakeResult,
 )
@@ -363,3 +370,170 @@ async def test_pep_service_finalizar_consulta_tolera_falha_na_producao() -> None
     result = await svc.finalizar_consulta(cmd)
     assert result.is_finalizado is True
     assert fake_session.commits == 1
+
+
+def _build_test_pep_service(
+    session: FakeAsyncSession,
+    atendimento_reader: AtendimentoReaderPort | None = None,
+    producao_port: FakeProducaoAmbulatorialPort | None = None,
+) -> PEPService:
+    pdf_gen = FakePDFGenerator()
+    signer = FakeICPBrasilSigner()
+    storage = FakeMemoryStorage()
+    doc_svc = DocumentoService(
+        session=session,  # pyright: ignore[reportArgumentType]
+        pdf_generator=pdf_gen,
+        signer=signer,
+        storage=storage,
+        cache=MemorySignedCache(),
+    )
+    return PEPService(
+        session=session,  # pyright: ignore[reportArgumentType]
+        pdf_generator=pdf_gen,
+        signer=signer,
+        storage=storage,
+        documento_service=doc_svc,
+        atendimento_reader=atendimento_reader,
+        producao_port=producao_port,
+    )
+
+
+@pytest.mark.asyncio
+async def test_pep_warning_on_reader_obter_resumo_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    atend_id = uuid4()
+    medico_id = uuid4()
+
+    evolucao = EvolucaoClinica(
+        organizacao_id=1,
+        atendimento_id=atend_id,
+        medico_id=medico_id,
+        anamnese="Paciente com dor",
+        conduta="Orientação médica",
+    )
+    fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
+    fake_reader = FakeAtendimentoReader(
+        error_obter_resumo=RuntimeError("Reader timeout error")
+    )
+    svc = _build_test_pep_service(
+        session=fake_session,
+        atendimento_reader=fake_reader,
+    )
+    cmd = FinalizarConsultaCommand(
+        atendimento_id=atend_id,
+        organizacao_id=1,
+        medico_id=medico_id,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = await svc.finalizar_consulta(cmd)
+
+    assert result.is_finalizado is True
+    assert fake_session.commits == 1
+    assert "Falha ao obter resumo do atendimento" in caplog.text
+    assert str(atend_id) in caplog.text
+    assert "Reader timeout error" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_pep_warning_on_reader_concluir_atendimento_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    atend_id = uuid4()
+    medico_id = uuid4()
+    paciente_id = uuid4()
+
+    evolucao = EvolucaoClinica(
+        organizacao_id=1,
+        atendimento_id=atend_id,
+        medico_id=medico_id,
+        anamnese="Paciente com febre",
+        conduta="Prescrição",
+    )
+    fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
+    resumo = AtendimentoResumoDTO(
+        atendimento_id=atend_id,
+        organizacao_id=1,
+        medico_id=medico_id,
+        paciente_id=paciente_id,
+        status="EM_ATENDIMENTO",
+        tcle_hash="h" * 64,
+        is_terminal=False,
+    )
+    fake_reader = FakeAtendimentoReader(
+        resumo=resumo,
+        error_concluir_atendimento=RuntimeError("Queue store failure"),
+    )
+    svc = _build_test_pep_service(
+        session=fake_session,
+        atendimento_reader=fake_reader,
+    )
+    cmd = FinalizarConsultaCommand(
+        atendimento_id=atend_id,
+        organizacao_id=1,
+        medico_id=medico_id,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = await svc.finalizar_consulta(cmd)
+
+    assert result.is_finalizado is True
+    assert fake_session.commits == 1
+    assert "Falha ao concluir atendimento" in caplog.text
+    assert str(atend_id) in caplog.text
+    assert "Queue store failure" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_pep_warning_on_producao_failure_with_context(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    atend_id = uuid4()
+    medico_id = uuid4()
+    paciente_id = uuid4()
+
+    evolucao = EvolucaoClinica(
+        organizacao_id=1,
+        atendimento_id=atend_id,
+        medico_id=medico_id,
+        anamnese="Paciente com tosse",
+        conduta="Xarope",
+        codigo_sigtap="03.01.01.025-0",
+    )
+    fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
+    resumo = AtendimentoResumoDTO(
+        atendimento_id=atend_id,
+        organizacao_id=1,
+        medico_id=medico_id,
+        paciente_id=paciente_id,
+        status="EM_ATENDIMENTO",
+        tcle_hash="h" * 64,
+        is_terminal=False,
+    )
+    fake_reader = FakeAtendimentoReader(resumo=resumo)
+    failing_producao = FakeProducaoAmbulatorialPort(
+        error=RuntimeError("BPA-I service timeout")
+    )
+    svc = _build_test_pep_service(
+        session=fake_session,
+        atendimento_reader=fake_reader,
+        producao_port=failing_producao,
+    )
+    cmd = FinalizarConsultaCommand(
+        atendimento_id=atend_id,
+        organizacao_id=1,
+        medico_id=medico_id,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = await svc.finalizar_consulta(cmd)
+
+    assert result.is_finalizado is True
+    assert fake_session.commits == 1
+    assert "Falha ao consolidar teleconsulta" in caplog.text
+    assert str(atend_id) in caplog.text
+    assert str(medico_id) in caplog.text
+    assert str(paciente_id) in caplog.text
+    assert "03.01.01.025-0" in caplog.text
+    assert "BPA-I service timeout" in caplog.text

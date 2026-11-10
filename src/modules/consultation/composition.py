@@ -21,6 +21,9 @@ from src.modules.ambulatory.application.dtos import ConsolidarTeleconsultaComman
 from src.modules.ambulatory.application.services.producao_service import (
     ProducaoAmbulatorialService,
 )
+from src.modules.ambulatory.composition import (
+    build_producao_ambulatorial_service,
+)
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
     AtendimentoResumoDTO,
@@ -79,6 +82,9 @@ from src.modules.consultation.infrastructure.pyhanko_signer import PyHankoSigner
 from src.modules.consultation.infrastructure.s3_storage import (
     FakeStorageAdapter,
     S3StorageAdapter,
+)
+from src.modules.consultation.infrastructure.valkey_signed_cache import (
+    ValkeySignedCache,
 )
 from src.modules.consultation.infrastructure.valkey_validation_rate_limiter import (
     FakeValidationRateLimiter,
@@ -258,8 +264,11 @@ def get_signer() -> ICPBrasilSignerPort:
 
 @lru_cache(maxsize=1)
 def get_signed_cache() -> SignedCachePort:
-    """Provide process-wide signed-document cache (single Memory instance)."""
-    return MemorySignedCache()
+    """Provide process-wide signed-document cache based on active settings."""
+    settings = get_settings()
+    if settings.SIGNED_CACHE_BACKEND == "memory":
+        return MemorySignedCache()
+    return ValkeySignedCache()
 
 
 def get_atendimento_reader(session: DbSessionDep) -> AtendimentoReaderPort:
@@ -349,7 +358,7 @@ def build_pep_service_for_session(
         producao_port
         if producao_port is not None
         else AmbulatoryProducaoAdapter(
-            producao_service=ProducaoAmbulatorialService(
+            producao_service=build_producao_ambulatorial_service(
                 session=session,
                 audit_trail=audit,
             ),
