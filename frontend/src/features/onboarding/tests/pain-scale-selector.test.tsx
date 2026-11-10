@@ -37,4 +37,21 @@ describe("PainScaleSelector (Escala Visual Analógica de Dor)", () => {
     rerender(<PainScaleSelector value={10} onChange={vi.fn()} />);
     expect(screen.getByText(/Pior dor imaginável \(10\/10\)/i)).toBeInTheDocument();
   });
+
+  it("IT-PAIN-03: Garante alvos de toque mínimos de 44x44px (WCAG 2.5.5) em todos os botões", () => {
+    render(<PainScaleSelector value={0} onChange={vi.fn()} />);
+    for (let i = 0; i <= 10; i++) {
+      const btn = screen.getByRole("radio", { name: new RegExp(`^nível ${i}$`, "i") });
+      expect(btn.className).toMatch(/min-h-\[44px\]/);
+      expect(btn.className).toMatch(/min-w-\[44px\]/);
+      expect(btn.className).toMatch(/touch-manipulation/);
+    }
+  });
+
+  it("IT-PAIN-04: Adota layout responsivo com quebra mobile (grid-cols-6 sm:grid-cols-11)", () => {
+    render(<PainScaleSelector value={0} onChange={vi.fn()} />);
+    const group = screen.getByRole("radiogroup");
+    expect(group.className).toMatch(/grid-cols-6/);
+    expect(group.className).toMatch(/sm:grid-cols-11/);
+  });
 });

@@ -84,7 +84,7 @@
 - [x] **Frontend Workstation Single-Pane:**
   - Rotas dedicadas: `/medico` (`frontend/src/routes/medico.tsx`), `/chamada` (`frontend/src/routes/chamada.tsx`) e `/pos-consulta` (`frontend/src/routes/pos-consulta.tsx`) (Issue #141)
   - Componente mestre: `frontend/src/features/consultation/components/doctor-workstation.tsx`
-  - Painéis compostos: `video-pane.tsx`, `medical-records-pane.tsx`, `soap-editor.tsx`, `prescription-builder.tsx`, `cfm-identity-gate.tsx`, `finalize-consultation-modal.tsx`, `tma-timer-badge.tsx`
+  - Painéis compostos: `workstation-media-pane.tsx` (isolado com `React.memo` para blindar o streaming WebRTC contra re-renders acidentais por digitação SOAP ou telemetria), `video-pane.tsx`, `medical-records-pane.tsx`, `soap-editor.tsx`, `prescription-builder.tsx` (decomposto em `prescription-form.tsx`, `atestado-form.tsx`, `prescription-items-list.tsx`), `cfm-identity-gate.tsx`, `finalize-consultation-modal.tsx`, `tma-timer-badge.tsx`
   - Hooks TanStack Query: `frontend/src/features/consultation/api/`
   - Schemas Zod: `frontend/src/features/consultation/schemas/consultation-schema.ts`
 - [x] **Testes Automatizados:**
@@ -94,3 +94,5 @@
   - `frontend/src/features/consultation/schemas/consultation-schema.test.ts`
   - `frontend/src/features/consultation/api/__tests__/consultation-hooks.test.tsx`
   - `frontend/src/features/consultation/tests/consultation-workstation.test.tsx`
+  - `frontend/src/features/consultation/tests/doctor-workstation-performance.test.tsx`
+  - `frontend/src/features/consultation/tests/prescription-builder.test.tsx`

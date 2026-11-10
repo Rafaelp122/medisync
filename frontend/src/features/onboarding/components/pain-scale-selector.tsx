@@ -54,7 +54,7 @@ export function PainScaleSelector({ value, onChange, className }: PainScaleSelec
         role="radiogroup"
         aria-label="Escala de dor de 0 a 10"
         onKeyDown={handleKeyDown}
-        className="grid grid-cols-11 gap-1 sm:gap-1.5"
+        className="grid grid-cols-6 sm:grid-cols-11 gap-2 sm:gap-1.5"
       >
         {NIVEIS_DOR.map((nivel) => {
           const selecionado = value === nivel;
@@ -69,7 +69,7 @@ export function PainScaleSelector({ value, onChange, className }: PainScaleSelec
               tabIndex={selecionado || (value === 0 && nivel === 0) ? 0 : -1}
               onClick={() => onChange(nivel)}
               className={cn(
-                "min-h-[44px] h-11 rounded-md text-sm sm:text-base font-semibold touch-manipulation transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "min-h-[44px] min-w-[44px] h-11 rounded-md text-sm sm:text-base font-semibold touch-manipulation transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 obterCorBotaoDor(nivel, selecionado),
               )}
             >

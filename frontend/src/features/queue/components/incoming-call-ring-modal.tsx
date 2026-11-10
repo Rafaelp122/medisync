@@ -145,7 +145,11 @@ export function IncomingCallRingModal({
       <DialogContent
         role="alertdialog"
         onPointerDownOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => {
+          e.preventDefault();
+          silenciarChime();
+          onNoShow();
+        }}
         className="sm:max-w-md text-center p-6 sm:p-8 space-y-6 border-primary/30 shadow-2xl"
       >
         <DialogHeader className="space-y-3">
@@ -225,6 +229,20 @@ export function IncomingCallRingModal({
             className="w-full text-base font-bold min-h-[50px] shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-transform motion-reduce:transform-none"
           >
             {isPending ? "Conectando à Teleconsulta…" : "Entrar na Teleconsulta"}
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              silenciarChime();
+              onNoShow();
+            }}
+            aria-label="Não posso atender agora (Recusar chamada médica)"
+            className="w-full text-xs text-muted-foreground hover:text-destructive"
+          >
+            Não posso atender agora (Recusar chamada)
           </Button>
         </DialogFooter>
       </DialogContent>
