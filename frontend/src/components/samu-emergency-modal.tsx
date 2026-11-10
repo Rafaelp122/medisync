@@ -97,7 +97,17 @@ export function SamuEmergencyModal({
         role="alertdialog"
         className="border-destructive/80 bg-background text-foreground sm:max-w-md shadow-2xl"
         onPointerDownOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => {
+          if (onConfirmarSaida) {
+            onConfirmarSaida();
+          } else if (onCorrigirSintomas) {
+            onCorrigirSintomas();
+          } else if (onOpenChange) {
+            onOpenChange(false);
+          } else {
+            e.preventDefault();
+          }
+        }}
       >
         <DialogHeader className="space-y-3">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 text-destructive">

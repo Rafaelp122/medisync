@@ -53,11 +53,33 @@ RE_RELATIVE_FEATURE_IMPORT = re.compile(
 )
 
 
+MAX_COMPONENT_LINES = 300
+
+
 @dataclass(frozen=True)
 class Finding:
     filepath: Path
     line: int
     message: str
+
+
+def audit_component_line_length(path: Path, lines: list[str]) -> str | None:
+    """Verifica se um componente visual TSX excede o teto recomendado de 300 linhas."""
+    posix = path.as_posix()
+    if not (
+        path.suffix in {".tsx", ".jsx"}
+        and ("features" in posix or "components" in posix)
+        and not posix.endswith((".test.tsx", ".test.jsx", ".spec.tsx", ".spec.jsx"))
+    ):
+        return None
+
+    total_lines = len(lines)
+    if total_lines > MAX_COMPONENT_LINES:
+        return (
+            f"Componente excede {MAX_COMPONENT_LINES} linhas ({total_lines} linhas) "
+            "→ considere decompor em compound components"
+        )
+    return None
 
 
 def strip_code_comments(line: str) -> str:
@@ -72,6 +94,52 @@ def strip_code_comments(line: str) -> str:
     if "//" in line:
         return line.split("//")[0]
     return line
+
+
+def _audit_line_ellipses(
+    rel_path: Path, line_idx: int, clean_line: str
+) -> list[Finding]:
+    """Valida presença de reticências ASCII '...' em texto de UI JSX (Regra b)."""
+    findings: list[Finding] = []
+    for m in RE_JSX_TEXT_ELLIPSIS.finditer(clean_line):
+        snippet = m.group(1).strip()
+        msg = f'"{snippet}" → "…" (use typographical ellipsis)'
+        findings.append(Finding(rel_path, line_idx, msg))
+
+    for m in RE_STRING_LITERAL_ELLIPSIS.finditer(clean_line):
+        snippet = m.group(1).strip()
+        if snippet.startswith("http") or snippet.startswith("..."):
+            continue
+        if re.search(r"[a-zA-ZÀ-ÿ]", snippet):
+            msg = f'"{snippet}" → "…" (use typographical ellipsis)'
+            findings.append(Finding(rel_path, line_idx, msg))
+    return findings
+
+
+def _audit_cross_feature_imports(
+    rel_path: Path, line_idx: int, clean_line: str, current_feature: str
+) -> list[Finding]:
+    """Valida proibição de imports cruzados diretos entre features (Regra d)."""
+    findings: list[Finding] = []
+    for m in RE_FEATURE_IMPORT.finditer(clean_line):
+        target_feat = m.group(1)
+        if target_feat != current_feature:
+            findings.append(
+                Finding(
+                    rel_path,
+                    line_idx,
+                    f"cross-feature import '@/{target_feat}' forbidden",
+                )
+            )
+    for m in RE_RELATIVE_FEATURE_IMPORT.finditer(clean_line):
+        target_feat = m.group(1)
+        if target_feat != current_feature:
+            findings.append(
+                Finding(
+                    rel_path, line_idx, f"relative import to '{target_feat}' forbidden"
+                )
+            )
+    return findings
 
 
 def audit_file_content(path: Path) -> list[Finding]:
@@ -111,18 +179,7 @@ def audit_file_content(path: Path) -> list[Finding]:
 
         # Regra (b): Reticências ASCII '...' em texto de UI
         if is_tsx:
-            for m in RE_JSX_TEXT_ELLIPSIS.finditer(clean_line):
-                snippet = m.group(1).strip()
-                msg = f'"{snippet}" → "…" (use typographical ellipsis)'
-                findings.append(Finding(rel_path, line_idx, msg))
-
-            for m in RE_STRING_LITERAL_ELLIPSIS.finditer(clean_line):
-                snippet = m.group(1).strip()
-                if snippet.startswith("http") or snippet.startswith("..."):
-                    continue
-                if re.search(r"[a-zA-ZÀ-ÿ]", snippet):
-                    msg = f'"{snippet}" → "…" (use typographical ellipsis)'
-                    findings.append(Finding(rel_path, line_idx, msg))
+            findings.extend(_audit_line_ellipses(rel_path, line_idx, clean_line))
 
         # Regra (c): Barrel imports de @/api/generated
         if is_ts_or_tsx:
@@ -132,16 +189,11 @@ def audit_file_content(path: Path) -> list[Finding]:
 
         # Regra (d): Imports cruzados diretos entre features
         if is_ts_or_tsx and current_feature:
-            for m in RE_FEATURE_IMPORT.finditer(clean_line):
-                target_feat = m.group(1)
-                if target_feat != current_feature:
-                    msg = f"cross-feature import '@/{target_feat}' forbidden"
-                    findings.append(Finding(rel_path, line_idx, msg))
-            for m in RE_RELATIVE_FEATURE_IMPORT.finditer(clean_line):
-                target_feat = m.group(1)
-                if target_feat != current_feature:
-                    msg = f"relative import to '{target_feat}' forbidden"
-                    findings.append(Finding(rel_path, line_idx, msg))
+            findings.extend(
+                _audit_cross_feature_imports(
+                    rel_path, line_idx, clean_line, current_feature
+                )
+            )
 
     return findings
 
@@ -206,6 +258,7 @@ def main() -> int:
         return 0
 
     all_findings: list[Finding] = []
+    warnings: list[tuple[Path, str]] = []
     scanned_files = 0
 
     # Varre frontend/src
@@ -218,6 +271,12 @@ def main() -> int:
         if path.suffix in {".ts", ".tsx", ".js", ".jsx", ".css"}:
             scanned_files += 1
             all_findings.extend(audit_file_content(path))
+            if path.suffix in {".tsx", ".jsx"}:
+                warn = audit_component_line_length(
+                    path, path.read_text(encoding="utf-8").splitlines()
+                )
+                if warn:
+                    warnings.append((path.relative_to(ROOT), warn))
 
     # Varre index.html e tema
     if INDEX_HTML.exists():
@@ -234,13 +293,18 @@ def main() -> int:
     print("=" * 70)
     print(f"Arquivos analisados em {SRC_DIR.relative_to(ROOT)}: {scanned_files}")
 
+    if warnings:
+        print(f"\n⚠️  {len(warnings)} avisos de complexidade (>300 linhas):")
+        for fpath, msg in sorted(warnings, key=lambda x: str(x[0])):
+            print(f"  - {fpath.as_posix()}: {msg}")
+
     if not all_findings:
         print("\n✅ 100% em conformidade com as diretrizes de frontend!")
         print("=" * 70 + "\n")
         return 0
 
     print(
-        f"\n⚠️  {len(all_findings)} violações encontradas em {len(grouped)} arquivos:\n"
+        f"\n❌ {len(all_findings)} violações encontradas em {len(grouped)} arquivos:\n"
     )
     for filepath, findings in sorted(grouped.items(), key=lambda x: str(x[0])):
         print(f"## {filepath.as_posix()}\n")

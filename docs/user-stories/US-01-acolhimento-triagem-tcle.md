@@ -91,12 +91,12 @@
 - [x] **Hash TCLE:** Hash SHA-256 gerado e armazenado com timestamp UTC (`src/modules/triage/domain/classification.py`).
 - [x] **Aplicação:** `FilaService.admitir_paciente()` orquestra persistência atômica e enfileira job ARQ de elegibilidade (`src/modules/queue/application/services/fila_service.py`).
 - [x] **Apresentação:** Router fino `admissao_router.py` montado em `/api/v1/fila/admissao` com `AdmissaoResponse` expondo `tcle_hash` validado via `model_validate` (ADR-001).
-- [x] **Frontend (Fase 1 & TCLE):** `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx` e `frontend/src/features/onboarding/components/tcle-dialog.tsx` com cálculo de hash forense nativo Web Crypto API (`frontend/src/lib/validators.ts:calcularHashTcle`).
+- [x] **Frontend (Fase 1 & TCLE):** `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx`, `frontend/src/features/onboarding/components/pain-scale-selector.tsx` (alvos de toque >= 44x44px em grid responsivo), `frontend/src/components/samu-emergency-modal.tsx` (safe area inset e saída acessível via Escape sem keyboard trap) e `frontend/src/features/onboarding/components/tcle-dialog.tsx` com cálculo de hash forense nativo Web Crypto API (`frontend/src/lib/validators.ts:calcularHashTcle`).
 - [x] **Frontend Hooks:** `frontend/src/features/onboarding/api/use-intake-fase1.ts` e `frontend/src/features/onboarding/api/use-admitir-paciente.ts`.
 - [x] **Sessão & Roteamento (Issue #113, Issue #141):** Persistência em `frontend/src/lib/session-storage.ts`, rotas declarativas `/triagem` (`frontend/src/routes/triagem.tsx`) e `/fila` (`frontend/src/routes/fila.tsx`) com guard `beforeLoad` e orquestração em `frontend/src/router.tsx`.
 - [x] **Testes Automatizados:**
   - Backend: `tests/unit/test_triage_model.py`, `tests/unit/test_admissao_service.py`, `tests/integration/test_admissao_integrada_flow.py`
-  - Frontend Unitários: `frontend/src/lib/validators.test.ts`, `frontend/src/features/onboarding/schemas/onboarding-schema.test.ts`, `frontend/src/lib/session-storage.test.ts`, `frontend/src/api/client.test.ts`
+  - Frontend Unitários: `frontend/src/lib/validators.test.ts`, `frontend/src/features/onboarding/schemas/onboarding-schema.test.ts`, `frontend/src/lib/session-storage.test.ts`, `frontend/src/api/client.test.ts`, `frontend/src/features/onboarding/tests/pain-scale-selector.test.tsx`, `frontend/src/features/onboarding/tests/samu-emergency-modal.test.tsx`
   - Frontend Hooks: `frontend/src/features/onboarding/api/__tests__/onboarding-hooks.test.tsx`
   - Frontend Telas: `frontend/src/features/onboarding/tests/acolhimento-triagem-form.test.tsx`, `frontend/src/App.test.tsx`
   - E2E / A11y: `frontend/e2e/onboarding-acolhimento.spec.ts` (`E2E-ONB-01` cobrindo persistência pós-admissão e `page.reload()`, `E2E-A11Y-01`)
@@ -108,14 +108,15 @@
 ### 5.1 Validação e Interação de Tela
 - **Formulário Ágil (<45s):** Interface móvel em fluxo progressivo otimizada para o paciente com dor (Juliana Silva), preenchimento sem barreiras ou paywalls.
 - **Termo de Consentimento (TCLE Digital):** Exibição do termo integral em caixa rolável acessível; checkbox explícito de concordância legal (LGPD Art. 11 / CFM nº 2.314/2022) que condiciona o botão de submissão.
-- **Escala Analógica Visual de Dor:** Seletor de 1 a 10 com cores semânticas e labels descritivos ("Sem dor" a "Pior dor imaginável"), totalmente operável por teclado ou toque.
-- **Salvaguarda Imediata SAMU 192 (RN04):** Em caso de classificação Nível 1 (Vermelho / Emergência), o fluxo virtual é imediatamente interrompido, disparando um modal com alerta audiovisual chamativo e botão de discagem rápida (`tel:192`) ou orientação de deslocamento hospitalar imediato.
+- **Escala Analógica Visual de Dor (EVA 0–10):** Seletor responsivo com alvos de toque mínimos de 44x44px (`min-w-[44px] min-h-[44px]` em layout `grid-cols-6 sm:grid-cols-11`), cores semânticas e labels descritivos ("Sem dor" a "Pior dor imaginável"), totalmente operável por teclado ou toque em telas a partir de 360px.
+- **Salvaguarda Imediata SAMU 192 (RN04):** Em caso de classificação Nível 1 (Vermelho / Emergência), o fluxo virtual é imediatamente interrompido, disparando modal com compensação de safe area (`env(safe-area-inset-bottom)`), botão acessível de saída, dismiss via `Escape` (sem aprisionamento de teclado / WCAG 2.1.2) e discagem rápida (`tel:192`).
 - **Persistência Imediata pós-Admissão:** Ao receber confirmação HTTP 201 da admissão na fila, os metadados e credenciais são salvos atomicamente no `localStorage` sob a chave `medisync_session`, restaurando a tela "Ingresso Confirmado!" após recarregamento acidental (`F5`).
 
 ### 5.2 Acessibilidade Clínica (WCAG 2.1 AA)
 - Rótulos semânticos e tags ARIA (`role="dialog"`, `role="alert"`, `aria-describedby`).
 - Respeito a `@media (prefers-reduced-motion: reduce)`, desativando transições de tela durante o preenchimento.
-- Contraste visual mínimo de 4.5:1 nas cores da escala de dor e avisos clínicos.
+- Contraste visual mínimo de 4.5:1 nas cores da escala de dor, badges clínicos SUS e avisos de gravidade.
+- Preservação de safe area insets móveis e eliminação de armadilhas de teclado (WCAG 2.1.2).
 
 ### 5.3 Troféu de Testes do Frontend
 - **Integração de Tela (Vitest + RTL + MSW v2):**

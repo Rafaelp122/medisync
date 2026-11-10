@@ -21,6 +21,8 @@
 - [Test Doubles & Fakes Catalog](testing/test-doubles-catalog.md) — Catálogo dos Fakes tipados em memória (`tests/doubles.py`) e asserções de teste.
 - [Testing Fixtures & Factories](testing/fixtures-and-factories.md) — Fixtures pytest assíncronas, factories e geradores de dados de teste.
 - [Frontend Testing Patterns](testing/frontend-testing-patterns.md) — Padrões e regras de testes com Vitest, React Testing Library, MSW v2, Playwright e Axe-Core (A11y).
+- [Accessibility Standards (WCAG 2.1 AA)](frontend/accessibility-standards.md) — Padrões de acessibilidade clínica, contraste Manchester, safe areas e alvos de toque >= 44x44px.
+- [Component Guidelines & Decomposição](frontend/component-guidelines.md) — Arquitetura de componentes, limiar de 300 linhas, compound components e memoização WebRTC.
 
 ## 5. Ambiente & Infraestrutura de CI/CD
 - [Environment Variables](environment/variables.md) — As 25 variáveis de ambiente, validações Pydantic e perfis de execução.

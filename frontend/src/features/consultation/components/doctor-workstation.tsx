@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Lock, LogOut, PhoneCall, Users } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { getActiveTenantId } from "@/api/client";
 import type { ChamarProximoResponse, DocumentoClinicoResponse } from "@/api/generated/types.gen";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -16,9 +16,7 @@ import { MedicalRecordsPane } from "./medical-records-pane";
 import { PrescriptionBuilder } from "./prescription-builder";
 import { SoapEditor } from "./soap-editor";
 import { TmaTimerBadge } from "./tma-timer-badge";
-import { VideoPane } from "./video-pane";
-
-const LazyLiveKitVideoCall = lazy(() => import("./livekit-video-call"));
+import { WorkstationMediaPane } from "./workstation-media-pane";
 
 export interface DoctorWorkstationProps {
   medicoId?: string;
@@ -273,32 +271,14 @@ export function DoctorWorkstation({
             aria-label="Videoconferência e Identificação"
             className="lg:col-span-4 flex flex-col gap-3.5"
           >
-            {livekitData?.token ? (
-              <Suspense
-                fallback={
-                  <div className="h-64 flex items-center justify-center bg-slate-900 rounded-lg text-slate-400 text-xs">
-                    Conectando ao WebRTC LiveKit…
-                  </div>
-                }
-              >
-                <LazyLiveKitVideoCall
-                  wsUrl={livekitData.ws_url}
-                  token={livekitData.token}
-                  roomName={livekitData.room_name}
-                  participantName={medicoNome}
-                  remoteParticipantName="Juliana Silva (Paciente)"
-                  className="min-h-[300px]"
-                />
-              </Suspense>
-            ) : (
-              <VideoPane
-                atendimentoId={atendimentoAtivo.atendimento_id}
-                pacienteNome="Juliana Silva (Paciente)"
-                medicoNome={medicoNome}
-                roomName={livekitData?.room_name}
-                isConnected={false}
-              />
-            )}
+            <WorkstationMediaPane
+              atendimentoId={atendimentoAtivo.atendimento_id}
+              medicoNome={medicoNome}
+              remoteParticipantName="Juliana Silva (Paciente)"
+              livekitToken={livekitData?.token}
+              wsUrl={livekitData?.ws_url}
+              roomName={livekitData?.room_name}
+            />
 
             <CfmIdentityGate
               onVerificationChange={(verificado) => setIdentidadeVerificada(verificado)}

@@ -179,4 +179,48 @@ describe("IncomingCallRingModal (Toque de Chamada Médica & 45s No-Show - RN02, 
     });
     expect(handleAtendido).not.toHaveBeenCalled();
   });
+
+  it("IT-RING-05: Fornece botão de cancelamento/escape hatch acessível e permite saída voluntária", async () => {
+    const user = userEvent.setup();
+    const handleNoShow = vi.fn();
+
+    const { getByRole } = renderWithProviders(
+      <IncomingCallRingModal
+        open={true}
+        atendimentoId={MOCK_ATENDIMENTO_ID}
+        pacienteId={MOCK_PACIENTE_ID}
+        token={MOCK_TOKEN}
+        ttlSegundos={45}
+        onAtendido={vi.fn()}
+        onNoShow={handleNoShow}
+      />,
+    );
+
+    const btnRecusar = getByRole("button", {
+      name: /recusar chamada|não posso atender agora/i,
+    });
+    expect(btnRecusar).toBeInTheDocument();
+    await user.click(btnRecusar);
+    expect(handleNoShow).toHaveBeenCalledTimes(1);
+  });
+
+  it("IT-RING-06: Permite fechamento voluntário via Escape silenciando o áudio e acionando onNoShow sem keyboard trap", async () => {
+    const user = userEvent.setup();
+    const handleNoShow = vi.fn();
+
+    renderWithProviders(
+      <IncomingCallRingModal
+        open={true}
+        atendimentoId={MOCK_ATENDIMENTO_ID}
+        pacienteId={MOCK_PACIENTE_ID}
+        token={MOCK_TOKEN}
+        ttlSegundos={45}
+        onAtendido={vi.fn()}
+        onNoShow={handleNoShow}
+      />,
+    );
+
+    await user.keyboard("{Escape}");
+    expect(handleNoShow).toHaveBeenCalledTimes(1);
+  });
 });

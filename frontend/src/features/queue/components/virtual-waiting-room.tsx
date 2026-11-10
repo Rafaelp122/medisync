@@ -130,18 +130,7 @@ export function VirtualWaitingRoom({
     [atendimentoId, queryClient],
   );
 
-  // 1. Tela de Emergência Máxima SAMU (Escape RN04)
-  if (modalSamuAberto) {
-    return (
-      <SamuEmergencyModal
-        open={true}
-        orientacoes={samuOrientacoes}
-        onConfirmarSaida={onEncerrarSessao}
-      />
-    );
-  }
-
-  // 2. Tela de No-Show / Paciente Ausente
+  // 1. Tela de No-Show / Paciente Ausente
   if (statusEfetivo === "PACIENTE_AUSENTE") {
     return (
       <Card
@@ -306,6 +295,14 @@ export function VirtualWaitingRoom({
         atendimentoId={atendimentoId}
         token={token}
         onCancelado={() => setIsCancelado(true)}
+      />
+
+      {/* Modal de Emergência Máxima SAMU (Escape RN04) */}
+      <SamuEmergencyModal
+        open={modalSamuAberto}
+        onOpenChange={setModalSamuAberto}
+        orientacoes={samuOrientacoes}
+        onConfirmarSaida={onEncerrarSessao}
       />
 
       {/* Modal Fullscreen de Chamada Médica (45s Ring) */}

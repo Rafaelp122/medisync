@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { SamuEmergencyModal } from "../components/samu-emergency-modal";
 
@@ -92,5 +93,14 @@ describe("SamuEmergencyModal (Salvaguarda SAMU 192 - RN04)", () => {
     expect(mockStop).toHaveBeenCalledTimes(2);
 
     vi.unstubAllGlobals();
+  });
+
+  it("IT-SAMU-07: Permite fechamento voluntário via Escape quando houver callback de saída sem keyboard trap", async () => {
+    const user = userEvent.setup();
+    const handleSaida = vi.fn();
+    render(<SamuEmergencyModal open={true} onConfirmarSaida={handleSaida} />);
+
+    await user.keyboard("{Escape}");
+    expect(handleSaida).toHaveBeenCalledTimes(1);
   });
 });
