@@ -75,6 +75,7 @@ Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3
 | `RATE_LIMIT_BACKEND` | `src/core/config.py:CommonSettings.RATE_LIMIT_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona adaptador no módulo auth |
 | `TOKEN_REVOCATION_BACKEND` | `src/core/config.py:CommonSettings.TOKEN_REVOCATION_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona revogação no módulo auth |
 | `VALIDATION_RATE_LIMIT_BACKEND` | `src/core/config.py:CommonSettings.VALIDATION_RATE_LIMIT_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona validador na consulta |
+| `SIGNED_CACHE_BACKEND` | `src/core/config.py:CommonSettings.SIGNED_CACHE_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona cache distribuído de documentos assinados no módulo consultation |
 | `TELEMETRY_CACHE_BACKEND` | `src/core/config.py:CommonSettings.TELEMETRY_CACHE_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona cache na telemetria |
 | `SAMU_WEBHOOK_URL` | `src/core/config.py:CommonSettings.SAMU_WEBHOOK_URL` | URL HTTP(S) | `""` | Despacho de emergência 192 em triagem |
 | `NOTIFICATION_PROVIDER` | `src/core/config.py:CommonSettings.NOTIFICATION_PROVIDER` | `console`, `fake`, `noop` | `console` | Adaptador concreto de mensageria SMS/WhatsApp |

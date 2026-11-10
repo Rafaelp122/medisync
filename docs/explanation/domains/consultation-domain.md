@@ -58,10 +58,11 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - Persiste em três tabelas (`evolucoes_clinicas`, `documentos_clinicos`, `documento_itens` com RLS por `organizacao_id`, `RESTRICT` nas FKs clínicas, `CASCADE` de documento para itens). [Modelo](../architecture/data-model.md)
 - Orquestra mídia sem transportar mídia. `TeleconsultaService` orquestra geração de JWT e ciclo de sala sobre `LiveKitMediaPort`; SFU LiveKit carrega áudio/vídeo, Python só sinaliza.
 - Valida acesso à mídia com distinção clínica de No-Show. `src/modules/consultation/presentation/dependencies.py` (`validar_acesso_livekit`) rejeita atendimento finalizado por no-show (`PACIENTE_AUSENTE`) com HTTP 409 Conflict (`ATENDIMENTO_EXPIRADO_NO_SHOW`), e outros status terminais com HTTP 403 Forbidden.
-- Finalização centralizada no PEP. `src/modules/consultation/application/services/pep_service.py` marca evolução + documentos de forma atômica e conclui o atendimento via `QueueStorePort`.
+- Finalização centralizada e resiliente no PEP. `src/modules/consultation/application/services/pep_service.py` marca evolução + documentos de forma atômica e conclui o atendimento via `QueueStorePort`. Falhas periféricas no leitor ou na consolidação ambulatorial SUS são capturadas e registradas com structured logging (`logger.warning` com contexto forense e valores ofensivos), preservando a integridade primária do ato médico.
 
 ## 5. Peculiaridades
 
+- Cache distribuído de documentos assinados (ADR-006). `SignedCachePort` opera sobre Valkey distribuído (`ValkeySignedCache` com TTL de 24h e prefixo `doc:assinado:`) ou memória em testes (`MemorySignedCache`), selecionado dinamicamente via `SIGNED_CACHE_BACKEND`.
 - Mídia nunca passa pelo Python. Backend gera JWT e gerencia sala via Twirp RPC; pacotes WebRTC fluem paciente ↔ SFU, nunca por FastAPI.
 - `finalizado_em` é coluna persistida com timezone. Presente tanto em `evolucoes_clinicas` quanto em `documentos_clinicos`; a imutabilidade jurídica é garantida no banco e refletida na property `is_finalizado`.
 - Documentos clínicos nascem em rascunho com `sha256_hash` e `assinado_em` nulos, sendo preenchidos atomicamente pelo método rico `registrar_assinatura` apenas após assinatura ICP-Brasil válida.

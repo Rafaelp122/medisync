@@ -1,6 +1,6 @@
 """PEP clinical workflow service enforcing SOAP and Portaria 344/98 safeguards."""
 
-import contextlib
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -20,6 +20,7 @@ from src.modules.consultation.application.dtos import (
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
+    AtendimentoResumoDTO,
     is_atendimento_terminal,
 )
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
@@ -50,6 +51,8 @@ from src.modules.consultation.domain.models import (
 from src.modules.consultation.domain.models._substances import (
     validar_substancia_permitida_telemedicina,
 )
+
+logger = logging.getLogger("medisync.consultation.pep")
 
 
 class PEPService:
@@ -216,25 +219,52 @@ class PEPService:
         for doc in documentos:
             doc.marcar_finalizado()
 
-        resumo = None
+        resumo: AtendimentoResumoDTO | None = None
         if self._reader is not None:
-            with contextlib.suppress(Exception):
+            try:
                 resumo = await self._reader.obter_resumo(command.atendimento_id)
-            with contextlib.suppress(Exception):
+            except Exception as exc:
+                logger.warning(
+                    "Falha ao obter resumo do atendimento '%s' via reader: %s",
+                    command.atendimento_id,
+                    exc,
+                    exc_info=True,
+                )
+            try:
                 await self._reader.concluir_atendimento(command.atendimento_id)
+            except Exception as exc:
+                logger.warning(
+                    "Falha ao concluir atendimento '%s' na fila virtual via reader: %s",
+                    command.atendimento_id,
+                    exc,
+                    exc_info=True,
+                )
 
         if (
             self._producao_port is not None
             and resumo is not None
             and resumo.paciente_id is not None
         ):
-            with contextlib.suppress(Exception):
+            try:
                 await self._producao_port.consolidar_teleconsulta(
                     organizacao_id=command.organizacao_id,
                     atendimento_id=command.atendimento_id,
                     profissional_id=command.medico_id,
                     paciente_id=resumo.paciente_id,
                     codigo_sigtap=evolucao.codigo_sigtap,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Falha ao consolidar teleconsulta ambulatorial (BPA-I/SUS) "
+                    "para atendimento '%s' (org: %s, médico: %s, paciente: %s, "
+                    "sigtap: '%s'): %s",
+                    command.atendimento_id,
+                    command.organizacao_id,
+                    command.medico_id,
+                    resumo.paciente_id,
+                    evolucao.codigo_sigtap,
+                    exc,
+                    exc_info=True,
                 )
 
         await self._session.flush()

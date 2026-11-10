@@ -37,8 +37,13 @@ from src.modules.consultation.domain.exceptions import (
 class CloudPSCOAuth2Client:
     """HTTP client communicating with Brazilian Cloud PSCs (CSC standard)."""
 
-    def __init__(self, timeout: float = 15.0) -> None:
+    def __init__(
+        self,
+        timeout: float = 15.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self._timeout = timeout
+        self._transport = transport
 
     def get_provider_base_url(self, provider: str) -> str:
         """Resolve base URL for target Brazilian Trust Service Provider."""
@@ -75,7 +80,9 @@ class CloudPSCOAuth2Client:
             body["credentialID"] = credential_id
 
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with httpx.AsyncClient(
+                timeout=self._timeout, transport=self._transport
+            ) as client:
                 resp = await client.post(endpoint, json=body, headers=headers)
                 if resp.status_code in (401, 403):
                     raise AssinaturaDigitalInvalidaError(
@@ -99,9 +106,12 @@ class CloudPSCOAuth2Client:
             return None
         res_dict = cast("dict[str, Any]", result)
         sigs: object = res_dict.get("signatures")
-        if not isinstance(sigs, list) or not sigs or not isinstance(sigs[0], str):
-            return None
-        return sigs[0]
+        if isinstance(sigs, list) and sigs and isinstance(sigs[0], str):
+            return sigs[0]
+        sig: object = res_dict.get("signature")
+        if isinstance(sig, str) and sig.strip():
+            return sig.strip()
+        return None
 
     async def assinar_hash(
         self,
@@ -110,6 +120,7 @@ class CloudPSCOAuth2Client:
         credential_id: str,
         hash_b64: str,
         sign_algo: str = "1.2.840.113549.1.1.1",
+        response_format: str | None = None,
     ) -> str:
         """Request remote digital signature of SHA-256 digest via CSC signHash."""
         base_url = self.get_provider_base_url(provider)
@@ -118,15 +129,19 @@ class CloudPSCOAuth2Client:
             "Authorization": f"Bearer {token.strip()}",
             "Content-Type": "application/json",
         }
-        body = {
+        body: dict[str, Any] = {
             "credentialID": credential_id,
             "hashes": [hash_b64],
             "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",  # SHA-256
             "signAlgo": sign_algo,
         }
+        if response_format:
+            body["responseFormat"] = response_format
 
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with httpx.AsyncClient(
+                timeout=self._timeout, transport=self._transport
+            ) as client:
                 resp = await client.post(endpoint, json=body, headers=headers)
                 if resp.status_code in (401, 403):
                     raise AssinaturaDigitalInvalidaError(
@@ -314,6 +329,7 @@ class PyHankoSigner(ICPBrasilSignerPort):
                 token=credenciais.token,
                 credential_id=alias,
                 hash_b64=hash_b64,
+                response_format="cms",
             )
         except AssinaturaDigitalInvalidaError:
             raise

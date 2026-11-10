@@ -10,8 +10,6 @@ import {
   ShieldCheck,
   Stethoscope,
 } from "lucide-react";
-import { useState } from "react";
-import { getActiveTenantId } from "@/api/client";
 import type { DocumentoClinicoResponse } from "@/api/generated/types.gen";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +22,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useDownloadDocumentoPdf } from "../api/use-download-document-pdf";
 import { useProntuario } from "../api/use-prontuario";
 
 export interface PosConsultaSummaryProps {
@@ -59,42 +58,10 @@ export function PosConsultaSummary({
   });
 
   const docs = docsProps && docsProps.length > 0 ? docsProps : (prontuario?.documentos ?? []);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const { downloadPdf, downloadingId } = useDownloadDocumentoPdf(atendimentoId);
 
   const handleDownloadPdf = async (documentoId: string, tipoDoc: string) => {
-    try {
-      setDownloadingId(documentoId);
-      const headers: Record<string, string> = {
-        "X-Tenant-ID": getActiveTenantId(),
-      };
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-
-      const res = await fetch(
-        `/api/v1/consultations/${atendimentoId}/documents/${documentoId}/pdf`,
-        { headers },
-      );
-
-      if (!res.ok) {
-        throw new Error(`Falha no download (status ${res.status})`);
-      }
-
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = blobUrl;
-      const cleanTipo = tipoDoc.toLowerCase().replace(/_/g, "-");
-      link.download = `${cleanTipo}-${documentoId.substring(0, 8)}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
-    } catch (err) {
-      console.error("Erro ao baixar documento:", err);
-    } finally {
-      setDownloadingId(null);
-    }
+    await downloadPdf(documentoId, token, tipoDoc);
   };
 
   return (

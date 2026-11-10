@@ -5,8 +5,9 @@ production services (ADR-012).
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.audit import SqlAuditTrailAdapter
+from src.core.audit import AuditTrailPort, SqlAuditTrailAdapter
 from src.core.database import DbSessionDep
 from src.modules.ambulatory.application.ports.eligibility_notifier import (
     ElegibilidadeNotifierPort,
@@ -46,14 +47,23 @@ def build_elegibilidade_service(
     )
 
 
+def build_producao_ambulatorial_service(
+    session: AsyncSession,
+    audit_trail: AuditTrailPort | None = None,
+) -> ProducaoAmbulatorialService:
+    """Build ProducaoAmbulatorialService outside request scope."""
+    audit = audit_trail if audit_trail is not None else SqlAuditTrailAdapter(session)
+    return ProducaoAmbulatorialService(
+        session=session,
+        audit_trail=audit,
+    )
+
+
 def get_producao_ambulatorial_service(
     session: DbSessionDep,
 ) -> ProducaoAmbulatorialService:
     """Resolve ProducaoAmbulatorialService para rotas e injeção de dependência."""
-    return ProducaoAmbulatorialService(
-        session=session,
-        audit_trail=SqlAuditTrailAdapter(session),
-    )
+    return build_producao_ambulatorial_service(session=session)
 
 
 ProducaoServiceDep = Annotated[

@@ -493,17 +493,28 @@ class FakeAuditTrail:
 class FakeAtendimentoReader(AtendimentoReaderPort):
     """In-memory fake implementation of AtendimentoReaderPort for testing."""
 
-    def __init__(self, resumo: AtendimentoResumoDTO | None = None) -> None:
+    def __init__(
+        self,
+        resumo: AtendimentoResumoDTO | None = None,
+        error_obter_resumo: Exception | None = None,
+        error_concluir_atendimento: Exception | None = None,
+    ) -> None:
         self.resumo = resumo
+        self.error_obter_resumo = error_obter_resumo
+        self.error_concluir_atendimento = error_concluir_atendimento
         self.chamada_atendida = False
         self.atendimento_concluido = False
 
     async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
+        if self.error_obter_resumo is not None:
+            raise self.error_obter_resumo
         if self.resumo is not None and self.resumo.atendimento_id == atendimento_id:
             return self.resumo
         return None
 
     async def concluir_atendimento(self, atendimento_id: UUID) -> None:
+        if self.error_concluir_atendimento is not None:
+            raise self.error_concluir_atendimento
         self.atendimento_concluido = True
 
     async def atender_chamada(self, atendimento_id: UUID) -> None:
@@ -635,8 +646,9 @@ class FakeIdentityReader(IdentityReaderPort):
 class FakeProducaoAmbulatorialPort(ProducaoAmbulatorialPort):
     """Canonical in-memory test double implementing ProducaoAmbulatorialPort."""
 
-    def __init__(self) -> None:
+    def __init__(self, error: Exception | None = None) -> None:
         self.consolidacoes: list[dict[str, Any]] = []
+        self.error = error
 
     async def consolidar_teleconsulta(
         self,
@@ -649,6 +661,8 @@ class FakeProducaoAmbulatorialPort(ProducaoAmbulatorialPort):
         codigo_sigtap: str = "03.01.01.025-0",
         carater_atendimento: str = "02",
     ) -> None:
+        if self.error is not None:
+            raise self.error
         self.consolidacoes.append(
             {
                 "organizacao_id": organizacao_id,

@@ -1,6 +1,7 @@
 """Unit tests for PyHanko ICP-Brasil PAdES cloud signer and PSC OAuth2 client."""
 
 import io
+import json
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -224,6 +225,33 @@ async def test_cloud_psc_oauth2_client_assinar_hash() -> None:
             hash_b64="c2hhMjU2aGFzaA==",
         )
         assert sig == "b64_signature_raw_bytes_value"
+
+    # Success case with CMS response format and singular signature key via MockTransport
+    captured_req: list[httpx.Request] = []
+
+    def handle_cms_post(req: httpx.Request) -> httpx.Response:
+        captured_req.append(req)
+        return httpx.Response(
+            200,
+            json={"signature": "b64_cms_signature_container_value"},
+            request=req,
+        )
+
+    cms_client = CloudPSCOAuth2Client(transport=httpx.MockTransport(handle_cms_post))
+    sig_cms = await cms_client.assinar_hash(
+        provider="birdid",
+        token="token-xyz",
+        credential_id="cred-1",
+        hash_b64="c2hhMjU2aGFzaA==",
+        response_format="cms",
+    )
+    assert sig_cms == "b64_cms_signature_container_value"
+    assert len(captured_req) == 1
+    sent_body: dict[str, Any] = json.loads(captured_req[0].content)
+    assert sent_body.get("responseFormat") == "cms"
+    assert sent_body.get("credentialID") == "cred-1"
+    assert sent_body.get("hashAlgorithmOID") == "2.16.840.1.101.3.4.2.1"
+    assert sent_body.get("signAlgo") == "1.2.840.113549.1.1.1"
 
     # Malformed response (missing signatures)
     mock_malformed = httpx.Response(

@@ -153,3 +153,39 @@ def test_get_onboarding_and_dependente_services() -> None:
     mock_session = AsyncMock()
     assert isinstance(get_onboarding_service(session=mock_session), OnboardingService)
     assert isinstance(get_dependente_service(session=mock_session), DependenteService)
+
+
+def test_get_signed_cache_returns_memory_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SIGNED_CACHE_BACKEND=memory must resolve to MemorySignedCache."""
+    from src.modules.consultation import composition
+    from src.modules.consultation.infrastructure.memory_signed_cache import (
+        MemorySignedCache,
+    )
+
+    monkeypatch.setattr(
+        composition,
+        "get_settings",
+        lambda: Settings(SIGNED_CACHE_BACKEND="memory"),
+    )
+    cache = composition.get_signed_cache()
+    assert isinstance(cache, MemorySignedCache)
+
+
+def test_get_signed_cache_returns_valkey_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SIGNED_CACHE_BACKEND=valkey must resolve to ValkeySignedCache."""
+    from src.modules.consultation import composition
+    from src.modules.consultation.infrastructure.valkey_signed_cache import (
+        ValkeySignedCache,
+    )
+
+    monkeypatch.setattr(
+        composition,
+        "get_settings",
+        lambda: Settings(SIGNED_CACHE_BACKEND="valkey"),
+    )
+    cache = composition.get_signed_cache()
+    assert isinstance(cache, ValkeySignedCache)

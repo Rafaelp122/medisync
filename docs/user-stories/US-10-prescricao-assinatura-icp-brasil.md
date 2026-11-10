@@ -65,7 +65,8 @@
 
 - [x] **Salvaguardas Farmacêuticas:** Blacklist de Notificação A/B e 2 vias para antimicrobianos (`src/modules/consultation/domain/models/documento_clinico.py`).
 - [x] **Compilador PDF/A:** ReportLab gerando PDF/A-1b com QR Code do ITI (`src/modules/consultation/infrastructure/pdf_generator.py`).
-- [x] **Assinador ICP-Brasil:** Adaptador PyHanko aplicando assinatura digital padrão ICP-Brasil PAdES (`src/modules/consultation/infrastructure/pyhanko_signer.py`).
+- [x] **Assinador ICP-Brasil:** Adaptador PyHanko aplicando assinatura digital padrão ICP-Brasil PAdES e handshake CSC com suporte a contêiner CMS (`src/modules/consultation/infrastructure/pyhanko_signer.py`).
+- [x] **Cache Distribuído de Integridade:** `SignedCachePort` respaldado por `ValkeySignedCache` (`src/modules/consultation/infrastructure/valkey_signed_cache.py`) sob `SIGNED_CACHE_BACKEND` para validação sem sobrecarga no storage.
 - [x] **Armazenamento em Nuvem:** Adaptador MinIO/S3 com chaves canônicas e portal de validação público (`src/modules/consultation/infrastructure/s3_storage.py`).
 - [x] **Frontend Pós-Consulta (Issue #141):** Rota `/pos-consulta` (`frontend/src/routes/pos-consulta.tsx`) para visualização de documentos assinados e download seguro.
 - [x] **Testes Automatizados:**
