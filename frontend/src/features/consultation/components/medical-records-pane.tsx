@@ -1,9 +1,8 @@
 import { Clock, Download, FileCheck, History, Loader2, Shield, User } from "lucide-react";
-import { useState } from "react";
-import { getActiveTenantId } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useDownloadDocumentoPdf } from "../api/use-download-document-pdf";
 import { useProntuario } from "../api/use-prontuario";
 
 export interface MedicalRecordsPaneProps {
@@ -29,59 +28,22 @@ export function MedicalRecordsPane({
   token,
 }: MedicalRecordsPaneProps) {
   const { data: prontuario, isLoading } = useProntuario(atendimentoId, token);
+  const { downloadPdf, downloadingId } = useDownloadDocumentoPdf(atendimentoId);
 
-  const getPrioridadeBadge = (prioridade: number) => {
-    switch (prioridade) {
-      case 1:
-        return <Badge variant="destructive">Vermelho: Emergência Imediata (SAMU 192)</Badge>;
-      case 2:
-        return <Badge variant="warning">Laranja: Muito Urgente</Badge>;
-      case 3:
-        return (
-          <Badge className="bg-amber-400 text-slate-950 hover:bg-amber-400">Amarelo: Urgente</Badge>
-        );
-      case 4:
-        return <Badge variant="success">Verde: Pouco Urgente</Badge>;
-      default:
-        return <Badge variant="secondary">Azul: Não Urgente</Badge>;
-    }
+  const PRIORIDADE_CLINICA_MAP: Record<
+    number,
+    { label: string; variant: "nivel1" | "nivel2" | "nivel3" | "nivel4" | "nivel5" }
+  > = {
+    1: { label: "Vermelho: Emergência Imediata (SAMU 192)", variant: "nivel1" },
+    2: { label: "Laranja: Muito Urgente", variant: "nivel2" },
+    3: { label: "Amarelo: Urgente", variant: "nivel3" },
+    4: { label: "Verde: Pouco Urgente", variant: "nivel4" },
+    5: { label: "Azul: Não Urgente", variant: "nivel5" },
   };
 
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
-
-  const handleDownloadPdf = async (documentoId: string) => {
-    try {
-      setDownloadingId(documentoId);
-      const headers: Record<string, string> = {
-        "X-Tenant-ID": getActiveTenantId(),
-      };
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-
-      const res = await fetch(
-        `/api/v1/consultations/${atendimentoId}/documents/${documentoId}/pdf`,
-        { headers },
-      );
-
-      if (!res.ok) {
-        throw new Error(`Falha ao obter PDF do documento (status ${res.status})`);
-      }
-
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = blobUrl;
-      link.download = `receita-${documentoId.substring(0, 8)}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
-    } catch (err) {
-      console.error("Erro no download de PDF:", err);
-    } finally {
-      setDownloadingId(null);
-    }
+  const getPrioridadeBadge = (prioridade: number) => {
+    const config = PRIORIDADE_CLINICA_MAP[prioridade] ?? PRIORIDADE_CLINICA_MAP[5];
+    return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
   return (
@@ -130,7 +92,7 @@ export function MedicalRecordsPane({
               <span>Documentos Emitidos ({prontuario?.documentos?.length ?? 0})</span>
             </CardTitle>
             <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-              <Shield className="size-3 text-emerald-600" />
+              <Shield className="size-3 text-acr-green" />
               PAdES ICP-Brasil
             </span>
           </div>
@@ -175,7 +137,7 @@ export function MedicalRecordsPane({
                       variant="outline"
                       size="sm"
                       disabled={downloadingId === doc.id}
-                      onClick={() => handleDownloadPdf(doc.id)}
+                      onClick={() => downloadPdf(doc.id, token)}
                       className="h-6 text-[10px] px-2 gap-1"
                     >
                       {downloadingId === doc.id ? (

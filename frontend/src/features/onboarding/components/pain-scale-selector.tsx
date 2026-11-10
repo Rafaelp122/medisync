@@ -18,12 +18,16 @@ function obterCorBotaoDor(nivel: number, selecionado: boolean): string {
   if (!selecionado) {
     return "bg-secondary text-secondary-foreground hover:bg-muted";
   }
-  if (nivel === 0)
-    return "bg-emerald-700 text-white font-bold ring-2 ring-emerald-700 ring-offset-2";
-  if (nivel <= 3) return "bg-green-700 text-white font-bold ring-2 ring-green-700 ring-offset-2";
-  if (nivel <= 6) return "bg-amber-500 text-black font-bold ring-2 ring-amber-500 ring-offset-2";
-  if (nivel <= 8) return "bg-orange-700 text-white font-bold ring-2 ring-orange-700 ring-offset-2";
-  return "bg-destructive text-destructive-foreground font-bold ring-2 ring-destructive ring-offset-2";
+  if (nivel <= 3) {
+    return "bg-acr-green text-acr-green-foreground font-bold ring-2 ring-acr-green ring-offset-2";
+  }
+  if (nivel <= 6) {
+    return "bg-acr-yellow text-acr-yellow-foreground font-bold ring-2 ring-acr-yellow ring-offset-2";
+  }
+  if (nivel <= 8) {
+    return "bg-acr-orange text-acr-orange-foreground font-bold ring-2 ring-acr-orange ring-offset-2";
+  }
+  return "bg-acr-red text-acr-red-foreground font-bold ring-2 ring-acr-red ring-offset-2";
 }
 
 const NIVEIS_DOR = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
@@ -38,6 +42,12 @@ export function PainScaleSelector({ value, onChange, className }: PainScaleSelec
     } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
       e.preventDefault();
       onChange(Math.min(10, value + 1));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      onChange(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      onChange(10);
     }
   };
 

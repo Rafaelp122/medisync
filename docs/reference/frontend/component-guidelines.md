@@ -49,13 +49,24 @@ Em aplicações clínicas com polling contínuo (ex.: TanStack Query refetch a c
 * **Silenciamento Estrito (`default="none"`):** Transições visuais (`document.startViewTransition`) só devem ser disparadas por intenção explícita do usuário (mudança de rota ou ação de clique). Polling em segundo plano nunca deve disparar animações de transição, prevenindo flicker visual e sobrecarga de CPU/GPU.
 * **Respeito a `prefers-reduced-motion`:** Usuários com sensibilidade vestibular têm todas as durações de transição zeradas automaticamente via Tailwind `motion-reduce:transition-none`.
 
+### 6. Governança de Tokens Semânticos Clínicos SUS (Proibição de Raw Palette)
+
+Em conformidade com a Portaria GM/MS nº 2.048/2002 e a WCAG 2.1 AA ([ADR-011](../../adrs/ADR-011-Arquitetura-Frontend-SPA-PWA-e-Estrategia-de-Testes.md)):
+* **Proibição de Classes Hardcoded:** É expressamente proibido o uso de classes de cores brutas da paleta Tailwind (ex.: `bg-red-700`, `bg-orange-700`, `bg-yellow-400`, `bg-emerald-700`, `bg-blue-600`, `border-red-500`, `text-yellow-950`) para expressar níveis de risco clínico, estados de triagem ou escalas de dor.
+* **Uso Obrigatório de Tokens Semânticos:**
+  - Componentes de crachá de risco devem utilizar exclusivamente `<Badge variant="nivel1" | "nivel2" | "nivel3" | "nivel4" | "nivel5">`.
+  - Componentes de contêiner ou seletores específicos (`AcrTriageDistributionGrid`, `PainScaleSelector`) devem compor estilos utilizando os tokens de tema `bg-acr-*`, `text-acr-*-foreground`, `border-acr-*` e `ring-acr-*`.
+* **Zero Discrepância em Dark Mode:** Badges e cartões clínicos delegam a adaptação luminosa e a conformidade de contraste estritamente às variáveis CSS de tema (`frontend/src/globals.css`), sendo proibidos overrides manuais ad-hoc (ex.: `dark:bg-red-900`).
+
 ## Onde no código
 
 * Impl: `scripts/audit_frontend_guidelines.py:audit_component_line_length`
+* Impl: `frontend/src/components/ui/badge.tsx:badgeVariants`
 * Impl: `frontend/src/features/consultation/components/workstation-media-pane.tsx:WorkstationMediaPane`
 * Impl: `frontend/src/features/consultation/components/prescription-builder.tsx:PrescriptionBuilder`
 * Impl: `frontend/src/features/telemetry/components/painel-gestor.tsx:PainelGestor`
 * Prova viva: `tests/unit/test_audit_frontend_guidelines.py`
+* Prova viva: `frontend/src/components/ui/badge.test.tsx`
 * Prova viva: `frontend/src/features/consultation/tests/doctor-workstation-performance.test.tsx`
 * Prova viva: `frontend/src/features/consultation/tests/prescription-builder.test.tsx`
 * Prova viva: `frontend/src/features/telemetry/tests/painel-gestor.test.tsx`
