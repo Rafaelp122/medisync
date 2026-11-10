@@ -49,7 +49,7 @@
 - **Quando** aloca um paciente da fila virtual via "Chamar Próximo Paciente",
 - **Então** o sistema renderiza simultaneamente a tela unificada do médico em 3 colunas:
   1. **Coluna 1 (Esquerda):** Mídia WebRTC LiveKit, badge passivo de TMA decorrido (RN06) e Gate CFM nº 2.314/2022 com conferência visual de RG/CNH/CNS;
-  2. **Coluna 2 (Centro):** Prontuário Eletrônico com classificação Manchester e histórico de documentos clínicos emitidos;
+  2. **Coluna 2 (Centro):** Prontuário Eletrônico com classificação Manchester via variantes canônicas de `Badge` (`nivel1` a `nivel5`) com tokens semânticos OKLCH e histórico de documentos clínicos emitidos;
   3. **Coluna 3 (Direita):** Editor SOAP estruturado, prescritor digital com salvaguarda da Portaria 344/98 e acionamento de conclusão com assinatura ICP-Brasil;
 - **E** todas as atualizações de formulários e controles WebRTC ocorrem sem perda de foco, sem re-renders indesejados da árvore e sem navegação entre abas,
 - **E** ao finalizar a consulta médica ou desconectar a chamada, a paciente é automaticamente redirecionada para a rota pós-consulta `/pos-consulta` (`frontend/src/routes/pos-consulta.tsx`).
@@ -93,6 +93,8 @@
   - `tests/integration/test_pep_transaction.py`
   - `frontend/src/features/consultation/schemas/consultation-schema.test.ts`
   - `frontend/src/features/consultation/api/__tests__/consultation-hooks.test.tsx`
+  - `frontend/src/features/consultation/api/__tests__/use-download-document-pdf.test.tsx`
+  - `frontend/src/features/consultation/tests/medical-records-pane.test.tsx`
   - `frontend/src/features/consultation/tests/consultation-workstation.test.tsx`
   - `frontend/src/features/consultation/tests/doctor-workstation-performance.test.tsx`
   - `frontend/src/features/consultation/tests/prescription-builder.test.tsx`

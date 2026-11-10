@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { PainScaleSelector } from "../components/pain-scale-selector";
@@ -53,5 +53,49 @@ describe("PainScaleSelector (Escala Visual Analógica de Dor)", () => {
     const group = screen.getByRole("radiogroup");
     expect(group.className).toMatch(/grid-cols-6/);
     expect(group.className).toMatch(/sm:grid-cols-11/);
+  });
+
+  it("IT-PAIN-05: aplica tokens semânticos acr-* de alto contraste nos botões de dor ativos", () => {
+    const { rerender } = render(<PainScaleSelector value={0} onChange={vi.fn()} />);
+    const btn0 = screen.getByRole("radio", { name: /^nível 0$/i });
+    expect(btn0.className).toMatch(/bg-acr-green text-acr-green-foreground/);
+
+    rerender(<PainScaleSelector value={5} onChange={vi.fn()} />);
+    const btn5 = screen.getByRole("radio", { name: /^nível 5$/i });
+    expect(btn5.className).toMatch(/bg-acr-yellow text-acr-yellow-foreground/);
+    expect(btn5.className).not.toMatch(/bg-amber-500/);
+
+    rerender(<PainScaleSelector value={8} onChange={vi.fn()} />);
+    const btn8 = screen.getByRole("radio", { name: /^nível 8$/i });
+    expect(btn8.className).toMatch(/bg-acr-orange text-acr-orange-foreground/);
+    expect(btn8.className).not.toMatch(/bg-orange-700/);
+
+    rerender(<PainScaleSelector value={10} onChange={vi.fn()} />);
+    const btn10 = screen.getByRole("radio", { name: /^nível 10$/i });
+    expect(btn10.className).toMatch(/bg-acr-red text-acr-red-foreground/);
+  });
+
+  it("IT-PAIN-06: suporta navegação por teclado com setas direcionais e teclas Home e End", () => {
+    const handleChange = vi.fn();
+    render(<PainScaleSelector value={5} onChange={handleChange} />);
+    const radiogroup = screen.getByRole("radiogroup", { name: /escala de dor de 0 a 10/i });
+
+    fireEvent.keyDown(radiogroup, { key: "ArrowLeft" });
+    expect(handleChange).toHaveBeenCalledWith(4);
+
+    fireEvent.keyDown(radiogroup, { key: "ArrowDown" });
+    expect(handleChange).toHaveBeenCalledWith(4);
+
+    fireEvent.keyDown(radiogroup, { key: "ArrowRight" });
+    expect(handleChange).toHaveBeenCalledWith(6);
+
+    fireEvent.keyDown(radiogroup, { key: "ArrowUp" });
+    expect(handleChange).toHaveBeenCalledWith(6);
+
+    fireEvent.keyDown(radiogroup, { key: "Home" });
+    expect(handleChange).toHaveBeenCalledWith(0);
+
+    fireEvent.keyDown(radiogroup, { key: "End" });
+    expect(handleChange).toHaveBeenCalledWith(10);
   });
 });

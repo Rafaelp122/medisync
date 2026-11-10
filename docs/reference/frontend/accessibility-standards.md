@@ -13,19 +13,25 @@ A governança de acessibilidade clínica é estruturada em quatro pilares mandat
 
 ### 1. Contraste de Cores em Badges Clínicos (WCAG 1.4.3 - Mínimo 4.5:1)
 
-Os crachás de classificação de risco do Protocolo de Manchester / ACR e estados do sistema devem apresentar contraste cromático mínimo de 4.5:1 contra seus respectivos fundos:
-* **Vermelho (Emergência / Nível 1):** Fundo vermelho com texto branco puro (`bg-red-700 text-white`). Contraste aferido: ~6.38:1.
-* **Laranja (Muito Urgente / Nível 2):** Fundo laranja profundo com texto branco puro (`bg-orange-700 text-white`). Contraste aferido: ~5.20:1.
-* **Amarelo (Urgente / Nível 3):** Fundo amarelo com texto amarelo escuro em negrito (`bg-yellow-400 text-yellow-950 font-bold`). Contraste aferido: ~10.0:1.
-* **Verde (Pouco Urgente / Nível 4 / Success):** Fundo esmeralda profundo com texto branco puro (`bg-emerald-700 text-white`). Contraste aferido: ~5.50:1.
-* **Azul (Não Urgente / Nível 5):** Fundo azul vibrante com texto branco puro (`bg-blue-600 text-white`). Contraste aferido: ~5.18:1.
-* **Aviso Geral (Warning):** Fundo âmbar com texto âmbar escuro em negrito (`bg-amber-400 text-amber-950 font-bold`). Contraste aferido: ~8.88:1.
+Os crachás de classificação de risco do Protocolo de Manchester / ACR e estados do sistema utilizam tokens semânticos clínicos (`--color-acr-*` e `--color-acr-*-foreground`) no Tailwind v4 (`frontend/src/globals.css`), calibrados matematicamente no espaço de cor OKLCH para garantir contraste mínimo de 4.5:1 (WCAG 2.1 AA) e 7.0:1 (AAA para Nível 3) em ambos os temas:
+
+| Nível Clínico | Gravidade SUS / Manchester | Token Background | Token Foreground | OKLCH Fundo (:root / .dark) | Contraste Light | Contraste Dark |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Nível 1** | Emergência Imediata (SAMU 192) | `--color-acr-red` | `--color-acr-red-foreground` | `0.50 0.22 25` / `0.55 0.22 25` | **~6.2:1** (AA) | **~5.3:1** (AA) |
+| **Nível 2** | Muito Urgente | `--color-acr-orange` | `--color-acr-orange-foreground` | `0.54 0.18 48` / `0.56 0.18 48` | **~5.3:1** (AA) | **~4.8:1** (AA) |
+| **Nível 3** | Urgente | `--color-acr-yellow` | `--color-acr-yellow-foreground` | `0.85 0.16 85` / `0.82 0.15 85` | **~11.8:1** (AAA) | **~11.2:1** (AAA) |
+| **Nível 4** | Pouco Urgente / Success | `--color-acr-green` | `--color-acr-green-foreground` | `0.52 0.15 145` / `0.53 0.15 145` | **~5.0:1** (AA) | **~4.8:1** (AA) |
+| **Nível 5** | Não Urgente | `--color-acr-blue` | `--color-acr-blue-foreground` | `0.50 0.18 245` / `0.54 0.18 245` | **~5.5:1** (AA) | **~4.8:1** (AA) |
+| **Warning** | Aviso Geral do Sistema | `--color-warning` | `--color-warning-foreground` | `0.85 0.16 85` / `0.82 0.15 85` | **~11.8:1** (AAA) | **~11.2:1** (AAA) |
+
+> [!NOTE]
+> O Nível 3 (Amarelo) e a variante de Aviso Geral (Warning) possuem alta luminância intrínseca ($Y \approx 0.60$). O uso de texto claro geraria falha crítica de contraste (~1.3:1); por isso, utilizam compulsoriamente foreground escuro (`oklch(0.18 0.06 85)` em `:root` e `oklch(0.15 0.05 85)` em `.dark`), atingindo conformidade nível AAA.
 
 ### 2. Ergonomia Móvel & Alvos de Toque (WCAG 2.5.5 / 2.5.8 - Mínimo 44x44px)
 
 Dispositivos móveis (smartphones SUS com largura a partir de 360px) exigem alvos de toque mínimos de 44x44px para prevenir acionamentos acidentais por pacientes em crise álgica:
 * **Escala Visual Analógica de Dor (EVA 0–10):** Layout responsivo `grid-cols-6 sm:grid-cols-11` com botões configurados em `min-w-[44px] min-h-[44px]` e espaçamento de 1.5 (`gap-1.5`).
-* **Navegação por Teclado:** Suporte contínuo às setas direcionais (`ArrowLeft`, `ArrowRight`, `ArrowDown`, `ArrowUp`, `Home`, `End`) gerenciado pelo Radix UI ToggleGroup.
+* **Navegação por Teclado:** Suporte contínuo às setas direcionais (`ArrowLeft`, `ArrowRight`, `ArrowDown`, `ArrowUp`) e teclas extremas (`Home` para nível 0, `End` para nível 10) em radiogroup customizado acessível com foco gerenciado.
 
 ### 3. Safe Area Inset em Modais e Diálogos Clínicos
 
