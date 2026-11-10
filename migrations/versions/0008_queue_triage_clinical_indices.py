@@ -31,7 +31,7 @@ def upgrade() -> None:
     )
 
     # 2. Remover indice duplicado em triagens (coberto por uq_triagens_atendimento_id)
-    op.drop_index("idx_triagens_atendimento", table_name="triagens")
+    op.drop_index("idx_triagens_atendimento", table_name="triagens", if_exists=True)
 
     # 3. Adicionar indices B-Tree de chaves estrangeiras em atendimentos
     op.create_index(

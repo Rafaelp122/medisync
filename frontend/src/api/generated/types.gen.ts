@@ -1607,7 +1607,7 @@ export type RefreshTokenRequest = {
      *
      * Token de atualização válido emitido no login ou rotação anterior
      */
-    refresh_token: string;
+    refresh_token?: string | null;
 };
 
 /**
@@ -2224,7 +2224,10 @@ export type MfaVerifyApiV1AuthMfaVerifyPostResponses = {
 export type MfaVerifyApiV1AuthMfaVerifyPostResponse = MfaVerifyApiV1AuthMfaVerifyPostResponses[keyof MfaVerifyApiV1AuthMfaVerifyPostResponses];
 
 export type RefreshTokenApiV1AuthRefreshPostData = {
-    body: RefreshTokenRequest;
+    /**
+     * Body
+     */
+    body?: RefreshTokenRequest | null;
     path?: never;
     query?: never;
     url: '/api/v1/auth/refresh';
@@ -2249,7 +2252,10 @@ export type RefreshTokenApiV1AuthRefreshPostResponses = {
 export type RefreshTokenApiV1AuthRefreshPostResponse = RefreshTokenApiV1AuthRefreshPostResponses[keyof RefreshTokenApiV1AuthRefreshPostResponses];
 
 export type LogoutApiV1AuthLogoutPostData = {
-    body: RefreshTokenRequest;
+    /**
+     * Body
+     */
+    body?: RefreshTokenRequest | null;
     path?: never;
     query?: never;
     url: '/api/v1/auth/logout';

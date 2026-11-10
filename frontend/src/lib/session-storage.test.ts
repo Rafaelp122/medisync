@@ -40,7 +40,6 @@ describe("session-storage", () => {
   };
 
   const mockDoctorSession: StoredDoctorSession = {
-    token: "mock-doctor-jwt-456",
     medicoId: "018f3a5b-med-123",
     medicoNome: "Dr. Eduardo Rocha",
     crmUf: "CRM/SP 123456",
@@ -48,7 +47,6 @@ describe("session-storage", () => {
   };
 
   const mockManagerSession: StoredManagerSession = {
-    token: "mock-manager-jwt-789",
     usuarioId: "018f3a5b-mgr-123",
     nome: "Gestora Maria",
     email: "maria@saude.gov.br",
@@ -103,11 +101,12 @@ describe("session-storage", () => {
   });
 
   describe("Doctor Session", () => {
-    it("UT-DOC-01: deve salvar e recuperar a sessão do médico no localStorage", () => {
+    it("UT-DOC-01: deve salvar e recuperar a sessão do médico no localStorage sem o campo token", () => {
       saveStoredDoctorSession(mockDoctorSession);
 
       const stored = getStoredDoctorSession();
       expect(stored).toEqual(mockDoctorSession);
+      expect((stored as unknown as { token?: unknown })?.token).toBeUndefined();
     });
 
     it("UT-DOC-02: deve retornar null e limpar o storage se JSON do médico for inválido", () => {
@@ -138,11 +137,12 @@ describe("session-storage", () => {
   });
 
   describe("Manager Session", () => {
-    it("UT-MGR-01: deve salvar e recuperar a sessão do gestor no localStorage", () => {
+    it("UT-MGR-01: deve salvar e recuperar a sessão do gestor no localStorage sem o campo token", () => {
       saveStoredManagerSession(mockManagerSession);
 
       const stored = getStoredManagerSession();
       expect(stored).toEqual(mockManagerSession);
+      expect((stored as unknown as { token?: unknown })?.token).toBeUndefined();
     });
 
     it("UT-MGR-02: deve retornar null e limpar o storage se JSON do gestor for inválido", () => {

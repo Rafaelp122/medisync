@@ -31,7 +31,7 @@ async def test_auth_full_lifecycle_login_me_refresh_logout(
         org.id,
         cpf="11122233344",
         email="dr.lucas@telemed.com.br",
-        papel="MEDICO",
+        papel="FATURAMENTO",
         crm="12345",
         crm_uf="SP",
     )
@@ -66,6 +66,14 @@ async def test_auth_full_lifecycle_login_me_refresh_logout(
     assert token_data["token_type"] == "bearer"
     assert token_data["expires_in"] == 900
 
+    # Validar atributos de segurança do cookie HttpOnly emitido no login (Issue #144)
+    set_cookies = login_resp.headers.get_list("set-cookie")
+    cookie_str = next((c for c in set_cookies if "refresh_token=" in c), "")
+    assert cookie_str != ""
+    assert "httponly" in cookie_str.lower()
+    assert "samesite=strict" in cookie_str.lower()
+    assert "path=/api/v1/auth" in cookie_str.lower()
+
     access_token = cast("str", token_data["access_token"])
     refresh_token = cast("str", token_data["refresh_token"])
 
@@ -89,7 +97,7 @@ async def test_auth_full_lifecycle_login_me_refresh_logout(
     assert me_data["usuario_id"] == str(medico.id)
     assert me_data["organizacao_id"] == org.id
     assert me_data["identificador"] == "dr.lucas@telemed.com.br"
-    assert me_data["papel"] == "MEDICO"
+    assert me_data["papel"] == "FATURAMENTO"
     assert me_data["ativo"] is True
 
     # 3. Rotacionar refresh token em /auth/refresh
@@ -133,6 +141,16 @@ async def test_auth_full_lifecycle_login_me_refresh_logout(
         headers={"Authorization": f"Bearer {new_access_token}"},
     )
     assert logout_resp.status_code == 204
+    logout_cookie_str = next(
+        (
+            c
+            for c in logout_resp.headers.get_list("set-cookie")
+            if "refresh_token=" in c
+        ),
+        "",
+    )
+    assert logout_cookie_str != ""
+    assert "max-age=0" in logout_cookie_str.lower()
 
     # 6. Validar que o refresh token revogado pelo logout nao pode mais ser utilizado
     revoked_refresh_resp = await async_client.post(
@@ -339,7 +357,7 @@ async def test_bearer_token_without_x_tenant_id_infers_tenant_for_tenant_dep(
         org.id,
         cpf="11122233390",
         email="dr.tenantless@telemed.com.br",
-        papel="MEDICO",
+        papel="FATURAMENTO",
         crm="12390",
         crm_uf="SP",
     )
@@ -384,3 +402,93 @@ async def test_bearer_token_without_x_tenant_id_infers_tenant_for_tenant_dep(
     # Shouldn't fail with 400 TENANT_INVALIDO
     assert pac_resp.status_code != 400
     assert cast("dict[str, object]", pac_resp.json()).get("code") != "TENANT_INVALIDO"
+
+
+@pytest.mark.asyncio
+async def test_auth_cookie_lifecycle_and_missing_token_rejection(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+) -> None:
+    """Validate AC-01 to AC-03: Cookie-only refresh,
+    missing token 401, and logout purge.
+    """
+    org = make_organizacao(cnpj="88777666000199")
+    db_session.add(org)
+    await db_session.commit()
+    await db_session.refresh(org)
+
+    medico = make_profissional(
+        org.id,
+        cpf="11122233399",
+        email="dr.cookie@telemed.com.br",
+        papel="FATURAMENTO",
+        crm="12399",
+        crm_uf="SP",
+    )
+    db_session.add(medico)
+    await db_session.commit()
+    await db_session.refresh(medico)
+
+    await persist_credencial(
+        db_session,
+        organizacao_id=org.id,
+        usuario_id=medico.id,
+        identificador=medico.email,
+        senha_pura="SenhaForte123!@#",
+        papel=medico.papel,
+    )
+
+    # 1. Requisicao a /refresh sem cookie e sem body deve falhar com 401 TOKEN_INVALIDO
+    async_client.cookies.clear()
+    empty_refresh_resp = await async_client.post(
+        "/api/v1/auth/refresh",
+        json={},
+        headers={"X-Tenant-ID": str(org.id)},
+    )
+    assert empty_refresh_resp.status_code == 401
+    err_data = cast("dict[str, object]", empty_refresh_resp.json())
+    assert err_data["code"] == "TOKEN_INVALIDO"
+
+    # 2. Login com emissao de cookie HttpOnly
+    login_resp = await async_client.post(
+        "/api/v1/auth/login",
+        json={
+            "identificador": "dr.cookie@telemed.com.br",
+            "senha": "SenhaForte123!@#",
+        },
+        headers={"X-Tenant-ID": str(org.id)},
+    )
+    assert login_resp.status_code == 200
+    set_cookie_header = login_resp.headers.get("set-cookie", "")
+    assert "refresh_token=" in set_cookie_header
+    assert "httponly" in set_cookie_header.lower()
+    assert "samesite=strict" in set_cookie_header.lower()
+    assert "path=/api/v1/auth" in set_cookie_header.lower()
+
+    # 3. Silent refresh usando EXCLUSIVAMENTE o cookie no jar (body vazio)
+    cookie_refresh_resp = await async_client.post(
+        "/api/v1/auth/refresh",
+        json={},
+    )
+    assert cookie_refresh_resp.status_code == 200
+    cookie_refresh_data = cast("dict[str, object]", cookie_refresh_resp.json())
+    assert "access_token" in cookie_refresh_data
+    # Novo cookie foi rotacionado
+    new_set_cookie = cookie_refresh_resp.headers.get("set-cookie", "")
+    assert "refresh_token=" in new_set_cookie
+
+    # 4. Logout usando o cookie do jar (sem refresh_token no body)
+    logout_resp = await async_client.post(
+        "/api/v1/auth/logout",
+        json={},
+    )
+    assert logout_resp.status_code == 204
+    logout_cookie = logout_resp.headers.get("set-cookie", "")
+    assert "max-age=0" in logout_cookie.lower()
+
+    # 5. Tentativa de refresh subsequente com cookie revogado/purgado
+    revoked_resp = await async_client.post(
+        "/api/v1/auth/refresh",
+        json={},
+    )
+    assert revoked_resp.status_code == 401

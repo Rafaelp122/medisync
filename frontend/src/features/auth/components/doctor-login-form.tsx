@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { settings } from "@/config/settings";
+import { setAccessToken } from "@/lib/auth-token";
 import type { StoredDoctorSession } from "@/lib/session-storage";
 import { useCorporateLogin } from "../api/use-corporate-login";
 import { doctorLoginSchema } from "../schemas/auth-schemas";
@@ -46,8 +47,8 @@ export function DoctorLoginForm({ onLoginSuccess, className }: DoctorLoginFormPr
   });
 
   const finalizarLogin = (token: string) => {
+    setAccessToken(token);
     const session: StoredDoctorSession = {
-      token,
       medicoId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e",
       medicoNome: "Dr. Eduardo Rocha",
       crmUf: `${crm.trim()}/${uf.toUpperCase()}`,

@@ -1,5 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
+import { client } from "@/api/client";
+import { logoutApiV1AuthLogoutPost } from "@/api/generated/sdk.gen";
 import { DoctorWorkstation } from "@/features/consultation/components/doctor-workstation";
+import { clearAccessToken, getAccessToken } from "@/lib/auth-token";
 import { clearStoredDoctorSession, type StoredDoctorSession } from "@/lib/session-storage";
 
 export interface DoctorWorkstationPageProps {
@@ -9,7 +12,13 @@ export interface DoctorWorkstationPageProps {
 export function DoctorWorkstationPage({ doctorSession }: DoctorWorkstationPageProps) {
   const navigate = useNavigate();
 
-  const handleDoctorLogout = () => {
+  const handleDoctorLogout = async () => {
+    try {
+      await logoutApiV1AuthLogoutPost({ client, body: {} });
+    } catch {
+      // Falha de rede não impede expurgo local
+    }
+    clearAccessToken();
     clearStoredDoctorSession();
     navigate({ to: "/login" });
   };
@@ -17,7 +26,7 @@ export function DoctorWorkstationPage({ doctorSession }: DoctorWorkstationPagePr
   return (
     <div className="w-full max-w-[1600px] mx-auto">
       <DoctorWorkstation
-        token={doctorSession.token}
+        token={getAccessToken() ?? undefined}
         medicoId={doctorSession.medicoId}
         medicoNome={doctorSession.medicoNome}
         crmUf={doctorSession.crmUf}

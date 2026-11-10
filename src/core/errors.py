@@ -107,6 +107,18 @@ class TokenRevogadoError(UnauthorizedError):
         super().__init__(detail, title=self.title, code=self.code)
 
 
+class TokenInvalidoError(UnauthorizedError):
+    """Raised when JWT token signature, payload, or structure is invalid."""
+
+    title: str = "Token Inválido"
+    code: str = "TOKEN_INVALIDO"
+
+    def __init__(
+        self, detail: str = "Token de autenticação inválido ou malformado."
+    ) -> None:
+        super().__init__(detail, title=self.title, code=self.code)
+
+
 class ForbiddenError(DomainError):
     status_code: int = 403
     title: str = "Forbidden"
