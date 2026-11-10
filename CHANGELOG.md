@@ -1,3 +1,9 @@
+## v0.15.1 (2026-11-10)
+
+### Refactor
+
+- **frontend**: acessibilidade clinica WCAG 2.1 AA, ergonomia mobile e decomposicao de monolitos (#143)
+
 ## v0.15.0 (2026-11-10)
 
 ### Feat
