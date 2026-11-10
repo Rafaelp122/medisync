@@ -1,3 +1,9 @@
+## v0.15.2 (2026-11-10)
+
+### Refactor
+
+- **frontend**: tokens semanticos clinicos SUS/Manchester no Tailwind v4 e conformidade dark mode (#147)
+
 ## v0.15.1 (2026-11-10)
 
 ### Refactor
