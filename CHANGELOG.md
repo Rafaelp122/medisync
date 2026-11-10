@@ -1,3 +1,9 @@
+## v0.15.0 (2026-11-10)
+
+### Feat
+
+- **auth**: migrar sessoes para cookies HttpOnly e access tokens em memoria (#144)
+
 ## v0.14.1 (2026-11-09)
 
 ### Fix
