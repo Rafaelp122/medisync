@@ -1,3 +1,9 @@
+## v0.16.1 (2026-11-12)
+
+### Fix
+
+- **frontend**: saneamento de tipagem estrita no tsc -b e alinhamento com contratos Hey API
+
 ## v0.16.0 (2026-11-12)
 
 ### Feat
