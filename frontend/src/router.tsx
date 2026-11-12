@@ -29,7 +29,9 @@ export const routeTree = rootRoute.addChildren([
   gestorRoute,
 ]);
 
-export { isReducedMotionPreferred } from "@/lib/view-transitions";
+import { isReducedMotionPreferred } from "@/lib/view-transitions";
+
+export { isReducedMotionPreferred };
 
 export function createAppRouter(
   history?: RouterHistory,
@@ -41,14 +43,19 @@ export function createAppRouter(
     context: { queryClient },
     defaultPreload: "intent",
     defaultNotFoundComponent: () => <Navigate to="/" replace />,
-    defaultViewTransition: () => !isReducedMotionPreferred(),
+    defaultViewTransition: !isReducedMotionPreferred(),
   });
 }
 
 export const router = createAppRouter();
 
+import type { LiveKitTokenResponse } from "@/api/generated/types.gen";
+
 declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router;
+  }
+  interface HistoryState {
+    callData?: LiveKitTokenResponse;
   }
 }

@@ -16,12 +16,15 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import { calcularHashTcle, mascararCNS, mascararCPF, mascararTelefoneBR } from "@/lib/validators";
 import { startSafeViewTransition } from "@/lib/view-transitions";
 import { useAdmitirPaciente } from "../api/use-admitir-paciente";
 import { useIntakeFase1 } from "../api/use-intake-fase1";
-import { type IntakeFase1FormData, intakeFase1Schema } from "../schemas/onboarding-schema";
+import {
+  type IntakeFase1FormData,
+  type IntakeFase1InputFormData,
+  intakeFase1Schema,
+} from "../schemas/onboarding-schema";
 import { PainScaleSelector } from "./pain-scale-selector";
 import { SamuEmergencyModal } from "./samu-emergency-modal";
 import { TcleDialog, TEXTO_TCLE_PADRAO } from "./tcle-dialog";
@@ -79,7 +82,7 @@ export function AcolhimentoFase1Form({
   const intakeMutation = useIntakeFase1();
   const admitirMutation = useAdmitirPaciente();
 
-  const form = useForm<IntakeFase1FormData>({
+  const form = useForm<IntakeFase1InputFormData, unknown, IntakeFase1FormData>({
     resolver: zodResolver(intakeFase1Schema),
     defaultValues: {
       nome_completo: "",
@@ -424,27 +427,17 @@ export function AcolhimentoFase1Form({
                             <div className="flex gap-1.5 p-0.5 rounded-lg bg-muted border border-border">
                               <button
                                 type="button"
-                                aria-pressed={tipoDoc === "cpf"}
+                                aria-pressed={true}
                                 onClick={alternarParaCpf}
-                                className={cn(
-                                  "text-xs px-2.5 py-0.5 rounded-md font-semibold shadow-xs transition-colors",
-                                  tipoDoc === "cpf"
-                                    ? "bg-background text-foreground"
-                                    : "text-muted-foreground hover:text-foreground",
-                                )}
+                                className="text-xs px-2.5 py-0.5 rounded-md font-semibold shadow-xs transition-colors bg-background text-foreground"
                               >
                                 CPF
                               </button>
                               <button
                                 type="button"
-                                aria-pressed={tipoDoc === "cns"}
+                                aria-pressed={false}
                                 onClick={alternarParaCns}
-                                className={cn(
-                                  "text-xs px-2.5 py-0.5 rounded-md transition-colors",
-                                  tipoDoc === "cns"
-                                    ? "bg-background text-foreground font-semibold shadow-xs"
-                                    : "text-muted-foreground hover:text-foreground",
-                                )}
+                                className="text-xs px-2.5 py-0.5 rounded-md transition-colors text-muted-foreground hover:text-foreground"
                               >
                                 Cartão SUS (CNS)
                               </button>
@@ -478,27 +471,17 @@ export function AcolhimentoFase1Form({
                             <div className="flex gap-1.5 p-0.5 rounded-lg bg-muted border border-border">
                               <button
                                 type="button"
-                                aria-pressed={tipoDoc === "cpf"}
+                                aria-pressed={false}
                                 onClick={alternarParaCpf}
-                                className={cn(
-                                  "text-xs px-2.5 py-0.5 rounded-md transition-colors",
-                                  tipoDoc === "cpf"
-                                    ? "bg-background text-foreground font-semibold shadow-xs"
-                                    : "text-muted-foreground hover:text-foreground",
-                                )}
+                                className="text-xs px-2.5 py-0.5 rounded-md transition-colors text-muted-foreground hover:text-foreground"
                               >
                                 CPF
                               </button>
                               <button
                                 type="button"
-                                aria-pressed={tipoDoc === "cns"}
+                                aria-pressed={true}
                                 onClick={alternarParaCns}
-                                className={cn(
-                                  "text-xs px-2.5 py-0.5 rounded-md font-semibold shadow-xs transition-colors",
-                                  tipoDoc === "cns"
-                                    ? "bg-background text-foreground"
-                                    : "text-muted-foreground hover:text-foreground",
-                                )}
+                                className="text-xs px-2.5 py-0.5 rounded-md font-semibold shadow-xs transition-colors bg-background text-foreground"
                               >
                                 Cartão SUS (CNS)
                               </button>

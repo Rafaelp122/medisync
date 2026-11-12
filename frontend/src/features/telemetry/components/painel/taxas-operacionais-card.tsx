@@ -1,9 +1,9 @@
 import { TrendingDown } from "lucide-react";
-import type { TelemetriaPainelResponse } from "@/api/generated/types.gen";
+import type { PainelTelemetriaResponse } from "@/api/generated/types.gen";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export interface TaxasOperacionaisCardProps {
-  painel?: TelemetriaPainelResponse;
+  painel?: PainelTelemetriaResponse;
 }
 
 /**

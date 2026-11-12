@@ -150,8 +150,10 @@ export const enrichmentFase2Schema = zFase2Request.extend({
     .transform((val) => val.toUpperCase()),
 });
 
-export type SolicitarOtpFormData = z.infer<typeof solicitarOtpSchema>;
-export type VerificarOtpFormData = z.infer<typeof verificarOtpSchema>;
-export type IntakeFase1FormData = z.infer<typeof intakeFase1Schema>;
-export type AdmissaoFormData = z.infer<typeof admissaoSchema>;
-export type EnrichmentFase2FormData = z.infer<typeof enrichmentFase2Schema>;
+export type SolicitarOtpFormData = z.output<typeof solicitarOtpSchema>;
+export type VerificarOtpFormData = z.output<typeof verificarOtpSchema>;
+export type IntakeFase1FormData = z.output<typeof intakeFase1Schema>;
+export type IntakeFase1InputFormData = z.input<typeof intakeFase1Schema>;
+export type AdmissaoFormData = z.output<typeof admissaoSchema>;
+export type EnrichmentFase2FormData = z.output<typeof enrichmentFase2Schema>;
+export type EnrichmentFase2InputFormData = z.input<typeof enrichmentFase2Schema>;

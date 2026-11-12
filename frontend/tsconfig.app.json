@@ -22,7 +22,10 @@
     /* Path Aliases */
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+
+    /* Environment Types */
+    "types": ["node"]
   },
   "include": ["src"]
 }

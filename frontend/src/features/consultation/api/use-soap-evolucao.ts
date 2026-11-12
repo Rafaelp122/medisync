@@ -51,7 +51,7 @@ export function useSoapEvolucao(
         });
 
         // 404 é o estado natural inicial: a consulta foi iniciada e ainda não possui SOAP gravado
-        if (response.status === 404) {
+        if (response.response?.status === 404) {
           return null;
         }
 
@@ -108,10 +108,10 @@ export function useSalvarSoap(
         throw toProblemDetailsError(err);
       }
     },
-    onSuccess: (data, variables, context) => {
+    onSuccess: (data, variables, onMutateResult, context) => {
       queryClient.invalidateQueries({ queryKey: ["soap", atendimentoId] });
       queryClient.invalidateQueries({ queryKey: ["prontuario", atendimentoId] });
-      options?.onSuccess?.(data, variables, context);
+      options?.onSuccess?.(data, variables, onMutateResult, context);
     },
     ...options,
   });

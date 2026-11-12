@@ -81,7 +81,6 @@ export function createEnrichmentFase2FormData(
     cep: MOCK_CEP_VALIDO,
     logradouro: "Avenida Paulista",
     numero: "1000",
-    complemento: "Apto 42",
     bairro: "Bela Vista",
     cidade: "São Paulo",
     estado: "SP",
@@ -107,6 +106,7 @@ export function createEnrichmentFase2Response(overrides?: Partial<Fase2Response>
     cidade: "São Paulo",
     estado: "SP",
     alergias: ["Dipirona"],
+    status: "CADASTRO_COMPLETO",
     ...overrides,
   };
 }

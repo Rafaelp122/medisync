@@ -112,7 +112,8 @@ export const cfmIdentityGateSchema = z
     }
   });
 
-export type SoapFormData = z.infer<typeof soapSchema>;
+export type SoapFormData = z.output<typeof soapSchema>;
+export type SoapInputFormData = z.input<typeof soapSchema>;
 export type ItemPrescricaoFormData = z.infer<typeof itemPrescricaoSchema>;
 export type EmitirDocumentoFormData = z.infer<typeof emitirDocumentoSchema>;
 export type AssinarDocumentoFormData = z.infer<typeof assinarDocumentoSchema>;

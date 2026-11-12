@@ -24,7 +24,7 @@ const mockCadsusResponse: VerificarOtpResponse = {
   access_token: "mock-cadsus-token-xyz",
   role: "PACIENTE",
   paciente_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
-  atendimento_ativo_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2d",
+  expires_in: 900,
 };
 
 describe("Tripartite Authentication Integration Tests (CADSUS, Doctor, Manager, MFA)", () => {

@@ -164,9 +164,9 @@ export function PosConsultaSummary({
                         <FileText className="size-4 text-primary shrink-0" />
                         <h4 className="font-semibold text-xs text-foreground">{labelDoc}</h4>
                       </div>
-                      {doc.token_validacao && (
+                      {doc.sha256_hash && (
                         <p className="text-[11px] text-muted-foreground font-mono">
-                          Código ITI: <strong>{doc.token_validacao}</strong>
+                          Código / Validação ITI: <strong>{doc.sha256_hash}</strong>
                         </p>
                       )}
                     </div>

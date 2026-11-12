@@ -276,7 +276,7 @@ export function DoctorWorkstation({
               medicoNome={medicoNome}
               remoteParticipantName="Juliana Silva (Paciente)"
               livekitToken={livekitData?.token}
-              wsUrl={livekitData?.ws_url}
+              wsUrl={livekitData?.server_url}
               roomName={livekitData?.room_name}
             />
 

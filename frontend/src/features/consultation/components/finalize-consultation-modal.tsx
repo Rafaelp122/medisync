@@ -156,9 +156,16 @@ export function FinalizeConsultationModal({
                     value={pscProvider}
                     onChange={(e) => {
                       const novo = e.target.value;
-                      setPscProvider(novo);
-                      if (novo === "fake" && settings.env.isDemoMode) {
-                        setPscToken(settings.demo.pscToken);
+                      if (
+                        novo === "birdid" ||
+                        novo === "safeid" ||
+                        novo === "vidaas" ||
+                        novo === "fake"
+                      ) {
+                        setPscProvider(novo);
+                        if (novo === "fake" && settings.env.isDemoMode) {
+                          setPscToken(settings.demo.pscToken);
+                        }
                       }
                     }}
                     className="w-full h-8 px-2 rounded-md border border-input bg-background text-xs"

@@ -3,6 +3,10 @@ import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/auth-tok
 import { saveStoredDoctorSession, saveStoredSession } from "@/lib/session-storage";
 import { client } from "./client";
 
+function toRequest(input: RequestInfo | URL, init?: RequestInit): Request {
+  return input instanceof Request ? input : new Request(input, init);
+}
+
 describe("client interceptor (Authorization Bearer & Token Handler)", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -17,7 +21,8 @@ describe("client interceptor (Authorization Bearer & Token Handler)", () => {
 
     await client.get({
       url: "/api/v1/test-auth",
-      fetch: async (req: Request) => {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const req = toRequest(input, init);
         interceptedRequest = req;
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       },
@@ -41,7 +46,8 @@ describe("client interceptor (Authorization Bearer & Token Handler)", () => {
 
     await client.get({
       url: "/api/v1/test-auth-patient",
-      fetch: async (req: Request) => {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const req = toRequest(input, init);
         interceptedRequest = req;
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       },
@@ -61,7 +67,8 @@ describe("client interceptor (Authorization Bearer & Token Handler)", () => {
       headers: {
         Authorization: "Bearer custom-override-token",
       },
-      fetch: async (req: Request) => {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const req = toRequest(input, init);
         interceptedRequest = req;
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       },
@@ -93,7 +100,8 @@ describe("client interceptor (Authorization Bearer & Token Handler)", () => {
 
     const response = await client.get({
       url: "/api/v1/clinical/resource",
-      fetch: async (req: Request) => {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const req = toRequest(input, init);
         callCount++;
         if (callCount === 1) {
           return new Response(JSON.stringify({ detail: "Token expired" }), { status: 401 });

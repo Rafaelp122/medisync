@@ -1,11 +1,11 @@
 import { UserCheck } from "lucide-react";
-import type { TelemetriaPainelResponse } from "@/api/generated/types.gen";
+import type { MedicoTmaResponse, PainelTelemetriaResponse } from "@/api/generated/types.gen";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatarTempoEstimado } from "@/lib/formatters";
 
 export interface MedicosTmaCardProps {
-  painel?: TelemetriaPainelResponse;
+  painel?: PainelTelemetriaResponse;
 }
 
 /**
@@ -30,7 +30,7 @@ export function MedicosTmaCard({ painel }: MedicosTmaCardProps) {
           </p>
         ) : (
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {painel.medicos_tma.map((med) => (
+            {painel.medicos_tma.map((med: MedicoTmaResponse) => (
               <div
                 key={med.medico_id}
                 className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card text-xs"
