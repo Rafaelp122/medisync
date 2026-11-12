@@ -79,7 +79,9 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
       expect(getByTestId("posicao-ordinal")).toHaveTextContent("4º na fila");
     });
     expect(getByTestId("tempo-estimado")).toHaveTextContent("Aproximadamente 15 minutos");
-    expect(getByTestId("atendimento-id-completo")).toHaveTextContent(MOCK_SESSION.atendimentoId);
+    expect(getByTestId("atendimento-id-completo")).toHaveTextContent(
+      MOCK_SESSION.atendimentoId ?? "",
+    );
     expect(getByText(/amarelo: urgente/i)).toBeInTheDocument();
     expect(getByText(/sentiu piora nos sintomas\?/i)).toBeInTheDocument();
   });
@@ -270,7 +272,9 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
       <VirtualWaitingRoom session={MOCK_SESSION} onComplementarCadastro={handleComplementar} />,
     );
 
-    expect(getByTestId("atendimento-id-completo")).toHaveTextContent(MOCK_SESSION.atendimentoId);
+    expect(getByTestId("atendimento-id-completo")).toHaveTextContent(
+      MOCK_SESSION.atendimentoId ?? "",
+    );
 
     const btnComplementar = getByRole("button", { name: /completar cadastro/i });
     await user.click(btnComplementar);
@@ -298,16 +302,19 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
     });
 
     // Envia evento CALLED em tempo real pelo WebSocket
-    wsClient?.send(
-      JSON.stringify({
-        event: "CALLED",
-        atendimento_id: MOCK_ATENDIMENTO_ID,
-        medico_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b99",
-        status: "CHAMANDO_PACIENTE",
-        ttl_segundos: 45,
-        chamada_iniciada_em: new Date().toISOString(),
-      }),
-    );
+    if (wsClient) {
+      const clientWithSend: { send: (data: string) => void } = wsClient;
+      clientWithSend.send(
+        JSON.stringify({
+          event: "CALLED",
+          atendimento_id: MOCK_ATENDIMENTO_ID,
+          medico_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b99",
+          status: "CHAMANDO_PACIENTE",
+          ttl_segundos: 45,
+          chamada_iniciada_em: new Date().toISOString(),
+        }),
+      );
+    }
 
     // O modal deve abrir instantaneamente
     await waitFor(() => {

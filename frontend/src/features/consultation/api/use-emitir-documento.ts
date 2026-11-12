@@ -49,9 +49,9 @@ export function useEmitirDocumento(
         throw toProblemDetailsError(err);
       }
     },
-    onSuccess: (data, variables, context) => {
+    onSuccess: (data, variables, onMutateResult, context) => {
       queryClient.invalidateQueries({ queryKey: ["prontuario", atendimentoId] });
-      options?.onSuccess?.(data, variables, context);
+      options?.onSuccess?.(data, variables, onMutateResult, context);
     },
     ...options,
   });

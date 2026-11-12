@@ -26,6 +26,7 @@ export function createChamarProximoResponse(
     status: "EM_ATENDIMENTO",
     chamada_iniciada_em: "2026-11-01T12:00:00Z",
     ttl_segundos: 900,
+    mensagem: "Paciente alocado com sucesso.",
     ...overrides,
   };
 }

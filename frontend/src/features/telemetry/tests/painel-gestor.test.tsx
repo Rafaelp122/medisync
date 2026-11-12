@@ -48,6 +48,9 @@ const mockConfigData: ConfigPlantaoResponse = {
   sla_minutos_nivel_3: 60,
   sla_minutos_nivel_4: 120,
   sla_minutos_nivel_5: 240,
+  criado_em: "2026-11-01T00:00:00Z",
+  atualizado_em: "2026-11-01T00:00:00Z",
+  atualizado_por_id: null,
 };
 
 describe("PainelGestor Integration Tests (RF-10, US-13, ACR SUS, RN06)", () => {

@@ -14,28 +14,30 @@ const mockDocumentos: DocumentoClinicoResponse[] = [
   {
     id: MOCK_DOC_ID,
     atendimento_id: MOCK_ATENDIMENTO_ID,
+    organizacao_id: 1,
+    medico_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e",
     tipo_documento: "RECEITA_SIMPLES",
-    conteudo: "Amoxicilina 500mg de 8/8h por 7 dias",
+    chave_s3: "consultas/doc-123.pdf",
+    sha256_hash: "ITI-MEDISYNC-998877",
+    is_finalizado: true,
+    assinado_em: "2026-11-02T12:30:00Z",
     itens: [
       {
+        id: "item-1",
         medicamento: "Amoxicilina 500mg",
+        dosagem: "500mg",
         posologia: "1 cápsula de 8 em 8 horas por 7 dias",
-        quantidade: "21 cápsulas",
+        duracao: "7 dias",
+        controle_especial: false,
       },
     ],
-    assinado_em: "2026-11-02T12:30:00Z",
-    token_validacao: "ITI-MEDISYNC-998877",
-    criado_em: "2026-11-02T12:28:00Z",
   },
 ];
 
 const mockProntuario: ProntuarioResponse = {
-  id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2a",
   atendimento_id: MOCK_ATENDIMENTO_ID,
-  paciente_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
+  is_finalizado: true,
   documentos: mockDocumentos,
-  criado_em: "2026-11-02T12:00:00Z",
-  atualizado_em: "2026-11-02T12:30:00Z",
 };
 
 describe("PosConsultaSummary Integration Tests (US-09, US-10, ICP-Brasil, ITI)", () => {

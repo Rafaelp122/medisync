@@ -33,6 +33,7 @@ export const MOCK_LIVEKIT_TOKEN_RESPONSE: LiveKitTokenResponse = {
   server_url: "wss://livekit.test:7880",
   room_name: `room_${MOCK_ATENDIMENTO_ID}`,
   participant_identity: `paciente:${MOCK_PACIENTE_ID}`,
+  expires_in: 3600,
 };
 
 export const MOCK_PIORA_RECLASSIFICADO_RESPONSE: PioraClinicaResponse = {

@@ -1,11 +1,11 @@
 import { CheckCircle2, ShieldAlert } from "lucide-react";
-import type { TelemetriaPainelResponse } from "@/api/generated/types.gen";
+import type { PainelTelemetriaResponse } from "@/api/generated/types.gen";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatarTempoEstimado } from "@/lib/formatters";
 
 export interface AcrTriageDistributionGridProps {
-  painel?: TelemetriaPainelResponse;
+  painel?: PainelTelemetriaResponse;
 }
 
 /**

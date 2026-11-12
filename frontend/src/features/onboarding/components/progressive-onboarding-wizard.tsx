@@ -3,6 +3,7 @@ import { startSafeViewTransition } from "@/lib/view-transitions";
 import { type AcolhimentoConcluidoData, AcolhimentoFase1Form } from "./acolhimento-fase1-form";
 import { EnriquecimentoFase2Form } from "./enriquecimento-fase2-form";
 
+export type { AcolhimentoConcluidoData };
 export type EtapaWizard = "acolhimento" | "enriquecimento";
 
 export interface ProgressiveOnboardingWizardProps {

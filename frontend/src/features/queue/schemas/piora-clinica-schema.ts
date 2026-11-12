@@ -8,7 +8,6 @@ import { zPioraClinicaRequest } from "@/api/generated/zod.gen";
 export const pioraClinicaFormSchema = zPioraClinicaRequest
   .extend({
     escala_dor: z
-      .number({ invalid_type_error: "A escala de dor deve ser um número inteiro." })
       .int("A escala de dor deve ser um número inteiro.")
       .min(0, "A escala de dor deve ser no mínimo 0.")
       .max(10, "A escala de dor deve estar entre 0 e 10."),

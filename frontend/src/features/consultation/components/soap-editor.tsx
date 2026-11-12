@@ -9,7 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useSalvarSoap, useSoapEvolucao } from "../api/use-soap-evolucao";
-import { type SoapFormData, soapSchema } from "../schemas/consultation-schema";
+import {
+  type SoapFormData,
+  type SoapInputFormData,
+  soapSchema,
+} from "../schemas/consultation-schema";
 
 export interface SoapEditorProps {
   atendimentoId: string;
@@ -33,7 +37,7 @@ export function SoapEditor({ atendimentoId, isReadOnly = false, token }: SoapEdi
     reset,
     setValue,
     formState: { errors },
-  } = useForm<SoapFormData>({
+  } = useForm<SoapInputFormData, unknown, SoapFormData>({
     resolver: zodResolver(soapSchema),
     defaultValues: {
       anamnese: "",

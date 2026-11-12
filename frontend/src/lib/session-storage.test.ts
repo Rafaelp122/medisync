@@ -58,6 +58,7 @@ describe("session-storage", () => {
     server_url: "wss://livekit.medisync.local",
     room_name: "sala-atendimento-123",
     participant_identity: "paciente-juliana",
+    expires_in: 3600,
   };
 
   describe("Patient Session", () => {

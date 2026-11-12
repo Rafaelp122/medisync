@@ -19,7 +19,11 @@ import { Input } from "@/components/ui/input";
 import { mascararCEP } from "@/lib/validators";
 import { useEnrichmentFase2 } from "../api/use-enrichment-fase2";
 import { useViaCep } from "../api/use-via-cep";
-import { type EnrichmentFase2FormData, enrichmentFase2Schema } from "../schemas/onboarding-schema";
+import {
+  type EnrichmentFase2FormData,
+  type EnrichmentFase2InputFormData,
+  enrichmentFase2Schema,
+} from "../schemas/onboarding-schema";
 
 export const ALERGIAS_COMUNS = [
   "Não possuo alergias",
@@ -48,7 +52,7 @@ export function EnriquecimentoFase2Form({
 
   const enrichmentMutation = useEnrichmentFase2();
 
-  const form = useForm<EnriquecimentoFase2FormData>({
+  const form = useForm<EnrichmentFase2InputFormData, unknown, EnrichmentFase2FormData>({
     resolver: zodResolver(enrichmentFase2Schema),
     defaultValues: {
       paciente_id: pacienteId,
