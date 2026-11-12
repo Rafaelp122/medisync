@@ -36,6 +36,7 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 |---|---|---|
 | 400 | `DOMAIN_ERROR`, `BAD_REQUEST` | Erro genérico de domínio ou payload malformado (`DomainError`, `BadRequestError`) |
 | 400 | `TENANT_INVALIDO` | Header `X-Tenant-ID` ausente ou não-positivo (`TenantInvalidoError`) |
+| 400 | `COMPETENCIA_INVALIDA` | Competência informada fora do padrão YYYYMM (`CompetenciaInvalidaError`) |
 | 400 | `AUTH_ERROR` | Falha genérica de autenticação (`AuthError`) |
 | 400 | `DEPENDENTE_AUTO_REFERENCIA` | Paciente indicado como dependente de si mesmo (`DependenteAutoReferenciaError`) |
 | 401 | `UNAUTHORIZED` | Ausência de credencial válida (`UnauthorizedError`) |
@@ -54,6 +55,7 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 404 | `EVOLUCAO_NAO_ENCONTRADA` | SOAP inexistente para o atendimento (`EvolucaoNaoEncontradaError`) |
 | 404 | `DOCUMENTO_CLINICO_NAO_ENCONTRADO` | Documento clínico inexistente (`DocumentoClinicoNaoEncontradoError`) |
 | 404 | `DOCUMENTO_STORAGE_NAO_ENCONTRADO` | Chave de arquivo ausente no MinIO/S3 (`DocumentoNaoEncontradoNoStorageError`) |
+| 404 | `PRODUCAO_NAO_ENCONTRADA` | Lote ou produção ambulatorial inexistente na competência/tenant (`ProducaoNaoEncontradaError`) |
 | 409 | `CONFLICT` | Conflito de estado concorrente genérico (`ConflictError`) |
 | 409 | `VINCULO_DEPENDENTE_EXISTENTE` | Vínculo titular-dependente já existente (`VinculoDependenteExistenteError`) |
 | 409 | `TRANSICAO_ESTADO_INVALIDA` | Transição ilegal na máquina de estados de atendimento (`TransicaoEstadoInvalidaError`) |

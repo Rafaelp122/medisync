@@ -203,6 +203,44 @@ export type AutenticarCadsusRequest = {
 };
 
 /**
+ * BpaProducaoItemResponse
+ *
+ * Schema de resposta para item consolidado de produção ambulatorial SUS (BPA-I).
+ */
+export type BpaProducaoItemResponse = {
+    /**
+     * Atendimento Id
+     *
+     * Identificador único do atendimento
+     */
+    atendimento_id: string;
+    /**
+     * Cnes
+     *
+     * Código CNES do ponto de telessaúde
+     */
+    cnes: string;
+    /**
+     * Codigo Sigtap
+     *
+     * Procedimento SIGTAP (03.01.01.025-0)
+     */
+    codigo_sigtap: string;
+    /**
+     * Carater Atendimento
+     *
+     * Caráter do atendimento (02 - Urgência)
+     */
+    carater_atendimento: string;
+    /**
+     * Consolidado Em
+     *
+     * Data e hora UTC da consolidação
+     */
+    consolidado_em: string;
+};
+
+/**
  * CancelarFilaRequest
  *
  * Payload opcional para cancelamento voluntário de atendimento na fila.
@@ -1159,6 +1197,50 @@ export type ItemValidacaoResponse = {
      * Controle Especial
      */
     controle_especial?: boolean;
+};
+
+/**
+ * ListaProducaoAmbulatorialResponse
+ *
+ * Schema de resposta paginada da produção ambulatorial por competência.
+ */
+export type ListaProducaoAmbulatorialResponse = {
+    /**
+     * Items
+     *
+     * Itens de produção ambulatorial
+     */
+    items: Array<BpaProducaoItemResponse>;
+    /**
+     * Total
+     *
+     * Total de registros na competência
+     */
+    total: number;
+    /**
+     * Competencia
+     *
+     * Competência de referência no formato YYYYMM
+     */
+    competencia: string;
+    /**
+     * Organizacao Id
+     *
+     * Identificador do tenant municipal
+     */
+    organizacao_id: number;
+    /**
+     * Page
+     *
+     * Página atual
+     */
+    page: number;
+    /**
+     * Size
+     *
+     * Tamanho da página
+     */
+    size: number;
 };
 
 /**
@@ -3143,3 +3225,77 @@ export type AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses
 };
 
 export type AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponse = AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses[keyof AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses];
+
+export type ListarProducaoApiV1AmbulatoryProducaoGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Competencia
+         *
+         * Competência de referência no formato YYYYMM
+         */
+        competencia: string;
+        /**
+         * Page
+         *
+         * Número da página
+         */
+        page?: number;
+        /**
+         * Size
+         *
+         * Tamanho da página
+         */
+        size?: number;
+    };
+    url: '/api/v1/ambulatory/producao';
+};
+
+export type ListarProducaoApiV1AmbulatoryProducaoGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListarProducaoApiV1AmbulatoryProducaoGetError = ListarProducaoApiV1AmbulatoryProducaoGetErrors[keyof ListarProducaoApiV1AmbulatoryProducaoGetErrors];
+
+export type ListarProducaoApiV1AmbulatoryProducaoGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ListaProducaoAmbulatorialResponse;
+};
+
+export type ListarProducaoApiV1AmbulatoryProducaoGetResponse = ListarProducaoApiV1AmbulatoryProducaoGetResponses[keyof ListarProducaoApiV1AmbulatoryProducaoGetResponses];
+
+export type ExportarBpaApiV1AmbulatoryProducaoExportarGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Competencia
+         *
+         * Competência de referência no formato YYYYMM
+         */
+        competencia: string;
+    };
+    url: '/api/v1/ambulatory/producao/exportar';
+};
+
+export type ExportarBpaApiV1AmbulatoryProducaoExportarGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExportarBpaApiV1AmbulatoryProducaoExportarGetError = ExportarBpaApiV1AmbulatoryProducaoExportarGetErrors[keyof ExportarBpaApiV1AmbulatoryProducaoExportarGetErrors];
+
+export type ExportarBpaApiV1AmbulatoryProducaoExportarGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};

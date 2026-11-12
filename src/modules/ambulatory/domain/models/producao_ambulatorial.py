@@ -88,7 +88,11 @@ class ProducaoAmbulatorial(Base):
         consolidado_em: datetime | None = None,
         id: UUID | None = None,
     ) -> None:
-        """Inicializa registro de produção ambulatorial validando restrições do SUS."""
+        """Inicializa registro de produção ambulatorial validando restrições do SUS.
+
+        Regras: docs/user-stories/US-11-liquidacao-fechamento-contabil.md e
+        docs/explanation/domains/ambulatory-domain.md.
+        """
         cnes_limpo = cnes.strip()
         if not cnes_limpo or len(cnes_limpo) > 7:
             raise ValueError(

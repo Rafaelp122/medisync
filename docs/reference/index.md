@@ -12,6 +12,7 @@
 
 ## 3. APIs, Tempo Real & Background Jobs
 - [API Error Envelope (RFC 7807)](api/error-envelope.md) — Catálogo exaustivo de exceções de domínio, status HTTP e envelope de erro RFC 7807.
+- [Ambulatory Production Endpoints (BPA-I)](api/ambulatory-producao-endpoints.md) — Contratos HTTP para consulta e exportação magnética SIA-SUS BPA-I.
 - [WebSocket Channels & Realtime Protocol](api/websocket-channels.md) — Endpoints WS de fila/médico, autenticação pré-accept, eventos Pub/Sub e envelopes JSON.
 - [ARQ Background Tasks](worker/arq-tasks.md) — Catálogo de jobs assíncronos (`validar_elegibilidade`, `ring_timeout`, `sweeper`), cron schedules e retries.
 

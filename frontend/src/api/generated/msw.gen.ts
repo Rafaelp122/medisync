@@ -2,7 +2,7 @@
 
 import { http, type HttpHandler, HttpResponse, type HttpResponseResolver, type RequestHandlerOptions as RequestHandlerOptions2 } from 'msw';
 
-import type { AdmitirPacienteApiV1FilaAdmissaoPostData, AdmitirPacienteApiV1FilaAdmissaoPostResponses, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostData, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostResponses, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutData, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses, CadastrarDependenteApiV1PacientesIdDependentesPostData, CadastrarDependenteApiV1PacientesIdDependentesPostResponses, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostData, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostResponses, ChamarProximoPacienteApiV1FilaChamarProximoPostResponses, ClientOptions, ComunicarPioraClinicaApiV1FilaPioraPostData, ComunicarPioraClinicaApiV1FilaPioraPostResponses, DownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGetResponses, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostData, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostResponses, EnrichmentFase2ApiV1OnboardingFase2PostData, EnrichmentFase2ApiV1OnboardingFase2PostResponses, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostData, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostData, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostResponses, HealthcheckHealthzGetResponses, IntakeFase1ApiV1OnboardingFase1PostData, IntakeFase1ApiV1OnboardingFase1PostResponses, ListarDependentesApiV1PacientesIdDependentesGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostResponses, MeApiV1AuthMeGetResponses, MfaActivateApiV1AuthMfaActivatePostData, MfaActivateApiV1AuthMfaActivatePostResponses, MfaSetupApiV1AuthMfaSetupPostResponses, MfaVerifyApiV1AuthMfaVerifyPostData, MfaVerifyApiV1AuthMfaVerifyPostResponses, ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetResponses, ObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGetResponses, ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetResponses, ObterPainelTelemetriaApiV1TelemetriaPainelGetResponses, ObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGetResponses, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetResponses, ObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGetResponses, PostAuthPacienteCadsusData, PostAuthPacienteCadsusResponses, RefreshTokenApiV1AuthRefreshPostData, RefreshTokenApiV1AuthRefreshPostResponses, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostData, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostResponses, RequestOtpApiV1AuthPatientOtpRequestPostData, RequestOtpApiV1AuthPatientOtpRequestPostResponses, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostData, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostResponses, ValidarDocumentoApiV1DocumentsValidateTokenValidacaoGetResponses, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostData, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostResponses, VerifyOtpApiV1AuthPatientOtpVerifyPostData, VerifyOtpApiV1AuthPatientOtpVerifyPostResponses } from './types.gen';
+import type { AdmitirPacienteApiV1FilaAdmissaoPostData, AdmitirPacienteApiV1FilaAdmissaoPostResponses, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostData, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostResponses, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutData, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses, CadastrarDependenteApiV1PacientesIdDependentesPostData, CadastrarDependenteApiV1PacientesIdDependentesPostResponses, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostData, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostResponses, ChamarProximoPacienteApiV1FilaChamarProximoPostResponses, ClientOptions, ComunicarPioraClinicaApiV1FilaPioraPostData, ComunicarPioraClinicaApiV1FilaPioraPostResponses, DownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGetResponses, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostData, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostResponses, EnrichmentFase2ApiV1OnboardingFase2PostData, EnrichmentFase2ApiV1OnboardingFase2PostResponses, ExportarBpaApiV1AmbulatoryProducaoExportarGetResponses, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostData, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostData, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostResponses, HealthcheckHealthzGetResponses, IntakeFase1ApiV1OnboardingFase1PostData, IntakeFase1ApiV1OnboardingFase1PostResponses, ListarDependentesApiV1PacientesIdDependentesGetResponses, ListarProducaoApiV1AmbulatoryProducaoGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostResponses, MeApiV1AuthMeGetResponses, MfaActivateApiV1AuthMfaActivatePostData, MfaActivateApiV1AuthMfaActivatePostResponses, MfaSetupApiV1AuthMfaSetupPostResponses, MfaVerifyApiV1AuthMfaVerifyPostData, MfaVerifyApiV1AuthMfaVerifyPostResponses, ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetResponses, ObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGetResponses, ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetResponses, ObterPainelTelemetriaApiV1TelemetriaPainelGetResponses, ObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGetResponses, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetResponses, ObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGetResponses, PostAuthPacienteCadsusData, PostAuthPacienteCadsusResponses, RefreshTokenApiV1AuthRefreshPostData, RefreshTokenApiV1AuthRefreshPostResponses, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostData, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostResponses, RequestOtpApiV1AuthPatientOtpRequestPostData, RequestOtpApiV1AuthPatientOtpRequestPostResponses, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostData, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostResponses, ValidarDocumentoApiV1DocumentsValidateTokenValidacaoGetResponses, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostData, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostResponses, VerifyOtpApiV1AuthPatientOtpVerifyPostData, VerifyOtpApiV1AuthPatientOtpVerifyPostResponses } from './types.gen';
 
 export type RequestHandlerOptions = RequestHandlerOptions2 & {
     baseUrl?: ClientOptions['baseUrl'];
@@ -1053,6 +1053,60 @@ export function handleAtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPu
     }, options);
 }
 
+export type HandleListarProducaoApiV1AmbulatoryProducaoGetResponse = {
+    body: ListarProducaoApiV1AmbulatoryProducaoGetResponses[200];
+    status?: 200;
+};
+
+/**
+ * Handler for the `GET /api/v1/ambulatory/producao` operation.
+ */
+export function handleListarProducaoApiV1AmbulatoryProducaoGet(response?: HandleListarProducaoApiV1AmbulatoryProducaoGetResponse | HttpResponseResolver<never, never>, options?: RequestHandlerOptions): HttpHandler {
+    return http.get<never, never>(`${options?.baseUrl ?? '*'}/api/v1/ambulatory/producao`, info => {
+        if (typeof response === 'function') {
+            return response(info);
+        }
+        const body = response?.body;
+        if (body !== undefined) {
+            return HttpResponse.json(body, { status: response?.status ?? 200 });
+        }
+        if (options?.responseFallback === 'passthrough') {
+            return;
+        }
+        return new Response('Not Implemented', {
+            status: 501,
+            statusText: 'Not Implemented'
+        });
+    }, options);
+}
+
+export type HandleExportarBpaApiV1AmbulatoryProducaoExportarGetResponse = {
+    body: ExportarBpaApiV1AmbulatoryProducaoExportarGetResponses[200];
+    status?: 200;
+};
+
+/**
+ * Handler for the `GET /api/v1/ambulatory/producao/exportar` operation.
+ */
+export function handleExportarBpaApiV1AmbulatoryProducaoExportarGet(response?: HandleExportarBpaApiV1AmbulatoryProducaoExportarGetResponse | HttpResponseResolver<never, never>, options?: RequestHandlerOptions): HttpHandler {
+    return http.get<never, never>(`${options?.baseUrl ?? '*'}/api/v1/ambulatory/producao/exportar`, info => {
+        if (typeof response === 'function') {
+            return response(info);
+        }
+        const body = response?.body;
+        if (body !== undefined) {
+            return new HttpResponse(body, { status: response?.status ?? 200 });
+        }
+        if (options?.responseFallback === 'passthrough') {
+            return;
+        }
+        return new Response('Not Implemented', {
+            status: 501,
+            statusText: 'Not Implemented'
+        });
+    }, options);
+}
+
 export type MswHandlerFactories = {
     /**
      * Handler for the `GET /healthz` operation.
@@ -1198,6 +1252,14 @@ export type MswHandlerFactories = {
      * Handler for the `PUT /api/v1/telemetria/config-plantao` operation.
      */
     atualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut: typeof handleAtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut;
+    /**
+     * Handler for the `GET /api/v1/ambulatory/producao` operation.
+     */
+    listarProducaoApiV1AmbulatoryProducaoGet: typeof handleListarProducaoApiV1AmbulatoryProducaoGet;
+    /**
+     * Handler for the `GET /api/v1/ambulatory/producao/exportar` operation.
+     */
+    exportarBpaApiV1AmbulatoryProducaoExportarGet: typeof handleExportarBpaApiV1AmbulatoryProducaoExportarGet;
 };
 
 export type CreateMswHandlersResult = {
@@ -1250,7 +1312,9 @@ export function createMswHandlers(config: RequestHandlerOptions = {}): CreateMsw
         downloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGet: wrap(handleDownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGet),
         obterPainelTelemetriaApiV1TelemetriaPainelGet: wrap(handleObterPainelTelemetriaApiV1TelemetriaPainelGet),
         obterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGet: wrap(handleObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGet),
-        atualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut: wrap(handleAtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut)
+        atualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut: wrap(handleAtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut),
+        listarProducaoApiV1AmbulatoryProducaoGet: wrap(handleListarProducaoApiV1AmbulatoryProducaoGet),
+        exportarBpaApiV1AmbulatoryProducaoExportarGet: wrap(handleExportarBpaApiV1AmbulatoryProducaoExportarGet)
     };
     const all: CreateMswHandlersResult['all'] = (options = {}) => {
         type OverrideValue<R> = R | [
@@ -1273,6 +1337,7 @@ export function createMswHandlers(config: RequestHandlerOptions = {}): CreateMsw
             invoke(pick.mfaActivateApiV1AuthMfaActivatePost, overrides.mfaActivateApiV1AuthMfaActivatePost),
             invoke(pick.mfaVerifyApiV1AuthMfaVerifyPost, overrides.mfaVerifyApiV1AuthMfaVerifyPost),
             invoke(pick.postAuthPacienteCadsus, overrides.postAuthPacienteCadsus),
+            invoke(pick.exportarBpaApiV1AmbulatoryProducaoExportarGet, overrides.exportarBpaApiV1AmbulatoryProducaoExportarGet),
             invoke(pick.obterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet, overrides.obterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet),
             invoke(pick.cancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPost, overrides.cancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPost),
             invoke(pick.validarDocumentoApiV1DocumentsValidateTokenValidacaoGet, overrides.validarDocumentoApiV1DocumentsValidateTokenValidacaoGet),
@@ -1297,6 +1362,7 @@ export function createMswHandlers(config: RequestHandlerOptions = {}): CreateMsw
             invoke(pick.obterPainelTelemetriaApiV1TelemetriaPainelGet, overrides.obterPainelTelemetriaApiV1TelemetriaPainelGet),
             invoke(pick.obterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGet, overrides.obterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGet),
             invoke(pick.atualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut, overrides.atualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut),
+            invoke(pick.listarProducaoApiV1AmbulatoryProducaoGet, overrides.listarProducaoApiV1AmbulatoryProducaoGet),
             invoke(pick.healthcheckHealthzGet, overrides.healthcheckHealthzGet)
         ];
     };

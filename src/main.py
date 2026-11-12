@@ -89,6 +89,9 @@ def create_app() -> FastAPI:
     # 4. System health route with Valkey telemetry
     app.include_router(health_router)
 
+    from src.modules.ambulatory.presentation.routers import (
+        http_router as ambulatory_router,
+    )
     from src.modules.auth.presentation.routers import http_router as auth_router
     from src.modules.consultation.presentation.routers import (
         http_router as consultation_router,
@@ -115,6 +118,7 @@ def create_app() -> FastAPI:
     api_v1.include_router(queue_router)
     api_v1.include_router(consultation_router)
     api_v1.include_router(telemetry_router)
+    api_v1.include_router(ambulatory_router)
     app.include_router(api_v1)
 
     # 5. Real-time WebSocket signaling routers

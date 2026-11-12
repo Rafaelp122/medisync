@@ -52,6 +52,7 @@ _MULTI_TENANT_TABLES = (
     "documento_itens",
     "audit_events",
     "configuracoes_plantao",
+    "producoes_ambulatoriais",
 )
 
 _SAMPLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
