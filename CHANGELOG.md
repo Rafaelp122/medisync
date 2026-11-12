@@ -1,3 +1,9 @@
+## v0.16.0 (2026-11-12)
+
+### Feat
+
+- **ambulatory**: implementar fechamento de produção SUS e exportação BPA-I (#78)
+
 ## v0.15.3 (2026-11-10)
 
 ### Refactor
