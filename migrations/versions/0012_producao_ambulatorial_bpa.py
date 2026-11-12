@@ -75,12 +75,41 @@ def upgrade() -> None:
         "idx_producao_competencia", "producoes_ambulatoriais", ["competencia"]
     )
 
-    # Multi-tenant PostgreSQL RLS
+    # Multi-tenant PostgreSQL RLS (ADR-003)
     op.execute("ALTER TABLE producoes_ambulatoriais ENABLE ROW LEVEL SECURITY;")
     op.execute("ALTER TABLE producoes_ambulatoriais FORCE ROW LEVEL SECURITY;")
 
+    predicate = (
+        "organizacao_id = "
+        "NULLIF(current_setting('app.current_tenant_id', true), '')::bigint"
+    )
+    op.execute(
+        f"""
+        CREATE POLICY tenant_isolation_producoes_ambulatoriais
+            ON producoes_ambulatoriais
+            USING ({predicate})
+            WITH CHECK ({predicate});
+        """
+    )
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'medisync_app') THEN
+                GRANT SELECT, INSERT, UPDATE, DELETE
+                    ON producoes_ambulatoriais TO medisync_app;
+            END IF;
+        END
+        $$;
+        """
+    )
+
 
 def downgrade() -> None:
+    op.execute(
+        "DROP POLICY IF EXISTS tenant_isolation_producoes_ambulatoriais "
+        "ON producoes_ambulatoriais;"
+    )
     op.execute(
         "ALTER TABLE IF EXISTS producoes_ambulatoriais NO FORCE ROW LEVEL SECURITY;"
     )

@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.audit import AuditTrailPort, SqlAuditTrailAdapter
 from src.core.database import DbSessionDep
+from src.modules.ambulatory.application.ports.bpa_directory_port import (
+    BpaDirectoryPort,
+)
 from src.modules.ambulatory.application.ports.eligibility_notifier import (
     ElegibilidadeNotifierPort,
 )
@@ -23,6 +26,9 @@ from src.modules.ambulatory.application.services.producao_service import (
 )
 from src.modules.ambulatory.infrastructure.adapters.logging_eligibility_notifier import (  # noqa: E501
     LoggingElegibilidadeNotifier,
+)
+from src.modules.ambulatory.infrastructure.adapters.sql_bpa_directory import (
+    SqlBpaDirectory,
 )
 from src.modules.ambulatory.infrastructure.adapters.sus_adapter import (
     SusEligibilityAdapter,
@@ -50,12 +56,15 @@ def build_elegibilidade_service(
 def build_producao_ambulatorial_service(
     session: AsyncSession,
     audit_trail: AuditTrailPort | None = None,
+    bpa_directory: BpaDirectoryPort | None = None,
 ) -> ProducaoAmbulatorialService:
     """Build ProducaoAmbulatorialService outside request scope."""
     audit = audit_trail if audit_trail is not None else SqlAuditTrailAdapter(session)
+    directory = bpa_directory if bpa_directory is not None else SqlBpaDirectory(session)
     return ProducaoAmbulatorialService(
         session=session,
         audit_trail=audit,
+        bpa_directory=directory,
     )
 
 

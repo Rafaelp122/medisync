@@ -58,28 +58,34 @@ Ao finalizar a consulta, a rotina de consolidação ambulatorial gera o lote de 
 - Rateio em Consórcios Públicos (Lei nº 11.107/2005). Viabiliza escala médica compartilhada para pequenos municípios contornarem o teto fiscal de 54% de despesa com pessoal da LRF.
 - Incentivo Financeiro eMulti. Cada equipe multiprofissional homologada vinculada ao CNES de telessaúde qualifica o consórcio para o repasse federal de até R$ 2.500,00 mensais (Portaria GM/MS nº 635/2023).
 - DTOs imutáveis ponta a ponta. Todas as estruturas de dados de entrada e resultado de produção ambulatorial são declaradas com imutabilidade estrita.
+- Layout Posicional BPA-I (SIA-SUS). O arquivo magnético segue estritamente a especificação do DATASUS: Header Tipo 01 com 130 caracteres iniciados por `01#BPA#`, Detalhe Tipo 03 com 152 caracteres iniciados por `03`, paginação de 20 registros por folha e checksum verificador `cbc-smt-vrf` calculado via `(soma % 1111) + 1111` no domínio `[1111..2221]`.
 
 ## 6. Onde no código
 
 - `src/modules/ambulatory/domain/enums.py`
+- `src/modules/ambulatory/domain/exceptions.py`
+- `src/modules/ambulatory/domain/bpa_formatter.py`
 - `src/modules/ambulatory/application/dtos.py`
-- `src/modules/ambulatory/application/ports/eligibility_provider.py`
-- `src/modules/ambulatory/application/ports/eligibility_notifier.py`
-- `src/modules/ambulatory/application/services/eligibility_service.py`
-- `src/modules/ambulatory/infrastructure/adapters/sus_adapter.py`
-- `src/modules/ambulatory/infrastructure/adapters/logging_eligibility_notifier.py`
-- `src/worker/tasks/eligibility.py`
+- `src/modules/ambulatory/application/ports/bpa_directory_port.py`
+- `src/modules/ambulatory/application/services/producao_service.py`
+- `src/modules/ambulatory/infrastructure/adapters/sql_bpa_directory.py`
+- `src/modules/ambulatory/presentation/schemas.py`
+- `src/modules/ambulatory/presentation/dependencies.py`
+- `src/modules/ambulatory/presentation/routers/producao_router.py`
 - `src/modules/ambulatory/composition.py`
-- `tests/unit/test_ambulatory_production.py`
-- `tests/unit/test_eligibility_task.py`
+- `tests/unit/test_ambulatory_domain.py`
+- `tests/unit/test_ambulatory_production_service.py`
+- `tests/unit/test_ambulatory_router.py`
 - Transição estrutural para `src/modules/ambulatory/...` formalizada na [ADR-012](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md).
 
 Prova viva:
 
 ```bash
-ls tests/unit | rg -i "ambulatory|eligibility"
+ls tests/unit | rg -i "ambulatory"
+# test_ambulatory_domain.py
 # test_ambulatory_production.py
-# test_eligibility_task.py
+# test_ambulatory_production_service.py
+# test_ambulatory_router.py
 ```
 
 ## 7. Verificação

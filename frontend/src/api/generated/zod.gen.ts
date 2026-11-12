@@ -74,6 +74,19 @@ export const zAutenticarCadsusRequest = z.object({
 });
 
 /**
+ * BpaProducaoItemResponse
+ *
+ * Schema de resposta para item consolidado de produção ambulatorial SUS (BPA-I).
+ */
+export const zBpaProducaoItemResponse = z.object({
+    atendimento_id: z.uuid(),
+    cnes: z.string(),
+    codigo_sigtap: z.string(),
+    carater_atendimento: z.string(),
+    consolidado_em: z.iso.datetime()
+});
+
+/**
  * CancelarFilaRequest
  *
  * Payload opcional para cancelamento voluntário de atendimento na fila.
@@ -391,6 +404,20 @@ export const zItemValidacaoResponse = z.object({
     posologia: z.string(),
     duracao: z.string().nullish(),
     controle_especial: z.boolean().optional().default(false)
+});
+
+/**
+ * ListaProducaoAmbulatorialResponse
+ *
+ * Schema de resposta paginada da produção ambulatorial por competência.
+ */
+export const zListaProducaoAmbulatorialResponse = z.object({
+    items: z.array(zBpaProducaoItemResponse),
+    total: z.int(),
+    competencia: z.string(),
+    organizacao_id: z.int(),
+    page: z.int(),
+    size: z.int()
 });
 
 /**
@@ -1100,3 +1127,18 @@ export const zAtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutBody = 
  * Successful Response
  */
 export const zAtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponse = zConfigPlantaoResponse;
+
+export const zListarProducaoApiV1AmbulatoryProducaoGetQuery = z.object({
+    competencia: z.string(),
+    page: z.int().gte(1).optional().default(1),
+    size: z.int().gte(1).lte(100).optional().default(50)
+});
+
+/**
+ * Successful Response
+ */
+export const zListarProducaoApiV1AmbulatoryProducaoGetResponse = zListaProducaoAmbulatorialResponse;
+
+export const zExportarBpaApiV1AmbulatoryProducaoExportarGetQuery = z.object({
+    competencia: z.string()
+});

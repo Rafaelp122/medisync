@@ -42,6 +42,9 @@ class ConsolidarTeleconsultaCommand:
     cnes: str
     codigo_sigtap: str = "03.01.01.025-0"
     carater_atendimento: str = "02"
+    paciente_cns: str | None = None
+    paciente_cpf: str | None = None
+    paciente_data_nascimento: str | None = None
 
 
 @dataclass(frozen=True)
@@ -53,3 +56,54 @@ class BpaProducaoDTO:
     codigo_sigtap: str
     carater_atendimento: str
     consolidado_em: datetime
+
+
+@dataclass(frozen=True)
+class BpaArquivoExportadoDTO:
+    """DTO com o conteúdo magnético SIA-SUS e metadados de exportação."""
+
+    conteudo: str
+    nome_arquivo: str
+    total_registros: int
+    total_folhas: int
+    competencia: str
+
+
+@dataclass(frozen=True)
+class ListaProducaoAmbulatorialDTO:
+    """DTO paginado de listagem da produção ambulatorial por competência."""
+
+    items: list[BpaProducaoDTO]
+    total: int
+    competencia: str
+    organizacao_id: int
+    page: int
+    size: int
+
+
+@dataclass(frozen=True)
+class BpaRegistroDetalheDTO:
+    """DTO com visão desnormalizada para composição do detalhe tipo 03 do BPA-I."""
+
+    producao_id: UUID
+    atendimento_id: UUID
+    profissional_id: UUID
+    paciente_id: UUID
+    cnes: str
+    codigo_sigtap: str
+    carater_atendimento: str
+    competencia: str
+    consolidado_em: datetime
+    paciente_nome: str
+    paciente_cns: str
+    paciente_cpf: str | None
+    paciente_data_nascimento: str  # AAAAMMDD
+    paciente_sexo: str  # M ou F
+    paciente_ibge: str
+    medico_cns: str
+    medico_cbo: str
+    org_nome: str
+    org_sigla: str
+    org_cnpj: str
+    cid: str = ""
+    idade: int = 0

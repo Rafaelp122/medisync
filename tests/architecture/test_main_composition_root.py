@@ -28,6 +28,8 @@ def test_main_does_not_import_infrastructure() -> None:
 
 def test_openapi_routes_exact_baseline() -> None:
     expected_routes = {
+        "/api/v1/ambulatory/producao",
+        "/api/v1/ambulatory/producao/exportar",
         "/api/v1/auth/login",
         "/api/v1/auth/logout",
         "/api/v1/auth/me",

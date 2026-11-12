@@ -62,6 +62,14 @@ depends_on = [
 ]
 
 [[modules]]
+path = "src.modules.ambulatory.presentation"
+depends_on = [
+    "src.core",
+    "src.modules.ambulatory.application",
+    "src.modules.ambulatory.composition",
+]
+
+[[modules]]
 path = "src.modules.consultation.domain"
 depends_on = ["src.core"]
 

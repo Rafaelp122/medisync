@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MediSync Express",
-    "version": "0.14.0"
+    "version": "0.15.2"
   },
   "paths": {
     "/healthz": {
@@ -33,7 +33,7 @@
           "Authentication & Sessions (OWASP)"
         ],
         "summary": "Autentica\u00e7\u00e3o com Argon2id e emiss\u00e3o de JWT (Anti-Brute Force)",
-        "description": "Autentica o usu\u00e1rio corporativo emitindo par de tokens de acesso e atualiza\u00e7\u00e3o.\n\nConforme o OWASP Authentication Cheat Sheet, as respostas de erro s\u00e3o\ngen\u00e9ricas (RFC 7807) para prevenir enumera\u00e7\u00e3o de contas, com prote\u00e7\u00e3o de\nfor\u00e7a bruta via contadores Valkey em janela deslizante.",
+        "description": "Autentica o usu\u00e1rio corporativo emitindo par de tokens de acesso e atualiza\u00e7\u00e3o.\n\nRegras: RN-AUT-01, RN-AUT-05, RN-AUT-08, OWASP ASVS v4.0 (V3.5.2).\nDocumenta\u00e7\u00e3o: docs/explanation/domains/auth-domain.md",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -149,7 +149,7 @@
           "Authentication & Sessions (OWASP)"
         ],
         "summary": "Verifica\u00e7\u00e3o do segundo fator (MFA) e emiss\u00e3o de tokens de sess\u00e3o",
-        "description": "Troca token tempor\u00e1rio mfa_pending por tokens definitivos ap\u00f3s valida\u00e7\u00e3o TOTP.",
+        "description": "Troca token tempor\u00e1rio mfa_pending por tokens definitivos ap\u00f3s valida\u00e7\u00e3o TOTP.\n\nRegras: RN-AUT-04, RN-AUT-05, RN-AUT-08, OWASP ASVS v4.0 (V3.5.2).\nDocumenta\u00e7\u00e3o: docs/explanation/domains/auth-domain.md",
         "operationId": "mfa_verify_api_v1_auth_mfa_verify_post",
         "requestBody": {
           "content": {
@@ -191,7 +191,7 @@
           "Authentication & Sessions (OWASP)"
         ],
         "summary": "Rota\u00e7\u00e3o de refresh token com detec\u00e7\u00e3o de reuso",
-        "description": "Rotaciona o refresh token: invalida o token apresentado e emite um novo par.",
+        "description": "Rotaciona o refresh token: invalida o token apresentado e emite um novo par.\n\nRegras: RN-AUT-05, RN-AUT-08, OWASP ASVS v4.0 (V3.4.1).\nDocumenta\u00e7\u00e3o: docs/explanation/domains/auth-domain.md",
         "operationId": "refresh_token_api_v1_auth_refresh_post",
         "requestBody": {
           "content": {
@@ -240,7 +240,7 @@
           "Authentication & Sessions (OWASP)"
         ],
         "summary": "Revoga\u00e7\u00e3o de sess\u00e3o e logout de usu\u00e1rio",
-        "description": "Revoga o refresh token fornecido (e access token opcional).\n\nImpede renova\u00e7\u00f5es e acessos subsequentes em toda a malha distribu\u00edda.",
+        "description": "Revoga o refresh token fornecido e expurga cookie HttpOnly s\u00edncrono.\n\nRegras: RN-AUT-06, OWASP ASVS v4.0 (V3.4.1).\nDocumenta\u00e7\u00e3o: docs/explanation/domains/auth-domain.md",
         "operationId": "logout_api_v1_auth_logout_post",
         "requestBody": {
           "content": {
@@ -1829,6 +1829,131 @@
           }
         ]
       }
+    },
+    "/api/v1/ambulatory/producao": {
+      "get": {
+        "tags": [
+          "Produ\u00e7\u00e3o Ambulatorial SUS"
+        ],
+        "summary": "Lista a produ\u00e7\u00e3o ambulatorial consolidada por compet\u00eancia (RF-08, US-11)",
+        "description": "Consulta registros consolidados de faturamento p\u00fablico SUS (BPA-I / SISAB) para presta\u00e7\u00e3o de contas do cons\u00f3rcio municipal e incentivo eMulti.",
+        "operationId": "listar_producao_api_v1_ambulatory_producao_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "competencia",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Compet\u00eancia de refer\u00eancia no formato YYYYMM",
+              "title": "Competencia"
+            },
+            "description": "Compet\u00eancia de refer\u00eancia no formato YYYYMM"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "N\u00famero da p\u00e1gina",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "N\u00famero da p\u00e1gina"
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Tamanho da p\u00e1gina",
+              "default": 50,
+              "title": "Size"
+            },
+            "description": "Tamanho da p\u00e1gina"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListaProducaoAmbulatorialResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ambulatory/producao/exportar": {
+      "get": {
+        "tags": [
+          "Produ\u00e7\u00e3o Ambulatorial SUS"
+        ],
+        "summary": "Gera e faz download do arquivo magn\u00e9tico BPA-I do SIA-SUS (RF-08, US-11)",
+        "description": "Gera o arquivo de texto posicional com colunas fixas e checksum cbc-smt-vrf formatado para importa\u00e7\u00e3o no aplicativo BPA-Mag do DATASUS.",
+        "operationId": "exportar_bpa_api_v1_ambulatory_producao_exportar_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "competencia",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Compet\u00eancia de refer\u00eancia no formato YYYYMM",
+              "title": "Competencia"
+            },
+            "description": "Compet\u00eancia de refer\u00eancia no formato YYYYMM"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2140,6 +2265,47 @@
         "type": "object",
         "title": "AutenticarCadsusRequest",
         "description": "Payload to authenticate patient via CADSUS / Gov.br civil registry."
+      },
+      "BpaProducaoItemResponse": {
+        "properties": {
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id",
+            "description": "Identificador \u00fanico do atendimento"
+          },
+          "cnes": {
+            "type": "string",
+            "title": "Cnes",
+            "description": "C\u00f3digo CNES do ponto de telessa\u00fade"
+          },
+          "codigo_sigtap": {
+            "type": "string",
+            "title": "Codigo Sigtap",
+            "description": "Procedimento SIGTAP (03.01.01.025-0)"
+          },
+          "carater_atendimento": {
+            "type": "string",
+            "title": "Carater Atendimento",
+            "description": "Car\u00e1ter do atendimento (02 - Urg\u00eancia)"
+          },
+          "consolidado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Consolidado Em",
+            "description": "Data e hora UTC da consolida\u00e7\u00e3o"
+          }
+        },
+        "type": "object",
+        "required": [
+          "atendimento_id",
+          "cnes",
+          "codigo_sigtap",
+          "carater_atendimento",
+          "consolidado_em"
+        ],
+        "title": "BpaProducaoItemResponse",
+        "description": "Schema de resposta para item consolidado de produ\u00e7\u00e3o ambulatorial SUS (BPA-I)."
       },
       "CancelarFilaRequest": {
         "properties": {
@@ -3709,6 +3875,54 @@
         ],
         "title": "ItemValidacaoResponse",
         "description": "Prescribed drug item summary for public verification."
+      },
+      "ListaProducaoAmbulatorialResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BpaProducaoItemResponse"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Itens de produ\u00e7\u00e3o ambulatorial"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Total de registros na compet\u00eancia"
+          },
+          "competencia": {
+            "type": "string",
+            "title": "Competencia",
+            "description": "Compet\u00eancia de refer\u00eancia no formato YYYYMM"
+          },
+          "organizacao_id": {
+            "type": "integer",
+            "title": "Organizacao Id",
+            "description": "Identificador do tenant municipal"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "description": "P\u00e1gina atual"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size",
+            "description": "Tamanho da p\u00e1gina"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "competencia",
+          "organizacao_id",
+          "page",
+          "size"
+        ],
+        "title": "ListaProducaoAmbulatorialResponse",
+        "description": "Schema de resposta paginada da produ\u00e7\u00e3o ambulatorial por compet\u00eancia."
       },
       "LiveKitTokenRequest": {
         "properties": {
