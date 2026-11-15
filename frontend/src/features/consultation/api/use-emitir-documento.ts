@@ -25,6 +25,7 @@ export function useEmitirDocumento(
   const queryClient = useQueryClient();
 
   return useMutation<DocumentoClinicoResponse, ProblemDetailsError, EmitirDocumentoParams>({
+    ...options,
     mutationFn: async ({ token, ...body }: EmitirDocumentoParams) => {
       try {
         const validatedBody = emitirDocumentoSchema.parse(body);
@@ -53,6 +54,5 @@ export function useEmitirDocumento(
       queryClient.invalidateQueries({ queryKey: ["prontuario", atendimentoId] });
       options?.onSuccess?.(data, variables, onMutateResult, context);
     },
-    ...options,
   });
 }
