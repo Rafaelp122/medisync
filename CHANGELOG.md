@@ -1,3 +1,9 @@
+## v0.16.2 (2026-11-15)
+
+### Fix
+
+- **frontend**: saneamento de precedencia de options, imports do router e tipos node
+
 ## v0.16.1 (2026-11-12)
 
 ### Fix
