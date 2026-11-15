@@ -35,6 +35,10 @@ Este catálogo define a taxonomia canônica dos 16 eventos clínicos e operacion
 | `IA_SUGESTAO_GERADA` | `consultation` | `SISTEMA` | `SISTEMA` | Geração de sugestão preliminar SOAP/CID-10 por copiloto de IA (CFM nº 2.454/2026). *Nota: No presente estágio, a salvaguarda e o diff forense preconizados pelo CFM nº 2.454/2026 são registrados atomicamente no evento `IA_DECISAO_MEDICA_REGISTRADA`.* |
 | `IA_DECISAO_MEDICA_REGISTRADA` | `consultation` | `PROFISSIONAL` | `MEDICO` | Ratificação, edição ou recusa médica com diff forense de sugestão de IA (CFM nº 2.454/2026). |
 | `TRAVA_TEMPORAL_ATESTADO_VIOLADA` | `consultation` | `PROFISSIONAL` | `MEDICO` | Tentativa de emissão de atestado com menos de 180s de teleconsulta (CFM nº 2.314/2022, RN09). |
+| `LIVENESS_FACIAL_APROVADO` | `consultation` | `PROFISSIONAL` / `PACIENTE` | `MEDICO` / `PACIENTE` | Prova de vida facial ativa aprovada com hash SHA-256 para receita Lista C1 (US-15). |
+| `SPOOFING_FACIAL_DETECTADO` | `consultation` | `PROFISSIONAL` / `PACIENTE` | `MEDICO` / `PACIENTE` | Suspeita de foto estática ou deepfake detectada na verificação de vivacidade facial (US-15). |
+| `PASSKEY_REGISTRADA` | `auth` | `PACIENTE` | `PACIENTE` | Cadastro de credencial WebAuthn / Passkey FIDO2 vinculada ao prontuário do paciente (US-14). |
+| `LOGIN_PASSKEY_SUCESSO` | `auth` | `PACIENTE` | `PACIENTE` | Autenticação passwordless em 1 toque via asserção Passkey sem SMS OTP (US-14). |
 | `PRODUCAO_AMBULATORIAL_CONSOLIDADA` | `ambulatory` | `SISTEMA` | `WORKER_ARQ` | Consolidação pós-consulta em lote BPA-I / SISAB sob SIGTAP 03.01.01.025-0 e CNES 160/006. |
 
 ### Contrato de Dados do Evento
@@ -82,11 +86,14 @@ Registrado em `src/modules/consultation/application/services/documento_service.p
 - Impl: `src/modules/consultation/application/services/pep_service.py:PEPService`
 - Impl: `src/modules/consultation/application/services/evolucao_service.py:EvolucaoService`
 - Impl: `src/modules/consultation/application/services/documento_service.py:DocumentoService`
+- Impl: `src/modules/auth/application/services/patient_webauthn_service.py:PatientWebAuthnService`
 - Prova viva: `tests/integration/test_clinical_audit_integration.py:test_pep_workflow_full_audit_trail_reconstruction`
 - Prova viva: `tests/unit/test_queue_audit_events.py:test_admitir_paciente_records_admissao_audit_event`
 - Prova viva: `tests/unit/test_consultation_audit_events.py:test_salvar_evolucao_soap_records_evolucao_audit_event`
 - Prova viva: `tests/unit/test_clinical_ai_governance.py:test_evolucao_com_ia_registra_evento_auditoria_e_diff`
 - Prova viva: `tests/unit/test_trava_antifraude_atestado.py:test_emissao_atestado_inferior_180s_sem_justificativa_bloqueada`
+- Prova viva: `tests/unit/test_patient_webauthn_service.py:test_verificar_registro_sucesso_persiste_passkey_e_auditoria`
+- Prova viva: `tests/unit/test_prescription_liveness.py:test_liveness_spoofing_detectado_bloqueia_e_audita`
 - Ver: `rg -n "record_event" src/modules/queue/application/services/`
 - Ver: `rg -n "record_event" src/modules/consultation/application/services/`
 

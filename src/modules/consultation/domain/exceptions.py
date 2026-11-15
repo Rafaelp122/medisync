@@ -80,3 +80,19 @@ class DocumentoIntegridadeError(DomainError):
             title=self.title,
             code=self.code,
         )
+
+
+class SpoofingFacialDetectadoError(ValidationError):
+    """Raised when facial liveness score indicates photo/deepfake spoofing."""
+
+    status_code: int = 422
+    title: str = "Prova de Vida Reprovada — Suspeita de Spoofing Facial"
+    code: str = "SPOOFING_FACIAL_DETECTADO"
+
+
+class ProvaDeVidaObrigatoriaError(ValidationError):
+    """Raised when emitting controlled prescription without facial liveness proof."""
+
+    status_code: int = 422
+    title: str = "Prova de Vida Facial Obrigatória para Controle Especial"
+    code: str = "PROVA_DE_VIDA_OBRIGATORIA"

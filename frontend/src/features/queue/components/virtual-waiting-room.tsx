@@ -224,7 +224,7 @@ export function VirtualWaitingRoom({
       )}
 
       {/* Convite Biométrico Passkeys (US-14) */}
-      <PasskeyInvitationCard />
+      <PasskeyInvitationCard token={token} />
 
       {/* Salvaguarda de Deterioração Clínica & Ações do Paciente */}
       <Card className="border-border/80 shadow-sm">

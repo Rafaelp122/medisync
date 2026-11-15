@@ -95,6 +95,12 @@ class DocumentoClinico(Base):
     justificativa_tempo_inferior: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )
+    liveness_verificacao_hash: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    justificativa_excecao_liveness: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
     assinado_em: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -122,6 +128,8 @@ class DocumentoClinico(Base):
         sha256_hash: str | None = None,
         *,
         justificativa_tempo_inferior: str | None = None,
+        liveness_verificacao_hash: str | None = None,
+        justificativa_excecao_liveness: str | None = None,
         assinado_em: datetime | None = None,
         finalizado_em: datetime | None = None,
         id: UUID | None = None,
@@ -152,6 +160,16 @@ class DocumentoClinico(Base):
             if justificativa_tempo_inferior and justificativa_tempo_inferior.strip()
             else None
         )
+        clean_liveness_hash = (
+            liveness_verificacao_hash.strip()
+            if liveness_verificacao_hash and liveness_verificacao_hash.strip()
+            else None
+        )
+        clean_excecao_liveness = (
+            justificativa_excecao_liveness.strip()
+            if justificativa_excecao_liveness and justificativa_excecao_liveness.strip()
+            else None
+        )
 
         try:
             tipo_enum = (
@@ -174,6 +192,8 @@ class DocumentoClinico(Base):
             chave_s3=chave_s3.strip(),
             sha256_hash=clean_hash,
             justificativa_tempo_inferior=clean_justificativa,
+            liveness_verificacao_hash=clean_liveness_hash,
+            justificativa_excecao_liveness=clean_excecao_liveness,
             assinado_em=assinado_em,
             finalizado_em=finalizado_em,
         )

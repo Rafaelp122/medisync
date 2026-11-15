@@ -53,6 +53,7 @@ _MULTI_TENANT_TABLES = (
     "audit_events",
     "configuracoes_plantao",
     "producoes_ambulatoriais",
+    "paciente_passkeys",
 )
 
 _SAMPLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -73,7 +74,7 @@ async def test_rls_flags_and_policies_on_all_tables() -> None:
                     'profissionais', 'pacientes', 'dependentes', 'atendimentos',
                     'triagens', 'evolucoes_clinicas', 'documentos_clinicos',
                     'documento_itens', 'audit_events', 'configuracoes_plantao',
-                    'organizacoes'
+                    'producoes_ambulatoriais', 'paciente_passkeys', 'organizacoes'
                 )
                 ORDER BY relname;
                 """

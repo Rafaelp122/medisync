@@ -659,6 +659,14 @@ export type DocumentoClinicoResponse = {
      */
     justificativa_tempo_inferior?: string | null;
     /**
+     * Liveness Verificacao Hash
+     */
+    liveness_verificacao_hash?: string | null;
+    /**
+     * Justificativa Excecao Liveness
+     */
+    justificativa_excecao_liveness?: string | null;
+    /**
      * Assinado Em
      */
     assinado_em?: string | null;
@@ -712,6 +720,18 @@ export type EmitirDocumentoRequest = {
      * Justificativa para consulta < 180s (CFM 2.314/2022)
      */
     justificativa_tempo_inferior?: string | null;
+    /**
+     * Liveness Verificacao Hash
+     *
+     * Hash SHA-256 da prova de vida facial aprovada (US-15)
+     */
+    liveness_verificacao_hash?: string | null;
+    /**
+     * Justificativa Excecao Liveness
+     *
+     * Justificativa médica para dispensa excepcional de prova de vida (US-15)
+     */
+    justificativa_excecao_liveness?: string | null;
     /**
      * Organizacao Id
      *
@@ -1079,6 +1099,22 @@ export type FinalizarConsultaResponse = {
 };
 
 /**
+ * GeolocalizacaoLivenessSchema
+ *
+ * Optional geolocation metadata captured during liveness verification.
+ */
+export type GeolocalizacaoLivenessSchema = {
+    /**
+     * Latitude
+     */
+    latitude: number;
+    /**
+     * Longitude
+     */
+    longitude: number;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -1335,6 +1371,67 @@ export type LiveKitTokenResponse = {
      * Validade em segundos
      */
     expires_in: number;
+};
+
+/**
+ * LivenessChallengeResponse
+ *
+ * Challenge instructions for active facial liveness verification.
+ */
+export type LivenessChallengeResponse = {
+    /**
+     * Challenge Id
+     */
+    challenge_id: string;
+    /**
+     * Instrucoes Movimento
+     */
+    instrucoes_movimento: Array<string>;
+    /**
+     * Timeout Segundos
+     */
+    timeout_segundos?: number;
+};
+
+/**
+ * LivenessVerifyRequest
+ *
+ * Liveness frames and challenge submission for controlled prescriptions.
+ */
+export type LivenessVerifyRequest = {
+    /**
+     * Challenge Id
+     */
+    challenge_id: string;
+    /**
+     * Liveness Payload
+     */
+    liveness_payload: string;
+    geolocalizacao?: GeolocalizacaoLivenessSchema | null;
+};
+
+/**
+ * LivenessVerifyResponse
+ *
+ * Biometric liveness verification outcome with SHA-256 hash proof.
+ */
+export type LivenessVerifyResponse = {
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Liveness Score
+     */
+    liveness_score: number;
+    /**
+     * Verificacao Hash
+     */
+    verificacao_hash: string;
+    /**
+     * Validado Em
+     */
+    validado_em: string;
 };
 
 /**
@@ -2234,6 +2331,212 @@ export type VerificarOtpResponse = {
     atendimento_id?: string | null;
 };
 
+/**
+ * WebAuthnAllowCredentialSchema
+ *
+ * Permitted credential descriptor for WebAuthn assertion.
+ */
+export type WebAuthnAllowCredentialSchema = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Type
+     */
+    type?: string;
+};
+
+/**
+ * WebAuthnAuthOptionsRequest
+ *
+ * Optional patient filter when requesting WebAuthn authentication options.
+ */
+export type WebAuthnAuthOptionsRequest = {
+    /**
+     * Paciente Id
+     */
+    paciente_id?: string | null;
+};
+
+/**
+ * WebAuthnAuthOptionsResponse
+ *
+ * PublicKeyCredentialRequestOptions payload for passkey login.
+ */
+export type WebAuthnAuthOptionsResponse = {
+    /**
+     * Challenge
+     */
+    challenge: string;
+    /**
+     * Rpid
+     */
+    rpId: string;
+    /**
+     * Allowcredentials
+     */
+    allowCredentials: Array<WebAuthnAllowCredentialSchema>;
+    /**
+     * Timeout
+     */
+    timeout?: number;
+    /**
+     * Userverification
+     */
+    userVerification?: string;
+};
+
+/**
+ * WebAuthnAuthVerifyRequest
+ *
+ * WebAuthn assertion credential submitted by client browser during login.
+ */
+export type WebAuthnAuthVerifyRequest = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Rawid
+     */
+    rawId: string;
+    /**
+     * Response
+     */
+    response: {
+        [key: string]: unknown;
+    };
+    /**
+     * Type
+     */
+    type?: string;
+};
+
+/**
+ * WebAuthnPubKeyCredParamSchema
+ *
+ * Supported WebAuthn COSE key algorithm parameter.
+ */
+export type WebAuthnPubKeyCredParamSchema = {
+    /**
+     * Alg
+     */
+    alg: number;
+    /**
+     * Type
+     */
+    type?: string;
+};
+
+/**
+ * WebAuthnRegisterOptionsResponse
+ *
+ * PublicKeyCredentialCreationOptions payload for passkey registration.
+ */
+export type WebAuthnRegisterOptionsResponse = {
+    /**
+     * Challenge
+     */
+    challenge: string;
+    rp: WebAuthnRpSchema;
+    user: WebAuthnUserSchema;
+    /**
+     * Pubkeycredparams
+     */
+    pubKeyCredParams: Array<WebAuthnPubKeyCredParamSchema>;
+    /**
+     * Timeout
+     */
+    timeout?: number;
+    /**
+     * Attestation
+     */
+    attestation?: string;
+};
+
+/**
+ * WebAuthnRegisterVerifyRequest
+ *
+ * WebAuthn registration credential attestation submitted by client browser.
+ */
+export type WebAuthnRegisterVerifyRequest = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Rawid
+     */
+    rawId: string;
+    /**
+     * Response
+     */
+    response: {
+        [key: string]: unknown;
+    };
+    /**
+     * Type
+     */
+    type?: string;
+    /**
+     * Device Name
+     */
+    device_name?: string | null;
+};
+
+/**
+ * WebAuthnRegisterVerifyResponse
+ *
+ * Confirmation payload returned after storing a WebAuthn passkey.
+ */
+export type WebAuthnRegisterVerifyResponse = {
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Credencial Id
+     */
+    credencial_id: string;
+};
+
+/**
+ * WebAuthnRpSchema
+ *
+ * WebAuthn Relying Party metadata.
+ */
+export type WebAuthnRpSchema = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Id
+     */
+    id: string;
+};
+
+/**
+ * WebAuthnUserSchema
+ *
+ * WebAuthn patient user handle descriptor.
+ */
+export type WebAuthnUserSchema = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Displayname
+     */
+    displayName: string;
+};
+
 export type HealthcheckHealthzGetData = {
     body?: never;
     path?: never;
@@ -2487,6 +2790,100 @@ export type PostAuthPacienteCadsusResponses = {
 };
 
 export type PostAuthPacienteCadsusResponse = PostAuthPacienteCadsusResponses[keyof PostAuthPacienteCadsusResponses];
+
+export type PostAuthPatientWebauthnRegisterOptionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/patient/webauthn/register/options';
+};
+
+export type PostAuthPatientWebauthnRegisterOptionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: WebAuthnRegisterOptionsResponse;
+};
+
+export type PostAuthPatientWebauthnRegisterOptionsResponse = PostAuthPatientWebauthnRegisterOptionsResponses[keyof PostAuthPatientWebauthnRegisterOptionsResponses];
+
+export type PostAuthPatientWebauthnRegisterVerifyData = {
+    body: WebAuthnRegisterVerifyRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/patient/webauthn/register/verify';
+};
+
+export type PostAuthPatientWebauthnRegisterVerifyErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostAuthPatientWebauthnRegisterVerifyError = PostAuthPatientWebauthnRegisterVerifyErrors[keyof PostAuthPatientWebauthnRegisterVerifyErrors];
+
+export type PostAuthPatientWebauthnRegisterVerifyResponses = {
+    /**
+     * Successful Response
+     */
+    200: WebAuthnRegisterVerifyResponse;
+};
+
+export type PostAuthPatientWebauthnRegisterVerifyResponse = PostAuthPatientWebauthnRegisterVerifyResponses[keyof PostAuthPatientWebauthnRegisterVerifyResponses];
+
+export type PostAuthPatientWebauthnAuthenticateOptionsData = {
+    /**
+     * Body
+     */
+    body?: WebAuthnAuthOptionsRequest | null;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/patient/webauthn/authenticate/options';
+};
+
+export type PostAuthPatientWebauthnAuthenticateOptionsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostAuthPatientWebauthnAuthenticateOptionsError = PostAuthPatientWebauthnAuthenticateOptionsErrors[keyof PostAuthPatientWebauthnAuthenticateOptionsErrors];
+
+export type PostAuthPatientWebauthnAuthenticateOptionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: WebAuthnAuthOptionsResponse;
+};
+
+export type PostAuthPatientWebauthnAuthenticateOptionsResponse = PostAuthPatientWebauthnAuthenticateOptionsResponses[keyof PostAuthPatientWebauthnAuthenticateOptionsResponses];
+
+export type PostAuthPatientWebauthnAuthenticateVerifyData = {
+    body: WebAuthnAuthVerifyRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/patient/webauthn/authenticate/verify';
+};
+
+export type PostAuthPatientWebauthnAuthenticateVerifyErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostAuthPatientWebauthnAuthenticateVerifyError = PostAuthPatientWebauthnAuthenticateVerifyErrors[keyof PostAuthPatientWebauthnAuthenticateVerifyErrors];
+
+export type PostAuthPatientWebauthnAuthenticateVerifyResponses = {
+    /**
+     * Successful Response
+     */
+    200: VerificarOtpResponse;
+};
+
+export type PostAuthPatientWebauthnAuthenticateVerifyResponse = PostAuthPatientWebauthnAuthenticateVerifyResponses[keyof PostAuthPatientWebauthnAuthenticateVerifyResponses];
 
 export type IntakeFase1ApiV1OnboardingFase1PostData = {
     body: Fase1Request;
@@ -2954,6 +3351,70 @@ export type EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostRe
 };
 
 export type EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostResponse = EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostResponses[keyof EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostResponses];
+
+export type SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostData = {
+    body?: never;
+    path: {
+        /**
+         * Atendimento Id
+         *
+         * Identificador único do atendimento
+         */
+        atendimento_id: string;
+    };
+    query?: never;
+    url: '/api/v1/consultations/{atendimento_id}/prescriptions/liveness/challenge';
+};
+
+export type SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostError = SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostErrors[keyof SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostErrors];
+
+export type SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LivenessChallengeResponse;
+};
+
+export type SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponse = SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponses[keyof SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponses];
+
+export type VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostData = {
+    body: LivenessVerifyRequest;
+    path: {
+        /**
+         * Atendimento Id
+         *
+         * Identificador único do atendimento
+         */
+        atendimento_id: string;
+    };
+    query?: never;
+    url: '/api/v1/consultations/{atendimento_id}/prescriptions/liveness/verify';
+};
+
+export type VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostError = VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostErrors[keyof VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostErrors];
+
+export type VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LivenessVerifyResponse;
+};
+
+export type VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponse = VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses[keyof VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses];
 
 export type FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostData = {
     body: FinalizarConsultaRequest;

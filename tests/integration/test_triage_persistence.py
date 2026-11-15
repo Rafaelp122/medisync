@@ -45,6 +45,7 @@ async def test_persist_triagem_success() -> None:
             atendimento_id=atendimento.id,
             queixa_principal="Cefaleia moderada com náuseas",
             prioridade_calculada=3,
+            escala_dor=5,
             sintomas_alerta=["cefaleia", "nauseas"],
         )
         session.add(triagem)

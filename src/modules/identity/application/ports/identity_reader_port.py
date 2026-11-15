@@ -1,5 +1,6 @@
 """Public read port for identity lookups across modules without model coupling."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol, runtime_checkable
@@ -60,6 +61,44 @@ class PacienteAuthLookupData:
     nome_mae: str | None = None
 
 
+class PacientePasskeyDTO(Protocol):
+    """Structural protocol for patient WebAuthn passkey metadata."""
+
+    @property
+    def id(self) -> UUID: ...
+
+    @property
+    def organizacao_id(self) -> int: ...
+
+    @property
+    def paciente_id(self) -> UUID: ...
+
+    @property
+    def credential_id(self) -> str: ...
+
+    @property
+    def public_key(self) -> str: ...
+
+    @property
+    def sign_count(self) -> int: ...
+
+    @property
+    def device_name(self) -> str | None: ...
+
+
+@dataclass(frozen=True)
+class PacientePasskeyData:
+    """Concrete immutable representation of a registered patient passkey."""
+
+    id: UUID
+    organizacao_id: int
+    paciente_id: UUID
+    credential_id: str
+    public_key: str
+    sign_count: int = 0
+    device_name: str | None = None
+
+
 @runtime_checkable
 class IdentityReaderPort(Protocol):
     """Protocol for reading identity entities using chainable ORM queries."""
@@ -99,4 +138,40 @@ class IdentityReaderPort(Protocol):
         nome_mae: str | None = None,
     ) -> PacienteAuthLookupDTO | None:
         """Look up patient record via CADSUS/Gov.br credentials (CPF, CNS, nome_mae)."""
+        ...
+
+    async def buscar_paciente_por_id(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> PacienteAuthLookupDTO | None:
+        """Look up patient authentication record by organization and patient ID."""
+        ...
+
+    async def registrar_passkey_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+        credential_id: str,
+        public_key: str,
+        sign_count: int = 0,
+        device_name: str | None = None,
+    ) -> PacientePasskeyDTO:
+        """Persist or update a FIDO2/WebAuthn passkey bound to a patient record."""
+        ...
+
+    async def buscar_passkey_por_credencial(
+        self,
+        organizacao_id: int,
+        credential_id: str,
+    ) -> PacientePasskeyDTO | None:
+        """Look up a registered WebAuthn passkey by tenant and credential ID."""
+        ...
+
+    async def listar_passkeys_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> Sequence[PacientePasskeyDTO]:
+        """List all registered WebAuthn passkeys for a patient within a tenant."""
         ...

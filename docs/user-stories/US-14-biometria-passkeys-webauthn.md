@@ -78,13 +78,16 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [ ] **Modelo:** Tabela `paciente_passkeys` no módulo `identity` com `credential_id`, `public_key`, `sign_count`, `device_name` e `created_at`.
-- [ ] **Aplicação:** Serviço `PatientWebAuthnService` utilizando `py_webauthn` para geração de desafios e verificação de assinaturas FIDO2/WebAuthn.
-- [ ] **Apresentação:** Router fino `patient_webauthn_router.py` integrado em `/api/v1/auth/patient/webauthn`.
-- [x] **Frontend Detecção e Card (ADR-011):** Verificação segura em `frontend/src/lib/formatters.ts:isWebAuthnSupported` e card não-bloqueante na sala de espera `frontend/src/features/queue/components/passkey-invitation-card.tsx`.
-- [x] **Testes Automatizados de Frontend:**
-  - `frontend/src/features/queue/tests/queue-unit.test.ts` (detecção de `window.PublicKeyCredential`)
-  - `frontend/src/features/queue/tests/passkey-invitation-card.test.tsx` (`IT-PASSKEY-01` a `IT-PASSKEY-04`)
+- [x] **Modelo:** Tabela `paciente_passkeys` no módulo `identity` (`src/modules/identity/domain/models/passkey.py:PacientePasskey`) com `credential_id`, `public_key`, `sign_count`, `device_name` e `created_at` (migração `migrations/versions/0014_passkeys_and_liveness.py`).
+- [x] **Aplicação:** Serviço `src/modules/auth/application/services/patient_webauthn_service.py:PatientWebAuthnService` com desafios criptográficos em Valkey/memória e emissão de JWT `Role.PACIENTE`.
+- [x] **Apresentação:** Router fino `src/modules/auth/presentation/routers/patient_webauthn_router.py:patient_webauthn_router` integrado em `/api/v1/auth/patient/webauthn`.
+- [x] **Frontend Registro e Login em 1 Toque (ADR-011):**
+  - Registro FIDO2 via `frontend/src/features/queue/api/use-passkey-register.ts:usePasskeyRegister` e `frontend/src/features/queue/components/passkey-invitation-card.tsx:PasskeyInvitationCard`.
+  - Autenticação 1-toque em `/otp` via `frontend/src/features/onboarding/api/use-passkey-auth.ts:usePasskeyAuth` e `frontend/src/features/onboarding/components/solicitar-otp-form.tsx:SolicitarOtpForm`.
+- [x] **Testes Automatizados (Backend Unitário + Frontend Vitest + E2E CDP):**
+  - `tests/unit/test_patient_webauthn_service.py` (desafios, replay, auditoria e JWT ativo)
+  - `frontend/src/features/queue/tests/queue-unit.test.ts` e `passkey-invitation-card.test.tsx`
+  - `frontend/e2e/auth-otp.spec.ts` (`E2E-04`: CDP Virtual Authenticator WebAuthn cadastro em `/fila` + login 1-toque em `/otp`)
 
 ---
 

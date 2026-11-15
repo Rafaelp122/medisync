@@ -1,5 +1,6 @@
 """Presentation layer dependencies for clinical contextual authorization (Tier 3)."""
 
+from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
@@ -204,6 +205,131 @@ async def _autenticar_chamador_paciente(raw_token: str) -> tuple[UUID, int, bool
     raise UnauthorizedError(
         f"Token em formato inválido ({len(token_parts)} partes; esperados: 2 ou 3)."
     )
+
+
+@dataclass(frozen=True)
+class LivenessActor:
+    """Identidade autenticada (médico ou paciente) para prova de vida US-15."""
+
+    actor_id: UUID
+    actor_papel: str
+    organizacao_id: int
+    is_admin: bool = False
+
+
+async def _autenticar_chamador_liveness(
+    raw_token: str,
+) -> tuple[UUID, int, str, bool]:
+    """Extrai identidade clínica de JWT ou token HMAC de acolhimento."""
+    parts = raw_token.split(".")
+    if len(parts) == 2:
+        actor_id, org_id, is_admin = _autenticar_chamador_paciente_intake(raw_token)
+        return actor_id, org_id, Role.PACIENTE.value, is_admin
+    if len(parts) != 3:
+        raise UnauthorizedError(
+            f"Token em formato inválido ({len(parts)} partes; esperados: 2 ou 3)."
+        )
+
+    try:
+        user = decode_access_token(raw_token)
+    except Exception as exc:
+        raise UnauthorizedError(
+            f"Token de acesso inválido ou expirado: {exc}."
+        ) from exc
+
+    if await is_token_revoked(user.token_id):
+        raise TokenRevogadoError(
+            f"Token de acesso '{user.token_id}' revogado. Realize novo login."
+        )
+
+    allowed_roles = (Role.MEDICO, Role.ADMIN_GLOBAL, Role.PACIENTE)
+    if user.papel not in allowed_roles:
+        raise ForbiddenError(
+            f"Papel '{user.papel}' não autorizado para prova de vida facial "
+            f"(esperados: {[r.value for r in allowed_roles]})."
+        )
+    return (
+        user.usuario_id,
+        user.organizacao_id,
+        str(user.papel),
+        user.papel == Role.ADMIN_GLOBAL,
+    )
+
+
+def _validar_participacao_atendimento_liveness(
+    *,
+    actor_id: UUID,
+    actor_org_id: int,
+    actor_papel: str,
+    is_admin: bool,
+    atendimento_org_id: int,
+    atendimento_paciente_id: UUID | None,
+    atendimento_medico_id: UUID | None,
+) -> None:
+    if is_admin:
+        return
+    if actor_org_id != atendimento_org_id:
+        raise ForbiddenError(
+            f"Acesso negado: ator pertence à organização {actor_org_id}, "
+            f"mas atendimento pertence à organização {atendimento_org_id}."
+        )
+    if actor_papel == Role.PACIENTE.value and atendimento_paciente_id != actor_id:
+        raise ForbiddenError(
+            f"Paciente {actor_id} não é o titular deste atendimento clínico."
+        )
+    if actor_papel == Role.MEDICO.value and atendimento_medico_id != actor_id:
+        raise ForbiddenError(
+            f"Médico {actor_id} não está alocado neste atendimento clínico."
+        )
+
+
+async def require_liveness_actor_access(
+    atendimento_id: AtendimentoIdPath,
+    reader: Annotated[AtendimentoReaderPort, Depends(get_atendimento_reader)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(http_bearer_scheme),
+    ] = None,
+) -> LivenessActor:
+    """Valida participante (médico alocado ou paciente) para endpoints US-15."""
+    if credentials is None or not credentials.credentials.strip():
+        raise UnauthorizedError(
+            "Credencial de autenticação obrigatória para prova de vida facial "
+            "(esperado cabeçalho 'Authorization: Bearer <token>')."
+        )
+
+    actor_id, actor_org_id, actor_papel, is_admin = await _autenticar_chamador_liveness(
+        credentials.credentials
+    )
+    resumo = await reader.obter_resumo(atendimento_id)
+    if resumo is None:
+        raise NotFoundError(
+            f"Atendimento {atendimento_id} não encontrado para prova de vida facial."
+        )
+    if resumo.is_terminal:
+        raise ForbiddenError(
+            f"Atendimento {atendimento_id} encontra-se em estado terminal "
+            f"('{resumo.status}'); prova de vida não permitida."
+        )
+
+    _validar_participacao_atendimento_liveness(
+        actor_id=actor_id,
+        actor_org_id=actor_org_id,
+        actor_papel=actor_papel,
+        is_admin=is_admin,
+        atendimento_org_id=resumo.organizacao_id,
+        atendimento_paciente_id=resumo.paciente_id,
+        atendimento_medico_id=resumo.medico_id,
+    )
+    return LivenessActor(
+        actor_id=actor_id,
+        actor_papel=actor_papel,
+        organizacao_id=resumo.organizacao_id,
+        is_admin=is_admin,
+    )
+
+
+LivenessActorDep = Annotated[LivenessActor, Depends(require_liveness_actor_access)]
 
 
 def _validar_permissao_sala_livekit(

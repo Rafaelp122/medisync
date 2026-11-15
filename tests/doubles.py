@@ -21,6 +21,8 @@ from src.modules.identity.application.ports.identity_reader_port import (
     IdentityDirectoryDTO,
     IdentityReaderPort,
     PacienteAuthLookupDTO,
+    PacientePasskeyData,
+    PacientePasskeyDTO,
 )
 
 
@@ -548,6 +550,7 @@ class FakeIdentityReader(IdentityReaderPort):
         self.modo_sus = modo_sus
         self.organizacoes_ativas = organizacoes_ativas or []
         self.lookups: list[dict[str, object]] = []
+        self.passkeys: dict[tuple[int, str], PacientePasskeyData] = {}
 
     async def obter_dados_diretorio(
         self,
@@ -641,6 +644,59 @@ class FakeIdentityReader(IdentityReaderPort):
                 return p
             return None
         return self.paciente
+
+    async def buscar_paciente_por_id(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> PacienteAuthLookupDTO | None:
+        if self.pacientes is not None:
+            for p in self.pacientes:
+                if p.organizacao_id == organizacao_id and p.id == paciente_id:
+                    return p
+            return None
+        if self.paciente is not None and self.paciente.id == paciente_id:
+            return self.paciente
+        return None
+
+    async def registrar_passkey_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+        credential_id: str,
+        public_key: str,
+        sign_count: int = 0,
+        device_name: str | None = None,
+    ) -> PacientePasskeyDTO:
+        record = PacientePasskeyData(
+            id=uuid7(),
+            organizacao_id=organizacao_id,
+            paciente_id=paciente_id,
+            credential_id=credential_id,
+            public_key=public_key,
+            sign_count=sign_count,
+            device_name=device_name,
+        )
+        self.passkeys[(organizacao_id, credential_id)] = record
+        return record
+
+    async def buscar_passkey_por_credencial(
+        self,
+        organizacao_id: int,
+        credential_id: str,
+    ) -> PacientePasskeyDTO | None:
+        return self.passkeys.get((organizacao_id, credential_id))
+
+    async def listar_passkeys_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> Sequence[PacientePasskeyDTO]:
+        return [
+            p
+            for p in self.passkeys.values()
+            if p.organizacao_id == organizacao_id and p.paciente_id == paciente_id
+        ]
 
 
 class FakeProducaoAmbulatorialPort(ProducaoAmbulatorialPort):

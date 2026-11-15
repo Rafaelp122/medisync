@@ -1,17 +1,25 @@
+from collections.abc import Sequence
 from datetime import date
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.errors import NotFoundError
+from src.core.errors import ConflictError, NotFoundError
 from src.modules.identity.application.ports.identity_reader_port import (
     IdentityDirectoryDTO,
     IdentityReaderPort,
     PacienteAuthLookupData,
     PacienteAuthLookupDTO,
+    PacientePasskeyData,
+    PacientePasskeyDTO,
 )
-from src.modules.identity.domain.models import Organizacao, Paciente, Profissional
+from src.modules.identity.domain.models import (
+    Organizacao,
+    Paciente,
+    PacientePasskey,
+    Profissional,
+)
 
 
 class SqlIdentityReader(IdentityReaderPort):
@@ -153,3 +161,108 @@ class SqlIdentityReader(IdentityReaderPort):
             nome_completo=pac.nome_completo or "",
             nome_mae=pac.nome_mae,
         )
+
+    async def buscar_paciente_por_id(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> PacienteAuthLookupDTO | None:
+        stmt = select(Paciente).where(
+            Paciente.organizacao_id == organizacao_id,
+            Paciente.id == paciente_id,
+        )
+        pac = (await self._session.execute(stmt)).scalar_one_or_none()
+        if pac is None:
+            return None
+        return PacienteAuthLookupData(
+            id=pac.id,
+            organizacao_id=pac.organizacao_id,
+            telefone=pac.telefone,
+            cpf=pac.cpf,
+            nome_completo=pac.nome_completo or "",
+            nome_mae=pac.nome_mae,
+        )
+
+    async def registrar_passkey_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+        credential_id: str,
+        public_key: str,
+        sign_count: int = 0,
+        device_name: str | None = None,
+    ) -> PacientePasskeyDTO:
+        stmt = select(PacientePasskey).where(
+            PacientePasskey.organizacao_id == organizacao_id,
+            PacientePasskey.credential_id == credential_id,
+        )
+        existing = (await self._session.execute(stmt)).scalar_one_or_none()
+        if existing is not None and existing.paciente_id != paciente_id:
+            raise ConflictError(
+                f"Credencial WebAuthn '{credential_id}' já vinculada a outro "
+                f"paciente na organização '{organizacao_id}'."
+            )
+        if existing is not None:
+            existing.public_key = public_key
+            existing.atualizar_contador(sign_count)
+            if device_name and device_name.strip():
+                existing.device_name = device_name.strip()
+            await self._session.flush()
+            await self._session.commit()
+            return _to_passkey_data(existing)
+
+        passkey = PacientePasskey(
+            organizacao_id=organizacao_id,
+            paciente_id=paciente_id,
+            credential_id=credential_id,
+            public_key=public_key,
+            sign_count=sign_count,
+            device_name=device_name,
+        )
+        self._session.add(passkey)
+        await self._session.flush()
+        await self._session.commit()
+        return _to_passkey_data(passkey)
+
+    async def buscar_passkey_por_credencial(
+        self,
+        organizacao_id: int,
+        credential_id: str,
+    ) -> PacientePasskeyDTO | None:
+        stmt = select(PacientePasskey).where(
+            PacientePasskey.organizacao_id == organizacao_id,
+            PacientePasskey.credential_id == credential_id,
+        )
+        passkey = (await self._session.execute(stmt)).scalar_one_or_none()
+        if passkey is None:
+            return None
+        return _to_passkey_data(passkey)
+
+    async def listar_passkeys_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> Sequence[PacientePasskeyDTO]:
+        stmt = (
+            select(PacientePasskey)
+            .where(
+                PacientePasskey.organizacao_id == organizacao_id,
+                PacientePasskey.paciente_id == paciente_id,
+            )
+            .order_by(PacientePasskey.created_at.desc())
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return [_to_passkey_data(r) for r in rows]
+
+
+def _to_passkey_data(passkey: PacientePasskey) -> PacientePasskeyData:
+    """Convert ORM PacientePasskey model to immutable DTO across boundaries."""
+    return PacientePasskeyData(
+        id=passkey.id,
+        organizacao_id=passkey.organizacao_id,
+        paciente_id=passkey.paciente_id,
+        credential_id=passkey.credential_id,
+        public_key=passkey.public_key,
+        sign_count=passkey.sign_count,
+        device_name=passkey.device_name,
+    )

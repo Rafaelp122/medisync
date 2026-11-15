@@ -10,6 +10,7 @@ from fastapi import Depends
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.audit import SqlAuditTrailAdapter
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.core.valkey import get_valkey_client
@@ -26,6 +27,9 @@ from src.modules.auth.application.ports.token_service_port import TokenServicePo
 from src.modules.auth.application.services.auth_service import AuthService
 from src.modules.auth.application.services.patient_auth_service import (
     PatientAuthService,
+)
+from src.modules.auth.application.services.patient_webauthn_service import (
+    PatientWebAuthnService,
 )
 from src.modules.auth.infrastructure.argon2_hasher import Argon2PasswordHasher
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
@@ -137,3 +141,35 @@ def get_patient_auth_service(
 
 
 PatientAuthServiceDep = Annotated[PatientAuthService, Depends(get_patient_auth_service)]
+
+
+def build_patient_webauthn_service_for_session(
+    session: AsyncSession,
+    valkey: Redis | None = None,
+    identity_reader: IdentityReaderPort | None = None,
+) -> PatientWebAuthnService:
+    """Build PatientWebAuthnService outside request scope (tests/tooling)."""
+    settings = get_settings()
+    reader = identity_reader or build_identity_reader_sql_for_session(session)
+    return PatientWebAuthnService(
+        jwt_secret=settings.JWT_SECRET_KEY,
+        valkey_client=valkey,
+        jwt_algorithm=settings.JWT_ALGORITHM,
+        access_token_expire_minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
+        identity_reader=reader,
+        audit_trail=SqlAuditTrailAdapter(session),
+        session=session,
+    )
+
+
+def get_patient_webauthn_service(
+    session: DbSessionDep,
+    valkey: Annotated[Redis, Depends(get_valkey_client)],
+) -> PatientWebAuthnService:
+    """Provide PatientWebAuthnService wired with Valkey, identity reader and audit."""
+    return build_patient_webauthn_service_for_session(session=session, valkey=valkey)
+
+
+PatientWebAuthnServiceDep = Annotated[
+    PatientWebAuthnService, Depends(get_patient_webauthn_service)
+]

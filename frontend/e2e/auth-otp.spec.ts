@@ -122,4 +122,140 @@ test.describe("Autenticação OTP de Paciente (E2E)", () => {
     const durationSeconds = Number.parseFloat(duration) * (duration.endsWith("ms") ? 0.001 : 1);
     expect(durationSeconds).toBeLessThanOrEqual(0.001);
   });
+
+  test("E2E-04: Passkeys WebAuthn — Cadastro em /fila e Login em 1 Toque em /otp (US-14)", async ({
+    page,
+    context,
+  }, testInfo) => {
+    const rawBaseUrl = testInfo.project.use.baseURL || "http://127.0.0.1:5183";
+    const originUrl = new URL(rawBaseUrl);
+    const localhostOrigin = `http://localhost:${originUrl.port}`;
+
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("WebAuthn.enable");
+    const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
+      options: {
+        protocol: "ctap2",
+        transport: "internal",
+        hasResidentKey: true,
+        hasUserVerification: true,
+        isUserVerified: true,
+        automaticPresenceSimulation: true,
+      },
+    });
+
+    try {
+      let registeredCredentialId = "";
+
+      await page.route("**/api/v1/fila/posicao/*", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b99",
+            posicao: 2,
+            total_aguardando: 4,
+            tempo_estimado_segundos: 300,
+            prioridade_clinica: 3,
+            status: "AGUARDANDO_CHAMADA",
+            protocolo: "MED-2026-0099",
+          }),
+        });
+      });
+
+      await page.route("**/api/v1/auth/patient/webauthn/register/options", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            challenge: "dGVzdC1yZWdpc3Rlci1jaGFsbGVuZ2UtdXMxNC0wMDE",
+            rp: { name: "MediSync Express", id: "localhost" },
+            user: {
+              id: "MDE4ZjNhNWItN2IyYy00YjJjLThiMmMtMDE4ZjNhNWI3YjJj",
+              name: "Maria Silva",
+              displayName: "Maria Silva",
+            },
+            pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+            timeout: 60000,
+            attestation: "none",
+          }),
+        });
+      });
+
+      await page.route("**/api/v1/auth/patient/webauthn/register/verify", async (route) => {
+        const payload = JSON.parse(route.request().postData() || "{}") as { id?: string };
+        registeredCredentialId = payload.id || "";
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            status: "registrado",
+            credencial_id: registeredCredentialId,
+          }),
+        });
+      });
+
+      await page.goto(localhostOrigin);
+      await page.evaluate(() => {
+        localStorage.setItem(
+          "medisync_session",
+          JSON.stringify({
+            tipo: "acolhimento",
+            role: "PACIENTE",
+            pacienteId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
+            atendimentoId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b99",
+            prioridadeClinica: 3,
+            protocolo: "MED-2026-0099",
+            nomePaciente: "Maria Silva",
+            token: "fake-intake-token-us14",
+          }),
+        );
+      });
+
+      await page.goto(`${localhostOrigin}/fila`);
+      await page.getByRole("button", { name: /ativar biometria deste aparelho/i }).click();
+      await expect(page.getByText(/biometria ativada com sucesso neste aparelho/i)).toBeVisible();
+      expect(registeredCredentialId.length).toBeGreaterThan(0);
+
+      // Agora testa Login em 1 Toque em /otp usando a credencial virtual recém-registrada
+      await page.route("**/api/v1/auth/patient/webauthn/authenticate/options", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            challenge: "dGVzdC1hdXRoLWNoYWxsZW5nZS11czE0LTAwMg",
+            rpId: "localhost",
+            allowCredentials: [{ id: registeredCredentialId, type: "public-key" }],
+            timeout: 60000,
+            userVerification: "preferred",
+          }),
+        });
+      });
+
+      await page.route("**/api/v1/auth/patient/webauthn/authenticate/verify", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            access_token: "fake-webauthn-jwt-e2e",
+            token_type: "bearer",
+            expires_in: 3600,
+            paciente_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
+            role: "PACIENTE",
+            atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b99",
+          }),
+        });
+      });
+
+      await page.evaluate(() => localStorage.removeItem("medisync_session"));
+      await page.goto(`${localhostOrigin}/otp`);
+      await page.getByRole("button", { name: /entrar com biometria do aparelho/i }).click();
+
+      await page.waitForURL("**/fila");
+      await expect(page.getByRole("heading", { name: /sala de espera virtual/i })).toBeVisible();
+      await expect(page.getByText(/2º na fila/i)).toBeVisible();
+    } finally {
+      await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId }).catch(() => {});
+    }
+  });
 });

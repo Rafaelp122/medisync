@@ -1,6 +1,6 @@
 """Data Transfer Objects for the authentication application layer."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from uuid import UUID
 
@@ -138,3 +138,91 @@ class AutenticarCadsusInputDTO(BaseModel):
     cns: str | None = None
     data_nascimento: date | None = None
     nome_mae: str | None = None
+
+
+@dataclass(frozen=True)
+class WebAuthnRpDTO:
+    """Relying Party metadata for WebAuthn registration options."""
+
+    name: str
+    id: str
+
+
+@dataclass(frozen=True)
+class WebAuthnUserDTO:
+    """User entity descriptor for WebAuthn credential creation."""
+
+    id: str
+    name: str
+    displayName: str
+
+
+@dataclass(frozen=True)
+class WebAuthnPubKeyCredParamDTO:
+    """Supported COSE algorithm descriptor for WebAuthn public keys."""
+
+    alg: int
+    type: str = "public-key"
+
+
+@dataclass(frozen=True)
+class WebAuthnRegisterOptionsDTO:
+    """Output DTO for WebAuthn passkey registration challenge options (US-14)."""
+
+    challenge: str
+    rp: WebAuthnRpDTO
+    user: WebAuthnUserDTO
+    pubKeyCredParams: list[WebAuthnPubKeyCredParamDTO]
+    timeout: int = 60000
+    attestation: str = "none"
+
+
+@dataclass(frozen=True)
+class WebAuthnRegisterVerifyCommand:
+    """Command encapsulating patient passkey attestation payload verification."""
+
+    organizacao_id: int
+    paciente_id: UUID
+    id: str
+    raw_id: str
+    response: dict[str, object] = field(default_factory=dict)
+    type: str = "public-key"
+    device_name: str | None = None
+
+
+@dataclass(frozen=True)
+class WebAuthnRegisterResultDTO:
+    """Output DTO confirming registered WebAuthn passkey credential."""
+
+    status: str
+    credencial_id: str
+
+
+@dataclass(frozen=True)
+class WebAuthnAllowCredentialDTO:
+    """Allowed credential descriptor returned in WebAuthn assertion options."""
+
+    id: str
+    type: str = "public-key"
+
+
+@dataclass(frozen=True)
+class WebAuthnAuthOptionsDTO:
+    """Output DTO for WebAuthn passkey authentication challenge options (US-14)."""
+
+    challenge: str
+    rpId: str
+    allowCredentials: list[WebAuthnAllowCredentialDTO]
+    timeout: int = 60000
+    userVerification: str = "preferred"
+
+
+@dataclass(frozen=True)
+class WebAuthnAuthVerifyCommand:
+    """Command encapsulating patient passkey assertion verification."""
+
+    organizacao_id: int
+    id: str
+    raw_id: str
+    response: dict[str, object] = field(default_factory=dict)
+    type: str = "public-key"

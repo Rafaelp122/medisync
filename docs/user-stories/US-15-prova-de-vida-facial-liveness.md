@@ -80,11 +80,11 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [ ] **Porta Arquitetural:** `LivenessVerificationPort` em `src/modules/consultation/application/ports/` (PEP 544 Protocol).
-- [ ] **Adaptadores:** `GovBrLivenessAdapter`, `DatavalidLivenessAdapter` e `MockLivenessAdapter` para testes em memória.
-- [ ] **Regra Farmacêutica:** Interceptador no `PrescriptionService` disparando a verificação apenas quando a classe do fármaco for Lista C1/C5 ou política da organização.
-- [ ] **Frontend:** Componente modal `<CameraLivenessCheck />` em `frontend/src/features/consultation/components/`.
-- [ ] **Testes:** Testes unitários com fakes de provedores de biometria e testes de integração com bloqueio de prescrição sem liveness prévio.
+- [x] **Porta Arquitetural:** `LivenessVerificationPort` em `src/modules/consultation/application/ports/liveness_verification_port.py:LivenessVerificationPort` (PEP 544 Protocol).
+- [x] **Adaptadores:** `MockLivenessAdapter`, `GovBrLivenessAdapter` e `DatavalidLivenessAdapter` em `src/modules/consultation/infrastructure/liveness_adapter.py`.
+- [x] **Regra Farmacêutica:** Gate em `src/modules/consultation/application/services/documento_service.py:DocumentoService` e rotas `/prescriptions/liveness/{challenge,verify}` em `src/modules/consultation/presentation/routers/consultation_router.py` exigindo hash aprovado ou exceção clínica na Lista C1 (`RECEITA_CONTROLE_ESPECIAL_C1` ou `controle_especial=True`).
+- [x] **Frontend:** Componente `<CameraLivenessCheck />` (`frontend/src/features/consultation/components/camera-liveness-check.tsx`), hooks em `frontend/src/features/consultation/api/use-liveness-check.ts` e trava integrada em `frontend/src/features/consultation/components/prescription-builder.tsx`.
+- [x] **Testes:** `tests/unit/test_prescription_liveness.py` (spoofing, fluxo completo, contingência) e `frontend/src/features/consultation/tests/camera-liveness-check.test.tsx` (Vitest + RTL + MSW v2).
 
 ---
 

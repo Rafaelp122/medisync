@@ -19,6 +19,11 @@ from src.modules.consultation.application.ports.livekit_media_port import (
     build_participant_identity,
     build_room_name,
 )
+from src.modules.consultation.application.ports.liveness_verification_port import (
+    LivenessChallengeDTO,
+    LivenessVerificationPort,
+    LivenessVerificationResultDTO,
+)
 from src.modules.consultation.application.ports.pdf_generator_port import (
     DocumentoItemPDFDTO,
     DocumentoPDFPayload,
@@ -46,6 +51,9 @@ __all__ = [
     "DocumentoPDFPayload",
     "ICPBrasilSignerPort",
     "LiveKitMediaPort",
+    "LivenessChallengeDTO",
+    "LivenessVerificationPort",
+    "LivenessVerificationResultDTO",
     "PDFGeneratorPort",
     "ProducaoAmbulatorialPort",
     "SignatureMetadataDTO",

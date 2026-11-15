@@ -67,7 +67,7 @@ async def test_onboarding_fase_1_happy_path_under_45s(
     data = cast("dict[str, object]", res.json())
     assert "paciente_id" in data
     assert "token" in data
-    assert data["status"] == "TRIADO_AGUARDANDO_ELEGIBILIDADE"
+    assert data["status"] == "APTO_PARA_CHAMADA"
     assert data["is_novo_paciente"] is True
 
     # Validate intake token integrity and claims

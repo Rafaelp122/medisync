@@ -148,6 +148,9 @@ async def test_validation_portal_documento_nao_assinado(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={
             "tipo_documento": "ATESTADO_MEDICO",
+            "justificativa_tempo_inferior": (
+                "Quadro clínico agudo compatível com repouso domiciliar imediato."
+            ),
             "itens": [
                 {
                     "medicamento": "Repouso Médico",

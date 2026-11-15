@@ -38,6 +38,9 @@ from src.modules.consultation.application.ports.icp_brasil_signer_port import (
 from src.modules.consultation.application.ports.livekit_media_port import (
     LiveKitMediaPort,
 )
+from src.modules.consultation.application.ports.liveness_verification_port import (
+    LivenessVerificationPort,
+)
 from src.modules.consultation.application.ports.pdf_generator_port import (
     PDFGeneratorPort,
 )
@@ -72,6 +75,9 @@ from src.modules.consultation.infrastructure.document_directory_sql import (
     SqlDocumentDirectory,
 )
 from src.modules.consultation.infrastructure.livekit_adapter import LiveKitAdapter
+from src.modules.consultation.infrastructure.liveness_adapter import (
+    MockLivenessAdapter,
+)
 from src.modules.consultation.infrastructure.memory_signed_cache import (
     MemorySignedCache,
 )
@@ -295,6 +301,11 @@ def get_document_directory(session: DbSessionDep) -> DocumentDirectoryPort:
         return SqlDocumentDirectory(session)
 
 
+def get_liveness_verifier() -> LivenessVerificationPort:
+    """Resolve adaptador ativo para prova de vida facial (US-15)."""
+    return MockLivenessAdapter()
+
+
 def get_documento_service(session: DbSessionDep) -> DocumentoService:
     """Build DocumentoService owning emitir/compilar/assinar canonical keys."""
     return DocumentoService(
@@ -306,6 +317,7 @@ def get_documento_service(session: DbSessionDep) -> DocumentoService:
         atendimento_reader=get_atendimento_reader(session),
         directory=get_document_directory(session),
         audit_trail=SqlAuditTrailAdapter(session),
+        liveness_verifier=get_liveness_verifier(),
     )
 
 
@@ -378,6 +390,7 @@ def build_pep_service_for_session(
             atendimento_reader=reader,
             directory=directory,
             audit_trail=audit,
+            liveness_verifier=get_liveness_verifier(),
         )
     )
     ev_svc = (

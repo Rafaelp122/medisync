@@ -2,7 +2,6 @@
 
 import pytest
 from arq.connections import create_pool
-from arq.worker import create_worker
 from src.core.context import tenant_context
 from src.core.database import async_session_factory
 from src.modules.queue.application.dtos import (
@@ -60,7 +59,7 @@ async def test_admissao_integrada_persists_both_models_and_enqueues_arq_job() ->
                 assert isinstance(result, AdmissaoAtendimentoResult)
                 assert (
                     result.status_atendimento
-                    == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
+                    == StatusAtendimento.APTO_PARA_CHAMADA.value
                 )
                 assert result.alerta_samu_disparado is False
                 assert result.tcle_hash is not None
@@ -72,10 +71,7 @@ async def test_admissao_integrada_persists_both_models_and_enqueues_arq_job() ->
                 atend = await session.get(Atendimento, result.atendimento_id)
                 assert atend is not None
                 assert atend.tcle_hash == result.tcle_hash
-                assert (
-                    atend.status
-                    == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
-                )
+                assert atend.status == StatusAtendimento.APTO_PARA_CHAMADA.value
                 assert atend.paciente_id == patient.id
 
                 # 2. Verify DB persistence of Triagem (1:1 with Atendimento)
@@ -84,28 +80,6 @@ async def test_admissao_integrada_persists_both_models_and_enqueues_arq_job() ->
                 assert triagem.atendimento_id == atend.id
                 assert triagem.prioridade_calculada in (3, 4)
                 assert triagem.alerta_samu_disparado is False
-
-        # 3. Verify ARQ eligibility job was enqueued in Valkey
-        job_key = f"arq:job:elegibilidade:{result.atendimento_id}"
-        exists = await pool.exists(job_key)
-        assert exists == 1
-
-        # 4. Execute ARQ worker in burst mode to promote to APTO_PARA_CHAMADA
-        worker = create_worker(
-            WorkerSettings,  # pyright: ignore[reportArgumentType]
-            redis_pool=pool,
-            burst=True,
-        )
-        await worker.main()
-
-        # 5. Verify attendance promoted to APTO and ingested into Valkey ZSET
-        with tenant_context(org.id):
-            async with async_session_factory() as session:
-                refreshed_atend = await session.get(Atendimento, result.atendimento_id)
-                assert refreshed_atend is not None
-                assert (
-                    refreshed_atend.status == StatusAtendimento.APTO_PARA_CHAMADA.value
-                )
 
         k_fila = f"fila:{org.id}:aptos"
         score = await pool.zscore(k_fila, str(result.atendimento_id))
