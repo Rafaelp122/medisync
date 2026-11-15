@@ -123,9 +123,11 @@ async def test_solicitar_otp_paciente_nao_encontrado(
     )
 
     dados = SolicitarOtpInputDTO(telefone="11987654321")
-    with pytest.raises(PacienteNaoEncontradoError):
-        await service.solicitar_otp(organizacao_id=1, dados=dados)
+    output = await service.solicitar_otp(organizacao_id=1, dados=dados)
 
+    assert output.mensagem == "Código de verificação enviado com sucesso."
+    assert output.expira_em_segundos == 300
+    assert output.codigo_debug is None
     assert len(fake_sms.sent_otps) == 0
 
 

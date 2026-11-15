@@ -93,6 +93,9 @@ class RegistrarEvolucaoSOAPCommand:
     ia_sugestao_bruta: str | None = None
     ia_diff_modificacao: str | None = None
     ia_ratificada_pelo_medico: bool = True
+    identidade_verificada: bool = False
+    tipo_documento_verificado: str | None = None
+    justificativa_excecao_identidade: str | None = None
 
 
 @dataclass(frozen=True)

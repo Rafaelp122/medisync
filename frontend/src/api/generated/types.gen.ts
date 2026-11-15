@@ -783,6 +783,18 @@ export type EvolucaoSoapResponse = {
      */
     ia_ratificada_pelo_medico?: boolean;
     /**
+     * Identidade Verificada
+     */
+    identidade_verificada?: boolean;
+    /**
+     * Tipo Documento Verificado
+     */
+    tipo_documento_verificado?: string | null;
+    /**
+     * Justificativa Excecao Identidade
+     */
+    justificativa_excecao_identidade?: string | null;
+    /**
      * Registrado Em
      */
     registrado_em: string;
@@ -1759,6 +1771,24 @@ export type RegistrarSoapRequest = {
      */
     ia_ratificada_pelo_medico?: boolean;
     /**
+     * Identidade Verificada
+     *
+     * Confirmação visual da identidade do paciente conforme Resolução CFM nº 2.314/2022.
+     */
+    identidade_verificada?: boolean;
+    /**
+     * Tipo Documento Verificado
+     *
+     * Tipo de documento oficial exibido na câmera.
+     */
+    tipo_documento_verificado?: 'RG' | 'CNH' | 'CNS' | 'CPF_FOTO' | 'EXCECAO_CLINICA' | null;
+    /**
+     * Justificativa Excecao Identidade
+     *
+     * Justificativa clínica caso o paciente não possua documento no ato.
+     */
+    justificativa_excecao_identidade?: string | null;
+    /**
      * Organizacao Id
      *
      * Identificador da organização de saúde
@@ -2196,6 +2226,12 @@ export type VerificarOtpResponse = {
      * Papel do usuário autenticado no sistema
      */
     role?: string;
+    /**
+     * Atendimento Id
+     *
+     * ID do atendimento ativo do paciente (opcional para reconexão em /fila)
+     */
+    atendimento_id?: string | null;
 };
 
 export type HealthcheckHealthzGetData = {

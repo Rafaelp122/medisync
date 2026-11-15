@@ -10,6 +10,7 @@ import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { useChamarProximo } from "../api/use-chamar-proximo";
 import { useLiveKitToken } from "../api/use-livekit-token";
 import { usePainelTelemetria } from "../api/use-painel-telemetria";
+import type { CfmIdentityGateData } from "../schemas/consultation-schema";
 import { CfmIdentityGate } from "./cfm-identity-gate";
 import { FinalizeConsultationModal } from "./finalize-consultation-modal";
 import { MedicalRecordsPane } from "./medical-records-pane";
@@ -75,6 +76,7 @@ export function DoctorWorkstation({
   }, [onLogout, idleTimeoutMs]);
   const [atendimentoAtivo, setAtendimentoAtivo] = useState<ChamarProximoResponse | null>(null);
   const [identidadeVerificada, setIdentidadeVerificada] = useState(false);
+  const [dadosIdentidade, setDadosIdentidade] = useState<CfmIdentityGateData | null>(null);
   const [documentoPendente, setDocumentoPendente] = useState<DocumentoClinicoResponse | null>(null);
   const [isFinalizado, setIsFinalizado] = useState(false);
   const [modalFinalizarAberto, setModalFinalizarAberto] = useState(false);
@@ -98,6 +100,7 @@ export function DoctorWorkstation({
           if (data.alocado && data.atendimento_id) {
             setAtendimentoAtivo(data);
             setIdentidadeVerificada(false);
+            setDadosIdentidade(null);
             setDocumentoPendente(null);
             setIsFinalizado(false);
 
@@ -281,7 +284,10 @@ export function DoctorWorkstation({
             />
 
             <CfmIdentityGate
-              onVerificationChange={(verificado) => setIdentidadeVerificada(verificado)}
+              onVerificationChange={(verificado, data) => {
+                setIdentidadeVerificada(verificado);
+                setDadosIdentidade(verificado ? (data ?? null) : null);
+              }}
               isReadOnly={isFinalizado}
             />
           </section>
@@ -310,6 +316,7 @@ export function DoctorWorkstation({
               atendimentoId={atendimentoAtivo.atendimento_id}
               isReadOnly={isFinalizado}
               token={token}
+              dadosIdentidade={dadosIdentidade}
             />
 
             <PrescriptionBuilder

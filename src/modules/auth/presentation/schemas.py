@@ -203,6 +203,12 @@ class VerificarOtpResponse(BaseModel):
         description="Papel do usuário autenticado no sistema",
         examples=["PACIENTE"],
     )
+    atendimento_id: UUID | None = Field(
+        default=None,
+        description=(
+            "ID do atendimento ativo do paciente (opcional para reconexão em /fila)"
+        ),
+    )
 
 
 class AutenticarCadsusRequest(AutenticarCadsusInputDTO, BaseModel):

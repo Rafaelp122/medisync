@@ -130,6 +130,9 @@ class EvolucaoService:
                 ia_sugestao_bruta=command.ia_sugestao_bruta,
                 ia_diff_modificacao=diff_ia,
                 ia_ratificada_pelo_medico=command.ia_ratificada_pelo_medico,
+                identidade_verificada=command.identidade_verificada,
+                tipo_documento_verificado=command.tipo_documento_verificado,
+                justificativa_excecao_identidade=command.justificativa_excecao_identidade,
             )
 
             await self._session.flush()
@@ -176,6 +179,9 @@ class EvolucaoService:
             ia_sugestao_bruta=command.ia_sugestao_bruta,
             ia_diff_modificacao=diff_ia,
             ia_ratificada_pelo_medico=command.ia_ratificada_pelo_medico,
+            identidade_verificada=command.identidade_verificada,
+            tipo_documento_verificado=command.tipo_documento_verificado,
+            justificativa_excecao_identidade=command.justificativa_excecao_identidade,
         )
         self._session.add(evolucao)
         try:
@@ -207,6 +213,9 @@ class EvolucaoService:
                 ia_sugestao_bruta=command.ia_sugestao_bruta,
                 ia_diff_modificacao=diff_ia,
                 ia_ratificada_pelo_medico=command.ia_ratificada_pelo_medico,
+                identidade_verificada=command.identidade_verificada,
+                tipo_documento_verificado=command.tipo_documento_verificado,
+                justificativa_excecao_identidade=command.justificativa_excecao_identidade,
             )
             await self._session.flush()
             if self._audit_trail is not None:

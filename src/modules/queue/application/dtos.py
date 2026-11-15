@@ -125,6 +125,7 @@ class AdmissaoAtendimentoCommand:
     cota_diaria_maxima: int | None = 300
     cpf: str | None = None
     cns: str | None = None
+    ip_origem: str | None = None
 
 
 @dataclass(frozen=True)

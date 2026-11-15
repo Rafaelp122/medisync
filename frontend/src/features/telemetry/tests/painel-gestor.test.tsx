@@ -62,6 +62,22 @@ describe("PainelGestor Integration Tests (RF-10, US-13, ACR SUS, RN06)", () => {
       http.get("*/api/v1/telemetria/config-plantao", () => {
         return HttpResponse.json(mockConfigData);
       }),
+      http.put("*/api/v1/telemetria/config-plantao", () => {
+        return HttpResponse.json(mockConfigData);
+      }),
+      http.get("*/api/v1/ambulatory/producao", () => {
+        return HttpResponse.json({
+          items: [],
+          total: 0,
+          competencia: "202611",
+          organizacao_id: 1,
+          page: 1,
+          size: 50,
+        });
+      }),
+      http.get("*/api/v1/ambulatory/producao/exportar", () => {
+        return HttpResponse.text("01#BPA#MOCK", { status: 200 });
+      }),
     );
   });
 
@@ -166,5 +182,86 @@ describe("PainelGestor Integration Tests (RF-10, US-13, ACR SUS, RN06)", () => {
     await user.click(btnSair);
 
     expect(handleLogout).toHaveBeenCalledTimes(1);
+  });
+
+  it("IT-PANEL-06: Atualiza política do plantão e fator alpha de backpressure via formulário (US-12)", async () => {
+    let payloadRecebido: Record<string, unknown> | null = null;
+
+    server.use(
+      http.put("*/api/v1/telemetria/config-plantao", async ({ request }) => {
+        payloadRecebido = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          ...mockConfigData,
+          medicos_ativos_planejados: 4,
+          alpha_backpressure: "1.28",
+        });
+      }),
+    );
+
+    renderWithProviders(<PainelGestor gestorNome="Dra. Mariana Santos" />);
+
+    const medicosInput = await screen.findByLabelText(/médicos ativos planejados/i);
+    const alphaInput = screen.getByLabelText(/fator alpha backpressure/i);
+
+    const user = userEvent.setup();
+    await user.clear(medicosInput);
+    await user.type(medicosInput, "4");
+    await user.clear(alphaInput);
+    await user.type(alphaInput, "1.28");
+
+    await user.click(screen.getByRole("button", { name: /salvar política do plantão/i }));
+
+    await waitFor(() => {
+      expect(payloadRecebido).toMatchObject({
+        medicos_ativos_planejados: 4,
+        alpha_backpressure: "1.28",
+      });
+      expect(screen.getByText(/política do plantão atualizada com sucesso/i)).toBeInTheDocument();
+    });
+  });
+
+  it("IT-PANEL-07: Lista produção ambulatorial SUS BPA-I e executa exportação .txt (US-11)", async () => {
+    let exportarCompetencia: string | null = null;
+
+    server.use(
+      http.get("*/api/v1/ambulatory/producao", () => {
+        return HttpResponse.json({
+          items: [
+            {
+              atendimento_id: "018f3a5b-0000-7000-8000-000000000099",
+              cnes: "2269988",
+              codigo_sigtap: "03.01.01.025-0",
+              carater_atendimento: "02",
+              consolidado_em: "2026-11-15T12:00:00Z",
+            },
+          ],
+          total: 1,
+          competencia: "202611",
+          organizacao_id: 1,
+          page: 1,
+          size: 50,
+        });
+      }),
+      http.get("*/api/v1/ambulatory/producao/exportar", ({ request }) => {
+        const url = new URL(request.url);
+        exportarCompetencia = url.searchParams.get("competencia");
+        return HttpResponse.text("01#2269988#202611#0301010250", { status: 200 });
+      }),
+    );
+
+    renderWithProviders(<PainelGestor gestorNome="Dra. Mariana Santos" />);
+
+    expect(await screen.findByText("03.01.01.025-0")).toBeInTheDocument();
+    expect(screen.getByText("1 registros")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /exportar bpa-i \(\.txt\)/i }));
+
+    await waitFor(() => {
+      expect(exportarCompetencia).toBe("202611");
+      expect(
+        screen.getByText(/arquivo bpa-i da competência 202611 exportado/i),
+      ).toBeInTheDocument();
+    });
   });
 });

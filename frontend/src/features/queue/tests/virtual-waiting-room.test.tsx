@@ -321,4 +321,49 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
       expect(getByRole("alertdialog")).toBeInTheDocument();
     });
   });
+
+  it("IT-WAIT-09: Permite regularizar elegibilidade pendente e promove paciente para fila ativa (US-05)", async () => {
+    let statusAtual = "TRIADO_AGUARDANDO_ELEGIBILIDADE";
+    let regularizarCalled = false;
+
+    server.use(
+      http.get("*/api/v1/fila/posicao/:atendimentoId", () => {
+        return HttpResponse.json({
+          ...MOCK_POSICAO_RESPONSE,
+          status: statusAtual,
+        });
+      }),
+      http.post("*/api/v1/fila/atendimentos/:atendimentoId/regularizar", () => {
+        regularizarCalled = true;
+        statusAtual = "AGUARDANDO_ATENDIMENTO";
+        return HttpResponse.json({
+          atendimento_id: MOCK_ATENDIMENTO_ID,
+          promovido: true,
+          status: "AGUARDANDO_ATENDIMENTO",
+          score: 1500,
+          tipo_contingencia: "REGULARIZACAO_ELEGIBILIDADE",
+          mensagem: "Atendimento regularizado e promovido para fila ativa.",
+        });
+      }),
+    );
+
+    const { findByRole, queryByRole } = renderWithProviders(
+      <VirtualWaitingRoom session={MOCK_SESSION} />,
+    );
+
+    const regularizarButton = await findByRole("button", {
+      name: /regularizar elegibilidade agora/i,
+    });
+    expect(regularizarButton).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(regularizarButton);
+
+    await waitFor(() => {
+      expect(regularizarCalled).toBe(true);
+      expect(
+        queryByRole("button", { name: /regularizar elegibilidade agora/i }),
+      ).not.toBeInTheDocument();
+    });
+  });
 });

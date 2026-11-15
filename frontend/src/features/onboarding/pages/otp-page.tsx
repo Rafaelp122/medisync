@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import type { VerificarOtpResponse } from "@/api/generated/types.gen";
@@ -13,6 +13,7 @@ import {
 import { startSafeViewTransition } from "@/lib/view-transitions";
 
 export function OtpPage() {
+  const navigate = useNavigate();
   const [session, setSession] = useState<StoredPatientSession | null>(() => getStoredSession());
 
   const handleOtpAuthenticated = (data: VerificarOtpResponse) => {
@@ -21,11 +22,15 @@ export function OtpPage() {
       role: data.role ?? "PACIENTE",
       pacienteId: data.paciente_id,
       token: data.access_token,
+      atendimentoId: data.atendimento_id ?? undefined,
     };
     saveStoredSession(newSession);
     startSafeViewTransition(() => {
       setSession(newSession);
     });
+    if (data.atendimento_id) {
+      void navigate({ to: "/fila" });
+    }
   };
 
   const handleEncerrarSessao = () => {

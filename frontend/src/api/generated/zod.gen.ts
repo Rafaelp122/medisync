@@ -236,6 +236,9 @@ export const zEvolucaoSoapResponse = z.object({
     ia_sugestao_bruta: z.string().nullish(),
     ia_diff_modificacao: z.string().nullish(),
     ia_ratificada_pelo_medico: z.boolean().optional().default(true),
+    identidade_verificada: z.boolean().optional().default(false),
+    tipo_documento_verificado: z.string().nullish(),
+    justificativa_excecao_identidade: z.string().nullish(),
     registrado_em: z.iso.datetime(),
     finalizado_em: z.iso.datetime().nullish(),
     is_finalizado: z.boolean()
@@ -613,6 +616,15 @@ export const zRegistrarSoapRequest = z.object({
     ia_sugestao_bruta: z.string().nullish(),
     ia_diff_modificacao: z.string().nullish(),
     ia_ratificada_pelo_medico: z.boolean().optional().default(true),
+    identidade_verificada: z.boolean().optional().default(false),
+    tipo_documento_verificado: z.enum([
+        'RG',
+        'CNH',
+        'CNS',
+        'CPF_FOTO',
+        'EXCECAO_CLINICA'
+    ]).nullish(),
+    justificativa_excecao_identidade: z.string().max(500).nullish(),
     organizacao_id: z.int().nullish()
 });
 
@@ -811,7 +823,8 @@ export const zVerificarOtpResponse = z.object({
     token_type: z.string().optional().default('bearer'),
     expires_in: z.int(),
     paciente_id: z.uuid(),
-    role: z.string().optional().default('PACIENTE')
+    role: z.string().optional().default('PACIENTE'),
+    atendimento_id: z.uuid().nullish()
 });
 
 /**

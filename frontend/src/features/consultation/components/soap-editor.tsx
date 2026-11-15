@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useSalvarSoap, useSoapEvolucao } from "../api/use-soap-evolucao";
 import {
+  type CfmIdentityGateData,
   type SoapFormData,
   type SoapInputFormData,
   soapSchema,
@@ -19,6 +20,7 @@ export interface SoapEditorProps {
   atendimentoId: string;
   isReadOnly?: boolean;
   token?: string;
+  dadosIdentidade?: CfmIdentityGateData | null;
 }
 
 /**
@@ -26,7 +28,12 @@ export interface SoapEditorProps {
  * Garante imutabilidade pós-encerramento conforme CFM nº 1.821/2007 e RN06.
  * Regras: RF-07, US-09.
  */
-export function SoapEditor({ atendimentoId, isReadOnly = false, token }: SoapEditorProps) {
+export function SoapEditor({
+  atendimentoId,
+  isReadOnly = false,
+  token,
+  dadosIdentidade,
+}: SoapEditorProps) {
   const { data: soapExistente, isLoading: isLoadingSoap } = useSoapEvolucao(atendimentoId, token);
   const { mutate: salvarSoap, isPending: isSaving } = useSalvarSoap(atendimentoId);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
@@ -69,6 +76,9 @@ export function SoapEditor({ atendimentoId, isReadOnly = false, token }: SoapEdi
         exame_fisico_virtual: formData.exame_fisico_virtual || null,
         cid10_principal: formData.cid10_principal ? formData.cid10_principal.toUpperCase() : null,
         conduta: formData.conduta,
+        identidade_verificada: dadosIdentidade?.identidade_verificada ?? false,
+        tipo_documento_verificado: dadosIdentidade?.tipo_documento_apresentado ?? null,
+        justificativa_excecao_identidade: dadosIdentidade?.justificativa_excecao ?? null,
       },
       {
         onSuccess: () => {

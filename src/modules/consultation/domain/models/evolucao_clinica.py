@@ -74,6 +74,15 @@ class EvolucaoClinica(Base):
     ia_ratificada_pelo_medico: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
     )
+    identidade_verificada: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    tipo_documento_verificado: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+    justificativa_excecao_identidade: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
     registrado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -100,6 +109,9 @@ class EvolucaoClinica(Base):
         ia_sugestao_bruta: str | None = None,
         ia_diff_modificacao: str | None = None,
         ia_ratificada_pelo_medico: bool = True,
+        identidade_verificada: bool = False,
+        tipo_documento_verificado: str | None = None,
+        justificativa_excecao_identidade: str | None = None,
         registrado_em: datetime | None = None,
         finalizado_em: datetime | None = None,
         id: UUID | None = None,
@@ -137,6 +149,18 @@ class EvolucaoClinica(Base):
             else None
         )
 
+        clean_tipo_doc = (
+            tipo_documento_verificado.strip().upper()
+            if tipo_documento_verificado and tipo_documento_verificado.strip()
+            else None
+        )
+        clean_justificativa = (
+            justificativa_excecao_identidade.strip()
+            if justificativa_excecao_identidade
+            and justificativa_excecao_identidade.strip()
+            else None
+        )
+
         super().__init__(
             id=id or uuid7(),
             organizacao_id=organizacao_id,
@@ -152,6 +176,9 @@ class EvolucaoClinica(Base):
             ia_sugestao_bruta=ia_sugestao_bruta,
             ia_diff_modificacao=ia_diff_modificacao,
             ia_ratificada_pelo_medico=ia_ratificada_pelo_medico,
+            identidade_verificada=identidade_verificada,
+            tipo_documento_verificado=clean_tipo_doc,
+            justificativa_excecao_identidade=clean_justificativa,
             registrado_em=registrado_em or datetime.now(UTC),
             finalizado_em=finalizado_em,
         )
@@ -188,6 +215,9 @@ class EvolucaoClinica(Base):
         ia_sugestao_bruta: str | None = None,
         ia_diff_modificacao: str | None = None,
         ia_ratificada_pelo_medico: bool | None = None,
+        identidade_verificada: bool | None = None,
+        tipo_documento_verificado: str | None = None,
+        justificativa_excecao_identidade: str | None = None,
     ) -> None:
         """Atualiza a anotação SOAP enquanto a consulta estiver em andamento (RN06).
 
@@ -238,6 +268,20 @@ class EvolucaoClinica(Base):
             self.ia_diff_modificacao = ia_diff_modificacao
         if ia_ratificada_pelo_medico is not None:
             self.ia_ratificada_pelo_medico = ia_ratificada_pelo_medico
+        if identidade_verificada is not None:
+            self.identidade_verificada = identidade_verificada
+        if tipo_documento_verificado is not None:
+            self.tipo_documento_verificado = (
+                tipo_documento_verificado.strip().upper()
+                if tipo_documento_verificado.strip()
+                else None
+            )
+        if justificativa_excecao_identidade is not None:
+            self.justificativa_excecao_identidade = (
+                justificativa_excecao_identidade.strip()
+                if justificativa_excecao_identidade.strip()
+                else None
+            )
         self.registrado_em = datetime.now(UTC)
 
     def validar_pode_excluir(self, status_atendimento: str | None = None) -> None:

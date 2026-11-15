@@ -78,6 +78,9 @@ async def salvar_evolucao_soap(
         ia_sugestao_bruta=request.ia_sugestao_bruta,
         ia_diff_modificacao=request.ia_diff_modificacao,
         ia_ratificada_pelo_medico=request.ia_ratificada_pelo_medico,
+        identidade_verificada=request.identidade_verificada,
+        tipo_documento_verificado=request.tipo_documento_verificado,
+        justificativa_excecao_identidade=request.justificativa_excecao_identidade,
     )
     evolucao = await service.salvar_evolucao_soap(command)
 

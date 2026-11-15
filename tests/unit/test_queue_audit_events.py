@@ -109,6 +109,52 @@ async def test_admitir_paciente_records_admissao_audit_event(
 
 
 @pytest.mark.asyncio
+async def test_admitir_paciente_propaga_ip_origem_para_auditoria(
+    fake_valkey: FakeValkey,
+    fake_audit_trail: FakeAuditTrail,
+) -> None:
+    org_id = 1
+    paciente_id = uuid4()
+    tcle_hash = "e" * 64
+
+    fake_session = FakeAsyncSession()
+    mock_triage = MagicMock()
+    mock_triage.avaliar_risco = AsyncMock(
+        return_value=DummyTriageEvaluation(
+            prioridade_clinica=PrioridadeClinica.POUCO_URGENTE,
+            alerta_samu_disparado=False,
+            tcle_hash=tcle_hash,
+            tcle_texto="Termo de Consentimento Livre e Esclarecido",
+        )
+    )
+    mock_triage.registrar_triagem = AsyncMock(return_value=uuid4())
+
+    fila_service = FilaService(
+        valkey=cast("Any", fake_valkey),
+        db_session=cast("AsyncSession", fake_session),
+        triage_port=mock_triage,
+        audit_trail=fake_audit_trail,
+    )
+
+    cmd = AdmissaoAtendimentoCommand(
+        organizacao_id=org_id,
+        paciente_id=paciente_id,
+        queixa_principal="Odinofagia",
+        sintomas=["odinofagia"],
+        escala_dor=2,
+        tcle_texto="Termo de Consentimento Livre e Esclarecido",
+        tcle_hash=tcle_hash,
+        ip_origem="192.168.10.25",
+    )
+
+    await fila_service.admitir_paciente(cmd)
+
+    events = fake_audit_trail.get_events_by_type("ADMISSAO_PACIENTE")
+    assert len(events) == 1
+    assert events[0]["ip_origem"] == "192.168.10.25"
+
+
+@pytest.mark.asyncio
 async def test_admitir_atendimento_apto_records_elegibilidade_confirmada_audit_event(
     fake_valkey: FakeValkey,
     fake_audit_trail: FakeAuditTrail,

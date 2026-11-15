@@ -126,6 +126,7 @@ class VerificarOtpOutputDTO(BaseModel):
     expires_in: int
     paciente_id: UUID
     role: str = "PACIENTE"
+    atendimento_id: UUID | None = None
 
 
 class AutenticarCadsusInputDTO(BaseModel):

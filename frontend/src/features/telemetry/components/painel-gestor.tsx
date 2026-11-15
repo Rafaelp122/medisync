@@ -6,8 +6,10 @@ import { formatarTempoEstimado } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import { useConfigPlantao, useTelemetriaPainel } from "../api/use-telemetria-painel";
 import { AcrTriageDistributionGrid } from "./painel/acr-triage-distribution-grid";
+import { ConfigPlantaoCard } from "./painel/config-plantao-card";
 import { MedicosTmaCard } from "./painel/medicos-tma-card";
 import { PainelHeader } from "./painel/painel-header";
+import { ProducaoBpaCard } from "./painel/producao-bpa-card";
 import { TaxasOperacionaisCard } from "./painel/taxas-operacionais-card";
 
 export interface PainelGestorProps {
@@ -114,7 +116,11 @@ export function PainelGestor({
             </div>
             {percentualCota !== null && (
               <div className="space-y-1">
-                <Progress value={percentualCota} className="h-1.5" />
+                <Progress
+                  value={percentualCota}
+                  aria-label="Percentual da cota diária utilizada"
+                  className="h-1.5"
+                />
                 <span className="text-[10px] text-muted-foreground block text-right">
                   {percentualCota}% da cota utilizada
                 </span>
@@ -185,6 +191,12 @@ export function PainelGestor({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
         <TaxasOperacionaisCard painel={painel} />
         <MedicosTmaCard painel={painel} />
+      </div>
+
+      {/* Seção 4: Parametrização de Plantão (US-12) e Produção Ambulatorial SUS BPA-I (US-11) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+        <ConfigPlantaoCard config={config} token={token} />
+        <ProducaoBpaCard token={token} />
       </div>
     </div>
   );

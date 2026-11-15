@@ -298,11 +298,10 @@ class PatientAuthService:
             cpf=clean_cpf,
         )
         if paciente is None:
-            tel_mask = _mascarar_telefone(clean_telefone)
-            raise PacienteNaoEncontradoError(
-                f"Paciente com telefone '{tel_mask}' não encontrado na "
-                f"organização '{organizacao_id}'. Inicie o acolhimento para "
-                "cadastrar-se."
+            return SolicitarOtpOutputDTO(
+                mensagem="Código de verificação enviado com sucesso.",
+                expira_em_segundos=OTP_TTL_SECONDS,
+                codigo_debug=None,
             )
 
         # 3. Generate cryptographically secure 6-digit OTP

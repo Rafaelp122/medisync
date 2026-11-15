@@ -209,6 +209,7 @@ class FilaService:
                     "prioridade_clinica": triage_eval.prioridade_clinica,
                     "triagem_id": str(triagem_id),
                 },
+                ip_origem=command.ip_origem,
             )
 
         await self._db_session.commit()
@@ -307,6 +308,25 @@ class FilaService:
         )
         return await self.ingressar_fila(ing_cmd)
 
+    async def _tentar_alocar_candidato(
+        self,
+        command: AdquirirProximoPacienteCommand,
+        candidate_uuid: UUID,
+    ) -> AlocacaoChamadaResult:
+        """Tenta executar alocação atômica para o candidato atual."""
+        if self._alocacao_service is None:
+            raise RuntimeError(
+                "AlocacaoChamadaService não configurado para aquisição de "
+                f"pacientes na organização '{command.organizacao_id}'."
+            )
+        alocar_cmd = AlocarChamadaCommand(
+            organizacao_id=command.organizacao_id,
+            medico_id=command.medico_id,
+            atendimento_id=candidate_uuid,
+            ttl_segundos=command.ttl_segundos,
+        )
+        return await self._alocacao_service.alocar_chamada(alocar_cmd)
+
     async def adquirir_proximo_paciente(
         self,
         command: AdquirirProximoPacienteCommand,
@@ -339,18 +359,7 @@ class FilaService:
             candidate_uuid = UUID(candidate_id_str)
 
             try:
-                alocar_cmd = AlocarChamadaCommand(
-                    organizacao_id=command.organizacao_id,
-                    medico_id=command.medico_id,
-                    atendimento_id=candidate_uuid,
-                    ttl_segundos=command.ttl_segundos,
-                )
-                if self._alocacao_service is None:
-                    raise RuntimeError(
-                        "AlocacaoChamadaService não configurado para "
-                        "aquisição de pacientes."
-                    )
-                return await self._alocacao_service.alocar_chamada(alocar_cmd)
+                return await self._tentar_alocar_candidato(command, candidate_uuid)
             except MedicoOcupadoError:
                 # Doctor is already locked with an active call -> fail immediately
                 logger.warning(
@@ -439,46 +448,46 @@ class FilaService:
 
         if (
             atendimento.status
-            == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
+            != StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
         ):
-            estado_anterior = str(atendimento.status)
-            atendimento.promover_para_apto()
-            if self._audit_trail is not None:
-                payload: dict[str, object] = {"canal": "ARQ_WORKER"}
-                if codigo_autorizacao is not None:
-                    payload["codigo_autorizacao"] = codigo_autorizacao
-                await self._audit_trail.record_event(
-                    organizacao_id=organizacao_id,
-                    atendimento_id=atendimento_id,
-                    ator_tipo=AtorTipo.SISTEMA,
-                    ator_papel=AtorPapel.WORKER_ARQ,
-                    tipo_evento="ELEGIBILIDADE_CONFIRMADA",
-                    ator_id=None,
-                    estado_anterior=estado_anterior,
-                    novo_estado=str(atendimento.status),
-                    tcle_hash=_safe_tcle_hash(atendimento),
-                    payload=payload,
-                )
-            await self._db_session.commit()
-            await self._db_session.refresh(atendimento)
-
             ts_base = atendimento.data_entrada_fila or atendimento.criado_em
             score = calcular_score(atendimento.prioridade_clinica, ts_base)
-            k_fila = f"fila:{organizacao_id}:aptos"
-            await self._valkey.zadd(k_fila, {str(atendimento_id): score})  # pyright: ignore[reportUnknownMemberType]
-            logger.info(
-                "Attendance %s promoted to APTO and ingested into %s with score=%d",
-                atendimento_id,
-                k_fila,
-                score,
+            return AdmissaoAptoResult(
+                promovido=False, status=str(atendimento.status), score=score
             )
-            return AdmissaoAptoResult(promovido=True, status="aprovado", score=score)
+
+        estado_anterior = str(atendimento.status)
+        atendimento.promover_para_apto()
+        if self._audit_trail is not None:
+            payload: dict[str, object] = {"canal": "ARQ_WORKER"}
+            if codigo_autorizacao is not None:
+                payload["codigo_autorizacao"] = codigo_autorizacao
+            await self._audit_trail.record_event(
+                organizacao_id=organizacao_id,
+                atendimento_id=atendimento_id,
+                ator_tipo=AtorTipo.SISTEMA,
+                ator_papel=AtorPapel.WORKER_ARQ,
+                tipo_evento="ELEGIBILIDADE_CONFIRMADA",
+                ator_id=None,
+                estado_anterior=estado_anterior,
+                novo_estado=str(atendimento.status),
+                tcle_hash=_safe_tcle_hash(atendimento),
+                payload=payload,
+            )
+        await self._db_session.commit()
+        await self._db_session.refresh(atendimento)
 
         ts_base = atendimento.data_entrada_fila or atendimento.criado_em
         score = calcular_score(atendimento.prioridade_clinica, ts_base)
-        return AdmissaoAptoResult(
-            promovido=False, status=str(atendimento.status), score=score
+        k_fila = f"fila:{organizacao_id}:aptos"
+        await self._valkey.zadd(k_fila, {str(atendimento_id): score})  # pyright: ignore[reportUnknownMemberType]
+        logger.info(
+            "Attendance %s promoted to APTO and ingested into %s with score=%d",
+            atendimento_id,
+            k_fila,
+            score,
         )
+        return AdmissaoAptoResult(promovido=True, status="aprovado", score=score)
 
     async def resolver_ring_timeout(
         self,

@@ -50,6 +50,26 @@ class RegistrarSOAPRequest(BaseModel):
         default=True,
         description="Ratificação obrigatória pelo médico sob CFM nº 2.454/2026",
     )
+    identidade_verificada: bool = Field(
+        default=False,
+        description=(
+            "Confirmação visual da identidade do paciente conforme Resolução "
+            "CFM nº 2.314/2022."
+        ),
+    )
+    tipo_documento_verificado: (
+        Literal["RG", "CNH", "CNS", "CPF_FOTO", "EXCECAO_CLINICA"] | None
+    ) = Field(
+        default=None,
+        description="Tipo de documento oficial exibido na câmera.",
+    )
+    justificativa_excecao_identidade: str | None = Field(
+        default=None,
+        max_length=500,
+        description=(
+            "Justificativa clínica caso o paciente não possua documento no ato."
+        ),
+    )
     organizacao_id: int | None = Field(
         default=None,
         description="Identificador da organização de saúde",
@@ -75,6 +95,9 @@ class EvolucaoSOAPResponse(BaseModel):
     ia_sugestao_bruta: str | None = None
     ia_diff_modificacao: str | None = None
     ia_ratificada_pelo_medico: bool = True
+    identidade_verificada: bool = False
+    tipo_documento_verificado: str | None = None
+    justificativa_excecao_identidade: str | None = None
     registrado_em: datetime
     finalizado_em: datetime | None = None
     is_finalizado: bool
