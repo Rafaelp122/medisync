@@ -1,8 +1,7 @@
-import fs from "node:fs";
-import path from "node:path";
 import { render, screen } from "@testing-library/react";
 import React from "react";
 import { describe, expect, it } from "vitest";
+import cssContent from "../../globals.css?raw";
 import { Badge } from "./badge";
 
 describe("Badge Component & WCAG 2.1 AA Contrast Compliance", () => {
@@ -47,9 +46,6 @@ describe("Badge Component & WCAG 2.1 AA Contrast Compliance", () => {
   });
 
   it("IT-BADGE-04: valida conformidade matemática de contraste WCAG 2.1 AA (>= 4.5:1) para tokens OKLCH lidos de globals.css", () => {
-    const cssPath = path.resolve(__dirname, "../../globals.css");
-    const cssContent = fs.readFileSync(cssPath, "utf-8");
-
     function extrairBlocoCss(css: string, seletor: string): Record<string, string> {
       const regex = new RegExp(`${seletor}\\s*\\{([^}]+(?:\\{[^}]*\\}[^}]*)*)\\}`);
       const match = css.match(regex);

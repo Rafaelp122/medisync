@@ -28,4 +28,5 @@ export const pioraClinicaFormSchema = zPioraClinicaRequest
     },
   );
 
-export type PioraClinicaFormData = z.infer<typeof pioraClinicaFormSchema>;
+export type PioraClinicaFormData = z.output<typeof pioraClinicaFormSchema>;
+export type PioraClinicaInputFormData = z.input<typeof pioraClinicaFormSchema>;

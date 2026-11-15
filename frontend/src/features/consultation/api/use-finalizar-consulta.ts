@@ -27,6 +27,7 @@ export function useFinalizarConsulta(
   const queryClient = useQueryClient();
 
   return useMutation<FinalizarConsultaResponse, ProblemDetailsError, FinalizarConsultaParams>({
+    ...options,
     mutationFn: async ({ token, ...body }: FinalizarConsultaParams = {}) => {
       try {
         const headers: Record<string, string> = {
@@ -55,6 +56,5 @@ export function useFinalizarConsulta(
       queryClient.invalidateQueries({ queryKey: ["soap", atendimentoId] });
       options?.onSuccess?.(data, variables, onMutateResult, context);
     },
-    ...options,
   });
 }
