@@ -38,24 +38,23 @@ docker logs medisync-app
 docker stop medisync-app
 ```
 
-### Inspeção interativa e depuração
-Caso precise depurar o ambiente de desenvolvimento de forma interativa com shell bash:
+### Inspeção interativa e operações em contêiner
+Para depurar ou executar tarefas dentro do contêiner `backend` em execução (`just up`):
 ```bash
-docker run --rm -it -v $(pwd):/app medisync:dev /bin/bash
+just docker-shell
 ```
-
-Dentro da sessão interativa, as dependências do ambiente virtual e os comandos da CLI estão disponíveis:
-```bash
-which python
-python -c "import granian; print(granian.__version__)"
-exit
-```
+Dentro ou fora da sessão interativa, as tarefas de banco e testes em contêiner possuem receitas dedicadas:
+- Migrações: `just docker-migrate`
+- Seed de desenvolvimento: `just docker-seed`
+- Testes unitários: `just docker-test`
+- Acompanhamento de logs: `just logs backend`
 
 ### Resolução de problemas comuns
 
-1. **Porta em uso (`bind: address already in use`):**
-   * Verifique se outra instância local da aplicação ou contêiner está ocupando a porta 8080 ou 8000:
-   * `lsof -i :8080` ou `docker ps`
+1. **Porta em uso (`bind: address already in use` / `os error 98`):**
+   * O comando `just up` inicia a topologia completa incluindo o contêiner `backend` na porta 8000.
+   * Para desenvolvimento local com `just backend-dev` ou `just dev`, suba apenas serviços essenciais com `just up-infra`.
+   * Caso o contêiner `backend` já esteja ativo: pare-o com `docker compose stop backend`.
 2. **Permissão de arquivos com usuário não-root:**
    * A imagem de produção roda sob UID 1000 (`appuser`). Ao mapear volumes locais para produção, garanta que os arquivos possuam permissão de leitura para o UID 1000.
 3. **Erros de importação no boot:**
@@ -65,6 +64,8 @@ exit
 
 - Impl: `Dockerfile:production`
 - Spec: `justfile:docker-build`
+- Spec: `justfile:docker-migrate`
+- Spec: `justfile:docker-shell`
 - Prova viva: `.github/workflows/ci.yml:docker-build`
 - Ver: `rg -n "docker-build" justfile`
 - Ver: `rg -n "FROM.*production" Dockerfile`

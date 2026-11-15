@@ -7,7 +7,7 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
 ## 1. Comandos e Tooling
 
 * **Gerenciador de Pacotes:** `uv` (Backend Python) e `pnpm` (Frontend TypeScript). Nunca use `pip install` ou `npm install` globais.
-* **Automação:** Sempre utilize os comandos do `justfile`:
+* **Automação:** Sempre utilize os comandos do `justfile` (organizados nativamente nos grupos `geral`, `infra`, `backend` e `frontend`, consultáveis via `just --groups` ou `just --group <grupo>`):
   * **Geral & Full-Stack:**
     * `just dev` — Inicia simultaneamente o backend (`granian`) e o frontend (`vite`) em modo desenvolvimento local integrado.
     * `just setup-dev` — Inicializa o ambiente de desenvolvimento completo (infra Docker, deps, migrações e validação rápida).
@@ -19,8 +19,15 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
     * `just up` — Inicia toda a topologia de contêineres em background (Postgres, Valkey, LiveKit, MinIO e Backend em contêiner).
     * `just up-infra` — Inicia exclusivamente os serviços essenciais de infraestrutura (Postgres, Valkey, LiveKit, MinIO).
     * `just down` — Para os contêineres locais.
-    * `just migrate` — Aplica migrações pendentes no banco relacional via Alembic.
+    * `just ps` — Exibe status e saúde dos contêineres.
+    * `just logs [serviço]` — Acompanha logs dos contêineres em tempo real (todos ou filtrado por serviço: ex. `just logs backend`).
     * `just clean-docker` — Remove contêineres e apaga volumes persistentes locais.
+    * `just migrate` — Aplica migrações pendentes no banco relacional via Alembic (host local).
+    * `just seed-dev` — Popula o banco de desenvolvimento local com tenant e pacientes de demonstração (host local).
+    * `just docker-migrate` — Executa migrações do Alembic dentro do contêiner backend (modo Docker puro).
+    * `just docker-seed` — Popula dados de desenvolvimento dentro do contêiner backend (modo Docker puro).
+    * `just docker-shell` — Abre terminal interativo bash dentro do contêiner backend.
+    * `just docker-test` — Executa testes unitários/arquiteturais dentro do contêiner backend.
   * **Backend (Python & FastAPI):**
     * `just install` — Sincroniza ambiente e dependências com `uv` (`uv sync`).
     * `just backend-dev` — Inicia o servidor backend localmente com hot-reload (Granian em `http://localhost:8000`).

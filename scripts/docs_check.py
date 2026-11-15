@@ -223,6 +223,8 @@ def main() -> int:
             )
             just_commands = re.findall(r"\bjust\s+([a-zA-Z0-9_-]+)\b", readme_text)
             for cmd in sorted(set(just_commands)):
+                if cmd.startswith("-"):
+                    continue
                 if cmd not in defined_recipes:
                     errors.append(
                         f"README.md: unknown just command 'just {cmd}' "
