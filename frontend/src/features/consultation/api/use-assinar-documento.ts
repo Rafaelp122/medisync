@@ -26,6 +26,7 @@ export function useAssinarDocumento(
   const queryClient = useQueryClient();
 
   return useMutation<AssinarDocumentoResponse, ProblemDetailsError, AssinarDocumentoParams>({
+    ...options,
     mutationFn: async ({ documento_id, payload, token }: AssinarDocumentoParams) => {
       try {
         const validatedPayload = assinarDocumentoSchema.parse(payload);
@@ -56,6 +57,5 @@ export function useAssinarDocumento(
       queryClient.invalidateQueries({ queryKey: ["prontuario", atendimentoId] });
       options?.onSuccess?.(data, variables, onMutateResult, context);
     },
-    ...options,
   });
 }

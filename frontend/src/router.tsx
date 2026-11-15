@@ -5,7 +5,9 @@ import {
   Navigate,
   type RouterHistory,
 } from "@tanstack/react-router";
+import type { LiveKitTokenResponse } from "@/api/generated/types.gen";
 import { defaultQueryClient } from "@/lib/query-client";
+import { isReducedMotionPreferred } from "@/lib/view-transitions";
 import { chamadaRoute } from "@/routes/chamada";
 import { filaRoute } from "@/routes/fila";
 import { gestorRoute } from "@/routes/gestor";
@@ -29,10 +31,6 @@ export const routeTree = rootRoute.addChildren([
   gestorRoute,
 ]);
 
-import { isReducedMotionPreferred } from "@/lib/view-transitions";
-
-export { isReducedMotionPreferred };
-
 export function createAppRouter(
   history?: RouterHistory,
   queryClient: QueryClient = defaultQueryClient,
@@ -48,8 +46,6 @@ export function createAppRouter(
 }
 
 export const router = createAppRouter();
-
-import type { LiveKitTokenResponse } from "@/api/generated/types.gen";
 
 declare module "@tanstack/react-router" {
   interface Register {

@@ -84,6 +84,7 @@ export function useSalvarSoap(
   const queryClient = useQueryClient();
 
   return useMutation<EvolucaoSoapResponse, ProblemDetailsError, SalvarSoapParams>({
+    ...options,
     mutationFn: async ({ token, ...body }: SalvarSoapParams) => {
       try {
         const validatedBody = soapSchema.parse(body);
@@ -113,6 +114,5 @@ export function useSalvarSoap(
       queryClient.invalidateQueries({ queryKey: ["prontuario", atendimentoId] });
       options?.onSuccess?.(data, variables, onMutateResult, context);
     },
-    ...options,
   });
 }
