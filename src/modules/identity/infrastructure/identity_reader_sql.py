@@ -167,6 +167,10 @@ class SqlIdentityReader(IdentityReaderPort):
         organizacao_id: int,
         paciente_id: UUID,
     ) -> PacienteAuthLookupDTO | None:
+        """Recupera dados civis do paciente por ID e organização para descritor FIDO2.
+
+        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        """
         stmt = select(Paciente).where(
             Paciente.organizacao_id == organizacao_id,
             Paciente.id == paciente_id,
@@ -192,24 +196,21 @@ class SqlIdentityReader(IdentityReaderPort):
         sign_count: int = 0,
         device_name: str | None = None,
     ) -> PacientePasskeyDTO:
+        """Persiste ou atualiza credencial Passkey WebAuthn do paciente sem commit.
+
+        O commit pertence ao caso de uso no Application Service (ADR-001 §6).
+        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        """
         stmt = select(PacientePasskey).where(
             PacientePasskey.organizacao_id == organizacao_id,
             PacientePasskey.credential_id == credential_id,
         )
         existing = (await self._session.execute(stmt)).scalar_one_or_none()
-        if existing is not None and existing.paciente_id != paciente_id:
-            raise ConflictError(
-                f"Credencial WebAuthn '{credential_id}' já vinculada a outro "
-                f"paciente na organização '{organizacao_id}'."
-            )
         if existing is not None:
-            existing.public_key = public_key
-            existing.atualizar_contador(sign_count)
-            if device_name and device_name.strip():
-                existing.device_name = device_name.strip()
-            await self._session.flush()
-            await self._session.commit()
-            return _to_passkey_data(existing)
+            raise ConflictError(
+                f"Credencial WebAuthn '{credential_id}' já registrada na "
+                f"organização '{organizacao_id}' (paciente '{existing.paciente_id}')."
+            )
 
         passkey = PacientePasskey(
             organizacao_id=organizacao_id,
@@ -221,7 +222,6 @@ class SqlIdentityReader(IdentityReaderPort):
         )
         self._session.add(passkey)
         await self._session.flush()
-        await self._session.commit()
         return _to_passkey_data(passkey)
 
     async def buscar_passkey_por_credencial(
@@ -229,6 +229,10 @@ class SqlIdentityReader(IdentityReaderPort):
         organizacao_id: int,
         credential_id: str,
     ) -> PacientePasskeyDTO | None:
+        """Localiza credencial Passkey ativa por organização e credential_id.
+
+        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        """
         stmt = select(PacientePasskey).where(
             PacientePasskey.organizacao_id == organizacao_id,
             PacientePasskey.credential_id == credential_id,
@@ -243,6 +247,10 @@ class SqlIdentityReader(IdentityReaderPort):
         organizacao_id: int,
         paciente_id: UUID,
     ) -> Sequence[PacientePasskeyDTO]:
+        """Lista todas as Passkeys registradas pelo paciente no tenant.
+
+        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        """
         stmt = (
             select(PacientePasskey)
             .where(
@@ -253,6 +261,30 @@ class SqlIdentityReader(IdentityReaderPort):
         )
         rows = (await self._session.execute(stmt)).scalars().all()
         return [_to_passkey_data(r) for r in rows]
+
+    async def atualizar_sign_count_passkey(
+        self,
+        organizacao_id: int,
+        credential_id: str,
+        novo_sign_count: int,
+    ) -> PacientePasskeyDTO:
+        """Atualiza o contador monotônico de assinatura FIDO2 após autenticação válida.
+
+        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        """
+        stmt = select(PacientePasskey).where(
+            PacientePasskey.organizacao_id == organizacao_id,
+            PacientePasskey.credential_id == credential_id,
+        )
+        passkey = (await self._session.execute(stmt)).scalar_one_or_none()
+        if passkey is None:
+            raise NotFoundError(
+                f"Credencial Passkey '{credential_id}' não encontrada na "
+                f"organização '{organizacao_id}'; esperado credential_id registrado."
+            )
+        passkey.atualizar_contador(novo_sign_count)
+        await self._session.flush()
+        return _to_passkey_data(passkey)
 
 
 def _to_passkey_data(passkey: PacientePasskey) -> PacientePasskeyData:

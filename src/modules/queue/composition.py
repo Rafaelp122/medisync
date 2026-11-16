@@ -36,6 +36,9 @@ from src.modules.queue.application.services.controle_admissao_service import (
     ControleAdmissaoService,
 )
 from src.modules.queue.application.services.fila_service import FilaService
+from src.modules.queue.infrastructure.active_attendance_reader_sql import (
+    SqlActiveAttendanceReader,
+)
 from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 from src.modules.queue.infrastructure.notifications import (
     LoggingNotificationAdapter,
@@ -247,3 +250,13 @@ def get_patient_queue_ownership_checker() -> PatientQueueOwnershipChecker:
 PatientQueueOwnershipCheckerDep = Annotated[
     PatientQueueOwnershipChecker, Depends(get_patient_queue_ownership_checker)
 ]
+
+
+def build_active_attendance_reader_for_session(
+    session: AsyncSession,
+) -> SqlActiveAttendanceReader:
+    """Instancia leitor SQL de atendimento ativo para módulos consumidores (auth).
+
+    Regras: ADR-001 e docs/user-stories/US-02-autenticacao-passwordless-otp.md.
+    """
+    return SqlActiveAttendanceReader(session=session)

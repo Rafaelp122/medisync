@@ -166,6 +166,15 @@ class WebAuthnPubKeyCredParamDTO:
 
 
 @dataclass(frozen=True)
+class WebAuthnAuthenticatorSelectionDTO:
+    """Authenticator selection criteria enforcing discoverable credentials (US-14)."""
+
+    residentKey: str = "required"
+    requireResidentKey: bool = True
+    userVerification: str = "preferred"
+
+
+@dataclass(frozen=True)
 class WebAuthnRegisterOptionsDTO:
     """Output DTO for WebAuthn passkey registration challenge options (US-14)."""
 
@@ -175,6 +184,9 @@ class WebAuthnRegisterOptionsDTO:
     pubKeyCredParams: list[WebAuthnPubKeyCredParamDTO]
     timeout: int = 60000
     attestation: str = "none"
+    authenticatorSelection: WebAuthnAuthenticatorSelectionDTO = (
+        WebAuthnAuthenticatorSelectionDTO()
+    )
 
 
 @dataclass(frozen=True)

@@ -139,6 +139,15 @@ class IdentityReaderPort(Protocol):
         """List all registered WebAuthn passkeys for a patient within a tenant."""
         ...
 
+    async def atualizar_sign_count_passkey(
+        self,
+        organizacao_id: int,
+        credential_id: str,
+        novo_sign_count: int,
+    ) -> PacientePasskeyDTO:
+        """Update monotonic FIDO2 signature counter for a registered passkey."""
+        ...
+
 
 __all__ = [
     "IdentityReaderPort",

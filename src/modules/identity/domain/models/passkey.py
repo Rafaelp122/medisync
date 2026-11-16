@@ -119,5 +119,9 @@ class PacientePasskey(Base):
                 f"Contador de assinatura inválido: '{novo_sign_count}'; "
                 f"esperado inteiro >= 0 (atual: {self.sign_count})."
             )
-        if novo_sign_count > self.sign_count:
-            self.sign_count = novo_sign_count
+        if self.sign_count > 0 and novo_sign_count <= self.sign_count:
+            raise ValidationError(
+                f"Contador de assinatura regressivo ou estagnado: '{novo_sign_count}'; "
+                f"esperado > {self.sign_count} para prevenir clonagem de autenticador."
+            )
+        self.sign_count = novo_sign_count

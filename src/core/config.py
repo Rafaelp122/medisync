@@ -101,6 +101,14 @@ class CommonSettings(BaseSettings):
     NOTIFICATION_RATE_LIMIT_REFILL_RATE: float = 0.05
     NOTIFICATION_RATE_LIMIT_TTL_SECONDS: int = 3600
 
+    # --- WebAuthn / FIDO2 Passkeys (US-14 / ADR-005) ---
+    WEBAUTHN_RP_ID: str = "localhost"
+    WEBAUTHN_RP_NAME: str = "MediSync Express"
+    WEBAUTHN_ALLOWED_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
     # --- Clinical Documents & PDF Validation (CFM 2.314/2022) ---
     DOCUMENTS_VALIDATION_URL_PREFIX: str = "https://medisync.app/validar"
 
@@ -111,6 +119,11 @@ class CommonSettings(BaseSettings):
     PSC_VIDAAS_ENDPOINT: str = "https://api.vidaas.com.br"
     PSC_CLIENT_ID: str = "medisync-psc-client"
     PSC_CLIENT_SECRET: str = "dev-psc-secret"
+
+    # --- Facial Liveness (US-15 / Portaria 344/98 Lista C1/C5) ---
+    LIVENESS_PROVIDER: Literal["valkey_sandbox", "mock", "govbr", "datavalid"] = (
+        "valkey_sandbox"
+    )
 
     @computed_field  # pyright: ignore[reportUntypedFunctionDecorator]
     @property
@@ -171,6 +184,7 @@ class TestSettings(CommonSettings):
     VALIDATION_RATE_LIMIT_BACKEND: Literal["valkey", "memory"] = "memory"
     SIGNED_CACHE_BACKEND: Literal["valkey", "memory"] = "memory"
     TELEMETRY_CACHE_BACKEND: Literal["valkey", "memory"] = "memory"
+    LIVENESS_PROVIDER: Literal["valkey_sandbox", "mock", "govbr", "datavalid"] = "mock"
 
 
 class ProductionSettings(CommonSettings):
@@ -191,6 +205,9 @@ class ProductionSettings(CommonSettings):
     SIGNED_CACHE_BACKEND: Literal["valkey", "memory"] = "valkey"
     TELEMETRY_CACHE_BACKEND: Literal["valkey", "memory"] = "valkey"
     PSC_DEFAULT_PROVIDER: Literal["birdid", "safeid", "vidaas", "fake"] = "birdid"
+    LIVENESS_PROVIDER: Literal["valkey_sandbox", "mock", "govbr", "datavalid"] = "govbr"
+    WEBAUTHN_RP_ID: str = "medisync.app"
+    WEBAUTHN_ALLOWED_ORIGINS: list[str] = ["https://medisync.app"]
 
     @model_validator(mode="after")
     def validate_production_invariants(self) -> Self:
@@ -211,6 +228,24 @@ class ProductionSettings(CommonSettings):
             raise ValueError(
                 f"PSC_DEFAULT_PROVIDER '{self.PSC_DEFAULT_PROVIDER}' não pode ser "
                 "'fake' em produção/staging; esperados: birdid, safeid, vidaas."
+            )
+        if self.LIVENESS_PROVIDER in ("mock", "valkey_sandbox"):
+            raise ValueError(
+                f"LIVENESS_PROVIDER '{self.LIVENESS_PROVIDER}' não é permitido "
+                "em produção/staging; esperados: govbr, datavalid."
+            )
+        if self.WEBAUTHN_RP_ID.strip().lower() in ("", "localhost", "127.0.0.1"):
+            raise ValueError(
+                f"WEBAUTHN_RP_ID '{self.WEBAUTHN_RP_ID}' inválido em produção; "
+                "esperado domínio FQDN de produção (ex.: 'medisync.app')."
+            )
+        if not self.WEBAUTHN_ALLOWED_ORIGINS or any(
+            not origin.startswith("https://")
+            for origin in self.WEBAUTHN_ALLOWED_ORIGINS
+        ):
+            raise ValueError(
+                "WEBAUTHN_ALLOWED_ORIGINS deve listar origens HTTPS explícitas em "
+                "produção."
             )
         return self
 

@@ -404,3 +404,57 @@ async def test_autenticar_cadsus_filtro_por_nome_mae_com_multiplos_pacientes(
         nome_mae="maria aparecida da silva",
     )
     assert res.paciente_id == p2.id
+
+
+@pytest.mark.asyncio
+async def test_verificar_otp_sucesso_retorna_atendimento_ativo_quando_existente(
+    fake_identity_reader: FakeIdentityReader,
+    fake_sms: FakeSmsSenderAdapter,
+) -> None:
+    from src.modules.auth.application.ports.active_attendance_lookup_port import (
+        ActiveAttendanceLookupPort,
+    )
+
+    paciente = _make_mock_paciente()
+    fake_identity_reader.paciente = paciente
+    atendimento_ativo_id = uuid7()
+
+    class _FakeLookup(ActiveAttendanceLookupPort):
+        async def buscar_atendimento_ativo_paciente(
+            self, organizacao_id: int, paciente_id: UUID
+        ) -> UUID | None:
+            if organizacao_id == 1 and paciente_id == paciente.id:
+                return atendimento_ativo_id
+            return None
+
+    service = PatientAuthService(
+        identity_reader=fake_identity_reader,
+        sms_sender=fake_sms,
+        active_attendance_lookup=_FakeLookup(),
+    )
+    req_out = await service.solicitar_otp(
+        organizacao_id=1,
+        dados=SolicitarOtpInputDTO(telefone="11987654321"),
+    )
+    assert req_out.codigo_debug is not None
+    ver_out = await service.verificar_otp(
+        organizacao_id=1,
+        dados=VerificarOtpInputDTO(
+            telefone="11987654321",
+            codigo=req_out.codigo_debug,
+        ),
+    )
+    assert ver_out.atendimento_id == atendimento_ativo_id
+
+
+@pytest.mark.asyncio
+async def test_autenticar_cadsus_sem_cpf_e_sem_cns_interpola_valores_ofensivos(
+    fake_identity_reader: FakeIdentityReader,
+) -> None:
+    service = PatientAuthService(identity_reader=fake_identity_reader)
+    with pytest.raises(PacienteNaoEncontradoError, match="recebido cpf=None"):
+        await service.autenticar_cadsus_govbr(
+            organizacao_id=1,
+            cpf=None,
+            cns="   ",
+        )

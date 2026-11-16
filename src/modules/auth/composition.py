@@ -14,6 +14,9 @@ from src.core.audit import SqlAuditTrailAdapter
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.core.valkey import get_valkey_client
+from src.modules.auth.application.ports.active_attendance_lookup_port import (
+    ActiveAttendanceLookupPort,
+)
 from src.modules.auth.application.ports.auth_rate_limiter_port import (
     AuthRateLimiterPort,
 )
@@ -48,6 +51,9 @@ from src.modules.identity.application.ports.sms_sender_port import SmsSenderPort
 from src.modules.identity.composition import (
     build_identity_reader_sql_for_session,
     get_sms_sender,
+)
+from src.modules.queue.composition import (
+    build_active_attendance_reader_for_session,
 )
 
 
@@ -116,11 +122,15 @@ def build_patient_auth_service_for_session(
     valkey: Redis | None = None,
     sms_sender: SmsSenderPort | None = None,
     identity_reader: IdentityReaderPort | None = None,
+    active_attendance_lookup: ActiveAttendanceLookupPort | None = None,
 ) -> PatientAuthService:
     """Build PatientAuthService outside request scope (tests/worker tooling)."""
     settings = get_settings()
     reader = identity_reader or build_identity_reader_sql_for_session(session)
     sender = sms_sender or get_sms_sender()
+    attendance_lookup = (
+        active_attendance_lookup or build_active_attendance_reader_for_session(session)
+    )
     return PatientAuthService(
         identity_reader=reader,
         valkey_client=valkey,
@@ -129,6 +139,7 @@ def build_patient_auth_service_for_session(
         algorithm=settings.JWT_ALGORITHM,
         access_token_expire_minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
         is_debug=settings.DEBUG,
+        active_attendance_lookup=attendance_lookup,
     )
 
 
@@ -147,16 +158,25 @@ def build_patient_webauthn_service_for_session(
     session: AsyncSession,
     valkey: Redis | None = None,
     identity_reader: IdentityReaderPort | None = None,
+    active_attendance_lookup: ActiveAttendanceLookupPort | None = None,
 ) -> PatientWebAuthnService:
     """Build PatientWebAuthnService outside request scope (tests/tooling)."""
     settings = get_settings()
     reader = identity_reader or build_identity_reader_sql_for_session(session)
+    attendance_lookup = (
+        active_attendance_lookup or build_active_attendance_reader_for_session(session)
+    )
     return PatientWebAuthnService(
         jwt_secret=settings.JWT_SECRET_KEY,
         valkey_client=valkey,
         jwt_algorithm=settings.JWT_ALGORITHM,
         access_token_expire_minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
+        rp_id=settings.WEBAUTHN_RP_ID,
+        rp_name=settings.WEBAUTHN_RP_NAME,
+        allowed_origins=tuple(settings.WEBAUTHN_ALLOWED_ORIGINS),
+        allow_memory_fallback=(settings.ENVIRONMENT == "test"),
         identity_reader=reader,
+        active_attendance_lookup=attendance_lookup,
         audit_trail=SqlAuditTrailAdapter(session),
         session=session,
     )

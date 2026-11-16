@@ -269,6 +269,16 @@ class WebAuthnPubKeyCredParamSchema(BaseModel):
     type: str = "public-key"
 
 
+class WebAuthnAuthenticatorSelectionSchema(BaseModel):
+    """WebAuthn authenticator selection enforcing discoverable credentials."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    residentKey: str = "required"
+    requireResidentKey: bool = True
+    userVerification: str = "preferred"
+
+
 class WebAuthnRegisterOptionsResponse(BaseModel):
     """PublicKeyCredentialCreationOptions payload for passkey registration."""
 
@@ -280,6 +290,9 @@ class WebAuthnRegisterOptionsResponse(BaseModel):
     pubKeyCredParams: list[WebAuthnPubKeyCredParamSchema]
     timeout: int = 60000
     attestation: str = "none"
+    authenticatorSelection: WebAuthnAuthenticatorSelectionSchema = (
+        WebAuthnAuthenticatorSelectionSchema()
+    )
 
 
 class WebAuthnRegisterVerifyRequest(BaseModel):
