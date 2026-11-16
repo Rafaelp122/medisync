@@ -93,6 +93,9 @@ class RegistrarEvolucaoSOAPCommand:
     ia_sugestao_bruta: str | None = None
     ia_diff_modificacao: str | None = None
     ia_ratificada_pelo_medico: bool = True
+    identidade_verificada: bool = False
+    tipo_documento_verificado: str | None = None
+    justificativa_excecao_identidade: str | None = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +123,22 @@ class EmitirDocumentoClinicoCommand:
     chave_s3: str = ""
     sha256_hash: str = ""
     justificativa_tempo_inferior: str | None = None
+    liveness_verificacao_hash: str | None = None
+    justificativa_excecao_liveness: str | None = None
+
+
+@dataclass(frozen=True)
+class VerificarLivenessCommand:
+    """Command to verify active facial liveness frames for a consultation."""
+
+    atendimento_id: UUID
+    organizacao_id: int
+    ator_id: UUID
+    ator_papel: str
+    challenge_id: str
+    liveness_payload: str
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 @dataclass(frozen=True)

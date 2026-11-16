@@ -37,9 +37,10 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
         contentType: "application/json",
         body: JSON.stringify({
           token: "fake-livekit-room-token-e2e",
-          url: "wss://livekit.medisync.local",
-          room: `room-${MOCK_SESSION.atendimentoId}`,
-          ttl_seconds: 3600,
+          room_name: `org_1_atend_${MOCK_SESSION.atendimentoId}`,
+          participant_identity: "paciente_e2e",
+          server_url: "wss://livekit.medisync.local",
+          expires_in: 3600,
         }),
       });
     });
@@ -82,7 +83,7 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
       window.localStorage.setItem("medisync_session", JSON.stringify(sessionData));
     }, MOCK_SESSION);
 
-    await page.goto("/");
+    await page.goto("/fila");
 
     // Valida elementos principais da sala de espera
     await expect(page.getByRole("heading", { name: /sala de espera virtual/i })).toBeVisible();
@@ -91,7 +92,7 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
     );
     await expect(page.getByText(/2º na fila/i)).toBeVisible();
     await expect(page.getByText(/aproximadamente 10 minutos/i)).toBeVisible();
-    await expect(page.getByText(/urgente \(amarelo\)/i)).toBeVisible();
+    await expect(page.getByText(/amarelo: urgente/i)).toBeVisible();
 
     // Auditoria automatizada de acessibilidade WCAG 2.1 AA
     const accessibilityScanResults = await new AxeBuilder({ page })
@@ -127,7 +128,7 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
       window.localStorage.setItem("medisync_session", JSON.stringify(sessionData));
     }, MOCK_SESSION);
 
-    await page.goto("/");
+    await page.goto("/fila");
 
     // Modal de convocação médica visível
     const modal = page.getByRole("alertdialog");
@@ -160,7 +161,7 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
       window.localStorage.setItem("medisync_session", JSON.stringify(sessionData));
     }, MOCK_SESSION);
 
-    await page.goto("/");
+    await page.goto("/fila");
 
     // Clica em relatar piora
     await page.getByRole("button", { name: /relatar piora/i }).click();
@@ -179,7 +180,7 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
     await page.getByRole("button", { name: /enviar reavaliação/i }).click();
 
     // Prioridade e badge devem atualizar para Laranja
-    await expect(page.getByText(/muito urgente \(laranja\)/i)).toBeVisible();
+    await expect(page.getByText(/laranja: muito urgente/i)).toBeVisible();
   });
 
   test("E2E-QUEUE-04: Desistência Voluntária da Fila (RN06)", async ({ page }) => {
@@ -187,7 +188,7 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
       window.localStorage.setItem("medisync_session", JSON.stringify(sessionData));
     }, MOCK_SESSION);
 
-    await page.goto("/");
+    await page.goto("/fila");
 
     // Clica no link de desistência
     await page.getByRole("button", { name: /desistir do atendimento/i }).click();

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,7 +45,16 @@ export function QueuePositionCard({
   className,
 }: QueuePositionCardProps) {
   const [copiado, setCopiado] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prioridadeInfo = prioridadeClinica ? PRIORIDADE_LABELS[prioridadeClinica] : null;
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleCopyId = () => {
     if (!atendimentoId) return;
@@ -54,8 +63,14 @@ export function QueuePositionCard({
         navigator.clipboard.writeText(atendimentoId).catch(() => {});
       }
     } catch {}
+    if (copyTimerRef.current) {
+      clearTimeout(copyTimerRef.current);
+    }
     setCopiado(true);
-    setTimeout(() => setCopiado(false), 2000);
+    copyTimerRef.current = setTimeout(() => {
+      setCopiado(false);
+      copyTimerRef.current = null;
+    }, 2000);
   };
 
   return (

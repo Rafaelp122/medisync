@@ -1,11 +1,22 @@
-import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
+import {
+  type UseMutationOptions,
+  type UseQueryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { client, getActiveTenantId } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
+  atualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut,
   obterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGet,
   obterPainelTelemetriaApiV1TelemetriaPainelGet,
 } from "@/api/generated/sdk.gen";
-import type { ConfigPlantaoResponse, PainelTelemetriaResponse } from "@/api/generated/types.gen";
+import type {
+  ConfigPlantaoRequest,
+  ConfigPlantaoResponse,
+  PainelTelemetriaResponse,
+} from "@/api/generated/types.gen";
 
 /**
  * Hook headless TanStack Query para monitoramento do painel operacional da regulação municipal.
@@ -77,5 +88,43 @@ export function useConfigPlantao(
     },
     staleTime: 60000,
     ...options,
+  });
+}
+
+/**
+ * Hook headless de mutação para atualizar política operacional e parâmetros do plantão (US-12 / RF-09).
+ */
+export function useAtualizarConfigPlantao(
+  token?: string,
+  options?: UseMutationOptions<ConfigPlantaoResponse, ProblemDetailsError, ConfigPlantaoRequest>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation<ConfigPlantaoResponse, ProblemDetailsError, ConfigPlantaoRequest>({
+    ...options,
+    mutationFn: async (body: ConfigPlantaoRequest) => {
+      try {
+        const headers: Record<string, string> = {
+          "X-Tenant-ID": getActiveTenantId(),
+        };
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+
+        const response = await atualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut({
+          client,
+          body,
+          headers,
+          throwOnError: true,
+        });
+        return response.data;
+      } catch (err) {
+        throw toProblemDetailsError(err);
+      }
+    },
+    onSuccess: (data, variables, onMutateResult, context) => {
+      void queryClient.invalidateQueries({ queryKey: ["telemetria"] });
+      options?.onSuccess?.(data, variables, onMutateResult, context);
+    },
   });
 }

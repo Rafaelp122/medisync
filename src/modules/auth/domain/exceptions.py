@@ -160,6 +160,34 @@ class OtpTentativasExcedidasError(DomainError):
         self.retry_after_segundos = retry_after_segundos
 
 
+class WebAuthnChallengeInvalidoError(UnauthorizedError):
+    """Raised when WebAuthn challenge is missing, expired or mismatched."""
+
+    title = "Desafio WebAuthn Inválido ou Expirado"
+    code = "WEBAUTHN_CHALLENGE_INVALIDO"
+
+    def __init__(
+        self,
+        detail: str = (
+            "Desafio criptográfico WebAuthn ausente, expirado ou divergente."
+        ),
+    ) -> None:
+        super().__init__(detail, title=self.title, code=self.code)
+
+
+class PasskeyNaoEncontradaError(UnauthorizedError):
+    """Raised when presented WebAuthn credential is not bound to the organization."""
+
+    title = "Credencial Passkey Não Encontrada"
+    code = "PASSKEY_NAO_ENCONTRADA"
+
+    def __init__(
+        self,
+        detail: str = "Credencial biométrica WebAuthn não localizada na organização.",
+    ) -> None:
+        super().__init__(detail, title=self.title, code=self.code)
+
+
 __all__ = [
     "AuthError",
     "ContaBloqueadaError",
@@ -169,7 +197,9 @@ __all__ = [
     "OtpRateLimitExcedidoError",
     "OtpTentativasExcedidasError",
     "PacienteNaoEncontradoError",
+    "PasskeyNaoEncontradaError",
     "TokenExpiradoError",
     "TokenInvalidoError",
     "TokenRevogadoError",
+    "WebAuthnChallengeInvalidoError",
 ]

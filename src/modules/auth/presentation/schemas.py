@@ -203,6 +203,12 @@ class VerificarOtpResponse(BaseModel):
         description="Papel do usuário autenticado no sistema",
         examples=["PACIENTE"],
     )
+    atendimento_id: UUID | None = Field(
+        default=None,
+        description=(
+            "ID do atendimento ativo do paciente (opcional para reconexão em /fila)"
+        ),
+    )
 
 
 class AutenticarCadsusRequest(AutenticarCadsusInputDTO, BaseModel):
@@ -233,3 +239,118 @@ class AutenticarCadsusRequest(AutenticarCadsusInputDTO, BaseModel):
         description="Nome completo da mãe para desambiguação",
         examples=["Maria da Silva"],
     )
+
+
+class WebAuthnRpSchema(BaseModel):
+    """WebAuthn Relying Party metadata."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    name: str
+    id: str
+
+
+class WebAuthnUserSchema(BaseModel):
+    """WebAuthn patient user handle descriptor."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    id: str
+    name: str
+    displayName: str
+
+
+class WebAuthnPubKeyCredParamSchema(BaseModel):
+    """Supported WebAuthn COSE key algorithm parameter."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    alg: int
+    type: str = "public-key"
+
+
+class WebAuthnAuthenticatorSelectionSchema(BaseModel):
+    """WebAuthn authenticator selection enforcing discoverable credentials."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    residentKey: str = "required"
+    requireResidentKey: bool = True
+    userVerification: str = "preferred"
+
+
+class WebAuthnRegisterOptionsResponse(BaseModel):
+    """PublicKeyCredentialCreationOptions payload for passkey registration."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    challenge: str
+    rp: WebAuthnRpSchema
+    user: WebAuthnUserSchema
+    pubKeyCredParams: list[WebAuthnPubKeyCredParamSchema]
+    timeout: int = 60000
+    attestation: str = "none"
+    authenticatorSelection: WebAuthnAuthenticatorSelectionSchema = (
+        WebAuthnAuthenticatorSelectionSchema()
+    )
+
+
+class WebAuthnRegisterVerifyRequest(BaseModel):
+    """WebAuthn registration credential attestation submitted by client browser."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(min_length=1, max_length=512)
+    rawId: str = Field(min_length=1, max_length=1024)
+    response: dict[str, object]
+    type: str = Field(default="public-key", max_length=32)
+    device_name: str | None = Field(default=None, max_length=128)
+
+
+class WebAuthnRegisterVerifyResponse(BaseModel):
+    """Confirmation payload returned after storing a WebAuthn passkey."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    status: str
+    credencial_id: str
+
+
+class WebAuthnAllowCredentialSchema(BaseModel):
+    """Permitted credential descriptor for WebAuthn assertion."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    id: str
+    type: str = "public-key"
+
+
+class WebAuthnAuthOptionsRequest(BaseModel):
+    """Optional patient filter when requesting WebAuthn authentication options."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    paciente_id: UUID | None = None
+
+
+class WebAuthnAuthOptionsResponse(BaseModel):
+    """PublicKeyCredentialRequestOptions payload for passkey login."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    challenge: str
+    rpId: str
+    allowCredentials: list[WebAuthnAllowCredentialSchema]
+    timeout: int = 60000
+    userVerification: str = "preferred"
+
+
+class WebAuthnAuthVerifyRequest(BaseModel):
+    """WebAuthn assertion credential submitted by client browser during login."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(min_length=1, max_length=512)
+    rawId: str = Field(min_length=1, max_length=1024)
+    response: dict[str, object]
+    type: str = Field(default="public-key", max_length=32)

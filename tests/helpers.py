@@ -29,7 +29,8 @@ from src.modules.queue.application.services.alocacao_service import (
 from src.modules.queue.application.services.fila_service import FilaService
 
 CLEAN_TABLES_SQL = text(
-    "TRUNCATE TABLE configuracoes_plantao, documento_itens, "
+    "TRUNCATE TABLE configuracoes_plantao, producoes_ambulatoriais, "
+    "paciente_passkeys, documento_itens, "
     "documentos_clinicos, evolucoes_clinicas, triagens, audit_events, "
     "atendimentos, dependentes, pacientes, profissionais, organizacoes, "
     "usuarios_credenciais CASCADE;"
@@ -53,6 +54,8 @@ DEFAULT_VALKEY_TEST_PATTERNS: tuple[str, ...] = (
     "otp:*",
     "ratelimit:otp:*",
     "telemetry:*",
+    "liveness:*",
+    "webauthn:*",
 )
 
 
@@ -123,6 +126,7 @@ def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
 
     audit_trail: Any = overrides.get("audit_trail")
     producao_port: Any = overrides.get("producao_port")
+    liveness_verifier: Any = overrides.get("liveness_verifier")
     documento_service: Any = overrides.get("documento_service")
     if documento_service is None:
         directory: Any = overrides.get("directory")
@@ -135,6 +139,7 @@ def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
             atendimento_reader=atendimento_reader,
             directory=directory,
             audit_trail=audit_trail,
+            liveness_verifier=liveness_verifier,
         )
     evolucao_service: Any = overrides.get("evolucao_service")
     if evolucao_service is None:

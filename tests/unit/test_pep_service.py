@@ -272,6 +272,7 @@ async def test_pep_service_finalizar_consulta_dispara_consolidacao_ambulatorial(
         anamnese="Paciente com tosse",
         conduta="Prescrito xarope",
         codigo_sigtap="03.01.01.025-0",
+        identidade_verificada=True,
     )
 
     fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
@@ -333,6 +334,7 @@ async def test_pep_service_finalizar_consulta_tolera_falha_na_producao() -> None
         anamnese="Paciente com febre",
         conduta="Prescrito antitermico",
         codigo_sigtap="03.01.01.025-0",
+        identidade_verificada=True,
     )
 
     fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
@@ -411,6 +413,7 @@ async def test_pep_warning_on_reader_obter_resumo_failure(
         medico_id=medico_id,
         anamnese="Paciente com dor",
         conduta="Orientação médica",
+        identidade_verificada=True,
     )
     fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
     fake_reader = FakeAtendimentoReader(
@@ -450,6 +453,7 @@ async def test_pep_warning_on_reader_concluir_atendimento_failure(
         medico_id=medico_id,
         anamnese="Paciente com febre",
         conduta="Prescrição",
+        identidade_verificada=True,
     )
     fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
     resumo = AtendimentoResumoDTO(
@@ -500,6 +504,7 @@ async def test_pep_warning_on_producao_failure_with_context(
         anamnese="Paciente com tosse",
         conduta="Xarope",
         codigo_sigtap="03.01.01.025-0",
+        identidade_verificada=True,
     )
     fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
     resumo = AtendimentoResumoDTO(
@@ -537,3 +542,30 @@ async def test_pep_warning_on_producao_failure_with_context(
     assert str(paciente_id) in caplog.text
     assert "03.01.01.025-0" in caplog.text
     assert "BPA-I service timeout" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_finalizar_consulta_bloqueia_sem_identidade_verificada_cfm() -> None:
+    """CFM 2.314/2022 forbids finalizing consultation without identity verification."""
+    from src.modules.consultation.domain.exceptions import ConsultaInvalidaError
+
+    atend_id = uuid4()
+    medico_id = uuid4()
+    evolucao = EvolucaoClinica(
+        organizacao_id=1,
+        atendimento_id=atend_id,
+        medico_id=medico_id,
+        anamnese="Cefaleia",
+        conduta="Analgesico",
+        identidade_verificada=False,
+    )
+    svc = _build_test_pep_service(session=FakeAsyncSession([FakeResult(evolucao)]))
+
+    with pytest.raises(ConsultaInvalidaError, match="identidade_verificada=False"):
+        await svc.finalizar_consulta(
+            FinalizarConsultaCommand(
+                atendimento_id=atend_id,
+                organizacao_id=1,
+                medico_id=medico_id,
+            )
+        )

@@ -236,6 +236,9 @@ export const zEvolucaoSoapResponse = z.object({
     ia_sugestao_bruta: z.string().nullish(),
     ia_diff_modificacao: z.string().nullish(),
     ia_ratificada_pelo_medico: z.boolean().optional().default(true),
+    identidade_verificada: z.boolean().optional().default(false),
+    tipo_documento_verificado: z.string().nullish(),
+    justificativa_excecao_identidade: z.string().nullish(),
     registrado_em: z.iso.datetime(),
     finalizado_em: z.iso.datetime().nullish(),
     is_finalizado: z.boolean()
@@ -333,6 +336,16 @@ export const zFinalizarConsultaResponse = z.object({
 });
 
 /**
+ * GeolocalizacaoLivenessSchema
+ *
+ * Optional geolocation metadata captured during liveness verification.
+ */
+export const zGeolocalizacaoLivenessSchema = z.object({
+    latitude: z.number().gte(-90).lte(90),
+    longitude: z.number().gte(-180).lte(180)
+});
+
+/**
  * ItemPrescricaoRequest
  *
  * Prescription medication item input.
@@ -356,6 +369,8 @@ export const zEmitirDocumentoRequest = z.object({
     chave_s3: z.string().nullish(),
     sha256_hash: z.string().nullish(),
     justificativa_tempo_inferior: z.string().nullish(),
+    liveness_verificacao_hash: z.string().max(128).nullish(),
+    justificativa_excecao_liveness: z.string().max(500).nullish(),
     organizacao_id: z.int().nullish()
 });
 
@@ -387,6 +402,8 @@ export const zDocumentoClinicoResponse = z.object({
     chave_s3: z.string(),
     sha256_hash: z.string().nullish(),
     justificativa_tempo_inferior: z.string().nullish(),
+    liveness_verificacao_hash: z.string().nullish(),
+    justificativa_excecao_liveness: z.string().nullish(),
     assinado_em: z.iso.datetime().nullish(),
     finalizado_em: z.iso.datetime().nullish(),
     is_finalizado: z.boolean(),
@@ -445,6 +462,40 @@ export const zLiveKitTokenResponse = z.object({
     participant_identity: z.string(),
     server_url: z.string(),
     expires_in: z.int()
+});
+
+/**
+ * LivenessChallengeResponse
+ *
+ * Challenge instructions for active facial liveness verification.
+ */
+export const zLivenessChallengeResponse = z.object({
+    challenge_id: z.string(),
+    instrucoes_movimento: z.array(z.string()),
+    timeout_segundos: z.int().optional().default(60)
+});
+
+/**
+ * LivenessVerifyRequest
+ *
+ * Liveness frames and challenge submission for controlled prescriptions.
+ */
+export const zLivenessVerifyRequest = z.object({
+    challenge_id: z.string().min(3).max(128),
+    liveness_payload: z.string().min(1).max(2000000),
+    geolocalizacao: zGeolocalizacaoLivenessSchema.nullish()
+});
+
+/**
+ * LivenessVerifyResponse
+ *
+ * Biometric liveness verification outcome with SHA-256 hash proof.
+ */
+export const zLivenessVerifyResponse = z.object({
+    status: z.string(),
+    liveness_score: z.number(),
+    verificacao_hash: z.string(),
+    validado_em: z.iso.datetime()
 });
 
 /**
@@ -613,6 +664,15 @@ export const zRegistrarSoapRequest = z.object({
     ia_sugestao_bruta: z.string().nullish(),
     ia_diff_modificacao: z.string().nullish(),
     ia_ratificada_pelo_medico: z.boolean().optional().default(true),
+    identidade_verificada: z.boolean().optional().default(false),
+    tipo_documento_verificado: z.enum([
+        'RG',
+        'CNH',
+        'CNS',
+        'CPF_FOTO',
+        'EXCECAO_CLINICA'
+    ]).nullish(),
+    justificativa_excecao_identidade: z.string().max(500).nullish(),
     organizacao_id: z.int().nullish()
 });
 
@@ -811,7 +871,136 @@ export const zVerificarOtpResponse = z.object({
     token_type: z.string().optional().default('bearer'),
     expires_in: z.int(),
     paciente_id: z.uuid(),
-    role: z.string().optional().default('PACIENTE')
+    role: z.string().optional().default('PACIENTE'),
+    atendimento_id: z.uuid().nullish()
+});
+
+/**
+ * WebAuthnAllowCredentialSchema
+ *
+ * Permitted credential descriptor for WebAuthn assertion.
+ */
+export const zWebAuthnAllowCredentialSchema = z.object({
+    id: z.string(),
+    type: z.string().optional().default('public-key')
+});
+
+/**
+ * WebAuthnAuthOptionsRequest
+ *
+ * Optional patient filter when requesting WebAuthn authentication options.
+ */
+export const zWebAuthnAuthOptionsRequest = z.object({
+    paciente_id: z.uuid().nullish()
+});
+
+/**
+ * WebAuthnAuthOptionsResponse
+ *
+ * PublicKeyCredentialRequestOptions payload for passkey login.
+ */
+export const zWebAuthnAuthOptionsResponse = z.object({
+    challenge: z.string(),
+    rpId: z.string(),
+    allowCredentials: z.array(zWebAuthnAllowCredentialSchema),
+    timeout: z.int().optional().default(60000),
+    userVerification: z.string().optional().default('preferred')
+});
+
+/**
+ * WebAuthnAuthVerifyRequest
+ *
+ * WebAuthn assertion credential submitted by client browser during login.
+ */
+export const zWebAuthnAuthVerifyRequest = z.object({
+    id: z.string().min(1).max(512),
+    rawId: z.string().min(1).max(1024),
+    response: z.record(z.string(), z.unknown()),
+    type: z.string().max(32).optional().default('public-key')
+});
+
+/**
+ * WebAuthnAuthenticatorSelectionSchema
+ *
+ * WebAuthn authenticator selection enforcing discoverable credentials.
+ */
+export const zWebAuthnAuthenticatorSelectionSchema = z.object({
+    residentKey: z.string().optional().default('required'),
+    requireResidentKey: z.boolean().optional().default(true),
+    userVerification: z.string().optional().default('preferred')
+});
+
+/**
+ * WebAuthnPubKeyCredParamSchema
+ *
+ * Supported WebAuthn COSE key algorithm parameter.
+ */
+export const zWebAuthnPubKeyCredParamSchema = z.object({
+    alg: z.int(),
+    type: z.string().optional().default('public-key')
+});
+
+/**
+ * WebAuthnRegisterVerifyRequest
+ *
+ * WebAuthn registration credential attestation submitted by client browser.
+ */
+export const zWebAuthnRegisterVerifyRequest = z.object({
+    id: z.string().min(1).max(512),
+    rawId: z.string().min(1).max(1024),
+    response: z.record(z.string(), z.unknown()),
+    type: z.string().max(32).optional().default('public-key'),
+    device_name: z.string().max(128).nullish()
+});
+
+/**
+ * WebAuthnRegisterVerifyResponse
+ *
+ * Confirmation payload returned after storing a WebAuthn passkey.
+ */
+export const zWebAuthnRegisterVerifyResponse = z.object({
+    status: z.string(),
+    credencial_id: z.string()
+});
+
+/**
+ * WebAuthnRpSchema
+ *
+ * WebAuthn Relying Party metadata.
+ */
+export const zWebAuthnRpSchema = z.object({
+    name: z.string(),
+    id: z.string()
+});
+
+/**
+ * WebAuthnUserSchema
+ *
+ * WebAuthn patient user handle descriptor.
+ */
+export const zWebAuthnUserSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    displayName: z.string()
+});
+
+/**
+ * WebAuthnRegisterOptionsResponse
+ *
+ * PublicKeyCredentialCreationOptions payload for passkey registration.
+ */
+export const zWebAuthnRegisterOptionsResponse = z.object({
+    challenge: z.string(),
+    rp: zWebAuthnRpSchema,
+    user: zWebAuthnUserSchema,
+    pubKeyCredParams: z.array(zWebAuthnPubKeyCredParamSchema),
+    timeout: z.int().optional().default(60000),
+    attestation: z.string().optional().default('none'),
+    authenticatorSelection: zWebAuthnAuthenticatorSelectionSchema.optional().default({
+        residentKey: 'required',
+        requireResidentKey: true,
+        userVerification: 'preferred'
+    })
 });
 
 /**
@@ -890,6 +1079,35 @@ export const zPostAuthPacienteCadsusBody = zAutenticarCadsusRequest;
  * Successful Response
  */
 export const zPostAuthPacienteCadsusResponse = zVerificarOtpResponse;
+
+/**
+ * Successful Response
+ */
+export const zPostAuthPatientWebauthnRegisterOptionsResponse = zWebAuthnRegisterOptionsResponse;
+
+export const zPostAuthPatientWebauthnRegisterVerifyBody = zWebAuthnRegisterVerifyRequest;
+
+/**
+ * Successful Response
+ */
+export const zPostAuthPatientWebauthnRegisterVerifyResponse = zWebAuthnRegisterVerifyResponse;
+
+/**
+ * Body
+ */
+export const zPostAuthPatientWebauthnAuthenticateOptionsBody = zWebAuthnAuthOptionsRequest.nullable();
+
+/**
+ * Successful Response
+ */
+export const zPostAuthPatientWebauthnAuthenticateOptionsResponse = zWebAuthnAuthOptionsResponse;
+
+export const zPostAuthPatientWebauthnAuthenticateVerifyBody = zWebAuthnAuthVerifyRequest;
+
+/**
+ * Successful Response
+ */
+export const zPostAuthPatientWebauthnAuthenticateVerifyResponse = zVerificarOtpResponse;
 
 export const zIntakeFase1ApiV1OnboardingFase1PostBody = zFase1Request;
 
@@ -1041,6 +1259,26 @@ export const zEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost
  * Successful Response
  */
 export const zEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostResponse = zDocumentoClinicoResponse;
+
+export const zSolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostPath = z.object({
+    atendimento_id: z.uuid()
+});
+
+/**
+ * Successful Response
+ */
+export const zSolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponse = zLivenessChallengeResponse;
+
+export const zVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostBody = zLivenessVerifyRequest;
+
+export const zVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostPath = z.object({
+    atendimento_id: z.uuid()
+});
+
+/**
+ * Successful Response
+ */
+export const zVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponse = zLivenessVerifyResponse;
 
 export const zFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostBody = zFinalizarConsultaRequest;
 

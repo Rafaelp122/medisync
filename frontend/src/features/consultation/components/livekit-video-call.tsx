@@ -2,17 +2,24 @@ import {
   LiveKitRoom,
   RoomAudioRenderer,
   useConnectionState,
+  useDataChannel,
   useLocalParticipant,
   useTracks,
   VideoTrack,
 } from "@livekit/components-react";
 import { ConnectionState, Track } from "livekit-client";
 import { Camera, CameraOff, Mic, MicOff, PhoneOff, ShieldCheck, Video } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import {
+  decodeLivenessMessage,
+  encodeLivenessMessage,
+  LIVENESS_DATA_TOPIC,
+  type LivenessChannelMessage,
+} from "../lib/liveness-channel";
 
 export interface LiveKitVideoCallProps {
   wsUrl?: string;
@@ -21,6 +28,10 @@ export interface LiveKitVideoCallProps {
   participantName?: string;
   remoteParticipantName?: string;
   onDisconnected?: () => void;
+  onLivenessMessage?: (message: LivenessChannelMessage) => void;
+  onRegisterLivenessSender?: (
+    sender: ((message: LivenessChannelMessage) => Promise<void>) | null,
+  ) => void;
   className?: string;
 }
 
@@ -69,15 +80,41 @@ function LiveKitRoomInner({
   remoteParticipantName = "Participante Remoto",
   participantName = "Você",
   onDisconnected,
+  onLivenessMessage,
+  onRegisterLivenessSender,
 }: {
   roomName?: string;
   remoteParticipantName?: string;
   participantName?: string;
   onDisconnected?: () => void;
+  onLivenessMessage?: (message: LivenessChannelMessage) => void;
+  onRegisterLivenessSender?: (
+    sender: ((message: LivenessChannelMessage) => Promise<void>) | null,
+  ) => void;
 }) {
   const connectionState = useConnectionState();
   const { isMicrophoneEnabled, isCameraEnabled, localParticipant } = useLocalParticipant();
   const tracks = useTracks([Track.Source.Camera]);
+  const onLivenessMessageRef = useRef(onLivenessMessage);
+  onLivenessMessageRef.current = onLivenessMessage;
+
+  const { send } = useDataChannel(LIVENESS_DATA_TOPIC, (msg) => {
+    const decoded = decodeLivenessMessage(msg.payload);
+    if (decoded) {
+      onLivenessMessageRef.current?.(decoded);
+    }
+  });
+
+  useEffect(() => {
+    if (!onRegisterLivenessSender) return;
+    const sender = async (message: LivenessChannelMessage) => {
+      await send(encodeLivenessMessage(message), { reliable: true });
+    };
+    onRegisterLivenessSender(sender);
+    return () => {
+      onRegisterLivenessSender(null);
+    };
+  }, [onRegisterLivenessSender, send]);
 
   const remoteTrack = tracks.find((t) => t.participant.identity !== localParticipant.identity);
   const localTrack = tracks.find((t) => t.participant.identity === localParticipant.identity);
@@ -207,14 +244,42 @@ function FallbackVideoCall({
   participantName = "Você",
   remoteParticipantName = "Participante Remoto",
   onDisconnected,
+  onLivenessMessage,
+  onRegisterLivenessSender,
 }: {
   roomName?: string;
   participantName?: string;
   remoteParticipantName?: string;
   onDisconnected?: () => void;
+  onLivenessMessage?: (message: LivenessChannelMessage) => void;
+  onRegisterLivenessSender?: (
+    sender: ((message: LivenessChannelMessage) => Promise<void>) | null,
+  ) => void;
 }) {
   const [micMuted, setMicMuted] = useState(false);
   const [camOff, setCamOff] = useState(false);
+  const onLivenessMessageRef = useRef(onLivenessMessage);
+  onLivenessMessageRef.current = onLivenessMessage;
+
+  useEffect(() => {
+    if (!onRegisterLivenessSender && !onLivenessMessageRef.current) return;
+    const channelName = roomName ? `${LIVENESS_DATA_TOPIC}:${roomName}` : LIVENESS_DATA_TOPIC;
+    const bc = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(channelName) : null;
+    if (bc) {
+      bc.onmessage = (event: MessageEvent<LivenessChannelMessage>) => {
+        if (event.data && typeof event.data === "object") {
+          onLivenessMessageRef.current?.(event.data);
+        }
+      };
+    }
+    onRegisterLivenessSender?.(async (message) => {
+      bc?.postMessage(message);
+    });
+    return () => {
+      onRegisterLivenessSender?.(null);
+      bc?.close();
+    };
+  }, [onRegisterLivenessSender, roomName]);
 
   return (
     <div className="flex flex-col h-full w-full">
@@ -324,6 +389,8 @@ export function LiveKitVideoCall({
   participantName = "Você",
   remoteParticipantName = "Participante Remoto",
   onDisconnected,
+  onLivenessMessage,
+  onRegisterLivenessSender,
   className,
 }: LiveKitVideoCallProps) {
   const isWebRTCSupported =
@@ -354,6 +421,8 @@ export function LiveKitVideoCall({
             participantName={participantName}
             remoteParticipantName={remoteParticipantName}
             onDisconnected={onDisconnected}
+            onLivenessMessage={onLivenessMessage}
+            onRegisterLivenessSender={onRegisterLivenessSender}
           />
         </LiveKitRoom>
       ) : (
@@ -362,6 +431,8 @@ export function LiveKitVideoCall({
           participantName={participantName}
           remoteParticipantName={remoteParticipantName}
           onDisconnected={onDisconnected}
+          onLivenessMessage={onLivenessMessage}
+          onRegisterLivenessSender={onRegisterLivenessSender}
         />
       )}
     </Card>

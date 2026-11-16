@@ -7,6 +7,7 @@ Owns emitir/compilar/assinar for DocumentoClinico using the canonical
 import asyncio
 import contextlib
 import hashlib
+import hmac
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -20,6 +21,7 @@ from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
     DocumentoAssinadoResult,
     EmitirDocumentoClinicoCommand,
+    VerificarLivenessCommand,
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
@@ -32,6 +34,11 @@ from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
     ICPBrasilSignerPort,
 )
+from src.modules.consultation.application.ports.liveness_verification_port import (
+    LivenessChallengeDTO,
+    LivenessVerificationPort,
+    LivenessVerificationResultDTO,
+)
 from src.modules.consultation.application.ports.pdf_generator_port import (
     DocumentoItemPDFDTO,
     DocumentoPDFPayload,
@@ -43,8 +50,12 @@ from src.modules.consultation.application.ports.signed_cache_port import (
 from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
+    ConsultaInvalidaError,
     DocumentoClinicoNaoEncontradoError,
+    LivenessChallengeInvalidoError,
     PrescricaoFisicaObrigatoriaError,
+    ProvaDeVidaObrigatoriaError,
+    SpoofingFacialDetectadoError,
 )
 from src.modules.consultation.domain.models import (
     DocumentoClinico,
@@ -53,12 +64,30 @@ from src.modules.consultation.domain.models import (
     TipoDocumentoClinico,
 )
 from src.modules.consultation.domain.models._substances import (
+    is_substancia_lista_c5,
     validar_substancia_permitida_telemedicina,
 )
 from src.modules.consultation.domain.s3_keys import build_signed_document_key
 
 _PROHIBITED_DOC_TYPES = frozenset({"NOTIFICACAO_RECEITA_A", "NOTIFICACAO_RECEITA_B"})
 _STATUS_TERMINAIS = frozenset({"CONCLUIDO", "PACIENTE_AUSENTE", "CANCELADO_PACIENTE"})
+
+
+def _resolve_liveness_actor(ator_papel: str) -> tuple[str, str]:
+    """Resolve AtorTipo e AtorPapel canônicos para trilha de auditoria US-15."""
+    normalized = ator_papel.strip().upper()
+    if normalized == AtorPapel.PACIENTE.value:
+        return AtorTipo.PACIENTE.value, AtorPapel.PACIENTE.value
+    if normalized == AtorPapel.ADMIN_GLOBAL.value:
+        return AtorTipo.PROFISSIONAL.value, AtorPapel.ADMIN_GLOBAL.value
+    return AtorTipo.PROFISSIONAL.value, AtorPapel.MEDICO.value
+
+
+def _is_valid_liveness_hash(value: str) -> bool:
+    """Validate SHA-256 liveness verification proof format."""
+    if value.startswith("sha256_") and len(value) >= 16:
+        return True
+    return len(value) == 64 and all(c in "0123456789abcdefABCDEF" for c in value)
 
 
 class DocumentoService:
@@ -74,6 +103,7 @@ class DocumentoService:
         atendimento_reader: AtendimentoReaderPort | None = None,
         directory: DocumentDirectoryPort | None = None,
         audit_trail: AuditTrailPort | None = None,
+        liveness_verifier: LivenessVerificationPort | None = None,
     ) -> None:
         self._session = session
         self._pdf_generator = pdf_generator
@@ -83,6 +113,135 @@ class DocumentoService:
         self._atendimento_reader = atendimento_reader
         self._directory = directory
         self._audit_trail = audit_trail
+        self._liveness_verifier = liveness_verifier
+
+    async def solicitar_desafio_liveness(
+        self, atendimento_id: UUID
+    ) -> LivenessChallengeDTO:
+        """Gera desafio de movimentação facial antes da emissão Lista C1 (US-15).
+
+        Regras: RF-07, Portaria 344/98 Lista C1 e
+        docs/user-stories/US-15-prova-de-vida-facial-liveness.md.
+        """
+        if self._liveness_verifier is None:
+            raise ConsultaInvalidaError(
+                "Provedor de prova de vida facial (LivenessVerificationPort) não "
+                f"configurado para atendimento {atendimento_id}."
+            )
+        return await self._liveness_verifier.gerar_desafio(atendimento_id)
+
+    async def verificar_liveness_prescricao(
+        self, command: VerificarLivenessCommand
+    ) -> LivenessVerificationResultDTO:
+        """Avalia prova de vida facial ativa para receita especial e registra auditoria.
+
+        Bloqueia tentativas com suspeita de spoofing e persiste hash SHA-256.
+        Regras: RF-07, LGPD Art. 11 e
+        docs/user-stories/US-15-prova-de-vida-facial-liveness.md.
+        """
+        if self._liveness_verifier is None:
+            raise ConsultaInvalidaError(
+                "Provedor de prova de vida facial (LivenessVerificationPort) não "
+                f"configurado para atendimento {command.atendimento_id}."
+            )
+        result = await self._liveness_verifier.verificar_prova_de_vida(
+            atendimento_id=command.atendimento_id,
+            challenge_id=command.challenge_id,
+            liveness_payload=command.liveness_payload,
+        )
+        if result.status == "DESAFIO_INVALIDO":
+            raise LivenessChallengeInvalidoError(
+                f"Desafio '{command.challenge_id}' inválido, expirado ou pertencente a "
+                f"outro atendimento (recebido atendimento '{command.atendimento_id}')."
+            )
+        if result.status != "APROVADO" or result.liveness_score < 0.95:
+            await self._registrar_auditoria_liveness(
+                command, result, "SPOOFING_FACIAL_DETECTADO"
+            )
+            await self._session.commit()
+            raise SpoofingFacialDetectadoError(
+                f"Prova de vida facial reprovada para atendimento "
+                f"{command.atendimento_id} (status='{result.status}', "
+                f"score={result.liveness_score:.2f}; esperado status='APROVADO' com "
+                "score >= 0.95)."
+            )
+
+        await self._registrar_auditoria_liveness(
+            command, result, "LIVENESS_FACIAL_APROVADO"
+        )
+        await self._session.commit()
+        return result
+
+    async def _registrar_auditoria_liveness(
+        self,
+        command: VerificarLivenessCommand,
+        result: LivenessVerificationResultDTO,
+        tipo_evento: str,
+    ) -> None:
+        if self._audit_trail is None:
+            return
+        ator_tipo, ator_papel = _resolve_liveness_actor(command.ator_papel)
+        await self._audit_trail.record_event(
+            organizacao_id=command.organizacao_id,
+            tipo_evento=tipo_evento,
+            ator_tipo=ator_tipo,
+            ator_papel=ator_papel,
+            ator_id=command.ator_id,
+            atendimento_id=command.atendimento_id,
+            payload={
+                "challenge_id": command.challenge_id,
+                "status": result.status,
+                "liveness_score": result.liveness_score,
+                "verificacao_hash": result.verificacao_hash,
+                "latitude": command.latitude,
+                "longitude": command.longitude,
+            },
+        )
+
+    async def _requer_liveness_controle_especial(
+        self, tipo_str: str, command: EmitirDocumentoClinicoCommand
+    ) -> bool:
+        if self._atendimento_reader is not None:
+            resumo = await self._atendimento_reader.obter_resumo(command.atendimento_id)
+            if resumo is not None and not resumo.exige_liveness_controle_especial:
+                return False
+        if tipo_str == str(TipoDocumentoClinico.RECEITA_CONTROLE_ESPECIAL_C1):
+            return True
+        return any(
+            item.controle_especial or is_substancia_lista_c5(item.medicamento)
+            for item in command.itens
+        )
+
+    async def _validar_prova_de_vida_controle_especial(
+        self, command: EmitirDocumentoClinicoCommand
+    ) -> tuple[str | None, str | None]:
+        clean_hash = (command.liveness_verificacao_hash or "").strip() or None
+        excecao = (command.justificativa_excecao_liveness or "").strip()
+        approved_hash = (
+            await self._liveness_verifier.obter_hash_aprovado(command.atendimento_id)
+            if self._liveness_verifier is not None
+            else clean_hash
+        )
+        hash_matches = clean_hash is None or (
+            approved_hash is not None and hmac.compare_digest(clean_hash, approved_hash)
+        )
+        if (
+            approved_hash is not None
+            and _is_valid_liveness_hash(approved_hash)
+            and hash_matches
+        ):
+            return approved_hash, excecao or None
+        if len(excecao) >= 10:
+            return None, excecao
+        raise ProvaDeVidaObrigatoriaError(
+            "Emissão de receita de controle especial para atendimento "
+            f"{command.atendimento_id} bloqueada: "
+            f"liveness_verificacao_hash={clean_hash!r} "
+            f"(aprovado no atendimento: {approved_hash!r}) "
+            f"e justificativa_excecao_liveness={excecao!r} insuficientes; esperado "
+            "hash SHA-256 de prova de vida aprovada para este atendimento ou "
+            "justificativa clínica com ao menos 10 caracteres."
+        )
 
     @property
     def storage(self) -> StoragePort:
@@ -210,6 +369,14 @@ class DocumentoService:
         if tipo_str in {TipoDocumentoClinico.ATESTADO_MEDICO, "ATESTADO"}:
             await self._validar_trava_antifraude_atestado(command)
 
+        liveness_hash: str | None = None
+        liveness_excecao: str | None = None
+        if await self._requer_liveness_controle_especial(tipo_str, command):
+            (
+                liveness_hash,
+                liveness_excecao,
+            ) = await self._validar_prova_de_vida_controle_especial(command)
+
         # Check if consultation is already finalized
         stmt = select(EvolucaoClinica).where(
             EvolucaoClinica.atendimento_id == command.atendimento_id
@@ -225,6 +392,18 @@ class DocumentoService:
             raise ConsultaFinalizadaError(
                 "Não é permitido emitir documentos de consulta finalizada "
                 f"(status atual: '{status_desc}')."
+            )
+
+        if evolucao is None or not evolucao.identidade_verificada:
+            verificado = (
+                evolucao.identidade_verificada if evolucao is not None else False
+            )
+            raise ConsultaInvalidaError(
+                f"Atendimento '{command.atendimento_id}' bloqueado pela Resolução "
+                f"CFM nº 2.314/2022: identidade_verificada={verificado!r} "
+                f"(evolucao_presente={evolucao is not None}); é obrigatória a "
+                "conferência visual prévia do documento oficial no prontuário SOAP "
+                "antes da emissão de documentos clínicos."
             )
 
         # Pre-validate all items before persistence
@@ -254,6 +433,8 @@ class DocumentoService:
             chave_s3=chave_s3,
             sha256_hash=sha256_hash,
             justificativa_tempo_inferior=command.justificativa_tempo_inferior,
+            liveness_verificacao_hash=liveness_hash,
+            justificativa_excecao_liveness=liveness_excecao,
             id=new_doc_id,
         )
         self._session.add(doc)
@@ -279,6 +460,14 @@ class DocumentoService:
 
         await self._session.flush()
         if self._audit_trail is not None:
+            audit_payload: dict[str, object] = {
+                "documento_id": str(doc.id),
+                "tipo_documento": str(doc.tipo_documento),
+                "itens_qtd": len(command.itens),
+            }
+            if liveness_excecao is not None:
+                audit_payload["excecao_liveness"] = True
+                audit_payload["justificativa_excecao_liveness"] = liveness_excecao
             await self._audit_trail.record_event(
                 organizacao_id=command.organizacao_id,
                 tipo_evento="DOCUMENTO_CLINICO_EMITIDO",
@@ -286,11 +475,7 @@ class DocumentoService:
                 ator_papel=AtorPapel.MEDICO.value,
                 ator_id=command.medico_id,
                 atendimento_id=command.atendimento_id,
-                payload={
-                    "documento_id": str(doc.id),
-                    "tipo_documento": str(doc.tipo_documento),
-                    "itens_qtd": len(command.itens),
-                },
+                payload=audit_payload,
             )
         await self._session.commit()
         # Reload with itens eagerly (selectin) so Pydantic model_validate

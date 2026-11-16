@@ -1,11 +1,17 @@
 import { AlertCircle, FileCheck2, Loader2, Pill } from "lucide-react";
 import { useState } from "react";
-import type { DocumentoClinicoResponse, ItemPrescricaoRequest } from "@/api/generated/types.gen";
+import type {
+  DocumentoClinicoResponse,
+  ItemPrescricaoRequest,
+  LivenessChallengeResponse,
+} from "@/api/generated/types.gen";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useEmitirDocumento } from "../api/use-emitir-documento";
+import type { LivenessResultMessage } from "../lib/liveness-channel";
+import { CameraLivenessCheck } from "./camera-liveness-check";
 import { AtestadoForm } from "./prescription/atestado-form";
 import { PrescriptionForm } from "./prescription/prescription-form";
 import { PrescriptionItemsList } from "./prescription/prescription-items-list";
@@ -15,6 +21,8 @@ export interface PrescriptionBuilderProps {
   identidadeVerificada: boolean;
   isReadOnly?: boolean;
   onPrescriptionIssued?: (doc: DocumentoClinicoResponse) => void;
+  onSendLivenessChallenge?: (challenge: LivenessChallengeResponse) => void;
+  remoteLivenessResult?: LivenessResultMessage | null;
   token?: string;
   duracaoSegundos?: number;
 }
@@ -29,6 +37,8 @@ export function PrescriptionBuilder({
   identidadeVerificada,
   isReadOnly = false,
   onPrescriptionIssued,
+  onSendLivenessChallenge,
+  remoteLivenessResult,
   token,
   duracaoSegundos,
 }: PrescriptionBuilderProps) {
@@ -39,6 +49,8 @@ export function PrescriptionBuilder({
   const [itens, setItens] = useState<ItemPrescricaoRequest[]>([]);
   const [erroSanitario, setErroSanitario] = useState<string | null>(null);
   const [sucessoEmissao, setSucessoEmissao] = useState<string | null>(null);
+  const [livenessHash, setLivenessHash] = useState<string | null>(null);
+  const [justificativaExcecaoLiveness, setJustificativaExcecaoLiveness] = useState("");
 
   const { mutate: emitirDocumento, isPending: isEmitting } = useEmitirDocumento(atendimentoId);
 
@@ -46,6 +58,10 @@ export function PrescriptionBuilder({
   const duracaoConsulta = duracaoSegundos ?? 0;
   const exigeJustificativa = isAtestado && duracaoConsulta < 180;
   const justificativaValida = !exigeJustificativa || justificativaTempoInferior.trim().length >= 15;
+  const exigeProvaDeVida = !isAtestado && itens.some((item) => Boolean(item.controle_especial));
+  const livenessSatisfeita =
+    !exigeProvaDeVida || Boolean(livenessHash) || justificativaExcecaoLiveness.trim().length >= 10;
+  const effectiveTipoDocumento = exigeProvaDeVida ? "RECEITA_CONTROLE_ESPECIAL_C1" : tipoDocumento;
 
   const handleAddItem = (novoItem: ItemPrescricaoRequest) => {
     setItens((prev) => [...prev, novoItem]);
@@ -70,13 +86,25 @@ export function PrescriptionBuilder({
       return;
     }
 
+    if (exigeProvaDeVida && !livenessSatisfeita) {
+      setErroSanitario(
+        "Prova de vida facial aprovada (ou justificativa clínica de contingência) é obrigatória para receitas da Lista C1.",
+      );
+      return;
+    }
+
     emitirDocumento(
       {
         token,
-        tipo_documento: tipoDocumento,
+        tipo_documento: effectiveTipoDocumento,
         itens: isAtestado ? (itens.length > 0 ? itens : undefined) : itens,
         justificativa_tempo_inferior:
           isAtestado && exigeJustificativa ? justificativaTempoInferior.trim() : undefined,
+        liveness_verificacao_hash: exigeProvaDeVida ? (livenessHash ?? undefined) : undefined,
+        justificativa_excecao_liveness:
+          exigeProvaDeVida && justificativaExcecaoLiveness.trim()
+            ? justificativaExcecaoLiveness.trim()
+            : undefined,
       },
       {
         onSuccess: (doc) => {
@@ -89,6 +117,8 @@ export function PrescriptionBuilder({
             setItens([]);
           }
           setJustificativaTempoInferior("");
+          setLivenessHash(null);
+          setJustificativaExcecaoLiveness("");
           onPrescriptionIssued?.(doc);
         },
         onError: (err) => {
@@ -200,6 +230,20 @@ export function PrescriptionBuilder({
               onRemoveItem={handleRemoveItem}
               isReadOnly={isReadOnly}
             />
+
+            {exigeProvaDeVida && !isReadOnly && (
+              <CameraLivenessCheck
+                atendimentoId={atendimentoId}
+                token={token}
+                approvedHash={livenessHash}
+                justificativaExcecao={justificativaExcecaoLiveness}
+                onApproved={setLivenessHash}
+                onJustificativaChange={setJustificativaExcecaoLiveness}
+                onSendChallenge={onSendLivenessChallenge}
+                remoteResult={remoteLivenessResult}
+                isReadOnly={isReadOnly}
+              />
+            )}
           </>
         )}
 
@@ -221,7 +265,8 @@ export function PrescriptionBuilder({
               !identidadeVerificada ||
               isEmitting ||
               (!isAtestado && itens.length === 0) ||
-              (isAtestado && exigeJustificativa && !justificativaValida)
+              (isAtestado && exigeJustificativa && !justificativaValida) ||
+              (exigeProvaDeVida && !livenessSatisfeita)
             }
             className="w-full text-xs font-medium h-8 gap-1.5"
           >

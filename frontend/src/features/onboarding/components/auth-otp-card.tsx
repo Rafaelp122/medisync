@@ -64,7 +64,7 @@ export function AuthOtpCard({ onAuthenticated, className }: AuthOtpCardProps) {
       </CardHeader>
       <CardContent>
         {step === "solicitar" ? (
-          <SolicitarOtpForm onOtpSent={handleOtpSent} />
+          <SolicitarOtpForm onOtpSent={handleOtpSent} onAuthenticated={onAuthenticated} />
         ) : (
           <VerificarOtpForm
             telefone={telefone}

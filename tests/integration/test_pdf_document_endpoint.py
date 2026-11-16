@@ -32,6 +32,17 @@ async def test_obter_documento_pdf_endpoint(
     )
     client = async_client
 
+    soap_resp = await client.post(
+        f"/api/v1/consultations/{cenario.atendimento.id}/soap",
+        json={
+            "anamnese": "Dor aguda leve.",
+            "conduta": "Dipirona gotas.",
+            "identidade_verificada": True,
+            "tipo_documento_verificado": "RG",
+        },
+    )
+    assert soap_resp.status_code == 200
+
     # 1. Emitir receita simples
     emit_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",

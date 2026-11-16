@@ -34,6 +34,8 @@ depends_on = [
     "src.modules.auth.infrastructure",
     "src.modules.identity.application",
     "src.modules.identity.composition",
+    "src.modules.queue.application",
+    "src.modules.queue.composition",
 ]
 
 [[modules]]

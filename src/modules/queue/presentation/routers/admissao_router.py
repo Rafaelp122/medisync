@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, status
+from fastapi import APIRouter, Body, Request, status
 
 from src.core.dependencies import TenantDep
 from src.modules.queue.composition import FilaServiceDep
@@ -29,11 +29,18 @@ admissao_router = APIRouter(
 )
 async def admitir_paciente(
     body: Annotated[AdmissaoRequest, Body()],
+    request: Request,
     tenant_id: TenantDep,
     service: FilaServiceDep,
     _auth: AdmissaoPacienteAuthDep,
 ) -> AdmissaoResponse:
     """Execute patient intake, clinical triage, and queue admission."""
-    cmd = body.to_command(organizacao_id=tenant_id)
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        raw_ip = forwarded.split(",")[0].strip()
+    else:
+        raw_ip = request.client.host if request.client else None
+    ip_origem = raw_ip if raw_ip and raw_ip != "testclient" else None
+    cmd = body.to_command(organizacao_id=tenant_id, ip_origem=ip_origem)
     result = await service.admitir_paciente(cmd)
     return AdmissaoResponse.model_validate(result)

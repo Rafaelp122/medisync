@@ -40,6 +40,17 @@ async def test_storage_presigned_url_and_validation_portal_full_flow(
     )
     client = async_client
 
+    soap_resp = await client.post(
+        f"/api/v1/consultations/{cenario.atendimento.id}/soap",
+        json={
+            "anamnese": "Febre alta.",
+            "conduta": "Paracetamol 750mg.",
+            "identidade_verificada": True,
+            "tipo_documento_verificado": "RG",
+        },
+    )
+    assert soap_resp.status_code == 200
+
     # 1. Emitir receita médica
     emit_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
@@ -143,11 +154,25 @@ async def test_validation_portal_documento_nao_assinado(
     )
     client = async_client
 
+    soap_resp = await client.post(
+        f"/api/v1/consultations/{cenario.atendimento.id}/soap",
+        json={
+            "anamnese": "Cefaleia.",
+            "conduta": "Atestado 1 dia.",
+            "identidade_verificada": True,
+            "tipo_documento_verificado": "RG",
+        },
+    )
+    assert soap_resp.status_code == 200
+
     # Emitir atestado médico
     emit_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={
             "tipo_documento": "ATESTADO_MEDICO",
+            "justificativa_tempo_inferior": (
+                "Quadro clínico agudo compatível com repouso domiciliar imediato."
+            ),
             "itens": [
                 {
                     "medicamento": "Repouso Médico",

@@ -156,3 +156,31 @@ def test_settings_loads_with_minio_env_vars_ignored(
     monkeypatch.setenv("MINIO_ENDPOINT", "http://test:9000")
     settings = CommonSettings()
     assert getattr(settings, "MINIO_ROOT_USER", None) is None
+
+
+def test_production_environment_fails_with_sandbox_or_mock_liveness_provider() -> None:
+    for provider in ("mock", "valkey_sandbox"):
+        with pytest.raises(ValueError, match="LIVENESS_PROVIDER"):
+            ProductionSettings(
+                SECRET_KEY="a-super-secret-app-key-with-sufficient-length-32-chars",
+                JWT_SECRET_KEY="a-super-secret-jwt-key-with-sufficient-length-32-chars",
+                CORS_ORIGINS=["https://app.medisync.com.br"],
+                LIVENESS_PROVIDER=provider,
+            )
+
+
+def test_production_environment_fails_with_localhost_webauthn_or_http_origin() -> None:
+    with pytest.raises(ValueError, match="WEBAUTHN_RP_ID"):
+        ProductionSettings(
+            SECRET_KEY="a-super-secret-app-key-with-sufficient-length-32-chars",
+            JWT_SECRET_KEY="a-super-secret-jwt-key-with-sufficient-length-32-chars",
+            CORS_ORIGINS=["https://app.medisync.com.br"],
+            WEBAUTHN_RP_ID="localhost",
+        )
+    with pytest.raises(ValueError, match="WEBAUTHN_ALLOWED_ORIGINS"):
+        ProductionSettings(
+            SECRET_KEY="a-super-secret-app-key-with-sufficient-length-32-chars",
+            JWT_SECRET_KEY="a-super-secret-jwt-key-with-sufficient-length-32-chars",
+            CORS_ORIGINS=["https://app.medisync.com.br"],
+            WEBAUTHN_ALLOWED_ORIGINS=["http://medisync.app"],
+        )

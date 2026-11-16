@@ -59,12 +59,42 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
         }),
       });
     });
+
+    await page.route("**/api/v1/fila/posicao/*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
+          status: "AGUARDANDO_ATENDIMENTO",
+          posicao: 2,
+          total_na_fila: 8,
+          prioridade_clinica: 3,
+          nivel_acr_label: "Urgente (Amarelo)",
+          cor_acr_hex: "#EAB308",
+          tempo_estimado_minutos: 10,
+        }),
+      });
+    });
+
+    await page.route("**/api/v1/fila/cancelar/*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
+          status: "CANCELADO",
+          cancelado_em: new Date().toISOString(),
+          motivo: "Desistência voluntária pelo paciente",
+        }),
+      });
+    });
   });
 
   test("E2E-ONB-01: Jornada Completa de Onboarding (Fase 1 -> Admissão -> Fase 2)", async ({
     page,
   }) => {
-    await page.goto("/");
+    await page.goto("/triagem");
 
     // 1. Fase 1: Identificação Rápida (Etapa 1)
     await expect(page.getByRole("heading", { name: /pronto atendimento virtual/i })).toBeVisible();
@@ -114,11 +144,12 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
     // Submeter Fase 2
     await page.getByRole("button", { name: /concluir enriquecimento/i }).click();
 
-    // 4. Conclusão do Wizard
-    await expect(page.getByRole("heading", { name: /ingresso confirmado!/i })).toBeVisible();
-    await expect(
-      page.getByText(/você já está posicionado na fila virtual de espera/i),
-    ).toBeVisible();
+    // 4. Redirecionamento automático para /fila e exibição da Sala de Espera Virtual
+    await expect(page).toHaveURL(/\/fila/);
+    await expect(page.getByRole("heading", { name: /sala de espera virtual/i })).toBeVisible();
+    await expect(page.getByTestId("atendimento-id-completo")).toHaveText(
+      "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
+    );
 
     // 5. Persistência de Sessão e Recarga (Issue #113)
     const rawSession = await page.evaluate(() => localStorage.getItem("medisync_session"));
@@ -130,13 +161,16 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
     // Recarregar a página (F5)
     await page.reload();
 
-    // Deve restaurar automaticamente no Ingresso Confirmado sem voltar ao início
-    await expect(page.getByRole("heading", { name: /ingresso confirmado!/i })).toBeVisible();
-    await expect(page.getByRole("tablist")).not.toBeVisible();
+    // Deve restaurar automaticamente na Sala de Espera Virtual sem voltar ao início
+    await expect(page).toHaveURL(/\/fila/);
+    await expect(page.getByRole("heading", { name: /sala de espera virtual/i })).toBeVisible();
 
-    // 6. Encerramento de Sessão e Limpeza de Storage
-    await page.getByRole("button", { name: /encerrar sessão \/ novo atendimento/i }).click();
-    await expect(page.getByRole("tablist")).toBeVisible();
+    // 6. Desistência Voluntária e Limpeza de Storage
+    await page.getByRole("button", { name: /desistir do atendimento/i }).click();
+    await page.getByRole("button", { name: /confirmar desistência/i }).click();
+    await expect(page.getByText(/atendimento cancelado/i)).toBeVisible();
+    await page.getByRole("button", { name: /voltar ao início/i }).click();
+    await expect(page).toHaveURL(/\/$/);
     const clearedSession = await page.evaluate(() => localStorage.getItem("medisync_session"));
     expect(clearedSession).toBeNull();
   });
@@ -144,7 +178,7 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
   test("E2E-ONB-02: Salvaguarda SAMU 192 imediata e recuperação por engano (Red Flag RN04)", async ({
     page,
   }) => {
-    await page.goto("/");
+    await page.goto("/triagem");
 
     // Preencher Identificação e Avançar para Triagem
     await page.getByLabel(/nome completo/i).fill("Juliana Silva");
@@ -197,7 +231,7 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
       });
     });
 
-    await page.goto("/");
+    await page.goto("/triagem");
 
     await page.getByLabel(/nome completo/i).fill("Juliana Silva");
     await page.getByLabel(/documento de identificação \(cpf\)/i).fill("52998224725");
@@ -222,7 +256,7 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
   test("E2E-A11Y-01: Auditoria de Acessibilidade WCAG 2.1 AA na tela de Onboarding", async ({
     page,
   }) => {
-    await page.goto("/");
+    await page.goto("/triagem");
 
     const accessibilityScanResults = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -233,7 +267,7 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
 
   test("E2E-A11Y-02: Respeito estrito a prefers-reduced-motion", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/");
+    await page.goto("/triagem");
 
     const button = page.getByRole("button", { name: /continuar para triagem/i });
     const duration = await button.evaluate((el) => {

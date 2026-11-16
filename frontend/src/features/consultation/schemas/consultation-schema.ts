@@ -84,7 +84,7 @@ export const assinarDocumentoSchema = zAssinarDocumentoRequest.extend({
 export const cfmIdentityGateSchema = z
   .object({
     identidade_verificada: z.boolean(),
-    tipo_documento_apresentado: z.enum(["RG", "CNH", "CNS"]).nullish(),
+    tipo_documento_apresentado: zRegistrarSoapRequest.shape.tipo_documento_verificado,
     justificativa_excecao: z.string().nullish(),
   })
   .superRefine((data, ctx) => {
@@ -106,7 +106,7 @@ export const cfmIdentityGateSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "Selecione o documento oficial apresentado (RG/CNH/CNS) ou informe justificativa formal de exceção clínica (mínimo 10 caracteres)",
+          "Selecione o documento oficial apresentado (RG/CNH/CNS/CPF_FOTO) ou informe justificativa formal de exceção clínica (mínimo 10 caracteres)",
         path: ["tipo_documento_apresentado"],
       });
     }

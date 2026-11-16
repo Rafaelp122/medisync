@@ -1,8 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
+import { KeyRound, Loader2 } from "lucide-react";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { extractProblemDetail } from "@/api/errors";
+import type { VerificarOtpResponse } from "@/api/generated/types.gen";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { settings } from "@/config/settings";
 import { mascararTelefoneBR } from "@/lib/validators";
+import { usePasskeyAuth } from "../api/use-passkey-auth";
 import { useSolicitarOtp } from "../api/use-solicitar-otp";
 import { type SolicitarOtpFormData, solicitarOtpSchema } from "../schemas/onboarding-schema";
 
@@ -26,6 +28,7 @@ export interface SolicitarOtpFormProps {
     expiraEmSegundos: number;
     codigoDebug?: string | null;
   }) => void;
+  onAuthenticated?: (data: VerificarOtpResponse) => void;
   className?: string;
 }
 
@@ -34,9 +37,10 @@ export interface SolicitarOtpFormProps {
  * Regras canônicas: RF-01, US-02 (§5.1) e ADR-011.
  * @see docs/user-stories/US-02-autenticacao-passwordless-otp.md
  */
-export function SolicitarOtpForm({ onOtpSent, className }: SolicitarOtpFormProps) {
+export function SolicitarOtpForm({ onOtpSent, onAuthenticated, className }: SolicitarOtpFormProps) {
   const [cooldown, setCooldown] = React.useState(0);
   const solicitarOtp = useSolicitarOtp();
+  const passkeyAuth = usePasskeyAuth();
 
   const form = useForm<SolicitarOtpFormData>({
     resolver: zodResolver(solicitarOtpSchema),
@@ -135,6 +139,29 @@ export function SolicitarOtpForm({ onOtpSent, className }: SolicitarOtpFormProps
             "Receber código"
           )}
         </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={passkeyAuth.isPending || solicitarOtp.isPending}
+          onClick={() => {
+            passkeyAuth.mutate(undefined, {
+              onSuccess: (authData) => {
+                onAuthenticated?.(authData);
+              },
+            });
+          }}
+        >
+          <KeyRound className="mr-2 size-4" aria-hidden="true" />
+          {passkeyAuth.isPending ? "Validando biometria…" : "Entrar com Biometria do Aparelho"}
+        </Button>
+
+        {passkeyAuth.isError && (
+          <p role="alert" className="text-xs text-destructive text-center">
+            {passkeyAuth.error.detail || "Não foi possível autenticar via Passkey."}
+          </p>
+        )}
       </form>
     </Form>
   );

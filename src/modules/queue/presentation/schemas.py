@@ -43,7 +43,11 @@ class AdmissaoRequest(BaseModel):
     cpf: str | None = Field(default=None, description="CPF do paciente (opcional)")
     cns: str | None = Field(default=None, description="Cartão Nacional de Saúde (SUS)")
 
-    def to_command(self, organizacao_id: int) -> AdmissaoAtendimentoCommand:
+    def to_command(
+        self,
+        organizacao_id: int,
+        ip_origem: str | None = None,
+    ) -> AdmissaoAtendimentoCommand:
         """Convert request into application command."""
         return AdmissaoAtendimentoCommand(
             organizacao_id=organizacao_id,
@@ -56,6 +60,7 @@ class AdmissaoRequest(BaseModel):
             medicos_ativos=self.medicos_ativos,
             cpf=self.cpf,
             cns=self.cns,
+            ip_origem=ip_origem,
         )
 
 

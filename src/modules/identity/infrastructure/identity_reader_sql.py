@@ -1,17 +1,25 @@
+from collections.abc import Sequence
 from datetime import date
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.errors import NotFoundError
+from src.core.errors import ConflictError, NotFoundError
 from src.modules.identity.application.ports.identity_reader_port import (
     IdentityDirectoryDTO,
     IdentityReaderPort,
     PacienteAuthLookupData,
     PacienteAuthLookupDTO,
+    PacientePasskeyData,
+    PacientePasskeyDTO,
 )
-from src.modules.identity.domain.models import Organizacao, Paciente, Profissional
+from src.modules.identity.domain.models import (
+    Organizacao,
+    Paciente,
+    PacientePasskey,
+    Profissional,
+)
 
 
 class SqlIdentityReader(IdentityReaderPort):
@@ -153,3 +161,140 @@ class SqlIdentityReader(IdentityReaderPort):
             nome_completo=pac.nome_completo or "",
             nome_mae=pac.nome_mae,
         )
+
+    async def buscar_paciente_por_id(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> PacienteAuthLookupDTO | None:
+        """Recupera dados civis do paciente por ID e organização para descritor FIDO2.
+
+        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        """
+        stmt = select(Paciente).where(
+            Paciente.organizacao_id == organizacao_id,
+            Paciente.id == paciente_id,
+        )
+        pac = (await self._session.execute(stmt)).scalar_one_or_none()
+        if pac is None:
+            return None
+        return PacienteAuthLookupData(
+            id=pac.id,
+            organizacao_id=pac.organizacao_id,
+            telefone=pac.telefone,
+            cpf=pac.cpf,
+            nome_completo=pac.nome_completo or "",
+            nome_mae=pac.nome_mae,
+        )
+
+    async def registrar_passkey_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+        credential_id: str,
+        public_key: str,
+        sign_count: int = 0,
+        device_name: str | None = None,
+    ) -> PacientePasskeyDTO:
+        """Persiste ou atualiza credencial Passkey WebAuthn do paciente sem commit.
+
+        O commit pertence ao caso de uso no Application Service (ADR-001 §6).
+        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        """
+        stmt = select(PacientePasskey).where(
+            PacientePasskey.organizacao_id == organizacao_id,
+            PacientePasskey.credential_id == credential_id,
+        )
+        existing = (await self._session.execute(stmt)).scalar_one_or_none()
+        if existing is not None:
+            raise ConflictError(
+                f"Credencial WebAuthn '{credential_id}' já registrada na "
+                f"organização '{organizacao_id}' (paciente '{existing.paciente_id}')."
+            )
+
+        passkey = PacientePasskey(
+            organizacao_id=organizacao_id,
+            paciente_id=paciente_id,
+            credential_id=credential_id,
+            public_key=public_key,
+            sign_count=sign_count,
+            device_name=device_name,
+        )
+        self._session.add(passkey)
+        await self._session.flush()
+        return _to_passkey_data(passkey)
+
+    async def buscar_passkey_por_credencial(
+        self,
+        organizacao_id: int,
+        credential_id: str,
+    ) -> PacientePasskeyDTO | None:
+        """Localiza credencial Passkey ativa por organização e credential_id.
+
+        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        """
+        stmt = select(PacientePasskey).where(
+            PacientePasskey.organizacao_id == organizacao_id,
+            PacientePasskey.credential_id == credential_id,
+        )
+        passkey = (await self._session.execute(stmt)).scalar_one_or_none()
+        if passkey is None:
+            return None
+        return _to_passkey_data(passkey)
+
+    async def listar_passkeys_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> Sequence[PacientePasskeyDTO]:
+        """Lista todas as Passkeys registradas pelo paciente no tenant.
+
+        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        """
+        stmt = (
+            select(PacientePasskey)
+            .where(
+                PacientePasskey.organizacao_id == organizacao_id,
+                PacientePasskey.paciente_id == paciente_id,
+            )
+            .order_by(PacientePasskey.created_at.desc())
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return [_to_passkey_data(r) for r in rows]
+
+    async def atualizar_sign_count_passkey(
+        self,
+        organizacao_id: int,
+        credential_id: str,
+        novo_sign_count: int,
+    ) -> PacientePasskeyDTO:
+        """Atualiza o contador monotônico de assinatura FIDO2 após autenticação válida.
+
+        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        """
+        stmt = select(PacientePasskey).where(
+            PacientePasskey.organizacao_id == organizacao_id,
+            PacientePasskey.credential_id == credential_id,
+        )
+        passkey = (await self._session.execute(stmt)).scalar_one_or_none()
+        if passkey is None:
+            raise NotFoundError(
+                f"Credencial Passkey '{credential_id}' não encontrada na "
+                f"organização '{organizacao_id}'; esperado credential_id registrado."
+            )
+        passkey.atualizar_contador(novo_sign_count)
+        await self._session.flush()
+        return _to_passkey_data(passkey)
+
+
+def _to_passkey_data(passkey: PacientePasskey) -> PacientePasskeyData:
+    """Convert ORM PacientePasskey model to immutable DTO across boundaries."""
+    return PacientePasskeyData(
+        id=passkey.id,
+        organizacao_id=passkey.organizacao_id,
+        paciente_id=passkey.paciente_id,
+        credential_id=passkey.credential_id,
+        public_key=passkey.public_key,
+        sign_count=passkey.sign_count,
+        device_name=passkey.device_name,
+    )

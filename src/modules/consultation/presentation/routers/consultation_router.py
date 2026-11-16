@@ -11,6 +11,7 @@ from src.modules.consultation.application.dtos import (
     EmitirDocumentoClinicoCommand,
     FinalizarConsultaCommand,
     RegistrarEvolucaoSOAPCommand,
+    VerificarLivenessCommand,
 )
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
@@ -21,6 +22,8 @@ from src.modules.consultation.presentation.dependencies import (
     ClinicalAccessMutationDep,
     ClinicalAccessReadDep,
     DocumentoIdPath,
+    LivenessChallengeMedicoDep,
+    LivenessVerifyPacienteDep,
 )
 from src.modules.consultation.presentation.schemas import (
     AssinarDocumentoRequest,
@@ -30,6 +33,9 @@ from src.modules.consultation.presentation.schemas import (
     EvolucaoSOAPResponse,
     FinalizarConsultaRequest,
     FinalizarConsultaResponse,
+    LivenessChallengeResponse,
+    LivenessVerifyRequest,
+    LivenessVerifyResponse,
     ProntuarioResponse,
     RegistrarSOAPRequest,
     TMAStatusResponse,
@@ -44,8 +50,8 @@ def _require_matching_tenant(provided: int | None, tenant_id: int) -> int:
     """Obsolete body organizacao_id: diverge -> 403, coincide/ausente -> ignora."""
     if provided is not None and provided != tenant_id:
         raise ForbiddenError(
-            "Organização do corpo diverge do tenant autenticado "
-            "(cabeçalho X-Tenant-ID)."
+            f"Organização do corpo ('{provided}') diverge do tenant autenticado "
+            f"no cabeçalho X-Tenant-ID (esperado: '{tenant_id}')."
         )
     return tenant_id
 
@@ -78,6 +84,9 @@ async def salvar_evolucao_soap(
         ia_sugestao_bruta=request.ia_sugestao_bruta,
         ia_diff_modificacao=request.ia_diff_modificacao,
         ia_ratificada_pelo_medico=request.ia_ratificada_pelo_medico,
+        identidade_verificada=request.identidade_verificada,
+        tipo_documento_verificado=request.tipo_documento_verificado,
+        justificativa_excecao_identidade=request.justificativa_excecao_identidade,
     )
     evolucao = await service.salvar_evolucao_soap(command)
 
@@ -162,11 +171,66 @@ async def emitir_documento_clinico(
         chave_s3=request.chave_s3 or "",
         sha256_hash=request.sha256_hash or "",
         justificativa_tempo_inferior=request.justificativa_tempo_inferior,
+        liveness_verificacao_hash=request.liveness_verificacao_hash,
+        justificativa_excecao_liveness=request.justificativa_excecao_liveness,
     )
 
     doc = await service.emitir_documento(cmd)
 
     return DocumentoClinicoResponse.model_validate(doc)
+
+
+@consultation_router.post(
+    "/{atendimento_id}/prescriptions/liveness/challenge",
+    status_code=status.HTTP_200_OK,
+    summary="Solicita desafio de prova de vida facial (Liveness US-15)",
+)
+async def solicitar_desafio_liveness_prescricao(
+    atendimento_id: AtendimentoIdPath,
+    current_actor: LivenessChallengeMedicoDep,
+    service: PEPServiceDep,
+    tenant_id: TenantDep,
+) -> LivenessChallengeResponse:
+    """Emite instruções ativas de prova de vida facial para receita especial."""
+    if not current_actor.is_admin and current_actor.organizacao_id != tenant_id:
+        raise ForbiddenError(
+            f"Organização do ator ('{current_actor.organizacao_id}') diverge do "
+            f"tenant autenticado no cabeçalho X-Tenant-ID (esperado: '{tenant_id}')."
+        )
+    challenge = await service.solicitar_desafio_liveness(atendimento_id)
+    return LivenessChallengeResponse.model_validate(challenge)
+
+
+@consultation_router.post(
+    "/{atendimento_id}/prescriptions/liveness/verify",
+    status_code=status.HTTP_200_OK,
+    summary="Verifica frames biométricos de prova de vida facial (US-15)",
+)
+async def verificar_liveness_prescricao(
+    atendimento_id: AtendimentoIdPath,
+    request: Annotated[LivenessVerifyRequest, Body()],
+    current_actor: LivenessVerifyPacienteDep,
+    service: PEPServiceDep,
+    tenant_id: TenantDep,
+) -> LivenessVerifyResponse:
+    """Avalia vivacidade facial e devolve hash SHA-256 auditável para Lista C1."""
+    if not current_actor.is_admin and current_actor.organizacao_id != tenant_id:
+        raise ForbiddenError(
+            f"Organização do ator ('{current_actor.organizacao_id}') diverge do "
+            f"tenant autenticado no cabeçalho X-Tenant-ID (esperado: '{tenant_id}')."
+        )
+    cmd = VerificarLivenessCommand(
+        atendimento_id=atendimento_id,
+        organizacao_id=current_actor.organizacao_id,
+        ator_id=current_actor.actor_id,
+        ator_papel=current_actor.actor_papel,
+        challenge_id=request.challenge_id,
+        liveness_payload=request.liveness_payload,
+        latitude=request.geolocalizacao.latitude if request.geolocalizacao else None,
+        longitude=request.geolocalizacao.longitude if request.geolocalizacao else None,
+    )
+    result = await service.verificar_liveness_prescricao(cmd)
+    return LivenessVerifyResponse.model_validate(result)
 
 
 @consultation_router.post(

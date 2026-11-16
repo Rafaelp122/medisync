@@ -85,15 +85,18 @@ async def test_patient_otp_lifecycle_e2e(
 
 
 @pytest.mark.asyncio
-async def test_patient_otp_paciente_nao_encontrado_retorna_404(
+async def test_patient_otp_paciente_nao_encontrado_retorna_neutro_200(
     db_session: AsyncSession,
     async_client: AsyncClient,
 ) -> None:
-    """Validate 404 RFC 7807 is returned when phone is not registered in tenant."""
+    """Validate neutral 200 OK response when phone is unregistered."""
     org = make_organizacao(cnpj="11223344000189")
     db_session.add(org)
     await db_session.commit()
     await db_session.refresh(org)
+
+    fake_sms = cast("FakeSmsSenderAdapter", get_sms_sender())
+    fake_sms.clear()
 
     headers = {"X-Tenant-ID": str(org.id)}
 
@@ -102,9 +105,12 @@ async def test_patient_otp_paciente_nao_encontrado_retorna_404(
         json={"telefone": "11999998888"},
         headers=headers,
     )
-    assert resp.status_code == 404
+    assert resp.status_code == 200
     data = cast("dict[str, object]", resp.json())
-    assert data["code"] == "PACIENTE_NAO_ENCONTRADO"
+    assert data["mensagem"] == "Código de verificação enviado com sucesso."
+    assert data["expira_em_segundos"] == 300
+    assert data["codigo_debug"] is None
+    assert len(fake_sms.sent_otps) == 0
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,7 @@ import { IncomingCallRingModal } from "./incoming-call-ring-modal";
 import { PasskeyInvitationCard } from "./passkey-invitation-card";
 import { PioraClinicaModal } from "./piora-clinica-modal";
 import { QueuePositionCard } from "./queue-position-card";
+import { RegularizarElegibilidadeCard } from "./regularizar-elegibilidade-card";
 
 export interface VirtualWaitingRoomProps {
   session: StoredPatientSession;
@@ -218,8 +219,12 @@ export function VirtualWaitingRoom({
         status={statusEfetivo}
       />
 
+      {statusEfetivo === "TRIADO_AGUARDANDO_ELEGIBILIDADE" && atendimentoId && (
+        <RegularizarElegibilidadeCard atendimentoId={atendimentoId} token={token} />
+      )}
+
       {/* Convite Biométrico Passkeys (US-14) */}
-      <PasskeyInvitationCard />
+      <PasskeyInvitationCard token={token} />
 
       {/* Salvaguarda de Deterioração Clínica & Ações do Paciente */}
       <Card className="border-border/80 shadow-sm">

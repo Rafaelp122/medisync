@@ -50,6 +50,26 @@ class RegistrarSOAPRequest(BaseModel):
         default=True,
         description="Ratificação obrigatória pelo médico sob CFM nº 2.454/2026",
     )
+    identidade_verificada: bool = Field(
+        default=False,
+        description=(
+            "Confirmação visual da identidade do paciente conforme Resolução "
+            "CFM nº 2.314/2022."
+        ),
+    )
+    tipo_documento_verificado: (
+        Literal["RG", "CNH", "CNS", "CPF_FOTO", "EXCECAO_CLINICA"] | None
+    ) = Field(
+        default=None,
+        description="Tipo de documento oficial exibido na câmera.",
+    )
+    justificativa_excecao_identidade: str | None = Field(
+        default=None,
+        max_length=500,
+        description=(
+            "Justificativa clínica caso o paciente não possua documento no ato."
+        ),
+    )
     organizacao_id: int | None = Field(
         default=None,
         description="Identificador da organização de saúde",
@@ -75,6 +95,9 @@ class EvolucaoSOAPResponse(BaseModel):
     ia_sugestao_bruta: str | None = None
     ia_diff_modificacao: str | None = None
     ia_ratificada_pelo_medico: bool = True
+    identidade_verificada: bool = False
+    tipo_documento_verificado: str | None = None
+    justificativa_excecao_identidade: str | None = None
     registrado_em: datetime
     finalizado_em: datetime | None = None
     is_finalizado: bool
@@ -132,6 +155,18 @@ class EmitirDocumentoRequest(BaseModel):
         default=None,
         description="Justificativa para consulta < 180s (CFM 2.314/2022)",
     )
+    liveness_verificacao_hash: str | None = Field(
+        default=None,
+        max_length=128,
+        description="Hash SHA-256 da prova de vida facial aprovada (US-15)",
+    )
+    justificativa_excecao_liveness: str | None = Field(
+        default=None,
+        max_length=500,
+        description=(
+            "Justificativa médica para dispensa excepcional de prova de vida (US-15)"
+        ),
+    )
     organizacao_id: int | None = Field(
         default=None, description="Identificador da organização"
     )
@@ -150,6 +185,8 @@ class DocumentoClinicoResponse(BaseModel):
     chave_s3: str
     sha256_hash: str | None = None
     justificativa_tempo_inferior: str | None = None
+    liveness_verificacao_hash: str | None = None
+    justificativa_excecao_liveness: str | None = None
     assinado_em: datetime | None = None
     finalizado_em: datetime | None = None
     is_finalizado: bool
@@ -339,3 +376,46 @@ class ValidarDocumentoResponse(BaseModel):
     assinatura_digital_valida: bool
     conformidade_icp_brasil: bool
     itens: list[ItemValidacaoResponse]
+
+
+# --- Facial Liveness Verification Schemas (US-15) ---
+
+
+class LivenessChallengeResponse(BaseModel):
+    """Challenge instructions for active facial liveness verification."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    challenge_id: str
+    instrucoes_movimento: list[str]
+    timeout_segundos: int = 60
+
+
+class GeolocalizacaoLivenessSchema(BaseModel):
+    """Optional geolocation metadata captured during liveness verification."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    latitude: float = Field(ge=-90.0, le=90.0)
+    longitude: float = Field(ge=-180.0, le=180.0)
+
+
+class LivenessVerifyRequest(BaseModel):
+    """Liveness frames and challenge submission for controlled prescriptions."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    challenge_id: str = Field(min_length=3, max_length=128)
+    liveness_payload: str = Field(min_length=1, max_length=2_000_000)
+    geolocalizacao: GeolocalizacaoLivenessSchema | None = None
+
+
+class LivenessVerifyResponse(BaseModel):
+    """Biometric liveness verification outcome with SHA-256 hash proof."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    status: str
+    liveness_score: float
+    verificacao_hash: str
+    validado_em: datetime

@@ -17,6 +17,7 @@ from src.modules.consultation.application.dtos import (
     ProntuarioResumoDTO,
     RegistrarEvolucaoSOAPCommand,
     TMAStatusDTO,
+    VerificarLivenessCommand,
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
@@ -26,6 +27,10 @@ from src.modules.consultation.application.ports.atendimento_reader_port import (
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
     ICPBrasilSignerPort,
+)
+from src.modules.consultation.application.ports.liveness_verification_port import (
+    LivenessChallengeDTO,
+    LivenessVerificationResultDTO,
 )
 from src.modules.consultation.application.ports.pdf_generator_port import (
     PDFGeneratorPort,
@@ -154,6 +159,24 @@ class PEPService:
         """
         return await self._documentos.emitir_documento(command)
 
+    async def solicitar_desafio_liveness(
+        self, atendimento_id: UUID
+    ) -> LivenessChallengeDTO:
+        """Delega geração de desafio facial (US-15) ao DocumentoService.
+
+        Regras: RF-07 e docs/user-stories/US-15-prova-de-vida-facial-liveness.md.
+        """
+        return await self._documentos.solicitar_desafio_liveness(atendimento_id)
+
+    async def verificar_liveness_prescricao(
+        self, command: VerificarLivenessCommand
+    ) -> LivenessVerificationResultDTO:
+        """Delega verificação de prova de vida facial (US-15) ao DocumentoService.
+
+        Regras: RF-07 e docs/user-stories/US-15-prova-de-vida-facial-liveness.md.
+        """
+        return await self._documentos.verificar_liveness_prescricao(command)
+
     async def compilar_pdf(self, documento_id: UUID) -> bytes:
         """Gera binário PDF/A-1b do documento com validação pública ITI.
 
@@ -206,6 +229,14 @@ class PEPService:
             raise ConsultaFinalizadaError(
                 f"A consulta '{command.atendimento_id}' já se encontra "
                 f"finalizada e imutável (status atual: '{status_desc}')."
+            )
+
+        if not evolucao.identidade_verificada:
+            raise ConsultaInvalidaError(
+                f"Atendimento '{command.atendimento_id}' bloqueado pela Resolução "
+                "CFM nº 2.314/2022: identidade_verificada=False; é obrigatória a "
+                "conferência visual do documento oficial do paciente antes de "
+                "finalizar a consulta."
             )
 
         evolucao.marcar_finalizado()

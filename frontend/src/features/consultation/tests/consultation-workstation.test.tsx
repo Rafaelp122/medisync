@@ -1,7 +1,7 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
 import { DoctorWorkstation } from "../components/doctor-workstation";
@@ -19,6 +19,11 @@ import {
 } from "./fixtures";
 
 describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)", () => {
+  beforeAll(async () => {
+    // Pré-carrega o chunk lazy WebRTC para eliminar timeouts intermitentes no IT-DOC-02 em CI/JSDOM
+    await import("../components/livekit-video-call");
+  });
+
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -427,8 +432,10 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
     // Antes do timeout, onLogout não foi chamado
     expect(handleLogout).not.toHaveBeenCalled();
 
-    // Avança o timer além do limite de inatividade
-    await vi.advanceTimersByTimeAsync(5000);
+    // Avança o timer além do limite de inatividade dentro de act() para drenar promises do React 19
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
 
     // onLogout deve ter sido invocado automaticamente
     expect(handleLogout).toHaveBeenCalledTimes(1);

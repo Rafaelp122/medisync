@@ -4,7 +4,7 @@
 > **Invariantes Relacionadas:** LGPD Art. 11 (Dados Pessoais Sensíveis / Biometria), RDC ANVISA 20/2011  
 > **Personas:** Dr. Eduardo Rocha (Médico Plantonista) e Juliana Silva (Paciente)  
 > **Módulos:** `consultation`, `identity`  
-> **Status de Qualidade:** 🔴 **Pendente (Backlog / Issue #116)**
+> **Status de Qualidade:** 🟡 **Parcial (Issue #116)** — fluxos de desafio distribuído (`ValkeyLivenessAdapter`), segregação Médico (`/challenge`) vs Paciente (`/verify`), canal bidirecional LiveKit e trava Lista C1/C5 implementados; pendente integração HTTP comercial (`LIVENESS_PROVIDER=govbr|datavalid`) para produção.
 
 ---
 
@@ -80,11 +80,11 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [ ] **Porta Arquitetural:** `LivenessVerificationPort` em `src/modules/consultation/application/ports/` (PEP 544 Protocol).
-- [ ] **Adaptadores:** `GovBrLivenessAdapter`, `DatavalidLivenessAdapter` e `MockLivenessAdapter` para testes em memória.
-- [ ] **Regra Farmacêutica:** Interceptador no `PrescriptionService` disparando a verificação apenas quando a classe do fármaco for Lista C1/C5 ou política da organização.
-- [ ] **Frontend:** Componente modal `<CameraLivenessCheck />` em `frontend/src/features/consultation/components/`.
-- [ ] **Testes:** Testes unitários com fakes de provedores de biometria e testes de integração com bloqueio de prescrição sem liveness prévio.
+- [x] **Porta Arquitetural:** `LivenessVerificationPort` em `src/modules/consultation/application/ports/liveness_verification_port.py:LivenessVerificationPort` (PEP 544 Protocol).
+- [x] **Adaptadores:** `ValkeyLivenessAdapter` (desafios distribuídos via `GETDEL` e aprovação em TTL) e `MockLivenessAdapter` em `src/modules/consultation/infrastructure/liveness_adapter.py`; seleção e bloqueio de produção via `LIVENESS_PROVIDER` em `src/modules/consultation/composition.py` e `src/core/config.py`.
+- [x] **Segregação de Papéis e Regra Farmacêutica:** Gate em `src/modules/consultation/application/services/documento_service.py:DocumentoService` e rotas `/prescriptions/liveness/challenge` (`MEDICO` via `LivenessChallengeMedicoDep`) e `/verify` (`PACIENTE` via `LivenessVerifyPacienteDep`) exigindo hash aprovado ou exceção clínica na Lista C1/C5 (`controle_especial=True`), diferenciando `LivenessChallengeInvalidoError` de `SpoofingFacialDetectadoError`.
+- [x] **Frontend:** Canal bidirecional LiveKit (`medisync.liveness`) entre médico (`CameraLivenessCheck`, `PrescriptionBuilder`) e paciente (`PatientLivenessModal` na sala `/chamada`), hooks em `frontend/src/features/consultation/api/use-liveness-check.ts`.
+- [x] **Testes:** `tests/unit/test_prescription_liveness.py`, `tests/integration/test_liveness_endpoints.py` e `frontend/src/features/consultation/tests/camera-liveness-check.test.tsx`.
 
 ---
 

@@ -23,6 +23,9 @@ from src.modules.auth.application.dtos import (
     VerificarOtpInputDTO,
     VerificarOtpOutputDTO,
 )
+from src.modules.auth.application.ports.active_attendance_lookup_port import (
+    ActiveAttendanceLookupPort,
+)
 from src.modules.auth.application.ports.identity_reader_port import (
     IdentityReaderPort,
 )
@@ -69,6 +72,7 @@ class PatientAuthService:
         algorithm: str = "HS256",
         access_token_expire_minutes: int = 60,
         is_debug: bool = True,
+        active_attendance_lookup: ActiveAttendanceLookupPort | None = None,
     ) -> None:
         self._identity_reader = identity_reader
         self._valkey = valkey_client
@@ -80,9 +84,20 @@ class PatientAuthService:
         self._algorithm = algorithm
         self._access_token_expire_minutes = access_token_expire_minutes
         self._is_debug = is_debug
+        self._active_attendance = active_attendance_lookup
         # In-memory storage fallback for unit testing when Valkey is None
         self._memory_otp: dict[str, dict[str, Any]] = {}
         self._memory_ratelimit: dict[str, list[float]] = {}
+
+    async def _resolve_active_attendance(
+        self, organizacao_id: int, paciente_id: UUID
+    ) -> UUID | None:
+        if self._active_attendance is None:
+            return None
+        return await self._active_attendance.buscar_atendimento_ativo_paciente(
+            organizacao_id=organizacao_id,
+            paciente_id=paciente_id,
+        )
 
     async def _calculate_valkey_retry_after(self, redis_key: str, now: float) -> int:
         """Calculate seconds remaining until the oldest entry slides out of window."""
@@ -277,7 +292,9 @@ class PatientAuthService:
         """
         if self._identity_reader is None:
             raise ValueError(
-                "IdentityReaderPort não configurado no PatientAuthService."
+                f"IdentityReaderPort não configurado no PatientAuthService "
+                f"(recebido: {self._identity_reader!r}; esperado instância de "
+                "IdentityReaderPort)."
             )
         if organizacao_id <= 0:
             raise TenantInvalidoError(
@@ -298,11 +315,10 @@ class PatientAuthService:
             cpf=clean_cpf,
         )
         if paciente is None:
-            tel_mask = _mascarar_telefone(clean_telefone)
-            raise PacienteNaoEncontradoError(
-                f"Paciente com telefone '{tel_mask}' não encontrado na "
-                f"organização '{organizacao_id}'. Inicie o acolhimento para "
-                "cadastrar-se."
+            return SolicitarOtpOutputDTO(
+                mensagem="Código de verificação enviado com sucesso.",
+                expira_em_segundos=OTP_TTL_SECONDS,
+                codigo_debug=None,
             )
 
         # 3. Generate cryptographically secure 6-digit OTP
@@ -406,6 +422,9 @@ class PatientAuthService:
 
         # 5. Issue lightweight JWT access token with Role.PACIENTE
         paciente_id = UUID(str(stored["paciente_id"]))
+        atendimento_id = await self._resolve_active_attendance(
+            organizacao_id, paciente_id
+        )
         token = create_access_token(
             usuario_id=paciente_id,
             organizacao_id=organizacao_id,
@@ -421,6 +440,7 @@ class PatientAuthService:
             expires_in=self._access_token_expire_minutes * 60,
             paciente_id=paciente_id,
             role=Role.PACIENTE.value,
+            atendimento_id=atendimento_id,
         )
 
     async def autenticar_cadsus_govbr(
@@ -437,7 +457,9 @@ class PatientAuthService:
         """
         if self._identity_reader is None:
             raise ValueError(
-                "IdentityReaderPort não configurado no PatientAuthService."
+                f"IdentityReaderPort não configurado no PatientAuthService "
+                f"(recebido: {self._identity_reader!r}; esperado instância de "
+                "IdentityReaderPort)."
             )
         if organizacao_id <= 0:
             raise TenantInvalidoError(
@@ -450,8 +472,9 @@ class PatientAuthService:
 
         if not clean_cpf and not clean_cns:
             raise PacienteNaoEncontradoError(
-                "Desambiguação CADSUS exige ao menos CPF ou CNS válido para "
-                "autenticação sem senha."
+                f"Desambiguação CADSUS inválida (recebido cpf={cpf!r}, "
+                f"cns={cns!r}); esperado ao menos CPF (11 dígitos) ou CNS "
+                "(15 dígitos) válido para autenticação sem senha."
             )
 
         paciente = await self._identity_reader.buscar_paciente_cadsus(

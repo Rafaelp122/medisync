@@ -68,6 +68,24 @@ _TODAS_SUBSTANCIAS_PROIBIDAS: frozenset[str] = (
     _LISTA_A_SUBSTANCIAS | _LISTA_B_SUBSTANCIAS
 )
 
+# Lista C5 (Esteroides Anabolizantes - Portaria SVS/MS nº 344/98)
+_LISTA_C5_SUBSTANCIAS: frozenset[str] = frozenset(
+    {
+        "oxandrolona",
+        "nandrolona",
+        "estanozolol",
+        "oximetolona",
+        "testosterona",
+        "mesterolona",
+        "metenolona",
+        "boldenona",
+        "trembolona",
+        "fluoximesterona",
+        "metandrostenolona",
+        "drostanolona",
+    }
+)
+
 
 def _normalizar_texto(texto: str) -> str:
     """Normalize text removing accents, punctuation and excess whitespace."""
@@ -98,3 +116,13 @@ def validar_substancia_permitida_telemedicina(medicamento: str) -> None:
                 "SVS/MS nº 344/98. A legislação sanitária veda a prescrição "
                 "digital em telemedicina e exige talonário físico de segurança."
             )
+
+
+def is_substancia_lista_c5(medicamento: str) -> bool:
+    """Return True when medication contains an anabolic substance from Lista C5."""
+    texto_norm = _normalizar_texto(medicamento)
+    palavras = set(texto_norm.split())
+    return any(
+        substancia in palavras or (len(substancia) > 4 and substancia in texto_norm)
+        for substancia in _LISTA_C5_SUBSTANCIAS
+    )

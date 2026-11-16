@@ -2,7 +2,7 @@
 
 import { http, type HttpHandler, HttpResponse, type HttpResponseResolver, type RequestHandlerOptions as RequestHandlerOptions2 } from 'msw';
 
-import type { AdmitirPacienteApiV1FilaAdmissaoPostData, AdmitirPacienteApiV1FilaAdmissaoPostResponses, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostData, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostResponses, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutData, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses, CadastrarDependenteApiV1PacientesIdDependentesPostData, CadastrarDependenteApiV1PacientesIdDependentesPostResponses, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostData, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostResponses, ChamarProximoPacienteApiV1FilaChamarProximoPostResponses, ClientOptions, ComunicarPioraClinicaApiV1FilaPioraPostData, ComunicarPioraClinicaApiV1FilaPioraPostResponses, DownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGetResponses, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostData, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostResponses, EnrichmentFase2ApiV1OnboardingFase2PostData, EnrichmentFase2ApiV1OnboardingFase2PostResponses, ExportarBpaApiV1AmbulatoryProducaoExportarGetResponses, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostData, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostData, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostResponses, HealthcheckHealthzGetResponses, IntakeFase1ApiV1OnboardingFase1PostData, IntakeFase1ApiV1OnboardingFase1PostResponses, ListarDependentesApiV1PacientesIdDependentesGetResponses, ListarProducaoApiV1AmbulatoryProducaoGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostResponses, MeApiV1AuthMeGetResponses, MfaActivateApiV1AuthMfaActivatePostData, MfaActivateApiV1AuthMfaActivatePostResponses, MfaSetupApiV1AuthMfaSetupPostResponses, MfaVerifyApiV1AuthMfaVerifyPostData, MfaVerifyApiV1AuthMfaVerifyPostResponses, ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetResponses, ObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGetResponses, ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetResponses, ObterPainelTelemetriaApiV1TelemetriaPainelGetResponses, ObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGetResponses, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetResponses, ObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGetResponses, PostAuthPacienteCadsusData, PostAuthPacienteCadsusResponses, RefreshTokenApiV1AuthRefreshPostData, RefreshTokenApiV1AuthRefreshPostResponses, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostData, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostResponses, RequestOtpApiV1AuthPatientOtpRequestPostData, RequestOtpApiV1AuthPatientOtpRequestPostResponses, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostData, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostResponses, ValidarDocumentoApiV1DocumentsValidateTokenValidacaoGetResponses, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostData, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostResponses, VerifyOtpApiV1AuthPatientOtpVerifyPostData, VerifyOtpApiV1AuthPatientOtpVerifyPostResponses } from './types.gen';
+import type { AdmitirPacienteApiV1FilaAdmissaoPostData, AdmitirPacienteApiV1FilaAdmissaoPostResponses, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostData, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostResponses, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutData, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses, CadastrarDependenteApiV1PacientesIdDependentesPostData, CadastrarDependenteApiV1PacientesIdDependentesPostResponses, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostData, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostResponses, ChamarProximoPacienteApiV1FilaChamarProximoPostResponses, ClientOptions, ComunicarPioraClinicaApiV1FilaPioraPostData, ComunicarPioraClinicaApiV1FilaPioraPostResponses, DownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGetResponses, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostData, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostResponses, EnrichmentFase2ApiV1OnboardingFase2PostData, EnrichmentFase2ApiV1OnboardingFase2PostResponses, ExportarBpaApiV1AmbulatoryProducaoExportarGetResponses, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostData, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostData, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostResponses, HealthcheckHealthzGetResponses, IntakeFase1ApiV1OnboardingFase1PostData, IntakeFase1ApiV1OnboardingFase1PostResponses, ListarDependentesApiV1PacientesIdDependentesGetResponses, ListarProducaoApiV1AmbulatoryProducaoGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostResponses, MeApiV1AuthMeGetResponses, MfaActivateApiV1AuthMfaActivatePostData, MfaActivateApiV1AuthMfaActivatePostResponses, MfaSetupApiV1AuthMfaSetupPostResponses, MfaVerifyApiV1AuthMfaVerifyPostData, MfaVerifyApiV1AuthMfaVerifyPostResponses, ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetResponses, ObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGetResponses, ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetResponses, ObterPainelTelemetriaApiV1TelemetriaPainelGetResponses, ObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGetResponses, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetResponses, ObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGetResponses, PostAuthPacienteCadsusData, PostAuthPacienteCadsusResponses, PostAuthPatientWebauthnAuthenticateOptionsData, PostAuthPatientWebauthnAuthenticateOptionsResponses, PostAuthPatientWebauthnAuthenticateVerifyData, PostAuthPatientWebauthnAuthenticateVerifyResponses, PostAuthPatientWebauthnRegisterOptionsResponses, PostAuthPatientWebauthnRegisterVerifyData, PostAuthPatientWebauthnRegisterVerifyResponses, RefreshTokenApiV1AuthRefreshPostData, RefreshTokenApiV1AuthRefreshPostResponses, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostData, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostResponses, RequestOtpApiV1AuthPatientOtpRequestPostData, RequestOtpApiV1AuthPatientOtpRequestPostResponses, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostData, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostResponses, SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponses, ValidarDocumentoApiV1DocumentsValidateTokenValidacaoGetResponses, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostData, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostResponses, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostData, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses, VerifyOtpApiV1AuthPatientOtpVerifyPostData, VerifyOtpApiV1AuthPatientOtpVerifyPostResponses } from './types.gen';
 
 export type RequestHandlerOptions = RequestHandlerOptions2 & {
     baseUrl?: ClientOptions['baseUrl'];
@@ -289,6 +289,114 @@ export type HandlePostAuthPacienteCadsusResponse = {
  */
 export function handlePostAuthPacienteCadsus(response?: HandlePostAuthPacienteCadsusResponse | HttpResponseResolver<never, PostAuthPacienteCadsusData['body']>, options?: RequestHandlerOptions): HttpHandler {
     return http.post<never, PostAuthPacienteCadsusData['body']>(`${options?.baseUrl ?? '*'}/api/v1/auth/patient/cadsus`, info => {
+        if (typeof response === 'function') {
+            return response(info);
+        }
+        const body = response?.body;
+        if (body !== undefined) {
+            return HttpResponse.json(body, { status: response?.status ?? 200 });
+        }
+        if (options?.responseFallback === 'passthrough') {
+            return;
+        }
+        return new Response('Not Implemented', {
+            status: 501,
+            statusText: 'Not Implemented'
+        });
+    }, options);
+}
+
+export type HandlePostAuthPatientWebauthnRegisterOptionsResponse = {
+    body: PostAuthPatientWebauthnRegisterOptionsResponses[200];
+    status?: 200;
+};
+
+/**
+ * Handler for the `POST /api/v1/auth/patient/webauthn/register/options` operation.
+ */
+export function handlePostAuthPatientWebauthnRegisterOptions(response?: HandlePostAuthPatientWebauthnRegisterOptionsResponse | HttpResponseResolver<never, never>, options?: RequestHandlerOptions): HttpHandler {
+    return http.post<never, never>(`${options?.baseUrl ?? '*'}/api/v1/auth/patient/webauthn/register/options`, info => {
+        if (typeof response === 'function') {
+            return response(info);
+        }
+        const body = response?.body;
+        if (body !== undefined) {
+            return HttpResponse.json(body, { status: response?.status ?? 200 });
+        }
+        if (options?.responseFallback === 'passthrough') {
+            return;
+        }
+        return new Response('Not Implemented', {
+            status: 501,
+            statusText: 'Not Implemented'
+        });
+    }, options);
+}
+
+export type HandlePostAuthPatientWebauthnRegisterVerifyResponse = {
+    body: PostAuthPatientWebauthnRegisterVerifyResponses[200];
+    status?: 200;
+};
+
+/**
+ * Handler for the `POST /api/v1/auth/patient/webauthn/register/verify` operation.
+ */
+export function handlePostAuthPatientWebauthnRegisterVerify(response?: HandlePostAuthPatientWebauthnRegisterVerifyResponse | HttpResponseResolver<never, PostAuthPatientWebauthnRegisterVerifyData['body']>, options?: RequestHandlerOptions): HttpHandler {
+    return http.post<never, PostAuthPatientWebauthnRegisterVerifyData['body']>(`${options?.baseUrl ?? '*'}/api/v1/auth/patient/webauthn/register/verify`, info => {
+        if (typeof response === 'function') {
+            return response(info);
+        }
+        const body = response?.body;
+        if (body !== undefined) {
+            return HttpResponse.json(body, { status: response?.status ?? 200 });
+        }
+        if (options?.responseFallback === 'passthrough') {
+            return;
+        }
+        return new Response('Not Implemented', {
+            status: 501,
+            statusText: 'Not Implemented'
+        });
+    }, options);
+}
+
+export type HandlePostAuthPatientWebauthnAuthenticateOptionsResponse = {
+    body: PostAuthPatientWebauthnAuthenticateOptionsResponses[200];
+    status?: 200;
+};
+
+/**
+ * Handler for the `POST /api/v1/auth/patient/webauthn/authenticate/options` operation.
+ */
+export function handlePostAuthPatientWebauthnAuthenticateOptions(response?: HandlePostAuthPatientWebauthnAuthenticateOptionsResponse | HttpResponseResolver<never, PostAuthPatientWebauthnAuthenticateOptionsData['body']>, options?: RequestHandlerOptions): HttpHandler {
+    return http.post<never, PostAuthPatientWebauthnAuthenticateOptionsData['body']>(`${options?.baseUrl ?? '*'}/api/v1/auth/patient/webauthn/authenticate/options`, info => {
+        if (typeof response === 'function') {
+            return response(info);
+        }
+        const body = response?.body;
+        if (body !== undefined) {
+            return HttpResponse.json(body, { status: response?.status ?? 200 });
+        }
+        if (options?.responseFallback === 'passthrough') {
+            return;
+        }
+        return new Response('Not Implemented', {
+            status: 501,
+            statusText: 'Not Implemented'
+        });
+    }, options);
+}
+
+export type HandlePostAuthPatientWebauthnAuthenticateVerifyResponse = {
+    body: PostAuthPatientWebauthnAuthenticateVerifyResponses[200];
+    status?: 200;
+};
+
+/**
+ * Handler for the `POST /api/v1/auth/patient/webauthn/authenticate/verify` operation.
+ */
+export function handlePostAuthPatientWebauthnAuthenticateVerify(response?: HandlePostAuthPatientWebauthnAuthenticateVerifyResponse | HttpResponseResolver<never, PostAuthPatientWebauthnAuthenticateVerifyData['body']>, options?: RequestHandlerOptions): HttpHandler {
+    return http.post<never, PostAuthPatientWebauthnAuthenticateVerifyData['body']>(`${options?.baseUrl ?? '*'}/api/v1/auth/patient/webauthn/authenticate/verify`, info => {
         if (typeof response === 'function') {
             return response(info);
         }
@@ -782,6 +890,68 @@ export function handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocum
     }, options);
 }
 
+export type HandleSolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponse = {
+    body: SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponses[200];
+    status?: 200;
+};
+
+/**
+ * Handler for the `POST /api/v1/consultations/{atendimento_id}/prescriptions/liveness/challenge` operation.
+ */
+export function handleSolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePost(response?: HandleSolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponse | HttpResponseResolver<{
+    atendimento_id: string;
+}, never>, options?: RequestHandlerOptions): HttpHandler {
+    return http.post<{
+        atendimento_id: string;
+    }, never>(`${options?.baseUrl ?? '*'}/api/v1/consultations/:atendimento_id/prescriptions/liveness/challenge`, info => {
+        if (typeof response === 'function') {
+            return response(info);
+        }
+        const body = response?.body;
+        if (body !== undefined) {
+            return HttpResponse.json(body, { status: response?.status ?? 200 });
+        }
+        if (options?.responseFallback === 'passthrough') {
+            return;
+        }
+        return new Response('Not Implemented', {
+            status: 501,
+            statusText: 'Not Implemented'
+        });
+    }, options);
+}
+
+export type HandleVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponse = {
+    body: VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses[200];
+    status?: 200;
+};
+
+/**
+ * Handler for the `POST /api/v1/consultations/{atendimento_id}/prescriptions/liveness/verify` operation.
+ */
+export function handleVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPost(response?: HandleVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponse | HttpResponseResolver<{
+    atendimento_id: string;
+}, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostData['body']>, options?: RequestHandlerOptions): HttpHandler {
+    return http.post<{
+        atendimento_id: string;
+    }, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostData['body']>(`${options?.baseUrl ?? '*'}/api/v1/consultations/:atendimento_id/prescriptions/liveness/verify`, info => {
+        if (typeof response === 'function') {
+            return response(info);
+        }
+        const body = response?.body;
+        if (body !== undefined) {
+            return HttpResponse.json(body, { status: response?.status ?? 200 });
+        }
+        if (options?.responseFallback === 'passthrough') {
+            return;
+        }
+        return new Response('Not Implemented', {
+            status: 501,
+            statusText: 'Not Implemented'
+        });
+    }, options);
+}
+
 export type HandleFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponse = {
     body: FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses[200];
     status?: 200;
@@ -1153,6 +1323,22 @@ export type MswHandlerFactories = {
      */
     postAuthPacienteCadsus: typeof handlePostAuthPacienteCadsus;
     /**
+     * Handler for the `POST /api/v1/auth/patient/webauthn/register/options` operation.
+     */
+    postAuthPatientWebauthnRegisterOptions: typeof handlePostAuthPatientWebauthnRegisterOptions;
+    /**
+     * Handler for the `POST /api/v1/auth/patient/webauthn/register/verify` operation.
+     */
+    postAuthPatientWebauthnRegisterVerify: typeof handlePostAuthPatientWebauthnRegisterVerify;
+    /**
+     * Handler for the `POST /api/v1/auth/patient/webauthn/authenticate/options` operation.
+     */
+    postAuthPatientWebauthnAuthenticateOptions: typeof handlePostAuthPatientWebauthnAuthenticateOptions;
+    /**
+     * Handler for the `POST /api/v1/auth/patient/webauthn/authenticate/verify` operation.
+     */
+    postAuthPatientWebauthnAuthenticateVerify: typeof handlePostAuthPatientWebauthnAuthenticateVerify;
+    /**
      * Handler for the `POST /api/v1/onboarding/fase-1` operation.
      */
     intakeFase1ApiV1OnboardingFase1Post: typeof handleIntakeFase1ApiV1OnboardingFase1Post;
@@ -1216,6 +1402,14 @@ export type MswHandlerFactories = {
      * Handler for the `POST /api/v1/consultations/{atendimento_id}/documents` operation.
      */
     emitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost: typeof handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost;
+    /**
+     * Handler for the `POST /api/v1/consultations/{atendimento_id}/prescriptions/liveness/challenge` operation.
+     */
+    solicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePost: typeof handleSolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePost;
+    /**
+     * Handler for the `POST /api/v1/consultations/{atendimento_id}/prescriptions/liveness/verify` operation.
+     */
+    verificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPost: typeof handleVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPost;
     /**
      * Handler for the `POST /api/v1/consultations/{atendimento_id}/finalize` operation.
      */
@@ -1288,6 +1482,10 @@ export function createMswHandlers(config: RequestHandlerOptions = {}): CreateMsw
         requestOtpApiV1AuthPatientOtpRequestPost: wrap(handleRequestOtpApiV1AuthPatientOtpRequestPost),
         verifyOtpApiV1AuthPatientOtpVerifyPost: wrap(handleVerifyOtpApiV1AuthPatientOtpVerifyPost),
         postAuthPacienteCadsus: wrap(handlePostAuthPacienteCadsus),
+        postAuthPatientWebauthnRegisterOptions: wrap(handlePostAuthPatientWebauthnRegisterOptions),
+        postAuthPatientWebauthnRegisterVerify: wrap(handlePostAuthPatientWebauthnRegisterVerify),
+        postAuthPatientWebauthnAuthenticateOptions: wrap(handlePostAuthPatientWebauthnAuthenticateOptions),
+        postAuthPatientWebauthnAuthenticateVerify: wrap(handlePostAuthPatientWebauthnAuthenticateVerify),
         intakeFase1ApiV1OnboardingFase1Post: wrap(handleIntakeFase1ApiV1OnboardingFase1Post),
         enrichmentFase2ApiV1OnboardingFase2Post: wrap(handleEnrichmentFase2ApiV1OnboardingFase2Post),
         listarDependentesApiV1PacientesIdDependentesGet: wrap(handleListarDependentesApiV1PacientesIdDependentesGet),
@@ -1304,6 +1502,8 @@ export function createMswHandlers(config: RequestHandlerOptions = {}): CreateMsw
         obterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet: wrap(handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet),
         validarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost: wrap(handleValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost),
         emitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost: wrap(handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost),
+        solicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePost: wrap(handleSolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePost),
+        verificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPost: wrap(handleVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPost),
         finalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePost: wrap(handleFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePost),
         obterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGet: wrap(handleObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGet),
         obterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGet: wrap(handleObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGet),
@@ -1326,6 +1526,12 @@ export function createMswHandlers(config: RequestHandlerOptions = {}): CreateMsw
         }
         const overrides = options.pick ?? {};
         return [
+            invoke(pick.postAuthPatientWebauthnRegisterOptions, overrides.postAuthPatientWebauthnRegisterOptions),
+            invoke(pick.postAuthPatientWebauthnRegisterVerify, overrides.postAuthPatientWebauthnRegisterVerify),
+            invoke(pick.postAuthPatientWebauthnAuthenticateOptions, overrides.postAuthPatientWebauthnAuthenticateOptions),
+            invoke(pick.postAuthPatientWebauthnAuthenticateVerify, overrides.postAuthPatientWebauthnAuthenticateVerify),
+            invoke(pick.solicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePost, overrides.solicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePost),
+            invoke(pick.verificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPost, overrides.verificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPost),
             invoke(pick.obterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGet, overrides.obterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGet),
             invoke(pick.assinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPost, overrides.assinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPost),
             invoke(pick.requestOtpApiV1AuthPatientOtpRequestPost, overrides.requestOtpApiV1AuthPatientOtpRequestPost),

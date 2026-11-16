@@ -83,6 +83,16 @@ async def test_emitir_documento_service_commit_visivel_outra_sessao(
 
     async with async_session_factory() as s1:
         svc = make_pep_service(s1)
+        await svc.salvar_evolucao_soap(
+            RegistrarEvolucaoSOAPCommand(
+                atendimento_id=atend_id,
+                organizacao_id=org_id,
+                medico_id=medico_id,
+                anamnese="Dor aguda.",
+                conduta="Analgesia.",
+                identidade_verificada=True,
+            )
+        )
         cmd = EmitirDocumentoClinicoCommand(
             atendimento_id=atend_id,
             organizacao_id=org_id,
@@ -136,6 +146,7 @@ async def test_finalizar_consulta_service_commit_visivel_outra_sessao(
                 medico_id=medico_id,
                 anamnese="Cefaleia leve.",
                 conduta="Sintomático e repouso.",
+                identidade_verificada=True,
             )
         )
 
@@ -183,6 +194,16 @@ async def test_assinar_documento_service_commit_visivel_outra_sessao(
 
     async with async_session_factory() as s1:
         svc = make_pep_service(s1, signer=signer, storage=storage)
+        await svc.salvar_evolucao_soap(
+            RegistrarEvolucaoSOAPCommand(
+                atendimento_id=atend_id,
+                organizacao_id=org_id,
+                medico_id=medico_id,
+                anamnese="Odinofagia.",
+                conduta="Dipirona.",
+                identidade_verificada=True,
+            )
+        )
         doc = await svc.emitir_documento(
             EmitirDocumentoClinicoCommand(
                 atendimento_id=atend_id,
@@ -255,6 +276,16 @@ async def test_assinar_documento_outro_atendimento_404_signer_nao_chamado(
 
     async with async_session_factory() as s1:
         svc = make_pep_service(s1, signer=signer_spy, storage=storage)
+        await svc.salvar_evolucao_soap(
+            RegistrarEvolucaoSOAPCommand(
+                atendimento_id=atend_a,
+                organizacao_id=org_id,
+                medico_id=medico_id,
+                anamnese="Cefaleia.",
+                conduta="Paracetamol.",
+                identidade_verificada=True,
+            )
+        )
         doc = await svc.emitir_documento(
             EmitirDocumentoClinicoCommand(
                 atendimento_id=atend_a,

@@ -1,13 +1,16 @@
+import { Loader2, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { settings } from "@/config/settings";
 import { isWebAuthnSupported } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
+import { usePasskeyRegister } from "../api/use-passkey-register";
 
 export interface PasskeyInvitationCardProps {
   className?: string;
   onAtivarBiometria?: () => void;
+  token?: string;
 }
 
 const DISMISSED_KEY = settings.storage.passkeyDismissed;
@@ -25,9 +28,12 @@ const DISMISSED_KEY = settings.storage.passkeyDismissed;
 export function PasskeyInvitationCard({
   className,
   onAtivarBiometria,
+  token,
 }: PasskeyInvitationCardProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const [avisoExibido, setAvisoExibido] = useState(false);
+  const [registrado, setRegistrado] = useState(false);
+  const [erroRegistro, setErroRegistro] = useState<string | null>(null);
+  const registerPasskey = usePasskeyRegister();
 
   useEffect(() => {
     if (!isWebAuthnSupported()) return;
@@ -50,9 +56,33 @@ export function PasskeyInvitationCard({
   const handleAtivar = () => {
     if (onAtivarBiometria) {
       onAtivarBiometria();
-    } else {
-      setAvisoExibido(true);
+      return;
     }
+
+    const canCreateCredential =
+      Boolean(token) &&
+      typeof navigator !== "undefined" &&
+      typeof navigator.credentials?.create === "function";
+
+    if (!canCreateCredential || !token) {
+      setErroRegistro(
+        "Sessão ou suporte biométrico indisponível neste navegador para ativar Passkey.",
+      );
+      return;
+    }
+
+    setErroRegistro(null);
+    registerPasskey.mutate(
+      { token },
+      {
+        onSuccess: () => {
+          setRegistrado(true);
+        },
+        onError: (err) => {
+          setErroRegistro(err.detail || "Não foi possível cadastrar a biometria neste aparelho.");
+        },
+      },
+    );
   };
 
   return (
@@ -84,16 +114,15 @@ export function PasskeyInvitationCard({
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="pt-1">
-        {avisoExibido ? (
-          <div className="text-xs text-blue-900/90 dark:text-blue-200/90 py-1 space-y-1">
+      <CardContent className="pt-1 space-y-2">
+        {registrado ? (
+          <div
+            className="text-xs text-emerald-900 dark:text-emerald-200 py-1 space-y-1"
+            role="status"
+          >
             <p className="font-semibold flex items-center gap-1.5">
-              <span aria-hidden="true">ℹ️</span>
-              Suporte FIDO2 / Passkeys detectado neste dispositivo.
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              O registro criptográfico de chaves públicas será configurado junto ao seu prontuário
-              (US-14 / Issue #115).
+              <ShieldCheck className="size-4 text-emerald-600" aria-hidden="true" />
+              Biometria ativada com sucesso neste aparelho (US-14).
             </p>
           </div>
         ) : (
@@ -102,21 +131,35 @@ export function PasskeyInvitationCard({
               type="button"
               size="sm"
               variant="default"
+              disabled={registerPasskey.isPending}
               className="bg-blue-600 hover:bg-blue-700 text-white text-xs min-h-[38px] px-3.5"
               onClick={handleAtivar}
             >
-              Ativar Biometria deste Aparelho
+              {registerPasskey.isPending ? (
+                <>
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                  Cadastrando biometria…
+                </>
+              ) : (
+                "Ativar Biometria deste Aparelho"
+              )}
             </Button>
             <Button
               type="button"
               size="sm"
               variant="ghost"
+              disabled={registerPasskey.isPending}
               className="text-xs text-muted-foreground hover:text-foreground min-h-[38px]"
               onClick={handleDismiss}
             >
               Agora não
             </Button>
           </div>
+        )}
+        {erroRegistro && (
+          <p role="alert" className="text-xs text-destructive">
+            {erroRegistro}
+          </p>
         )}
       </CardContent>
     </Card>

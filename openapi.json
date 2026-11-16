@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MediSync Express",
-    "version": "0.15.2"
+    "version": "0.16.2"
   },
   "paths": {
     "/healthz": {
@@ -405,6 +405,171 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AutenticarCadsusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificarOtpResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/patient/webauthn/register/options": {
+      "post": {
+        "tags": [
+          "Autentica\u00e7\u00e3o de Pacientes (WebAuthn)"
+        ],
+        "summary": "Gerar op\u00e7\u00f5es e desafio para cadastro de biometria Passkey (US-14)",
+        "description": "Generate WebAuthn PublicKeyCredentialCreationOptions for patient.",
+        "operationId": "post_auth_patient_webauthn_register_options",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebAuthnRegisterOptionsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/patient/webauthn/register/verify": {
+      "post": {
+        "tags": [
+          "Autentica\u00e7\u00e3o de Pacientes (WebAuthn)"
+        ],
+        "summary": "Verificar atesta\u00e7\u00e3o e persistir chave p\u00fablica Passkey do paciente",
+        "description": "Verify WebAuthn registration response and bind public key to patient.",
+        "operationId": "post_auth_patient_webauthn_register_verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnRegisterVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebAuthnRegisterVerifyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/patient/webauthn/authenticate/options": {
+      "post": {
+        "tags": [
+          "Autentica\u00e7\u00e3o de Pacientes (WebAuthn)"
+        ],
+        "summary": "Gerar desafio criptogr\u00e1fico para login em 1 toque via Passkey (US-14)",
+        "description": "Generate WebAuthn PublicKeyCredentialRequestOptions for patient login.",
+        "operationId": "post_auth_patient_webauthn_authenticate_options",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WebAuthnAuthOptionsRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebAuthnAuthOptionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/patient/webauthn/authenticate/verify": {
+      "post": {
+        "tags": [
+          "Autentica\u00e7\u00e3o de Pacientes (WebAuthn)"
+        ],
+        "summary": "Validar asser\u00e7\u00e3o Passkey e emitir token Bearer Role.PACIENTE",
+        "description": "Verify WebAuthn assertion and issue patient JWT access token.",
+        "operationId": "post_auth_patient_webauthn_authenticate_verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnAuthVerifyRequest"
               }
             }
           },
@@ -1281,6 +1446,118 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DocumentoClinicoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{atendimento_id}/prescriptions/liveness/challenge": {
+      "post": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Solicita desafio de prova de vida facial (Liveness US-15)",
+        "description": "Emite instru\u00e7\u00f5es ativas de prova de vida facial para receita especial.",
+        "operationId": "solicitar_desafio_liveness_prescricao_api_v1_consultations__atendimento_id__prescriptions_liveness_challenge_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do atendimento",
+              "title": "Atendimento Id"
+            },
+            "description": "Identificador \u00fanico do atendimento"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LivenessChallengeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{atendimento_id}/prescriptions/liveness/verify": {
+      "post": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Verifica frames biom\u00e9tricos de prova de vida facial (US-15)",
+        "description": "Avalia vivacidade facial e devolve hash SHA-256 audit\u00e1vel para Lista C1.",
+        "operationId": "verificar_liveness_prescricao_api_v1_consultations__atendimento_id__prescriptions_liveness_verify_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atendimento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do atendimento",
+              "title": "Atendimento Id"
+            },
+            "description": "Identificador \u00fanico do atendimento"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LivenessVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LivenessVerifyResponse"
                 }
               }
             }
@@ -2969,6 +3246,28 @@
             ],
             "title": "Justificativa Tempo Inferior"
           },
+          "liveness_verificacao_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liveness Verificacao Hash"
+          },
+          "justificativa_excecao_liveness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Justificativa Excecao Liveness"
+          },
           "assinado_em": {
             "anyOf": [
               {
@@ -3070,6 +3369,32 @@
             ],
             "title": "Justificativa Tempo Inferior",
             "description": "Justificativa para consulta < 180s (CFM 2.314/2022)"
+          },
+          "liveness_verificacao_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liveness Verificacao Hash",
+            "description": "Hash SHA-256 da prova de vida facial aprovada (US-15)"
+          },
+          "justificativa_excecao_liveness": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Justificativa Excecao Liveness",
+            "description": "Justificativa m\u00e9dica para dispensa excepcional de prova de vida (US-15)"
           },
           "organizacao_id": {
             "anyOf": [
@@ -3190,6 +3515,33 @@
             "type": "boolean",
             "title": "Ia Ratificada Pelo Medico",
             "default": true
+          },
+          "identidade_verificada": {
+            "type": "boolean",
+            "title": "Identidade Verificada",
+            "default": false
+          },
+          "tipo_documento_verificado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Documento Verificado"
+          },
+          "justificativa_excecao_identidade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Justificativa Excecao Identidade"
           },
           "registrado_em": {
             "type": "string",
@@ -3675,6 +4027,30 @@
         "title": "FinalizarConsultaResponse",
         "description": "Result of consultation finalization (payload preserved)."
       },
+      "GeolocalizacaoLivenessSchema": {
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Latitude"
+          },
+          "longitude": {
+            "type": "number",
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Longitude"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "latitude",
+          "longitude"
+        ],
+        "title": "GeolocalizacaoLivenessSchema",
+        "description": "Optional geolocation metadata captured during liveness verification."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -4022,6 +4398,99 @@
         ],
         "title": "LiveKitTokenResponse",
         "description": "Response containing signed JWT token and connection metadata."
+      },
+      "LivenessChallengeResponse": {
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "title": "Challenge Id"
+          },
+          "instrucoes_movimento": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Instrucoes Movimento"
+          },
+          "timeout_segundos": {
+            "type": "integer",
+            "title": "Timeout Segundos",
+            "default": 60
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "challenge_id",
+          "instrucoes_movimento"
+        ],
+        "title": "LivenessChallengeResponse",
+        "description": "Challenge instructions for active facial liveness verification."
+      },
+      "LivenessVerifyRequest": {
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Challenge Id"
+          },
+          "liveness_payload": {
+            "type": "string",
+            "maxLength": 2000000,
+            "minLength": 1,
+            "title": "Liveness Payload"
+          },
+          "geolocalizacao": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeolocalizacaoLivenessSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "challenge_id",
+          "liveness_payload"
+        ],
+        "title": "LivenessVerifyRequest",
+        "description": "Liveness frames and challenge submission for controlled prescriptions."
+      },
+      "LivenessVerifyResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "liveness_score": {
+            "type": "number",
+            "title": "Liveness Score"
+          },
+          "verificacao_hash": {
+            "type": "string",
+            "title": "Verificacao Hash"
+          },
+          "validado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Validado Em"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "liveness_score",
+          "verificacao_hash",
+          "validado_em"
+        ],
+        "title": "LivenessVerifyResponse",
+        "description": "Biometric liveness verification outcome with SHA-256 hash proof."
       },
       "LoginRequest": {
         "properties": {
@@ -4619,6 +5088,44 @@
             "title": "Ia Ratificada Pelo Medico",
             "description": "Ratifica\u00e7\u00e3o obrigat\u00f3ria pelo m\u00e9dico sob CFM n\u00ba 2.454/2026",
             "default": true
+          },
+          "identidade_verificada": {
+            "type": "boolean",
+            "title": "Identidade Verificada",
+            "description": "Confirma\u00e7\u00e3o visual da identidade do paciente conforme Resolu\u00e7\u00e3o CFM n\u00ba 2.314/2022.",
+            "default": false
+          },
+          "tipo_documento_verificado": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "RG",
+                  "CNH",
+                  "CNS",
+                  "CPF_FOTO",
+                  "EXCECAO_CLINICA"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Documento Verificado",
+            "description": "Tipo de documento oficial exibido na c\u00e2mera."
+          },
+          "justificativa_excecao_identidade": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Justificativa Excecao Identidade",
+            "description": "Justificativa cl\u00ednica caso o paciente n\u00e3o possua documento no ato."
           },
           "organizacao_id": {
             "anyOf": [
@@ -5227,6 +5734,19 @@
             "examples": [
               "PACIENTE"
             ]
+          },
+          "atendimento_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Atendimento Id",
+            "description": "ID do atendimento ativo do paciente (opcional para reconex\u00e3o em /fila)"
           }
         },
         "additionalProperties": false,
@@ -5238,6 +5758,325 @@
         ],
         "title": "VerificarOtpResponse",
         "description": "Response containing issued patient Bearer JWT token."
+      },
+      "WebAuthnAllowCredentialSchema": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "public-key"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "WebAuthnAllowCredentialSchema",
+        "description": "Permitted credential descriptor for WebAuthn assertion."
+      },
+      "WebAuthnAuthOptionsRequest": {
+        "properties": {
+          "paciente_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paciente Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WebAuthnAuthOptionsRequest",
+        "description": "Optional patient filter when requesting WebAuthn authentication options."
+      },
+      "WebAuthnAuthOptionsResponse": {
+        "properties": {
+          "challenge": {
+            "type": "string",
+            "title": "Challenge"
+          },
+          "rpId": {
+            "type": "string",
+            "title": "Rpid"
+          },
+          "allowCredentials": {
+            "items": {
+              "$ref": "#/components/schemas/WebAuthnAllowCredentialSchema"
+            },
+            "type": "array",
+            "title": "Allowcredentials"
+          },
+          "timeout": {
+            "type": "integer",
+            "title": "Timeout",
+            "default": 60000
+          },
+          "userVerification": {
+            "type": "string",
+            "title": "Userverification",
+            "default": "preferred"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "challenge",
+          "rpId",
+          "allowCredentials"
+        ],
+        "title": "WebAuthnAuthOptionsResponse",
+        "description": "PublicKeyCredentialRequestOptions payload for passkey login."
+      },
+      "WebAuthnAuthVerifyRequest": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "rawId": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Rawid"
+          },
+          "response": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Response"
+          },
+          "type": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Type",
+            "default": "public-key"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "rawId",
+          "response"
+        ],
+        "title": "WebAuthnAuthVerifyRequest",
+        "description": "WebAuthn assertion credential submitted by client browser during login."
+      },
+      "WebAuthnAuthenticatorSelectionSchema": {
+        "properties": {
+          "residentKey": {
+            "type": "string",
+            "title": "Residentkey",
+            "default": "required"
+          },
+          "requireResidentKey": {
+            "type": "boolean",
+            "title": "Requireresidentkey",
+            "default": true
+          },
+          "userVerification": {
+            "type": "string",
+            "title": "Userverification",
+            "default": "preferred"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WebAuthnAuthenticatorSelectionSchema",
+        "description": "WebAuthn authenticator selection enforcing discoverable credentials."
+      },
+      "WebAuthnPubKeyCredParamSchema": {
+        "properties": {
+          "alg": {
+            "type": "integer",
+            "title": "Alg"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "public-key"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "alg"
+        ],
+        "title": "WebAuthnPubKeyCredParamSchema",
+        "description": "Supported WebAuthn COSE key algorithm parameter."
+      },
+      "WebAuthnRegisterOptionsResponse": {
+        "properties": {
+          "challenge": {
+            "type": "string",
+            "title": "Challenge"
+          },
+          "rp": {
+            "$ref": "#/components/schemas/WebAuthnRpSchema"
+          },
+          "user": {
+            "$ref": "#/components/schemas/WebAuthnUserSchema"
+          },
+          "pubKeyCredParams": {
+            "items": {
+              "$ref": "#/components/schemas/WebAuthnPubKeyCredParamSchema"
+            },
+            "type": "array",
+            "title": "Pubkeycredparams"
+          },
+          "timeout": {
+            "type": "integer",
+            "title": "Timeout",
+            "default": 60000
+          },
+          "attestation": {
+            "type": "string",
+            "title": "Attestation",
+            "default": "none"
+          },
+          "authenticatorSelection": {
+            "$ref": "#/components/schemas/WebAuthnAuthenticatorSelectionSchema",
+            "default": {
+              "residentKey": "required",
+              "requireResidentKey": true,
+              "userVerification": "preferred"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "challenge",
+          "rp",
+          "user",
+          "pubKeyCredParams"
+        ],
+        "title": "WebAuthnRegisterOptionsResponse",
+        "description": "PublicKeyCredentialCreationOptions payload for passkey registration."
+      },
+      "WebAuthnRegisterVerifyRequest": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "rawId": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Rawid"
+          },
+          "response": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Response"
+          },
+          "type": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Type",
+            "default": "public-key"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "rawId",
+          "response"
+        ],
+        "title": "WebAuthnRegisterVerifyRequest",
+        "description": "WebAuthn registration credential attestation submitted by client browser."
+      },
+      "WebAuthnRegisterVerifyResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "credencial_id": {
+            "type": "string",
+            "title": "Credencial Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "credencial_id"
+        ],
+        "title": "WebAuthnRegisterVerifyResponse",
+        "description": "Confirmation payload returned after storing a WebAuthn passkey."
+      },
+      "WebAuthnRpSchema": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "id"
+        ],
+        "title": "WebAuthnRpSchema",
+        "description": "WebAuthn Relying Party metadata."
+      },
+      "WebAuthnUserSchema": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "displayName": {
+            "type": "string",
+            "title": "Displayname"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "displayName"
+        ],
+        "title": "WebAuthnUserSchema",
+        "description": "WebAuthn patient user handle descriptor."
       }
     },
     "securitySchemes": {

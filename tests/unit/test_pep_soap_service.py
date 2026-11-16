@@ -176,3 +176,55 @@ def test_finalized_consultation_immutability() -> None:
 
     with pytest.raises(ConsultaFinalizadaError):
         doc.validar_pode_excluir()
+
+
+@pytest.mark.asyncio
+async def test_salvar_evolucao_soap_persiste_gate_identidade_cfm_2314() -> None:
+    """Verify CFM 2.314/2022 identity gate fields persist via EvolucaoService."""
+    from typing import TYPE_CHECKING, cast
+
+    from src.modules.consultation.application.dtos import (
+        RegistrarEvolucaoSOAPCommand,
+    )
+    from src.modules.consultation.application.ports.atendimento_reader_port import (
+        AtendimentoResumoDTO,
+    )
+    from src.modules.consultation.application.services.evolucao_service import (
+        EvolucaoService,
+    )
+
+    from tests.doubles import FakeAsyncSession, FakeAtendimentoReader
+
+    if TYPE_CHECKING:
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+    atendimento_id = uuid7()
+    medico_id = uuid7()
+    session = FakeAsyncSession()
+    reader = FakeAtendimentoReader(
+        resumo=AtendimentoResumoDTO(
+            atendimento_id=atendimento_id,
+            organizacao_id=1,
+            medico_id=medico_id,
+            status="EM_ATENDIMENTO",
+            tcle_hash="a" * 64,
+            is_terminal=False,
+        )
+    )
+    svc = EvolucaoService(session=cast("AsyncSession", session), reader=reader)
+
+    cmd = RegistrarEvolucaoSOAPCommand(
+        atendimento_id=atendimento_id,
+        organizacao_id=1,
+        medico_id=medico_id,
+        anamnese="Cefaleia frontal há 24h.",
+        conduta="Hidratação e analgesia.",
+        identidade_verificada=True,
+        tipo_documento_verificado="CNH",
+    )
+    evolucao = await svc.salvar_evolucao_soap(cmd)
+
+    assert evolucao.identidade_verificada is True
+    assert evolucao.tipo_documento_verificado == "CNH"
+    assert evolucao.justificativa_excecao_identidade is None
+    assert session.commits == 1
