@@ -2414,6 +2414,26 @@ export type WebAuthnAuthVerifyRequest = {
 };
 
 /**
+ * WebAuthnAuthenticatorSelectionSchema
+ *
+ * WebAuthn authenticator selection enforcing discoverable credentials.
+ */
+export type WebAuthnAuthenticatorSelectionSchema = {
+    /**
+     * Residentkey
+     */
+    residentKey?: string;
+    /**
+     * Requireresidentkey
+     */
+    requireResidentKey?: boolean;
+    /**
+     * Userverification
+     */
+    userVerification?: string;
+};
+
+/**
  * WebAuthnPubKeyCredParamSchema
  *
  * Supported WebAuthn COSE key algorithm parameter.
@@ -2453,6 +2473,7 @@ export type WebAuthnRegisterOptionsResponse = {
      * Attestation
      */
     attestation?: string;
+    authenticatorSelection?: WebAuthnAuthenticatorSelectionSchema;
 };
 
 /**

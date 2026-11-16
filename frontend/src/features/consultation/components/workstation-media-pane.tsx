@@ -1,4 +1,5 @@
 import React, { lazy, Suspense } from "react";
+import type { LivenessChannelMessage } from "../lib/liveness-channel";
 import { VideoPane } from "./video-pane";
 
 const LazyLiveKitVideoCall = lazy(() => import("./livekit-video-call"));
@@ -10,6 +11,10 @@ export interface WorkstationMediaPaneProps {
   livekitToken?: string;
   wsUrl?: string;
   roomName?: string;
+  onLivenessMessage?: (message: LivenessChannelMessage) => void;
+  onRegisterLivenessSender?: (
+    sender: ((message: LivenessChannelMessage) => Promise<void>) | null,
+  ) => void;
 }
 
 /**
@@ -25,6 +30,8 @@ export const WorkstationMediaPane = React.memo(function WorkstationMediaPane({
   livekitToken,
   wsUrl,
   roomName,
+  onLivenessMessage,
+  onRegisterLivenessSender,
 }: WorkstationMediaPaneProps) {
   if (livekitToken) {
     return (
@@ -41,6 +48,8 @@ export const WorkstationMediaPane = React.memo(function WorkstationMediaPane({
           roomName={roomName}
           participantName={medicoNome}
           remoteParticipantName={remoteParticipantName}
+          onLivenessMessage={onLivenessMessage}
+          onRegisterLivenessSender={onRegisterLivenessSender}
           className="min-h-[300px]"
         />
       </Suspense>

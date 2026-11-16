@@ -31,7 +31,6 @@ export function PasskeyInvitationCard({
   token,
 }: PasskeyInvitationCardProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const [avisoExibido, setAvisoExibido] = useState(false);
   const [registrado, setRegistrado] = useState(false);
   const [erroRegistro, setErroRegistro] = useState<string | null>(null);
   const registerPasskey = usePasskeyRegister();
@@ -66,7 +65,9 @@ export function PasskeyInvitationCard({
       typeof navigator.credentials?.create === "function";
 
     if (!canCreateCredential || !token) {
-      setAvisoExibido(true);
+      setErroRegistro(
+        "Sessão ou suporte biométrico indisponível neste navegador para ativar Passkey.",
+      );
       return;
     }
 
@@ -122,17 +123,6 @@ export function PasskeyInvitationCard({
             <p className="font-semibold flex items-center gap-1.5">
               <ShieldCheck className="size-4 text-emerald-600" aria-hidden="true" />
               Biometria ativada com sucesso neste aparelho (US-14).
-            </p>
-          </div>
-        ) : avisoExibido ? (
-          <div className="text-xs text-blue-900/90 dark:text-blue-200/90 py-1 space-y-1">
-            <p className="font-semibold flex items-center gap-1.5">
-              <span aria-hidden="true">ℹ️</span>
-              Suporte FIDO2 / Passkeys detectado neste dispositivo.
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              O registro criptográfico de chaves públicas será configurado junto ao seu prontuário
-              (US-14 / Issue #115).
             </p>
           </div>
         ) : (

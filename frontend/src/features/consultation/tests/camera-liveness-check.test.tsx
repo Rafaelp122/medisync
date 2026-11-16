@@ -1,7 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpResponse } from "msw";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost,
   handleSolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePost,
@@ -10,8 +10,14 @@ import {
 } from "@/api/generated/msw.gen";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
+import { CameraLivenessCheck } from "../components/camera-liveness-check";
 import { PrescriptionBuilder } from "../components/prescription-builder";
 import { createDocumentoClinicoResponse, MOCK_ATENDIMENTO_ID } from "./fixtures";
+
+const originalMediaDevicesDescriptor =
+  typeof navigator !== "undefined"
+    ? Object.getOwnPropertyDescriptor(navigator, "mediaDevices")
+    : undefined;
 
 async function addControlledMedication(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/medicamento \/ princípio ativo/i), "Fluoxetina 20mg");
@@ -22,7 +28,26 @@ async function addControlledMedication(user: ReturnType<typeof userEvent.setup>)
 }
 
 describe("CameraLivenessCheck & Trava Lista C1 (US-15)", () => {
+  afterEach(() => {
+    if (typeof navigator !== "undefined") {
+      if (originalMediaDevicesDescriptor) {
+        Object.defineProperty(navigator, "mediaDevices", originalMediaDevicesDescriptor);
+      } else {
+        Reflect.deleteProperty(navigator, "mediaDevices");
+      }
+    }
+  });
+
   beforeEach(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue({
+          getTracks: () => [{ stop: vi.fn() }],
+        }),
+      },
+      configurable: true,
+    });
+
     server.use(
       handleValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost({
         status: 200,
@@ -78,16 +103,18 @@ describe("CameraLivenessCheck & Trava Lista C1 (US-15)", () => {
           },
         },
       ),
-      http.post("*/api/v1/consultations/:atendimento_id/documents", async ({ request }) => {
-        capturedPayload = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json(
-          createDocumentoClinicoResponse({
-            tipo_documento: "RECEITA_CONTROLE_ESPECIAL_C1",
-            liveness_verificacao_hash: expectedHash,
-          }),
-          { status: 201 },
-        );
-      }),
+      handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost(
+        async ({ request }) => {
+          capturedPayload = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(
+            createDocumentoClinicoResponse({
+              tipo_documento: "RECEITA_CONTROLE_ESPECIAL_C1",
+              liveness_verificacao_hash: expectedHash,
+            }),
+            { status: 201 },
+          ) as never;
+        },
+      ),
     );
 
     const onIssued = vi.fn();
@@ -132,18 +159,20 @@ describe("CameraLivenessCheck & Trava Lista C1 (US-15)", () => {
           },
         },
       ),
-      http.post("*/api/v1/consultations/:atendimento_id/prescriptions/liveness/verify", () => {
-        return HttpResponse.json(
-          {
-            type: "https://medisync.app/errors/spoofing-facial-detectado",
-            title: "Prova de Vida Reprovada",
-            status: 422,
-            code: "SPOOFING_FACIAL_DETECTADO",
-            detail: "Prova de vida reprovada por suspeita de foto estática (score 0.42).",
-          },
-          { status: 422 },
-        );
-      }),
+      handleVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPost(
+        () => {
+          return HttpResponse.json(
+            {
+              type: "https://medisync.app/errors/spoofing-facial-detectado",
+              title: "Prova de Vida Reprovada",
+              status: 422,
+              code: "SPOOFING_FACIAL_DETECTADO",
+              detail: "Prova de vida reprovada por suspeita de foto estática (score 0.42).",
+            },
+            { status: 422 },
+          ) as never;
+        },
+      ),
     );
 
     const user = userEvent.setup();
@@ -207,5 +236,119 @@ describe("CameraLivenessCheck & Trava Lista C1 (US-15)", () => {
       tipo_documento: "RECEITA_CONTROLE_ESPECIAL_C1",
       justificativa_excecao_liveness: "Paciente acamado sem câmera disponível",
     });
+  });
+
+  it("exibe erro de câmera, abre contingência médica e não chama /liveness/verify quando getUserMedia falha", async () => {
+    let verifyCalled = false;
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: {
+        getUserMedia: vi.fn().mockRejectedValue(new Error("NotAllowedError")),
+      },
+      configurable: true,
+    });
+
+    server.use(
+      handleSolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePost(
+        {
+          status: 200,
+          body: {
+            challenge_id: "ch_cam_fail_003",
+            instrucoes_movimento: ["piscar_olhos"],
+            timeout_segundos: 60,
+          },
+        },
+      ),
+      handleVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPost(
+        () => {
+          verifyCalled = true;
+          return HttpResponse.json({} as never, { status: 200 });
+        },
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(
+      <PrescriptionBuilder
+        atendimentoId={MOCK_ATENDIMENTO_ID}
+        identidadeVerificada={true}
+        token="mock-medico-jwt"
+      />,
+    );
+
+    await addControlledMedication(user);
+    await user.click(screen.getByRole("button", { name: /iniciar prova de vida facial/i }));
+    await screen.findByRole("button", { name: /capturar e validar vivacidade/i });
+    await user.click(screen.getByRole("button", { name: /capturar e validar vivacidade/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /permissão de câmera negada ou falha na captura de vídeo/i,
+    );
+    expect(
+      screen.getByLabelText(/justificativa médica para dispensa de prova de vida/i),
+    ).toBeInTheDocument();
+    expect(verifyCalled).toBe(false);
+    expect(screen.getByRole("button", { name: /emitir prescrição digital/i })).toBeDisabled();
+  });
+
+  it("envia desafio via DataChannel LiveKit ao paciente e libera hash quando paciente aprova", async () => {
+    const onSendChallenge = vi.fn();
+    const onApproved = vi.fn();
+    const expectedHash = `sha256_${"b".repeat(64)}`;
+
+    server.use(
+      handleSolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePost(
+        {
+          status: 200,
+          body: {
+            challenge_id: "ch_remote_lk_01",
+            instrucoes_movimento: ["piscar_olhos", "sorrir"],
+            timeout_segundos: 60,
+          },
+        },
+      ),
+    );
+
+    const user = userEvent.setup();
+    const { rerender } = renderWithProviders(
+      <CameraLivenessCheck
+        atendimentoId={MOCK_ATENDIMENTO_ID}
+        token="mock-medico-jwt"
+        approvedHash={null}
+        justificativaExcecao=""
+        onApproved={onApproved}
+        onJustificativaChange={vi.fn()}
+        onSendChallenge={onSendChallenge}
+        remoteResult={null}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /iniciar prova de vida facial/i }));
+    await screen.findByText(/desafio biométrico enviado ao paciente na chamada/i);
+    expect(onSendChallenge).toHaveBeenCalledWith({
+      challenge_id: "ch_remote_lk_01",
+      instrucoes_movimento: ["piscar_olhos", "sorrir"],
+      timeout_segundos: 60,
+    });
+
+    rerender(
+      <CameraLivenessCheck
+        atendimentoId={MOCK_ATENDIMENTO_ID}
+        token="mock-medico-jwt"
+        approvedHash={null}
+        justificativaExcecao=""
+        onApproved={onApproved}
+        onJustificativaChange={vi.fn()}
+        onSendChallenge={onSendChallenge}
+        remoteResult={{
+          type: "LIVENESS_RESULT",
+          atendimento_id: MOCK_ATENDIMENTO_ID,
+          status: "APROVADO",
+          verificacao_hash: expectedHash,
+          liveness_score: 0.99,
+        }}
+      />,
+    );
+
+    await waitFor(() => expect(onApproved).toHaveBeenCalledWith(expectedHash));
   });
 });

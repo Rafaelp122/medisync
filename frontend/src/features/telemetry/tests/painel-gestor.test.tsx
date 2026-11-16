@@ -1,7 +1,14 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  handleAtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut,
+  handleExportarBpaApiV1AmbulatoryProducaoExportarGet,
+  handleListarProducaoApiV1AmbulatoryProducaoGet,
+  handleObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGet,
+  handleObterPainelTelemetriaApiV1TelemetriaPainelGet,
+} from "@/api/generated/msw.gen";
 import type { ConfigPlantaoResponse, PainelTelemetriaResponse } from "@/api/generated/types.gen";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
@@ -56,28 +63,20 @@ const mockConfigData: ConfigPlantaoResponse = {
 describe("PainelGestor Integration Tests (RF-10, US-13, ACR SUS, RN06)", () => {
   beforeEach(() => {
     server.use(
-      http.get("*/api/v1/telemetria/painel", () => {
-        return HttpResponse.json(mockPainelData);
-      }),
-      http.get("*/api/v1/telemetria/config-plantao", () => {
-        return HttpResponse.json(mockConfigData);
-      }),
-      http.put("*/api/v1/telemetria/config-plantao", () => {
-        return HttpResponse.json(mockConfigData);
-      }),
-      http.get("*/api/v1/ambulatory/producao", () => {
-        return HttpResponse.json({
+      handleObterPainelTelemetriaApiV1TelemetriaPainelGet({ body: mockPainelData }),
+      handleObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGet({ body: mockConfigData }),
+      handleAtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut({ body: mockConfigData }),
+      handleListarProducaoApiV1AmbulatoryProducaoGet({
+        body: {
           items: [],
           total: 0,
           competencia: "202611",
           organizacao_id: 1,
           page: 1,
           size: 50,
-        });
+        },
       }),
-      http.get("*/api/v1/ambulatory/producao/exportar", () => {
-        return HttpResponse.text("01#BPA#MOCK", { status: 200 });
-      }),
+      handleExportarBpaApiV1AmbulatoryProducaoExportarGet({ body: "01#BPA#MOCK" }),
     );
   });
 
@@ -118,12 +117,12 @@ describe("PainelGestor Integration Tests (RF-10, US-13, ACR SUS, RN06)", () => {
 
     // Simula sobrecarga / saturação
     server.use(
-      http.get("*/api/v1/telemetria/painel", () => {
-        return HttpResponse.json({
+      handleObterPainelTelemetriaApiV1TelemetriaPainelGet({
+        body: {
           ...mockPainelData,
           medicos_ativos_count: 1,
           total_pacientes_fila: 15,
-        });
+        },
       }),
     );
 
@@ -188,7 +187,7 @@ describe("PainelGestor Integration Tests (RF-10, US-13, ACR SUS, RN06)", () => {
     let payloadRecebido: Record<string, unknown> | null = null;
 
     server.use(
-      http.put("*/api/v1/telemetria/config-plantao", async ({ request }) => {
+      handleAtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut(async ({ request }) => {
         payloadRecebido = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({
           ...mockConfigData,
@@ -224,8 +223,8 @@ describe("PainelGestor Integration Tests (RF-10, US-13, ACR SUS, RN06)", () => {
     let exportarCompetencia: string | null = null;
 
     server.use(
-      http.get("*/api/v1/ambulatory/producao", () => {
-        return HttpResponse.json({
+      handleListarProducaoApiV1AmbulatoryProducaoGet({
+        body: {
           items: [
             {
               atendimento_id: "018f3a5b-0000-7000-8000-000000000099",
@@ -240,9 +239,9 @@ describe("PainelGestor Integration Tests (RF-10, US-13, ACR SUS, RN06)", () => {
           organizacao_id: 1,
           page: 1,
           size: 50,
-        });
+        },
       }),
-      http.get("*/api/v1/ambulatory/producao/exportar", ({ request }) => {
+      handleExportarBpaApiV1AmbulatoryProducaoExportarGet(({ request }) => {
         const url = new URL(request.url);
         exportarCompetencia = url.searchParams.get("competencia");
         return HttpResponse.text("01#2269988#202611#0301010250", { status: 200 });
@@ -262,6 +261,7 @@ describe("PainelGestor Integration Tests (RF-10, US-13, ACR SUS, RN06)", () => {
       expect(
         screen.getByText(/arquivo bpa-i da competência 202611 exportado/i),
       ).toBeInTheDocument();
+      expect(screen.getByText(/BPA_I_202611_2269988\.txt/)).toBeInTheDocument();
     });
   });
 });

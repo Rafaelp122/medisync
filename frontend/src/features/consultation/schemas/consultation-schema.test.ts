@@ -163,13 +163,13 @@ describe("Consultation Schemas (Zod Validation - US-09, US-10, CFM 2.314/2022)",
 
   describe("cfmIdentityGateSchema (Conferência Visual CFM 2.314/2022)", () => {
     it("valida conferência quando documento oficial com foto é informado", () => {
-      const validGate = {
-        identidade_verificada: true,
-        tipo_documento_apresentado: "RG",
-      };
-
-      const result = cfmIdentityGateSchema.safeParse(validGate);
-      expect(result.success).toBe(true);
+      for (const docType of ["RG", "CNH", "CNS", "CPF_FOTO", "EXCECAO_CLINICA"] as const) {
+        const result = cfmIdentityGateSchema.safeParse({
+          identidade_verificada: true,
+          tipo_documento_apresentado: docType,
+        });
+        expect(result.success).toBe(true);
+      }
     });
 
     it("valida conferência em situação de emergência justificada", () => {

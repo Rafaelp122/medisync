@@ -6,7 +6,7 @@
 
 A telemedicina no Brasil é estritamente regulamentada pelas Resoluções CFM nº 1.821/2007 e CFM nº 2.314/2022, bem como pela Lei Geral de Proteção de Dados (LGPD, Art. 11, dados sensíveis de saúde). Toda transição de estado clínico, alocação de plantonista, admissão de paciente, emissão ou assinatura de documento e encerramento de teleconsulta deve ser registrada em trilha imutável (*append-only*), vinculada à transação da ação clínica antes do commit.
 
-Este catálogo define a taxonomia canônica dos 16 eventos clínicos e operacionais do MediSync Express distribuídos entre os módulos `auth`, `queue`, `consultation` e `ambulatory`.
+Este catálogo define a taxonomia canônica dos 20 eventos clínicos e operacionais do MediSync Express distribuídos entre os módulos `auth`, `queue`, `consultation` e `ambulatory`.
 
 ## Conceito
 
@@ -16,7 +16,7 @@ Este catálogo define a taxonomia canônica dos 16 eventos clínicos e operacion
 2. **Imutabilidade Física:** A tabela `audit_events` é protegida pela trigger de banco de dados `trg_prevent_audit_mutation`, que bloqueia comandos `UPDATE` e `DELETE` em tempo de execução com exceção RestrictViolation.
 3. **Não-Repúdio e Proveniência:** Cada evento registra o identificador do ator (`ator_id`), tipo (`ator_tipo`), papel funcional (`ator_papel`), hash do consentimento (`tcle_hash`), transição de estado (`estado_anterior` e `novo_estado`) e payload contextual.
 
-### Taxonomia Canônica dos 16 Eventos
+### Taxonomia Canônica dos 20 Eventos
 
 | Tipo de Evento | Módulo | Ator Canônico | Papel | Descrição Clínica |
 |---|---|---|---|---|

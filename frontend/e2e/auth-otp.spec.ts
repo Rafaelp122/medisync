@@ -176,6 +176,11 @@ test.describe("Autenticação OTP de Paciente (E2E)", () => {
               displayName: "Maria Silva",
             },
             pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+            authenticatorSelection: {
+              residentKey: "required",
+              requireResidentKey: true,
+              userVerification: "preferred",
+            },
             timeout: 60000,
             attestation: "none",
           }),

@@ -69,8 +69,15 @@ export function usePasskeyRegister(
             attestation:
               (creationOpts.attestation as AttestationConveyancePreference | undefined) ?? "none",
             authenticatorSelection: {
-              userVerification: "preferred",
-              residentKey: "preferred",
+              userVerification:
+                (creationOpts.authenticatorSelection?.userVerification as
+                  | UserVerificationRequirement
+                  | undefined) ?? "preferred",
+              residentKey:
+                (creationOpts.authenticatorSelection?.residentKey as
+                  | ResidentKeyRequirement
+                  | undefined) ?? "required",
+              requireResidentKey: creationOpts.authenticatorSelection?.requireResidentKey ?? true,
             },
           },
         })) as PublicKeyCredential | null;
@@ -83,6 +90,8 @@ export function usePasskeyRegister(
         }
 
         const attestation = credential.response as AuthenticatorAttestationResponse;
+        const pubKeyBuf =
+          typeof attestation.getPublicKey === "function" ? attestation.getPublicKey() : null;
         const verifyRes = await postAuthPatientWebauthnRegisterVerify({
           client,
           headers,
@@ -94,6 +103,7 @@ export function usePasskeyRegister(
             response: {
               clientDataJSON: bufferToBase64Url(attestation.clientDataJSON),
               attestationObject: bufferToBase64Url(attestation.attestationObject),
+              ...(pubKeyBuf ? { publicKey: bufferToBase64Url(pubKeyBuf) } : {}),
             },
           },
           throwOnError: true,

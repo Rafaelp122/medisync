@@ -13,8 +13,14 @@ export function createTestQueryClient() {
 
 export function renderWithProviders(ui: ReactElement, options?: Omit<RenderOptions, "wrapper">) {
   const queryClient = createTestQueryClient();
+  const result = render(
+    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
+    options,
+  );
   return {
-    ...render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>, options),
+    ...result,
+    rerender: (nextUi: ReactElement) =>
+      result.rerender(<QueryClientProvider client={queryClient}>{nextUi}</QueryClientProvider>),
     queryClient,
   };
 }

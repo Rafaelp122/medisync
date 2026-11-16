@@ -1,11 +1,16 @@
 import { AlertCircle, FileCheck2, Loader2, Pill } from "lucide-react";
 import { useState } from "react";
-import type { DocumentoClinicoResponse, ItemPrescricaoRequest } from "@/api/generated/types.gen";
+import type {
+  DocumentoClinicoResponse,
+  ItemPrescricaoRequest,
+  LivenessChallengeResponse,
+} from "@/api/generated/types.gen";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useEmitirDocumento } from "../api/use-emitir-documento";
+import type { LivenessResultMessage } from "../lib/liveness-channel";
 import { CameraLivenessCheck } from "./camera-liveness-check";
 import { AtestadoForm } from "./prescription/atestado-form";
 import { PrescriptionForm } from "./prescription/prescription-form";
@@ -16,6 +21,8 @@ export interface PrescriptionBuilderProps {
   identidadeVerificada: boolean;
   isReadOnly?: boolean;
   onPrescriptionIssued?: (doc: DocumentoClinicoResponse) => void;
+  onSendLivenessChallenge?: (challenge: LivenessChallengeResponse) => void;
+  remoteLivenessResult?: LivenessResultMessage | null;
   token?: string;
   duracaoSegundos?: number;
 }
@@ -30,6 +37,8 @@ export function PrescriptionBuilder({
   identidadeVerificada,
   isReadOnly = false,
   onPrescriptionIssued,
+  onSendLivenessChallenge,
+  remoteLivenessResult,
   token,
   duracaoSegundos,
 }: PrescriptionBuilderProps) {
@@ -230,6 +239,8 @@ export function PrescriptionBuilder({
                 justificativaExcecao={justificativaExcecaoLiveness}
                 onApproved={setLivenessHash}
                 onJustificativaChange={setJustificativaExcecaoLiveness}
+                onSendChallenge={onSendLivenessChallenge}
+                remoteResult={remoteLivenessResult}
                 isReadOnly={isReadOnly}
               />
             )}

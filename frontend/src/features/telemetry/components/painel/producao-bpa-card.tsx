@@ -28,19 +28,25 @@ export function ProducaoBpaCard({ token }: ProducaoBpaCardProps) {
     setExportStatus(null);
     exportarBpa(competencia, {
       onSuccess: (conteudo) => {
+        const cnesFromHeader = conteudo.startsWith("01#")
+          ? conteudo.split("#")[1]?.trim()
+          : undefined;
+        const cnes = producao?.items[0]?.cnes || cnesFromHeader || "0000000";
+        const filename = `BPA_I_${competencia}_${cnes}.txt`;
+
         if (typeof URL.createObjectURL === "function") {
           const blob = new Blob([conteudo], { type: "text/plain;charset=utf-8" });
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
           link.href = url;
-          link.download = `BPA-I-${competencia}.txt`;
+          link.download = filename;
           document.body.appendChild(link);
           link.click();
           link.remove();
           URL.revokeObjectURL(url);
         }
         setExportStatus(
-          `Arquivo BPA-I da competência ${competencia} exportado (${conteudo.length} caracteres).`,
+          `Arquivo BPA-I da competência ${competencia} exportado (${filename}, ${conteudo.length} caracteres).`,
         );
       },
     });

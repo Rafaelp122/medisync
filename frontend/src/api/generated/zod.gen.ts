@@ -920,6 +920,17 @@ export const zWebAuthnAuthVerifyRequest = z.object({
 });
 
 /**
+ * WebAuthnAuthenticatorSelectionSchema
+ *
+ * WebAuthn authenticator selection enforcing discoverable credentials.
+ */
+export const zWebAuthnAuthenticatorSelectionSchema = z.object({
+    residentKey: z.string().optional().default('required'),
+    requireResidentKey: z.boolean().optional().default(true),
+    userVerification: z.string().optional().default('preferred')
+});
+
+/**
  * WebAuthnPubKeyCredParamSchema
  *
  * Supported WebAuthn COSE key algorithm parameter.
@@ -984,7 +995,12 @@ export const zWebAuthnRegisterOptionsResponse = z.object({
     user: zWebAuthnUserSchema,
     pubKeyCredParams: z.array(zWebAuthnPubKeyCredParamSchema),
     timeout: z.int().optional().default(60000),
-    attestation: z.string().optional().default('none')
+    attestation: z.string().optional().default('none'),
+    authenticatorSelection: zWebAuthnAuthenticatorSelectionSchema.optional().default({
+        residentKey: 'required',
+        requireResidentKey: true,
+        userVerification: 'preferred'
+    })
 });
 
 /**

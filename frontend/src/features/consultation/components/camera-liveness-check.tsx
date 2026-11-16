@@ -1,5 +1,5 @@
 import { Camera, CheckCircle2, Loader2, ShieldAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { LivenessChallengeResponse } from "@/api/generated/types.gen";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useSolicitarDesafioLiveness, useVerificarLiveness } from "../api/use-liveness-check";
+import type { LivenessResultMessage } from "../lib/liveness-channel";
 
 export interface CameraLivenessCheckProps {
   atendimentoId: string;
@@ -15,6 +16,8 @@ export interface CameraLivenessCheckProps {
   justificativaExcecao: string;
   onApproved: (verificacaoHash: string) => void;
   onJustificativaChange: (value: string) => void;
+  onSendChallenge?: (challenge: LivenessChallengeResponse) => void;
+  remoteResult?: LivenessResultMessage | null;
   isReadOnly?: boolean;
 }
 
@@ -34,20 +37,39 @@ export function CameraLivenessCheck({
   justificativaExcecao,
   onApproved,
   onJustificativaChange,
+  onSendChallenge,
+  remoteResult,
   isReadOnly = false,
 }: CameraLivenessCheckProps) {
   const [challenge, setChallenge] = useState<LivenessChallengeResponse | null>(null);
   const [modoContingencia, setModoContingencia] = useState(false);
+  const [erroCamera, setErroCamera] = useState<string | null>(null);
 
   const solicitarDesafio = useSolicitarDesafioLiveness(atendimentoId);
   const verificarLiveness = useVerificarLiveness(atendimentoId);
 
+  useEffect(() => {
+    if (!remoteResult || remoteResult.atendimento_id !== atendimentoId) return;
+    if (remoteResult.status === "APROVADO" && remoteResult.verificacao_hash && !approvedHash) {
+      onApproved(remoteResult.verificacao_hash);
+      return;
+    }
+    if (remoteResult.status !== "APROVADO") {
+      setErroCamera(
+        remoteResult.detail ||
+          "Prova de vida facial do paciente reprovada. Emissão da Lista C1 bloqueada.",
+      );
+    }
+  }, [remoteResult, atendimentoId, approvedHash, onApproved]);
+
   const handleIniciarDesafio = () => {
+    setErroCamera(null);
     solicitarDesafio.mutate(
       { token },
       {
         onSuccess: (data) => {
           setChallenge(data);
+          onSendChallenge?.(data);
         },
       },
     );
@@ -55,18 +77,29 @@ export function CameraLivenessCheck({
 
   const handleCapturarEValidar = async () => {
     if (!challenge) return;
-    let payloadToken = "LIVE_WEBRTC_FRAME_CAPTURE_OK";
+    setErroCamera(null);
 
-    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        for (const track of stream.getTracks()) {
-          track.stop();
-        }
-        payloadToken = `LIVE_CAMERA_STREAM_${challenge.challenge_id}`;
-      } catch {
-        payloadToken = `LIVE_SANDBOX_FALLBACK_${challenge.challenge_id}`;
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setErroCamera(
+        "Câmera indisponível neste dispositivo ou navegador. Caso o paciente não possua câmera operante, registre a justificativa clínica de contingência abaixo.",
+      );
+      setModoContingencia(true);
+      return;
+    }
+
+    let payloadToken: string;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      for (const track of stream.getTracks()) {
+        track.stop();
       }
+      payloadToken = `LIVE_CAMERA_STREAM_${challenge.challenge_id}`;
+    } catch {
+      setErroCamera(
+        "Permissão de câmera negada ou falha na captura de vídeo. Autorize o acesso à câmera ou registre justificativa clínica de contingência.",
+      );
+      setModoContingencia(true);
+      return;
     }
 
     verificarLiveness.mutate(
@@ -85,7 +118,8 @@ export function CameraLivenessCheck({
     );
   };
 
-  const erroAtual = solicitarDesafio.error?.detail || verificarLiveness.error?.detail || null;
+  const erroAtual =
+    erroCamera || solicitarDesafio.error?.detail || verificarLiveness.error?.detail || null;
 
   return (
     <div
@@ -156,22 +190,41 @@ export function CameraLivenessCheck({
                   <li key={instr}>{INSTRUCTION_LABELS[instr] ?? instr}</li>
                 ))}
               </ul>
-              <Button
-                type="button"
-                size="sm"
-                disabled={isReadOnly || verificarLiveness.isPending}
-                onClick={() => void handleCapturarEValidar()}
-                className="w-full h-8 text-xs gap-1.5"
-              >
-                {verificarLiveness.isPending ? (
-                  <>
-                    <Loader2 className="size-3.5 animate-spin" />
-                    Validando vivacidade facial…
-                  </>
-                ) : (
-                  "Capturar e Validar Vivacidade"
-                )}
-              </Button>
+              {onSendChallenge ? (
+                <div className="space-y-1.5" role="status" aria-live="polite">
+                  <p className="text-[11px] text-amber-900 dark:text-amber-300 font-medium">
+                    Desafio biométrico enviado ao paciente na chamada… Aguardando captura pela
+                    câmera do paciente.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isReadOnly || solicitarDesafio.isPending}
+                    onClick={handleIniciarDesafio}
+                    className="w-full h-7 text-[11px]"
+                  >
+                    Reenviar Desafio ao Paciente
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isReadOnly || verificarLiveness.isPending}
+                  onClick={() => void handleCapturarEValidar()}
+                  className="w-full h-8 text-xs gap-1.5"
+                >
+                  {verificarLiveness.isPending ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" />
+                      Validando vivacidade facial…
+                    </>
+                  ) : (
+                    "Capturar e Validar Vivacidade"
+                  )}
+                </Button>
+              )}
             </div>
           )}
 

@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Lock, LogOut, PhoneCall, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getActiveTenantId } from "@/api/client";
 import type { ChamarProximoResponse, DocumentoClinicoResponse } from "@/api/generated/types.gen";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -10,6 +10,7 @@ import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { useChamarProximo } from "../api/use-chamar-proximo";
 import { useLiveKitToken } from "../api/use-livekit-token";
 import { usePainelTelemetria } from "../api/use-painel-telemetria";
+import type { LivenessChannelMessage, LivenessResultMessage } from "../lib/liveness-channel";
 import type { CfmIdentityGateData } from "../schemas/consultation-schema";
 import { CfmIdentityGate } from "./cfm-identity-gate";
 import { FinalizeConsultationModal } from "./finalize-consultation-modal";
@@ -78,9 +79,19 @@ export function DoctorWorkstation({
   const [identidadeVerificada, setIdentidadeVerificada] = useState(false);
   const [dadosIdentidade, setDadosIdentidade] = useState<CfmIdentityGateData | null>(null);
   const [documentoPendente, setDocumentoPendente] = useState<DocumentoClinicoResponse | null>(null);
+  const [livenessResult, setLivenessResult] = useState<LivenessResultMessage | null>(null);
+  const livenessSenderRef = useRef<((message: LivenessChannelMessage) => Promise<void>) | null>(
+    null,
+  );
   const [isFinalizado, setIsFinalizado] = useState(false);
   const [modalFinalizarAberto, setModalFinalizarAberto] = useState(false);
   const [mensagemFilaVazia, setMensagemFilaVazia] = useState<string | null>(null);
+
+  const handleLivenessMessage = useCallback((message: LivenessChannelMessage) => {
+    if (message.type === "LIVENESS_RESULT") {
+      setLivenessResult(message);
+    }
+  }, []);
 
   const queryClient = useQueryClient();
   const { data: painelTelemetria, isLoading: isCarregandoPainel } = usePainelTelemetria(token);
@@ -102,6 +113,7 @@ export function DoctorWorkstation({
             setIdentidadeVerificada(false);
             setDadosIdentidade(null);
             setDocumentoPendente(null);
+            setLivenessResult(null);
             setIsFinalizado(false);
 
             // Emite token LiveKit WebRTC para a sala médica
@@ -281,6 +293,10 @@ export function DoctorWorkstation({
               livekitToken={livekitData?.token}
               wsUrl={livekitData?.server_url}
               roomName={livekitData?.room_name}
+              onLivenessMessage={handleLivenessMessage}
+              onRegisterLivenessSender={(sender) => {
+                livenessSenderRef.current = sender;
+              }}
             />
 
             <CfmIdentityGate
@@ -335,6 +351,15 @@ export function DoctorWorkstation({
                   : 0
               }
               onPrescriptionIssued={(doc) => setDocumentoPendente(doc)}
+              onSendLivenessChallenge={(challenge) => {
+                if (!atendimentoAtivo.atendimento_id) return;
+                void livenessSenderRef.current?.({
+                  type: "LIVENESS_CHALLENGE",
+                  atendimento_id: atendimentoAtivo.atendimento_id,
+                  challenge,
+                });
+              }}
+              remoteLivenessResult={livenessResult}
               token={token}
             />
 

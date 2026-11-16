@@ -5873,6 +5873,29 @@
         "title": "WebAuthnAuthVerifyRequest",
         "description": "WebAuthn assertion credential submitted by client browser during login."
       },
+      "WebAuthnAuthenticatorSelectionSchema": {
+        "properties": {
+          "residentKey": {
+            "type": "string",
+            "title": "Residentkey",
+            "default": "required"
+          },
+          "requireResidentKey": {
+            "type": "boolean",
+            "title": "Requireresidentkey",
+            "default": true
+          },
+          "userVerification": {
+            "type": "string",
+            "title": "Userverification",
+            "default": "preferred"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WebAuthnAuthenticatorSelectionSchema",
+        "description": "WebAuthn authenticator selection enforcing discoverable credentials."
+      },
       "WebAuthnPubKeyCredParamSchema": {
         "properties": {
           "alg": {
@@ -5921,6 +5944,14 @@
             "type": "string",
             "title": "Attestation",
             "default": "none"
+          },
+          "authenticatorSelection": {
+            "$ref": "#/components/schemas/WebAuthnAuthenticatorSelectionSchema",
+            "default": {
+              "residentKey": "required",
+              "requireResidentKey": true,
+              "userVerification": "preferred"
+            }
           }
         },
         "additionalProperties": false,

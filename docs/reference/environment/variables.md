@@ -83,13 +83,17 @@ Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3
 | `NOTIFICATION_RATE_LIMIT_REFILL_RATE` | `src/core/config.py:CommonSettings.NOTIFICATION_RATE_LIMIT_REFILL_RATE` | Float $\ge 0.0$ | `0.05` | Reposição de tokens por segundo (~1 a cada 20s) |
 | `NOTIFICATION_RATE_LIMIT_TTL_SECONDS` | `src/core/config.py:CommonSettings.NOTIFICATION_RATE_LIMIT_TTL_SECONDS` | Inteiro $\ge 1$ | `3600` | Expiração da chave hash do token bucket no Valkey |
 | `PSC_DEFAULT_PROVIDER` | `src/core/config.py:CommonSettings.PSC_DEFAULT_PROVIDER` | `birdid`, `safeid`, `vidaas`, `fake` | `fake` | Provedor de assinatura ICP-Brasil em nuvem (rejeita fake em prod) |
+| `LIVENESS_PROVIDER` | `src/core/config.py:CommonSettings.LIVENESS_PROVIDER` | `valkey_sandbox`, `mock`, `govbr`, `datavalid` | `valkey_sandbox` | Provedor de prova de vida facial (US-15; rejeita `mock`/`valkey_sandbox` em prod) |
+| `WEBAUTHN_RP_ID` | `src/core/config.py:CommonSettings.WEBAUTHN_RP_ID` | Domínio RFC 6454 | `localhost` | Relying Party ID WebAuthn (US-14; proibido `localhost` em prod) |
+| `WEBAUTHN_RP_NAME` | `src/core/config.py:CommonSettings.WEBAUTHN_RP_NAME` | Texto | `MediSync Express` | Nome exibido no prompt nativo FIDO2/Passkeys |
+| `WEBAUTHN_ALLOWED_ORIGINS` | `src/core/config.py:CommonSettings.WEBAUTHN_ALLOWED_ORIGINS` | Lista URL HTTP(S) | `["http://localhost:5173"]` | Origens permitidas no `clientDataJSON` (prod exige `https://`) |
 
 ### 7. Perfis Polimórficos de Ambiente
 
 O carregamento via `src/core/config.py:get_settings` instancia dinamicamente a subclasse de acordo com `ENVIRONMENT`:
 - `development` → `DevelopmentSettings` (`DEBUG=True`, defaults para Docker Compose local).
-- `test` → `TestSettings` (`DEBUG=True`, seletores automáticos para `memory`).
-- `production` → `ProductionSettings` (`DEBUG=False`, fail-fast ativo via `@model_validator` rejeitando `devkey`, segredos fracos, SAMU de teste e `PSC_DEFAULT_PROVIDER='fake'`).
+- `test` → `TestSettings` (`DEBUG=True`, seletores automáticos para `memory`, `LIVENESS_PROVIDER="mock"`).
+- `production` → `ProductionSettings` (`DEBUG=False`, fail-fast ativo via `@model_validator` rejeitando `devkey`, segredos fracos, SAMU de teste, `PSC_DEFAULT_PROVIDER='fake'`, `LIVENESS_PROVIDER` de dev/test e WebAuthn não-HTTPS/`localhost`).
 
 Bootstrap:
 

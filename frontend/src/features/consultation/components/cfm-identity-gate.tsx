@@ -21,7 +21,7 @@ export function CfmIdentityGate({
   onVerificationChange,
   isReadOnly = false,
 }: CfmIdentityGateProps) {
-  const [tipoDocumento, setTipoDocumento] = useState<"RG" | "CNH" | "CNS" | "">("RG");
+  const [tipoDocumento, setTipoDocumento] = useState<"RG" | "CNH" | "CNS" | "CPF_FOTO" | "">("RG");
   const [isEmergencia, setIsEmergencia] = useState(false);
   const [justificativa, setJustificativa] = useState("");
   const [verificado, setVerificado] = useState(false);
@@ -34,7 +34,7 @@ export function CfmIdentityGate({
       identidade_verificada: true,
       tipo_documento_apresentado: isEmergencia
         ? null
-        : (tipoDocumento as "RG" | "CNH" | "CNS") || null,
+        : (tipoDocumento as "RG" | "CNH" | "CNS" | "CPF_FOTO") || null,
       justificativa_excecao: isEmergencia ? justificativa.trim() : null,
     };
 
@@ -139,16 +139,18 @@ export function CfmIdentityGate({
             </div>
 
             {!isEmergencia ? (
-              <div className="flex items-center gap-3 pt-1">
+              <div className="flex flex-wrap items-center gap-3 pt-1">
                 <span className="text-muted-foreground">Tipo de documento:</span>
-                {(["RG", "CNH", "CNS"] as const).map((doc) => (
+                {(["RG", "CNH", "CNS", "CPF_FOTO"] as const).map((doc) => (
                   <Label key={doc} className="flex items-center gap-1 cursor-pointer font-normal">
                     <input
                       type="radio"
                       name="tipo-doc"
                       value={doc}
                       checked={tipoDocumento === doc}
-                      onChange={(e) => setTipoDocumento(e.target.value as "RG" | "CNH" | "CNS")}
+                      onChange={(e) =>
+                        setTipoDocumento(e.target.value as "RG" | "CNH" | "CNS" | "CPF_FOTO")
+                      }
                       disabled={isReadOnly}
                       className="size-3"
                     />

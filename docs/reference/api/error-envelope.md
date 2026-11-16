@@ -71,12 +71,13 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 422 | `EMERGENCIA_CRITICA_SAMU_192` | Gravidade Vermelha / SAMU 192 imediato - RN04 (`EmergenciaCriticaSamuError`) |
 | 422 | `TRIAGEM_INVALIDA` | Parâmetros de triagem inválidos (`TriagemInvalidaError`) |
 | 422 | `PRESCRICAO_FISICA_OBRIGATORIA` | Notificação amarela/azul Portaria 344/98 (`PrescricaoFisicaObrigatoriaError`) |
-| 422 | `CONSULTA_INVALIDA` | Violação de regra clínica em evolução/prescrição (`ConsultaInvalidaError`) |
+| 422 | `CONSULTA_INVALIDA` | Violação de regra clínica em evolução, ausência de identidade verificada (CFM nº 2.314/2022) ou prescrição inválida (`ConsultaInvalidaError`) |
 | 422 | `ASSINATURA_DIGITAL_INVALIDA` | Falha na assinatura digital ICP-Brasil (`AssinaturaDigitalInvalidaError`) |
 | 422 | `AUDITORIA_INVALIDA` | Inconsistência nos atributos do evento forense (`AuditoriaInvalidaError`) |
 | 422 | `TRAVA_TEMPORAL_ATESTADO_VIOLADA` | Emissão de atestado médico com tempo de consulta <180s sem justificativa circunstanciada - RN09 (`TravaTemporalAtestadoVioladaError`) |
 | 422 | `IA_NAO_RATIFICADA` | Submissão de sugestão de IA no prontuário sem ratificação médica expressa - CFM nº 2.454/2026, RN08 (`IaNaoRatificadaError`) |
 | 422 | `SPOOFING_FACIAL_DETECTADO` | Prova de vida facial reprovada por suspeita de spoofing - US-15 (`SpoofingFacialDetectadoError`) |
+| 422 | `LIVENESS_CHALLENGE_INVALIDO` | Desafio de prova de vida ausente, expirado ou já consumido (sem disparar incidente de spoofing) - US-15 (`LivenessChallengeInvalidoError`) |
 | 422 | `PROVA_DE_VIDA_OBRIGATORIA` | Prescrição Lista C1 bloqueada sem prova de vida aprovada ou justificativa - US-15 (`ProvaDeVidaObrigatoriaError`) |
 | 423 | `CONTA_BLOQUEADA` | Bloqueio temporário por tentativas falhas consecutivas (`ContaBloqueadaError`) |
 | 429 | `OTP_RATE_LIMIT_EXCEEDED` | Limite de requisições de OTP excedido (`OtpRateLimitExcedidoError`) |
@@ -115,6 +116,7 @@ Notas de semântica:
 - Impl: `src/modules/triage/domain/exceptions.py:EmergenciaCriticaSamuError`
 - Impl: `src/modules/consultation/domain/exceptions.py:PrescricaoFisicaObrigatoriaError`
 - Impl: `src/modules/consultation/domain/exceptions.py:SpoofingFacialDetectadoError`
+- Impl: `src/modules/consultation/domain/exceptions.py:LivenessChallengeInvalidoError`
 - Impl: `src/modules/consultation/domain/exceptions.py:ProvaDeVidaObrigatoriaError`
 - Impl: `src/modules/consultation/presentation/dependencies.py:exigir_rate_limit`
 

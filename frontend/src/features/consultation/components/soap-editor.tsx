@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CheckCircle, FileText, Loader2, Save } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,15 @@ export function SoapEditor({
   const { data: soapExistente, isLoading: isLoadingSoap } = useSoapEvolucao(atendimentoId, token);
   const { mutate: salvarSoap, isPending: isSaving } = useSalvarSoap(atendimentoId);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) {
+        clearTimeout(successTimerRef.current);
+      }
+    };
+  }, []);
 
   const {
     register,
@@ -67,6 +76,10 @@ export function SoapEditor({
 
   const onSubmit = (formData: SoapFormData) => {
     if (isReadOnly) return;
+    if (successTimerRef.current) {
+      clearTimeout(successTimerRef.current);
+      successTimerRef.current = null;
+    }
     setMensagemSucesso(null);
 
     salvarSoap(
@@ -76,14 +89,26 @@ export function SoapEditor({
         exame_fisico_virtual: formData.exame_fisico_virtual || null,
         cid10_principal: formData.cid10_principal ? formData.cid10_principal.toUpperCase() : null,
         conduta: formData.conduta,
-        identidade_verificada: dadosIdentidade?.identidade_verificada ?? false,
-        tipo_documento_verificado: dadosIdentidade?.tipo_documento_apresentado ?? null,
-        justificativa_excecao_identidade: dadosIdentidade?.justificativa_excecao ?? null,
+        identidade_verificada:
+          dadosIdentidade?.identidade_verificada ?? soapExistente?.identidade_verificada ?? false,
+        tipo_documento_verificado:
+          dadosIdentidade?.tipo_documento_apresentado ??
+          (soapExistente?.tipo_documento_verificado as
+            | CfmIdentityGateData["tipo_documento_apresentado"]
+            | undefined) ??
+          null,
+        justificativa_excecao_identidade:
+          dadosIdentidade?.justificativa_excecao ??
+          soapExistente?.justificativa_excecao_identidade ??
+          null,
       },
       {
         onSuccess: () => {
           setMensagemSucesso("Evolução clínica SOAP salva com sucesso no PEP.");
-          setTimeout(() => setMensagemSucesso(null), 4000);
+          successTimerRef.current = setTimeout(() => {
+            setMensagemSucesso(null);
+            successTimerRef.current = null;
+          }, 4000);
         },
       },
     );
