@@ -1,3 +1,16 @@
+## v0.17.0 (2026-11-16)
+
+### Feat
+
+- **auth,consultation**: implement US-14 WebAuthn passkeys and US-15 facial liveness gate
+- **audit-e2e**: remediar gaps P0/P1 de requisitos, contratos e testes E2E
+
+### Fix
+
+- **frontend,docs**: sync OpenAPI contracts, add LiveKit patient liveness flow and harden UI tests
+- **consultation,queue**: enforce Valkey liveness, role segregation, CFM identity gate and eligibility audit (#116)
+- **auth,identity**: harden US-14 WebAuthn cryptography, tenant isolation and monotonic passkeys (#115)
+
 ## v0.16.2 (2026-11-15)
 
 ### Fix
