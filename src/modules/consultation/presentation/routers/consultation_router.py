@@ -22,7 +22,8 @@ from src.modules.consultation.presentation.dependencies import (
     ClinicalAccessMutationDep,
     ClinicalAccessReadDep,
     DocumentoIdPath,
-    LivenessActorDep,
+    LivenessChallengeMedicoDep,
+    LivenessVerifyPacienteDep,
 )
 from src.modules.consultation.presentation.schemas import (
     AssinarDocumentoRequest,
@@ -49,8 +50,8 @@ def _require_matching_tenant(provided: int | None, tenant_id: int) -> int:
     """Obsolete body organizacao_id: diverge -> 403, coincide/ausente -> ignora."""
     if provided is not None and provided != tenant_id:
         raise ForbiddenError(
-            "Organização do corpo diverge do tenant autenticado "
-            "(cabeçalho X-Tenant-ID)."
+            f"Organização do corpo ('{provided}') diverge do tenant autenticado "
+            f"no cabeçalho X-Tenant-ID (esperado: '{tenant_id}')."
         )
     return tenant_id
 
@@ -186,14 +187,15 @@ async def emitir_documento_clinico(
 )
 async def solicitar_desafio_liveness_prescricao(
     atendimento_id: AtendimentoIdPath,
-    current_actor: LivenessActorDep,
+    current_actor: LivenessChallengeMedicoDep,
     service: PEPServiceDep,
     tenant_id: TenantDep,
 ) -> LivenessChallengeResponse:
     """Emite instruções ativas de prova de vida facial para receita especial."""
     if not current_actor.is_admin and current_actor.organizacao_id != tenant_id:
         raise ForbiddenError(
-            "Organização do ator diverge do tenant autenticado (X-Tenant-ID)."
+            f"Organização do ator ('{current_actor.organizacao_id}') diverge do "
+            f"tenant autenticado no cabeçalho X-Tenant-ID (esperado: '{tenant_id}')."
         )
     challenge = await service.solicitar_desafio_liveness(atendimento_id)
     return LivenessChallengeResponse.model_validate(challenge)
@@ -207,14 +209,15 @@ async def solicitar_desafio_liveness_prescricao(
 async def verificar_liveness_prescricao(
     atendimento_id: AtendimentoIdPath,
     request: Annotated[LivenessVerifyRequest, Body()],
-    current_actor: LivenessActorDep,
+    current_actor: LivenessVerifyPacienteDep,
     service: PEPServiceDep,
     tenant_id: TenantDep,
 ) -> LivenessVerifyResponse:
     """Avalia vivacidade facial e devolve hash SHA-256 auditável para Lista C1."""
     if not current_actor.is_admin and current_actor.organizacao_id != tenant_id:
         raise ForbiddenError(
-            "Organização do ator diverge do tenant autenticado (X-Tenant-ID)."
+            f"Organização do ator ('{current_actor.organizacao_id}') diverge do "
+            f"tenant autenticado no cabeçalho X-Tenant-ID (esperado: '{tenant_id}')."
         )
     cmd = VerificarLivenessCommand(
         atendimento_id=atendimento_id,

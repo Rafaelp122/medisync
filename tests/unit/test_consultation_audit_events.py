@@ -97,8 +97,16 @@ async def test_emitir_documento_records_documento_emitido_audit_event(
     med_id = uuid7()
 
     added: list[Any] = []
+    evolucao = EvolucaoClinica(
+        organizacao_id=org_id,
+        atendimento_id=atend_id,
+        medico_id=med_id,
+        anamnese="Anamnese teste",
+        conduta="Conduta teste",
+        identidade_verificada=True,
+    )
     fake_session = FakeAsyncSession(
-        [FakeResult(None), FakeAddedResult(added)], added=added
+        [FakeResult(evolucao), FakeAddedResult(added)], added=added
     )
 
     svc = DocumentoService(
@@ -218,6 +226,7 @@ async def test_finalizar_consulta_records_consulta_finalizada_audit_event(
         medico_id=med_id,
         anamnese="Anamnese teste",
         conduta="Conduta teste",
+        identidade_verificada=True,
     )
 
     fake_session = FakeAsyncSession(

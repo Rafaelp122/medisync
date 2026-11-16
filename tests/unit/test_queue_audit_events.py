@@ -6,7 +6,6 @@ Referência: docs/reference/audit/event-catalog.md
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
-from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -33,7 +32,13 @@ from src.modules.queue.domain.models import (
     StatusAtendimento,
 )
 
-from tests.doubles import FakeAsyncSession, FakeAuditTrail, FakeValkey
+from tests.doubles import (
+    FakeAllocationPort,
+    FakeAsyncSession,
+    FakeAuditTrail,
+    FakeTriagePort,
+    FakeValkey,
+)
 
 
 @dataclass
@@ -65,21 +70,19 @@ async def test_admitir_paciente_records_admissao_audit_event(
     tcle_hash = "f" * 64
 
     fake_session = FakeAsyncSession()
-    mock_triage = MagicMock()
-    mock_triage.avaliar_risco = AsyncMock(
-        return_value=DummyTriageEvaluation(
+    fake_triage = FakeTriagePort(
+        evaluation=DummyTriageEvaluation(
             prioridade_clinica=PrioridadeClinica.POUCO_URGENTE,
             alerta_samu_disparado=False,
             tcle_hash=tcle_hash,
             tcle_texto="Termo de Consentimento Livre e Esclarecido",
         )
     )
-    mock_triage.registrar_triagem = AsyncMock(return_value=uuid4())
 
     fila_service = FilaService(
         valkey=cast("Any", fake_valkey),
         db_session=cast("AsyncSession", fake_session),
-        triage_port=mock_triage,
+        triage_port=fake_triage,
         audit_trail=fake_audit_trail,
     )
 
@@ -118,21 +121,19 @@ async def test_admitir_paciente_propaga_ip_origem_para_auditoria(
     tcle_hash = "e" * 64
 
     fake_session = FakeAsyncSession()
-    mock_triage = MagicMock()
-    mock_triage.avaliar_risco = AsyncMock(
-        return_value=DummyTriageEvaluation(
+    fake_triage = FakeTriagePort(
+        evaluation=DummyTriageEvaluation(
             prioridade_clinica=PrioridadeClinica.POUCO_URGENTE,
             alerta_samu_disparado=False,
             tcle_hash=tcle_hash,
             tcle_texto="Termo de Consentimento Livre e Esclarecido",
         )
     )
-    mock_triage.registrar_triagem = AsyncMock(return_value=uuid4())
 
     fila_service = FilaService(
         valkey=cast("Any", fake_valkey),
         db_session=cast("AsyncSession", fake_session),
-        triage_port=mock_triage,
+        triage_port=fake_triage,
         audit_trail=fake_audit_trail,
     )
 
@@ -252,13 +253,12 @@ async def test_alocar_chamada_records_chamada_iniciada_audit_event(
     )
     fake_session = FakeAsyncSession(entities={atendimento_id: atendimento})
 
-    mock_lua = MagicMock()
-    mock_lua.alocar_chamada = AsyncMock(return_value=AlocacaoCodigo.SUCESSO)
+    fake_allocation = FakeAllocationPort(codigo=AlocacaoCodigo.SUCESSO)
 
     alocacao_service = AlocacaoChamadaService(
         valkey=cast("Any", fake_valkey),
         db_session=cast("AsyncSession", fake_session),
-        lua_manager=mock_lua,
+        lua_manager=fake_allocation,
         audit_trail=fake_audit_trail,
     )
 
@@ -418,9 +418,8 @@ async def test_processar_piora_clinica_samu_records_deterioracao_audit_event(
     )
     fake_session = FakeAsyncSession(entities={atendimento_id: atendimento})
 
-    mock_triage = MagicMock()
-    mock_triage.avaliar_risco = AsyncMock(
-        return_value=DummyTriageEvaluation(
+    fake_triage = FakeTriagePort(
+        evaluation=DummyTriageEvaluation(
             prioridade_clinica=1,
             alerta_samu_disparado=True,
             tcle_hash="9" * 64,
@@ -432,7 +431,7 @@ async def test_processar_piora_clinica_samu_records_deterioracao_audit_event(
     fila_service = FilaService(
         valkey=cast("Any", fake_valkey),
         db_session=cast("AsyncSession", fake_session),
-        triage_port=mock_triage,
+        triage_port=fake_triage,
         audit_trail=fake_audit_trail,
     )
 

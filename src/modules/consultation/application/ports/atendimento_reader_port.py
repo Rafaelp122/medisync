@@ -19,6 +19,7 @@ class AtendimentoResumoDTO:
     paciente_id: UUID | None = None
     chamada_iniciada_em: datetime | None = None
     criado_em: datetime | None = None
+    exige_liveness_controle_especial: bool = True
 
 
 @runtime_checkable

@@ -1080,9 +1080,26 @@ class FilaService:
             )
 
         # Liberação assistencial imediata no SUS (Art. 196 CF/88 / ADR-012)
+        estado_anterior = str(atendimento.status)
         atendimento.promover_para_apto()
+        if self._audit_trail is not None:
+            await self._audit_trail.record_event(
+                organizacao_id=cmd.organizacao_id,
+                atendimento_id=atendimento.id,
+                ator_tipo=AtorTipo.SISTEMA,
+                ator_papel=AtorPapel.SISTEMA,
+                tipo_evento="ELEGIBILIDADE_CONFIRMADA",
+                ator_id=None,
+                estado_anterior=estado_anterior,
+                novo_estado=str(atendimento.status),
+                tcle_hash=_safe_tcle_hash(atendimento),
+                payload={
+                    "canal": "REGULARIZACAO_CONTINGENCIA",
+                    "tipo_contingencia": cmd.tipo_contingencia,
+                    "motivo": motivo_limpo,
+                },
+            )
         await self._db_session.commit()
-        await self._db_session.refresh(atendimento)
 
         ts_promovido = atendimento.data_entrada_fila or atendimento.criado_em
         score_promovido = calcular_score(atendimento.prioridade_clinica, ts_promovido)

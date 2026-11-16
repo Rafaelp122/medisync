@@ -24,9 +24,13 @@ from src.modules.consultation.application.services.documento_service import (
     DocumentoService,
 )
 from src.modules.consultation.domain.exceptions import (
+    ConsultaInvalidaError,
     PrescricaoFisicaObrigatoriaError,
 )
-from src.modules.consultation.domain.models import DocumentoClinico
+from src.modules.consultation.domain.models import (
+    DocumentoClinico,
+    EvolucaoClinica,
+)
 from src.modules.consultation.domain.s3_keys import build_signed_document_key
 from src.modules.consultation.infrastructure.memory_signed_cache import (
     MemorySignedCache,
@@ -94,13 +98,30 @@ def _service(
     )
 
 
+def _make_evolucao_verificada(atendimento_id: UUID, medico_id: UUID) -> EvolucaoClinica:
+    return EvolucaoClinica(
+        organizacao_id=_ORG_ID,
+        atendimento_id=atendimento_id,
+        medico_id=medico_id,
+        anamnese="Anamnese registrada.",
+        conduta="Conduta clinica definida.",
+        identidade_verificada=True,
+    )
+
+
 @pytest.mark.asyncio
 async def test_emitir_gera_chave_canonica_sem_legado() -> None:
     """Emitir without chave must generate orgs/{org}/consultations key, no s3://."""
     atend_id = uuid7()
     med_id = uuid7()
     added: list[Any] = []
-    session = FakeAsyncSession([FakeResult(None), FakeAddedResult(added)], added)
+    session = FakeAsyncSession(
+        [
+            FakeResult(_make_evolucao_verificada(atend_id, med_id)),
+            FakeAddedResult(added),
+        ],
+        added,
+    )
     svc = _service(session)
 
     doc = await svc.emitir_documento(_emitir_command(atend_id, med_id))
@@ -120,7 +141,13 @@ async def test_emitir_preserva_chave_explicita() -> None:
     atend_id = uuid7()
     med_id = uuid7()
     added: list[Any] = []
-    session = FakeAsyncSession([FakeResult(None), FakeAddedResult(added)], added)
+    session = FakeAsyncSession(
+        [
+            FakeResult(_make_evolucao_verificada(atend_id, med_id)),
+            FakeAddedResult(added),
+        ],
+        added,
+    )
     svc = _service(session)
     explicita = f"orgs/{_ORG_ID}/consultations/{atend_id}/documents/custom.pdf"
 
@@ -325,3 +352,27 @@ async def test_validacao_usa_cache_port_para_status_assinado() -> None:
     res_assinado = await svc2.validar_documento(str(doc.id))
     assert res_assinado.status_documento == "ASSINADO"
     assert res_assinado.assinatura_digital_valida is True
+
+
+@pytest.mark.asyncio
+async def test_emitir_documento_bloqueia_sem_identidade_verificada_cfm() -> None:
+    """CFM 2.314/2022 blocks document emission without verified patient identity."""
+    atend_id = uuid7()
+    med_id = uuid7()
+    svc_sem_soap = _service(FakeAsyncSession([FakeResult(None)]))
+    with pytest.raises(ConsultaInvalidaError, match="identidade_verificada"):
+        await svc_sem_soap.emitir_documento(_emitir_command(atend_id, med_id))
+
+    evolucao_nao_verificada = EvolucaoClinica(
+        organizacao_id=_ORG_ID,
+        atendimento_id=atend_id,
+        medico_id=med_id,
+        anamnese="Queixa clinica",
+        conduta="Observacao",
+        identidade_verificada=False,
+    )
+    svc_nao_verificada = _service(
+        FakeAsyncSession([FakeResult(evolucao_nao_verificada)])
+    )
+    with pytest.raises(ConsultaInvalidaError, match="identidade_verificada=False"):
+        await svc_nao_verificada.emitir_documento(_emitir_command(atend_id, med_id))

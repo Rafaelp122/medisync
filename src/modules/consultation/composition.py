@@ -12,11 +12,13 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.audit import AuditTrailPort, SqlAuditTrailAdapter
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
+from src.core.valkey import get_valkey_client, get_valkey_pool
 from src.modules.ambulatory.application.dtos import ConsolidarTeleconsultaCommand
 from src.modules.ambulatory.application.services.producao_service import (
     ProducaoAmbulatorialService,
@@ -77,6 +79,7 @@ from src.modules.consultation.infrastructure.document_directory_sql import (
 from src.modules.consultation.infrastructure.livekit_adapter import LiveKitAdapter
 from src.modules.consultation.infrastructure.liveness_adapter import (
     MockLivenessAdapter,
+    ValkeyLivenessAdapter,
 )
 from src.modules.consultation.infrastructure.memory_signed_cache import (
     MemorySignedCache,
@@ -301,12 +304,34 @@ def get_document_directory(session: DbSessionDep) -> DocumentDirectoryPort:
         return SqlDocumentDirectory(session)
 
 
-def get_liveness_verifier() -> LivenessVerificationPort:
+def get_liveness_verifier(valkey: Redis | None = None) -> LivenessVerificationPort:
     """Resolve adaptador ativo para prova de vida facial (US-15)."""
-    return MockLivenessAdapter()
+    settings = get_settings()
+    if settings.LIVENESS_PROVIDER == "mock":
+        if settings.ENVIRONMENT == "production":
+            raise RuntimeError(
+                "Provedor 'mock' de prova de vida é proibido em produção."
+            )
+        return MockLivenessAdapter()
+    if settings.LIVENESS_PROVIDER == "valkey_sandbox":
+        if settings.ENVIRONMENT == "production":
+            raise RuntimeError(
+                "Provedor 'valkey_sandbox' de prova de vida é proibido em produção."
+            )
+        client = (
+            valkey if valkey is not None else Redis(connection_pool=get_valkey_pool())
+        )
+        return ValkeyLivenessAdapter(valkey=client)
+    raise NotImplementedError(
+        f"Provedor biométrico '{settings.LIVENESS_PROVIDER}' ainda não possui "
+        "credenciais/SDK configurados neste ambiente; esperado gov.br/Datavalid."
+    )
 
 
-def get_documento_service(session: DbSessionDep) -> DocumentoService:
+def get_documento_service(
+    session: DbSessionDep,
+    valkey: Annotated[Redis | None, Depends(get_valkey_client)] = None,
+) -> DocumentoService:
     """Build DocumentoService owning emitir/compilar/assinar canonical keys."""
     return DocumentoService(
         session=session,
@@ -317,7 +342,7 @@ def get_documento_service(session: DbSessionDep) -> DocumentoService:
         atendimento_reader=get_atendimento_reader(session),
         directory=get_document_directory(session),
         audit_trail=SqlAuditTrailAdapter(session),
-        liveness_verifier=get_liveness_verifier(),
+        liveness_verifier=get_liveness_verifier(valkey),
     )
 
 
@@ -348,6 +373,7 @@ def build_pep_service_for_session(
     documento_service: DocumentoService | None = None,
     audit_trail: AuditTrailPort | None = None,
     producao_port: ProducaoAmbulatorialPort | None = None,
+    liveness_verifier: LivenessVerificationPort | None = None,
 ) -> PEPService:
     """Build PEPService with all mandatory ports wired (outside request scope)."""
     reader = (
@@ -390,7 +416,11 @@ def build_pep_service_for_session(
             atendimento_reader=reader,
             directory=directory,
             audit_trail=audit,
-            liveness_verifier=get_liveness_verifier(),
+            liveness_verifier=(
+                liveness_verifier
+                if liveness_verifier is not None
+                else get_liveness_verifier()
+            ),
         )
     )
     ev_svc = (
@@ -415,9 +445,15 @@ def build_pep_service_for_session(
     )
 
 
-def get_pep_service(session: DbSessionDep) -> PEPService:
+def get_pep_service(
+    session: DbSessionDep,
+    valkey: Annotated[Redis | None, Depends(get_valkey_client)] = None,
+) -> PEPService:
     """Build PEPService with all mandatory ports wired (no infra defaults)."""
-    return build_pep_service_for_session(session)
+    return build_pep_service_for_session(
+        session,
+        liveness_verifier=get_liveness_verifier(valkey),
+    )
 
 
 PEPServiceDep = Annotated[PEPService, Depends(get_pep_service)]

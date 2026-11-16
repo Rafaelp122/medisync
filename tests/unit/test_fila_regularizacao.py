@@ -26,7 +26,7 @@ from src.modules.queue.domain.models import (
 )
 from src.modules.queue.domain.scoring import calcular_score
 
-from tests.doubles import FakeAsyncSession, FakeValkey
+from tests.doubles import FakeAsyncSession, FakeAuditTrail, FakeValkey
 
 
 @pytest.mark.asyncio
@@ -325,3 +325,44 @@ async def test_regularizar_reenvio_convenio_enfileira_tarefa_assincrona() -> Non
     assert result.promovido is True
     assert result.status == StatusAtendimento.APTO_PARA_CHAMADA.value
     assert paciente.status == StatusAtendimento.APTO_PARA_CHAMADA.value
+
+
+@pytest.mark.asyncio
+async def test_regularizar_atendimento_registra_audit_trail_sem_refresh() -> None:
+    """Record ELEGIBILIDADE_CONFIRMADA before commit without refresh."""
+    paciente = Atendimento(
+        id=uuid4(),
+        organizacao_id=1,
+        paciente_id=uuid4(),
+        status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
+        prioridade_clinica=PrioridadeClinica.URGENTE,
+        tcle_hash="b" * 64,
+    )
+    fake_valkey = FakeValkey()
+    fake_session = FakeAsyncSession(entities={paciente.id: paciente})
+    audit = FakeAuditTrail()
+
+    fila_service = FilaService(
+        valkey=cast("Any", fake_valkey),
+        db_session=cast("Any", fake_session),
+        alocacao_service=MagicMock(spec=AlocacaoChamadaService),
+        audit_trail=audit,
+    )
+
+    await fila_service.regularizar_atendimento(
+        RegularizacaoFilaCommand(
+            organizacao_id=1,
+            atendimento_id=paciente.id,
+            tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
+            motivo="Paciente regularizou documento no acolhimento",
+        )
+    )
+
+    events = audit.get_events_by_type("ELEGIBILIDADE_CONFIRMADA")
+    assert len(events) == 1
+    assert events[0]["atendimento_id"] == paciente.id
+    assert events[0]["payload"]["tipo_contingencia"] == "CONTINGENCIA_ASSISTENCIAL"
+    assert events[0]["estado_anterior"] == "TRIADO_AGUARDANDO_ELEGIBILIDADE"
+    assert events[0]["novo_estado"] == "APTO_PARA_CHAMADA"
+    assert fake_session.commits == 1
+    assert fake_session.refreshes == 0

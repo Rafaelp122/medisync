@@ -231,6 +231,14 @@ class PEPService:
                 f"finalizada e imutável (status atual: '{status_desc}')."
             )
 
+        if not evolucao.identidade_verificada:
+            raise ConsultaInvalidaError(
+                f"Atendimento '{command.atendimento_id}' bloqueado pela Resolução "
+                "CFM nº 2.314/2022: identidade_verificada=False; é obrigatória a "
+                "conferência visual do documento oficial do paciente antes de "
+                "finalizar a consulta."
+            )
+
         evolucao.marcar_finalizado()
 
         # Mark all documents as finalized

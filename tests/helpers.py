@@ -54,6 +54,8 @@ DEFAULT_VALKEY_TEST_PATTERNS: tuple[str, ...] = (
     "otp:*",
     "ratelimit:otp:*",
     "telemetry:*",
+    "liveness:*",
+    "webauthn:*",
 )
 
 

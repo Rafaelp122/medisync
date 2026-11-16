@@ -211,6 +211,7 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
             anamnese="Paciente com febre e cefaleia há 24h.",
             conduta="Prescrito sintomáticos e repouso.",
             cid10_principal="R50.9",
+            identidade_verificada=True,
         )
         evolucao = await pep_svc.salvar_evolucao_soap(cmd_soap)
         assert evolucao.cid10_principal == "R50.9"

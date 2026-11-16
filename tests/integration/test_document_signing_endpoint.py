@@ -35,6 +35,17 @@ async def test_assinar_documento_clinico_pades_flow(
     )
     client = async_client
 
+    soap_resp_1 = await client.post(
+        f"/api/v1/consultations/{cenario.atendimento.id}/soap",
+        json={
+            "anamnese": "Infeccao respiratoria alta.",
+            "conduta": "Amoxicilina.",
+            "identidade_verificada": True,
+            "tipo_documento_verificado": "RG",
+        },
+    )
+    assert soap_resp_1.status_code == 200
+
     # 1. Emitir receita simples
     emit_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
@@ -113,6 +124,18 @@ async def test_assinar_documento_consultation_finalizada_bloqueado(
     )
     client = async_client
 
+    # Salvar evolução SOAP com conferência de identidade CFM antes de emitir
+    soap_resp = await client.post(
+        f"/api/v1/consultations/{cenario.atendimento.id}/soap",
+        json={
+            "anamnese": "Paciente refere cefaleia de leve intensidade.",
+            "conduta": "Prescrito sintomático e repouso.",
+            "identidade_verificada": True,
+            "tipo_documento_verificado": "CNH",
+        },
+    )
+    assert soap_resp.status_code == 200
+
     # Emitir documento
     emit_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
@@ -130,16 +153,6 @@ async def test_assinar_documento_consultation_finalizada_bloqueado(
     )
     assert emit_resp.status_code == 201
     doc_id = emit_resp.json()["id"]
-
-    # Salvar evolução SOAP necessária antes de finalizar
-    soap_resp = await client.post(
-        f"/api/v1/consultations/{cenario.atendimento.id}/soap",
-        json={
-            "anamnese": "Paciente refere cefaleia de leve intensidade.",
-            "conduta": "Prescrito sintomático e repouso.",
-        },
-    )
-    assert soap_resp.status_code == 200
 
     # Finalizar consulta
     fin_resp = await client.post(
@@ -188,6 +201,17 @@ async def test_assinar_documento_erros_validacao_e_nao_encontrado(
     assert resp_404.status_code == 404
 
     # 2. Token vazio -> 422
+    soap_resp_3 = await client.post(
+        f"/api/v1/consultations/{cenario.atendimento.id}/soap",
+        json={
+            "anamnese": "Cefaleia tensional.",
+            "conduta": "Paracetamol se dor.",
+            "identidade_verificada": True,
+            "tipo_documento_verificado": "RG",
+        },
+    )
+    assert soap_resp_3.status_code == 200
+
     emit_resp = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={

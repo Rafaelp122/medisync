@@ -7,6 +7,7 @@ Owns emitir/compilar/assinar for DocumentoClinico using the canonical
 import asyncio
 import contextlib
 import hashlib
+import hmac
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -51,6 +52,7 @@ from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     ConsultaInvalidaError,
     DocumentoClinicoNaoEncontradoError,
+    LivenessChallengeInvalidoError,
     PrescricaoFisicaObrigatoriaError,
     ProvaDeVidaObrigatoriaError,
     SpoofingFacialDetectadoError,
@@ -62,6 +64,7 @@ from src.modules.consultation.domain.models import (
     TipoDocumentoClinico,
 )
 from src.modules.consultation.domain.models._substances import (
+    is_substancia_lista_c5,
     validar_substancia_permitida_telemedicina,
 )
 from src.modules.consultation.domain.s3_keys import build_signed_document_key
@@ -146,10 +149,16 @@ class DocumentoService:
             challenge_id=command.challenge_id,
             liveness_payload=command.liveness_payload,
         )
+        if result.status == "DESAFIO_INVALIDO":
+            raise LivenessChallengeInvalidoError(
+                f"Desafio '{command.challenge_id}' inválido, expirado ou pertencente a "
+                f"outro atendimento (recebido atendimento '{command.atendimento_id}')."
+            )
         if result.status != "APROVADO" or result.liveness_score < 0.95:
             await self._registrar_auditoria_liveness(
                 command, result, "SPOOFING_FACIAL_DETECTADO"
             )
+            await self._session.commit()
             raise SpoofingFacialDetectadoError(
                 f"Prova de vida facial reprovada para atendimento "
                 f"{command.atendimento_id} (status='{result.status}', "
@@ -189,33 +198,49 @@ class DocumentoService:
             },
         )
 
-    def _requer_liveness_controle_especial(
+    async def _requer_liveness_controle_especial(
         self, tipo_str: str, command: EmitirDocumentoClinicoCommand
     ) -> bool:
+        if self._atendimento_reader is not None:
+            resumo = await self._atendimento_reader.obter_resumo(command.atendimento_id)
+            if resumo is not None and not resumo.exige_liveness_controle_especial:
+                return False
         if tipo_str == str(TipoDocumentoClinico.RECEITA_CONTROLE_ESPECIAL_C1):
             return True
-        return any(item.controle_especial for item in command.itens)
+        return any(
+            item.controle_especial or is_substancia_lista_c5(item.medicamento)
+            for item in command.itens
+        )
 
     async def _validar_prova_de_vida_controle_especial(
         self, command: EmitirDocumentoClinicoCommand
     ) -> tuple[str | None, str | None]:
         clean_hash = (command.liveness_verificacao_hash or "").strip() or None
         excecao = (command.justificativa_excecao_liveness or "").strip()
-        if clean_hash is None and self._liveness_verifier is not None:
-            clean_hash = await self._liveness_verifier.obter_hash_aprovado(
-                command.atendimento_id
-            )
-        if clean_hash is not None and _is_valid_liveness_hash(clean_hash):
-            return clean_hash, excecao or None
+        approved_hash = (
+            await self._liveness_verifier.obter_hash_aprovado(command.atendimento_id)
+            if self._liveness_verifier is not None
+            else clean_hash
+        )
+        hash_matches = clean_hash is None or (
+            approved_hash is not None and hmac.compare_digest(clean_hash, approved_hash)
+        )
+        if (
+            approved_hash is not None
+            and _is_valid_liveness_hash(approved_hash)
+            and hash_matches
+        ):
+            return approved_hash, excecao or None
         if len(excecao) >= 10:
             return None, excecao
         raise ProvaDeVidaObrigatoriaError(
             "Emissão de receita de controle especial para atendimento "
             f"{command.atendimento_id} bloqueada: "
             f"liveness_verificacao_hash={clean_hash!r} "
+            f"(aprovado no atendimento: {approved_hash!r}) "
             f"e justificativa_excecao_liveness={excecao!r} insuficientes; esperado "
-            "hash SHA-256 de prova de vida aprovada ou justificativa clínica com ao "
-            "menos 10 caracteres."
+            "hash SHA-256 de prova de vida aprovada para este atendimento ou "
+            "justificativa clínica com ao menos 10 caracteres."
         )
 
     @property
@@ -346,7 +371,7 @@ class DocumentoService:
 
         liveness_hash: str | None = None
         liveness_excecao: str | None = None
-        if self._requer_liveness_controle_especial(tipo_str, command):
+        if await self._requer_liveness_controle_especial(tipo_str, command):
             (
                 liveness_hash,
                 liveness_excecao,
@@ -367,6 +392,18 @@ class DocumentoService:
             raise ConsultaFinalizadaError(
                 "Não é permitido emitir documentos de consulta finalizada "
                 f"(status atual: '{status_desc}')."
+            )
+
+        if evolucao is None or not evolucao.identidade_verificada:
+            verificado = (
+                evolucao.identidade_verificada if evolucao is not None else False
+            )
+            raise ConsultaInvalidaError(
+                f"Atendimento '{command.atendimento_id}' bloqueado pela Resolução "
+                f"CFM nº 2.314/2022: identidade_verificada={verificado!r} "
+                f"(evolucao_presente={evolucao is not None}); é obrigatória a "
+                "conferência visual prévia do documento oficial no prontuário SOAP "
+                "antes da emissão de documentos clínicos."
             )
 
         # Pre-validate all items before persistence
@@ -423,6 +460,14 @@ class DocumentoService:
 
         await self._session.flush()
         if self._audit_trail is not None:
+            audit_payload: dict[str, object] = {
+                "documento_id": str(doc.id),
+                "tipo_documento": str(doc.tipo_documento),
+                "itens_qtd": len(command.itens),
+            }
+            if liveness_excecao is not None:
+                audit_payload["excecao_liveness"] = True
+                audit_payload["justificativa_excecao_liveness"] = liveness_excecao
             await self._audit_trail.record_event(
                 organizacao_id=command.organizacao_id,
                 tipo_evento="DOCUMENTO_CLINICO_EMITIDO",
@@ -430,11 +475,7 @@ class DocumentoService:
                 ator_papel=AtorPapel.MEDICO.value,
                 ator_id=command.medico_id,
                 atendimento_id=command.atendimento_id,
-                payload={
-                    "documento_id": str(doc.id),
-                    "tipo_documento": str(doc.tipo_documento),
-                    "itens_qtd": len(command.itens),
-                },
+                payload=audit_payload,
             )
         await self._session.commit()
         # Reload with itens eagerly (selectin) so Pydantic model_validate

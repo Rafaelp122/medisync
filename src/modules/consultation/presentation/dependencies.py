@@ -130,7 +130,11 @@ async def exigir_rate_limit(
     if not res.permitido:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Muitas requisições. Tente novamente em instantes.",
+            detail=(
+                f"Limite de requisições excedido para a chave '{chave}' "
+                f"(máximo: {limite} a cada {janela_segundos}s; "
+                f"aguarde {res.retry_after_segundos}s)."
+            ),
             headers={"Retry-After": str(res.retry_after_segundos)},
         )
 
@@ -219,11 +223,17 @@ class LivenessActor:
 
 async def _autenticar_chamador_liveness(
     raw_token: str,
+    allowed_roles: tuple[Role, ...],
 ) -> tuple[UUID, int, str, bool]:
-    """Extrai identidade clínica de JWT ou token HMAC de acolhimento."""
+    """Extrai identidade clínica de JWT ou HMAC validando papéis permitidos."""
     parts = raw_token.split(".")
     if len(parts) == 2:
         actor_id, org_id, is_admin = _autenticar_chamador_paciente_intake(raw_token)
+        if Role.PACIENTE not in allowed_roles:
+            raise ForbiddenError(
+                f"Papel '{Role.PACIENTE.value}' não autorizado para esta ação "
+                f"(esperados: {[r.value for r in allowed_roles]})."
+            )
         return actor_id, org_id, Role.PACIENTE.value, is_admin
     if len(parts) != 3:
         raise UnauthorizedError(
@@ -242,7 +252,6 @@ async def _autenticar_chamador_liveness(
             f"Token de acesso '{user.token_id}' revogado. Realize novo login."
         )
 
-    allowed_roles = (Role.MEDICO, Role.ADMIN_GLOBAL, Role.PACIENTE)
     if user.papel not in allowed_roles:
         raise ForbiddenError(
             f"Papel '{user.papel}' não autorizado para prova de vida facial "
@@ -275,41 +284,44 @@ def _validar_participacao_atendimento_liveness(
         )
     if actor_papel == Role.PACIENTE.value and atendimento_paciente_id != actor_id:
         raise ForbiddenError(
-            f"Paciente {actor_id} não é o titular deste atendimento clínico."
+            f"Paciente '{actor_id}' não é o titular deste atendimento clínico "
+            f"(esperado titular: '{atendimento_paciente_id}')."
         )
     if actor_papel == Role.MEDICO.value and atendimento_medico_id != actor_id:
         raise ForbiddenError(
-            f"Médico {actor_id} não está alocado neste atendimento clínico."
+            f"Médico '{actor_id}' não está alocado neste atendimento clínico "
+            f"(esperado médico alocado: '{atendimento_medico_id}')."
         )
 
 
-async def require_liveness_actor_access(
+async def _require_liveness_actor(
+    *,
     atendimento_id: AtendimentoIdPath,
-    reader: Annotated[AtendimentoReaderPort, Depends(get_atendimento_reader)],
-    credentials: Annotated[
-        HTTPAuthorizationCredentials | None,
-        Security(http_bearer_scheme),
-    ] = None,
+    reader: AtendimentoReaderPort,
+    credentials: HTTPAuthorizationCredentials | None,
+    allowed_roles: tuple[Role, ...],
 ) -> LivenessActor:
-    """Valida participante (médico alocado ou paciente) para endpoints US-15."""
+    """Valida participante autorizado para etapa específica de prova de vida US-15."""
     if credentials is None or not credentials.credentials.strip():
         raise UnauthorizedError(
             "Credencial de autenticação obrigatória para prova de vida facial "
-            "(esperado cabeçalho 'Authorization: Bearer <token>')."
+            f"(recebido: {credentials!r}; "
+            "esperado cabeçalho 'Authorization: Bearer <token>')."
         )
 
     actor_id, actor_org_id, actor_papel, is_admin = await _autenticar_chamador_liveness(
-        credentials.credentials
+        credentials.credentials,
+        allowed_roles,
     )
     resumo = await reader.obter_resumo(atendimento_id)
     if resumo is None:
         raise NotFoundError(
-            f"Atendimento {atendimento_id} não encontrado para prova de vida facial."
+            f"Atendimento '{atendimento_id}' não encontrado para prova de vida facial."
         )
     if resumo.is_terminal:
         raise ForbiddenError(
-            f"Atendimento {atendimento_id} encontra-se em estado terminal "
-            f"('{resumo.status}'); prova de vida não permitida."
+            f"Atendimento '{atendimento_id}' encontra-se em estado terminal "
+            f"('{resumo.status}'); esperados estados ativos para prova de vida."
         )
 
     _validar_participacao_atendimento_liveness(
@@ -329,7 +341,46 @@ async def require_liveness_actor_access(
     )
 
 
-LivenessActorDep = Annotated[LivenessActor, Depends(require_liveness_actor_access)]
+async def require_liveness_challenge_medico(
+    atendimento_id: AtendimentoIdPath,
+    reader: Annotated[AtendimentoReaderPort, Depends(get_atendimento_reader)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(http_bearer_scheme),
+    ] = None,
+) -> LivenessActor:
+    """Restringe solicitação de desafio facial ao médico alocado (ou admin)."""
+    return await _require_liveness_actor(
+        atendimento_id=atendimento_id,
+        reader=reader,
+        credentials=credentials,
+        allowed_roles=(Role.MEDICO, Role.ADMIN_GLOBAL),
+    )
+
+
+async def require_liveness_verify_paciente(
+    atendimento_id: AtendimentoIdPath,
+    reader: Annotated[AtendimentoReaderPort, Depends(get_atendimento_reader)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(http_bearer_scheme),
+    ] = None,
+) -> LivenessActor:
+    """Restringe submissão dos frames biométricos ao paciente titular (ou admin)."""
+    return await _require_liveness_actor(
+        atendimento_id=atendimento_id,
+        reader=reader,
+        credentials=credentials,
+        allowed_roles=(Role.PACIENTE, Role.ADMIN_GLOBAL),
+    )
+
+
+LivenessChallengeMedicoDep = Annotated[
+    LivenessActor, Depends(require_liveness_challenge_medico)
+]
+LivenessVerifyPacienteDep = Annotated[
+    LivenessActor, Depends(require_liveness_verify_paciente)
+]
 
 
 def _validar_permissao_sala_livekit(

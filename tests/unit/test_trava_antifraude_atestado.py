@@ -20,6 +20,7 @@ from src.modules.consultation.application.services.documento_service import (
     DocumentoService,
 )
 from src.modules.consultation.domain.models import (
+    EvolucaoClinica,
     TipoDocumentoClinico,
 )
 from src.modules.consultation.infrastructure.memory_signed_cache import (
@@ -150,6 +151,17 @@ async def test_emissao_atestado_inferior_180s_com_justificativa_curta_bloqueada(
     assert evt["payload"]["justificativa"] == "urgente rápido"
 
 
+def _make_evolucao_verificada(atendimento_id: UUID, medico_id: UUID) -> EvolucaoClinica:
+    return EvolucaoClinica(
+        organizacao_id=1,
+        atendimento_id=atendimento_id,
+        medico_id=medico_id,
+        anamnese="Anamnese clinica.",
+        conduta="Atestado emitido.",
+        identidade_verificada=True,
+    )
+
+
 @pytest.mark.asyncio
 async def test_emissao_atestado_inferior_180s_com_justificativa_valida_permitida() -> (
     None
@@ -164,7 +176,7 @@ async def test_emissao_atestado_inferior_180s_com_justificativa_valida_permitida
     added_entities: list[object] = []
     session = FakeAsyncSession(
         [
-            FakeResult(None),  # evolucao select
+            FakeResult(_make_evolucao_verificada(atendimento_id, medico_id)),
             FakeAddedResult(added_entities),  # reload after commit
         ],
         added_entities,
@@ -212,7 +224,7 @@ async def test_emissao_atestado_superior_180s_sem_justificativa_permitida() -> N
     added_entities: list[object] = []
     session = FakeAsyncSession(
         [
-            FakeResult(None),  # evolucao select
+            FakeResult(_make_evolucao_verificada(atendimento_id, medico_id)),
             FakeAddedResult(added_entities),  # reload after commit
         ],
         added_entities,
@@ -246,7 +258,7 @@ async def test_emissao_receita_inferior_180s_nao_aciona_trava() -> None:
     added_entities: list[object] = []
     session = FakeAsyncSession(
         [
-            FakeResult(None),  # evolucao select
+            FakeResult(_make_evolucao_verificada(atendimento_id, medico_id)),
             FakeAddedResult(added_entities),  # reload after commit
         ],
         added_entities,

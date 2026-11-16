@@ -35,7 +35,11 @@ async def admitir_paciente(
     _auth: AdmissaoPacienteAuthDep,
 ) -> AdmissaoResponse:
     """Execute patient intake, clinical triage, and queue admission."""
-    raw_ip = request.client.host if request.client else None
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        raw_ip = forwarded.split(",")[0].strip()
+    else:
+        raw_ip = request.client.host if request.client else None
     ip_origem = raw_ip if raw_ip and raw_ip != "testclient" else None
     cmd = body.to_command(organizacao_id=tenant_id, ip_origem=ip_origem)
     result = await service.admitir_paciente(cmd)

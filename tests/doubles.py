@@ -24,6 +24,14 @@ from src.modules.identity.application.ports.identity_reader_port import (
     PacientePasskeyData,
     PacientePasskeyDTO,
 )
+from src.modules.queue.application.ports.allocation_port import (
+    AllocationPort,
+    AlocacaoCodigo,
+)
+from src.modules.queue.application.ports.triage_port import (
+    TriageEvaluationDTO,
+    TriagePort,
+)
 
 
 class FakeNoneMappings:
@@ -110,6 +118,7 @@ class FakeAsyncSession:
         self._entities: dict[Any, Any] = dict(entities) if entities is not None else {}
         self.commits: int = 0
         self.executes: int = 0
+        self.refreshes: int = 0
 
     async def get(self, entity_cls: Any, ident: Any, *args: Any, **kwargs: Any) -> Any:
         if ident in self._entities:
@@ -143,6 +152,7 @@ class FakeAsyncSession:
         self.commits += 1
 
     async def refresh(self, obj: Any) -> None:
+        self.refreshes += 1
         return None
 
     @asynccontextmanager
@@ -225,6 +235,17 @@ class FakeValkey:
 
     async def get(self, name: str) -> Any:
         return self._kv.get(name)
+
+    async def getdel(self, name: str) -> Any:
+        return self._kv.pop(name, None)
+
+    async def delete(self, *names: str) -> int:
+        deleted = 0
+        for key in names:
+            if key in self._kv:
+                del self._kv[key]
+                deleted += 1
+        return deleted
 
     async def set(self, name: str, value: Any, *args: Any, **kwargs: Any) -> bool:
         self._kv[name] = value
@@ -668,6 +689,13 @@ class FakeIdentityReader(IdentityReaderPort):
         sign_count: int = 0,
         device_name: str | None = None,
     ) -> PacientePasskeyDTO:
+        if (organizacao_id, credential_id) in self.passkeys:
+            from src.core.errors import ConflictError
+
+            raise ConflictError(
+                f"Credencial WebAuthn '{credential_id}' já registrada "
+                f"na organização '{organizacao_id}'."
+            )
         record = PacientePasskeyData(
             id=uuid7(),
             organizacao_id=organizacao_id,
@@ -697,6 +725,30 @@ class FakeIdentityReader(IdentityReaderPort):
             for p in self.passkeys.values()
             if p.organizacao_id == organizacao_id and p.paciente_id == paciente_id
         ]
+
+    async def atualizar_sign_count_passkey(
+        self,
+        organizacao_id: int,
+        credential_id: str,
+        novo_sign_count: int,
+    ) -> PacientePasskeyDTO:
+        existing = self.passkeys.get((organizacao_id, credential_id))
+        if existing is None:
+            raise ValueError(
+                f"Credencial Passkey '{credential_id}' não encontrada na "
+                f"organização '{organizacao_id}'."
+            )
+        updated = PacientePasskeyData(
+            id=existing.id,
+            organizacao_id=existing.organizacao_id,
+            paciente_id=existing.paciente_id,
+            credential_id=existing.credential_id,
+            public_key=existing.public_key,
+            sign_count=max(existing.sign_count, novo_sign_count),
+            device_name=existing.device_name,
+        )
+        self.passkeys[(organizacao_id, credential_id)] = updated
+        return updated
 
 
 class FakeProducaoAmbulatorialPort(ProducaoAmbulatorialPort):
@@ -730,3 +782,92 @@ class FakeProducaoAmbulatorialPort(ProducaoAmbulatorialPort):
                 "carater_atendimento": carater_atendimento,
             }
         )
+
+
+class FakeTriagePort(TriagePort):
+    """Canonical in-memory test double implementing TriagePort."""
+
+    def __init__(
+        self,
+        evaluation: TriageEvaluationDTO,
+        triagem_id: UUID | None = None,
+    ) -> None:
+        self.evaluation = evaluation
+        self.triagem_id = triagem_id or uuid7()
+        self.avaliacoes: list[dict[str, Any]] = []
+        self.triagens_registradas: list[dict[str, Any]] = []
+
+    async def avaliar_risco(
+        self,
+        organizacao_id: int,
+        queixa_principal: str,
+        sintomas: list[str],
+        escala_dor: int = 0,
+        tcle_texto: str = "",
+        tcle_hash: str | None = None,
+        *,
+        raise_on_emergency: bool = True,
+        atendimento_id: UUID | None = None,
+    ) -> TriageEvaluationDTO:
+        self.avaliacoes.append(
+            {
+                "organizacao_id": organizacao_id,
+                "queixa_principal": queixa_principal,
+                "sintomas": sintomas,
+                "escala_dor": escala_dor,
+                "tcle_texto": tcle_texto,
+                "tcle_hash": tcle_hash,
+                "raise_on_emergency": raise_on_emergency,
+                "atendimento_id": atendimento_id,
+            }
+        )
+        return self.evaluation
+
+    async def registrar_triagem(
+        self,
+        organizacao_id: int,
+        atendimento_id: UUID,
+        queixa_principal: str,
+        sintomas: list[str],
+        prioridade_calculada: int,
+        alerta_samu_disparado: bool = False,
+        escala_dor: int = 0,
+    ) -> UUID:
+        self.triagens_registradas.append(
+            {
+                "organizacao_id": organizacao_id,
+                "atendimento_id": atendimento_id,
+                "queixa_principal": queixa_principal,
+                "sintomas": sintomas,
+                "prioridade_calculada": prioridade_calculada,
+                "alerta_samu_disparado": alerta_samu_disparado,
+                "escala_dor": escala_dor,
+            }
+        )
+        return self.triagem_id
+
+
+class FakeAllocationPort(AllocationPort):
+    """Canonical in-memory test double implementing AllocationPort."""
+
+    def __init__(
+        self,
+        codigo: AlocacaoCodigo = AlocacaoCodigo.SUCESSO,
+    ) -> None:
+        self.codigo = codigo
+        self.chamadas: list[dict[str, Any]] = []
+
+    async def execute_script(
+        self,
+        client: Any,
+        script_name: str,
+        keys: Sequence[str] = (),
+        args: Sequence[Any] = (),
+    ) -> Any:
+        return int(self.codigo)
+
+    async def alocar_chamada(
+        self, client: Any, keys: list[str], args: list[object]
+    ) -> AlocacaoCodigo:
+        self.chamadas.append({"keys": list(keys), "args": list(args)})
+        return self.codigo

@@ -54,6 +54,8 @@ async def test_consultation_soap_full_lifecycle_and_safeguards(
         "exame_fisico_virtual": ("Orofaringe com hiperemia leve e congestão nasal."),
         "cid10_principal": "J00",
         "conduta": "Orientada hidratação abundante e paracetamol.",
+        "identidade_verificada": True,
+        "tipo_documento_verificado": "RG",
     }
     res_soap_update = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/soap",

@@ -90,6 +90,14 @@ class SpoofingFacialDetectadoError(ValidationError):
     code: str = "SPOOFING_FACIAL_DETECTADO"
 
 
+class LivenessChallengeInvalidoError(ValidationError):
+    """Raised when liveness challenge is missing, expired, or mismatched."""
+
+    status_code: int = 422
+    title: str = "Desafio de Prova de Vida Inválido ou Expirado"
+    code: str = "LIVENESS_CHALLENGE_INVALIDO"
+
+
 class ProvaDeVidaObrigatoriaError(ValidationError):
     """Raised when emitting controlled prescription without facial liveness proof."""
 
