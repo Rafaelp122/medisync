@@ -1,3 +1,10 @@
+## v0.18.0 (2026-11-17)
+
+### Feat
+
+- **frontend,api**: atualizar OpenAPI/Hey API e reestruturar landing page, login isolado e portal /home
+- **backend**: implementar IAM híbrido do cidadão, módulo scheduling, histórico PEP e multi-tenancy opcional
+
 ## v0.17.0 (2026-11-16)
 
 ### Feat
