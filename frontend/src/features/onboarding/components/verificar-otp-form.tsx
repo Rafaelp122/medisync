@@ -5,6 +5,7 @@ import type { VerificarOtpResponse } from "@/api/generated/types.gen";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { settings } from "@/config/settings";
 import { useVerificarOtp } from "../api/use-verificar-otp";
 import { verificarOtpSchema } from "../schemas/onboarding-schema";
 
@@ -151,15 +152,16 @@ export function VerificarOtpForm({
         <legend className="text-sm font-medium leading-none">Código de 6 dígitos</legend>
         <p className="text-xs text-muted-foreground">Enviado por SMS para o telefone {telefone}</p>
 
-        {codigoDebug && (
-          <div className="p-2.5 text-xs rounded-md bg-secondary/80 border border-primary/20 text-muted-foreground">
-            <span className="font-semibold text-primary">Ambiente de Teste:</span> Código SMS
-            gerado:{" "}
-            <span className="text-foreground tracking-widest text-sm font-mono font-bold">
-              {codigoDebug}
-            </span>
-          </div>
-        )}
+        {codigoDebug &&
+          (settings.env.isDev || settings.env.isDemoMode || settings.env.mode === "test") && (
+            <div className="p-2.5 text-xs rounded-md bg-secondary/80 border border-primary/20 text-muted-foreground">
+              <span className="font-semibold text-primary">Ambiente de Teste:</span> Código SMS
+              gerado:{" "}
+              <span className="text-foreground tracking-widest text-sm font-mono font-bold">
+                {codigoDebug}
+              </span>
+            </div>
+          )}
 
         <div className="flex gap-2 justify-between pt-2">
           {OTP_SLOTS.map((slotId, idx) => (

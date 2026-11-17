@@ -1,10 +1,21 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { clearAccessToken, setAccessToken } from "@/lib/auth-token";
 import { server } from "@/mocks/server";
-import { renderWithProviders } from "@/test/utils";
+import { createTestQueryClient, renderWithProviders } from "@/test/utils";
 import { DoctorWorkstation } from "../components/doctor-workstation";
+import { DoctorWorkstationPage } from "../pages/doctor-workstation-page";
 import {
   createAssinarDocumentoResponse,
   createChamarProximoResponse,
@@ -26,6 +37,7 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
 
   afterEach(() => {
     vi.useRealTimers();
+    clearAccessToken();
   });
 
   beforeEach(() => {
@@ -140,6 +152,9 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
     expect(screen.getAllByText(/juliana silva/i).length).toBeGreaterThan(0);
     // Notas SOAP carregadas
     expect(screen.getByLabelText(/subjetivo \(s\)/i)).toBeInTheDocument();
+    // TMA dentro do SLA esperado (fixture com 5 minutos decorridos, sem falso estouro)
+    expect(screen.getByText(/TMA:\s*05:0\d \/ 15m/i)).toBeInTheDocument();
+    expect(screen.queryByText(/teleconsulta preservada sob rn06/i)).not.toBeInTheDocument();
   });
 
   it("IT-DOC-03: Salva evolução clínica SOAP com sucesso", async () => {
@@ -439,5 +454,81 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
 
     // onLogout deve ter sido invocado automaticamente
     expect(handleLogout).toHaveBeenCalledTimes(1);
+  });
+
+  it("IT-DOC-12: DoctorWorkstationPage utiliza token atualizado pós-refresh sem congelar no render e limpa QueryClient no logout", async () => {
+    setAccessToken("expired-initial-doctor-token");
+    const capturedAuthHeaders: Array<string | null> = [];
+
+    server.use(
+      http.get("*/api/v1/telemetria/painel", ({ request }) => {
+        capturedAuthHeaders.push(request.headers.get("Authorization"));
+        return HttpResponse.json(createPainelTelemetriaResponse());
+      }),
+      http.post("*/api/v1/fila/chamar-proximo", ({ request }) => {
+        capturedAuthHeaders.push(request.headers.get("Authorization"));
+        return HttpResponse.json(createChamarProximoResponse());
+      }),
+      http.post("*/api/v1/auth/logout", () => {
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    const queryClient = createTestQueryClient();
+    const testRootRoute = createRootRoute({
+      component: () => (
+        <QueryClientProvider client={queryClient}>
+          <Outlet />
+        </QueryClientProvider>
+      ),
+    });
+    const medicoRouteTest = createRoute({
+      getParentRoute: () => testRootRoute,
+      path: "/medico",
+      component: () => (
+        <DoctorWorkstationPage
+          doctorSession={{
+            medicoId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e",
+            medicoNome: "Dr. Eduardo Rocha",
+            crmUf: "123456/SP",
+            identificador: "123456/SP",
+          }}
+        />
+      ),
+    });
+    const loginRouteTest = createRoute({
+      getParentRoute: () => testRootRoute,
+      path: "/interno/login",
+      component: () => <div>Login Interno Mock</div>,
+    });
+    const router = createRouter({
+      routeTree: testRootRoute.addChildren([medicoRouteTest, loginRouteTest]),
+      history: createMemoryHistory({ initialEntries: ["/medico"] }),
+    });
+
+    render(<RouterProvider router={router as never} />);
+
+    // Carregamento inicial usa token inicial e popula cache
+    await waitFor(() => {
+      expect(screen.getByTestId("badge-pacientes-fila")).toHaveTextContent(/3 pacientes na fila/i);
+    });
+    expect(queryClient.getQueryCache().getAll().length).toBeGreaterThan(0);
+
+    // Simula rotação via silentRefreshToken() sem remountar a página
+    setAccessToken("rotated-fresh-doctor-token");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /chamar próximo paciente/i }));
+
+    await waitFor(() => {
+      expect(capturedAuthHeaders).toContain("Bearer rotated-fresh-doctor-token");
+    });
+
+    // Logout deve limpar todo o QueryClient para evitar vazamento entre sessões clínicas
+    await user.click(screen.getByRole("button", { name: /sair do plantão/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Login Interno Mock")).toBeInTheDocument();
+      expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    });
   });
 });

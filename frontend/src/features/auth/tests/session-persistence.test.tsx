@@ -37,13 +37,13 @@ describe("Session Persistence & Silent Rehydration on F5 Reload (ADR-005, ADR-01
       doctorSession: unknown;
     }>;
 
-    it("IT-PERSIST-01: Redireciona para /login se não houver sessão médica armazenada", async () => {
+    it("IT-PERSIST-01: Redireciona para /interno/login se não houver sessão médica armazenada", async () => {
       try {
         await runMedicoBeforeLoad({});
         expect.unreachable("Deveria ter lançado redirect");
       } catch (err) {
         expect(isRedirect(err)).toBe(true);
-        expect((err as unknown as RedirectLike).options?.to).toBe("/login");
+        expect((err as unknown as RedirectLike).options?.to).toBe("/interno/login");
       }
     });
 
@@ -97,7 +97,7 @@ describe("Session Persistence & Silent Rehydration on F5 Reload (ADR-005, ADR-01
       expect(getAccessToken()).toBe("rotated-doctor-access-token");
     });
 
-    it("IT-PERSIST-04: F5 Reload em /medico purga sessão e redireciona para /login se cookie for inválido/expirado", async () => {
+    it("IT-PERSIST-04: F5 Reload em /medico purga sessão e redireciona para /interno/login se cookie for inválido/expirado", async () => {
       saveStoredDoctorSession({
         medicoId: "med-1",
         medicoNome: "Dr. Eduardo",
@@ -120,7 +120,7 @@ describe("Session Persistence & Silent Rehydration on F5 Reload (ADR-005, ADR-01
         expect.unreachable("Deveria ter lançado redirect");
       } catch (err) {
         expect(isRedirect(err)).toBe(true);
-        expect((err as unknown as RedirectLike).options?.to).toBe("/login");
+        expect((err as unknown as RedirectLike).options?.to).toBe("/interno/login");
         expect(getAccessToken()).toBeNull();
         expect(getStoredDoctorSession()).toBeNull();
       }
@@ -132,13 +132,13 @@ describe("Session Persistence & Silent Rehydration on F5 Reload (ADR-005, ADR-01
       managerSession: unknown;
     }>;
 
-    it("IT-PERSIST-05: Redireciona para /login se não houver sessão de gestor armazenada", async () => {
+    it("IT-PERSIST-05: Redireciona para /interno/login se não houver sessão de gestor armazenada", async () => {
       try {
         await runGestorBeforeLoad({});
         expect.unreachable("Deveria ter lançado redirect");
       } catch (err) {
         expect(isRedirect(err)).toBe(true);
-        expect((err as unknown as RedirectLike).options?.to).toBe("/login");
+        expect((err as unknown as RedirectLike).options?.to).toBe("/interno/login");
       }
     });
 
@@ -169,7 +169,7 @@ describe("Session Persistence & Silent Rehydration on F5 Reload (ADR-005, ADR-01
       expect(getAccessToken()).toBe("rotated-manager-access-token");
     });
 
-    it("IT-PERSIST-07: F5 Reload em /gestor purga sessão e redireciona para /login se refresh falhar", async () => {
+    it("IT-PERSIST-07: F5 Reload em /gestor purga sessão e redireciona para /interno/login se refresh falhar", async () => {
       saveStoredManagerSession({
         usuarioId: "gestor-1",
         nome: "Gestora Maria",
@@ -189,7 +189,7 @@ describe("Session Persistence & Silent Rehydration on F5 Reload (ADR-005, ADR-01
         expect.unreachable("Deveria ter lançado redirect");
       } catch (err) {
         expect(isRedirect(err)).toBe(true);
-        expect((err as unknown as RedirectLike).options?.to).toBe("/login");
+        expect((err as unknown as RedirectLike).options?.to).toBe("/interno/login");
         expect(getAccessToken()).toBeNull();
         expect(getStoredManagerSession()).toBeNull();
       }

@@ -40,16 +40,15 @@ export function TriagemPage() {
     <div className="w-full max-w-xl mx-auto space-y-4">
       <div>
         <Link
-          to="/"
+          to="/home"
           className="inline-flex items-center gap-1.5 text-xs sm:text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
         >
           <ArrowLeft className="h-4 w-4" />
-          <span>Voltar ao Início</span>
+          <span>Voltar ao Portal</span>
         </Link>
       </div>
 
       <ProgressiveOnboardingWizard
-        onTrocarParaOtp={() => navigate({ to: "/otp" })}
         onSessaoIniciada={handleSessaoIniciada}
         onFinalizar={handleOnboardingFinalizado}
       />

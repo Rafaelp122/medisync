@@ -1,8 +1,10 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getActiveTenantId } from "@/api/client";
+import { client, extractTenantIdFromJwt, getActiveTenantId, getTenantHeaders } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { generateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost } from "@/api/generated/sdk.gen";
 import type { LiveKitTokenRequest, LiveKitTokenResponse } from "@/api/generated/types.gen";
+import { getAccessToken } from "@/lib/auth-token";
+import { getStoredToken } from "@/lib/session-storage";
 
 export interface AtenderChamadaParams {
   atendimentoId: string;
@@ -28,18 +30,23 @@ export function useAtenderChamada(
       token,
     }: AtenderChamadaParams) => {
       try {
-        const tenantId = Number.parseInt(getActiveTenantId(), 10) || 1;
-        const body: LiveKitTokenRequest = {
-          organizacao_id: tenantId,
+        const activeTenant = getActiveTenantId();
+        const parsedTenant = activeTenant ? Number.parseInt(activeTenant, 10) : Number.NaN;
+        const resolvedTenantId =
+          extractTenantIdFromJwt(token ?? getAccessToken() ?? getStoredToken()) ??
+          (Number.isFinite(parsedTenant) && parsedTenant > 0 ? parsedTenant : undefined);
+
+        const body = {
+          ...(resolvedTenantId !== undefined ? { organizacao_id: resolvedTenantId } : {}),
           participant_id: pacienteId,
-          role: "paciente",
+          role: "paciente" as const,
           participant_name: nomePaciente ?? "Paciente",
           is_publisher: true,
           ttl_seconds: 3600,
-        };
+        } as LiveKitTokenRequest;
 
         const headers: Record<string, string> = {
-          "X-Tenant-ID": String(tenantId),
+          ...getTenantHeaders(),
         };
         if (token) {
           headers.Authorization = `Bearer ${token}`;

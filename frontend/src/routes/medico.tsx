@@ -1,6 +1,8 @@
 import { createRoute, redirect } from "@tanstack/react-router";
 import { silentRefreshToken } from "@/api/client";
 import { DoctorWorkstationPage } from "@/features/consultation/pages/doctor-workstation-page";
+import { ProfessionalSchedulePanel } from "@/features/scheduling/components/professional-schedule-panel";
+import { ClinicalPageLayout } from "@/layouts/clinical-page-layout";
 import { getAccessToken } from "@/lib/auth-token";
 import {
   clearStoredDoctorSession,
@@ -15,13 +17,13 @@ export const medicoRoute = createRoute({
   beforeLoad: async () => {
     const doctorSession = getStoredDoctorSession();
     if (!doctorSession) {
-      throw redirect({ to: "/login" });
+      throw redirect({ to: "/interno/login" });
     }
     if (!getAccessToken()) {
       await silentRefreshToken();
       if (!getAccessToken()) {
         clearStoredDoctorSession();
-        throw redirect({ to: "/login" });
+        throw redirect({ to: "/interno/login" });
       }
     }
     return { doctorSession };
@@ -30,6 +32,14 @@ export const medicoRoute = createRoute({
     const { doctorSession } = medicoRoute.useRouteContext() as {
       doctorSession: StoredDoctorSession;
     };
-    return <DoctorWorkstationPage doctorSession={doctorSession} />;
+    const token = getAccessToken() ?? undefined;
+    return (
+      <ClinicalPageLayout subtitle="Estação Clínica do Profissional de Saúde">
+        <DoctorWorkstationPage
+          doctorSession={doctorSession}
+          renderSchedulePanel={<ProfessionalSchedulePanel token={token} />}
+        />
+      </ClinicalPageLayout>
+    );
   },
 });

@@ -133,7 +133,7 @@ export function EnriquecimentoFase2Form({
     <Card className="w-full max-w-xl mx-auto shadow-md">
       <CardHeader className="space-y-1">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600">
+          <span className="inline-flex items-center rounded-full bg-acr-green px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-acr-green-foreground">
             Você já está na fila &bull; Fase 2
           </span>
           {onPular && (

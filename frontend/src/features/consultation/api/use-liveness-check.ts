@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getActiveTenantId } from "@/api/client";
+import { client, getTenantHeaders } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
   solicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePost,
@@ -21,7 +21,7 @@ export interface VerificarLivenessParams extends LivenessVerifyRequest {
 
 function buildHeaders(token?: string): Record<string, string> {
   const headers: Record<string, string> = {
-    "X-Tenant-ID": getActiveTenantId(),
+    ...getTenantHeaders(),
   };
   if (token) {
     headers.Authorization = `Bearer ${token}`;

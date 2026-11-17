@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AdmitirPacienteApiV1FilaAdmissaoPostData, AdmitirPacienteApiV1FilaAdmissaoPostErrors, AdmitirPacienteApiV1FilaAdmissaoPostResponses, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostData, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostErrors, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostResponses, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutData, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutErrors, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses, CadastrarDependenteApiV1PacientesIdDependentesPostData, CadastrarDependenteApiV1PacientesIdDependentesPostErrors, CadastrarDependenteApiV1PacientesIdDependentesPostResponses, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostData, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostErrors, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostResponses, ChamarProximoPacienteApiV1FilaChamarProximoPostData, ChamarProximoPacienteApiV1FilaChamarProximoPostResponses, ComunicarPioraClinicaApiV1FilaPioraPostData, ComunicarPioraClinicaApiV1FilaPioraPostErrors, ComunicarPioraClinicaApiV1FilaPioraPostResponses, DownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGetData, DownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGetErrors, DownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGetResponses, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostData, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostErrors, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostResponses, EnrichmentFase2ApiV1OnboardingFase2PostData, EnrichmentFase2ApiV1OnboardingFase2PostErrors, EnrichmentFase2ApiV1OnboardingFase2PostResponses, ExportarBpaApiV1AmbulatoryProducaoExportarGetData, ExportarBpaApiV1AmbulatoryProducaoExportarGetErrors, ExportarBpaApiV1AmbulatoryProducaoExportarGetResponses, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostData, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostErrors, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostData, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostErrors, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostResponses, HealthcheckHealthzGetData, HealthcheckHealthzGetResponses, IntakeFase1ApiV1OnboardingFase1PostData, IntakeFase1ApiV1OnboardingFase1PostErrors, IntakeFase1ApiV1OnboardingFase1PostResponses, ListarDependentesApiV1PacientesIdDependentesGetData, ListarDependentesApiV1PacientesIdDependentesGetErrors, ListarDependentesApiV1PacientesIdDependentesGetResponses, ListarProducaoApiV1AmbulatoryProducaoGetData, ListarProducaoApiV1AmbulatoryProducaoGetErrors, ListarProducaoApiV1AmbulatoryProducaoGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, MeApiV1AuthMeGetData, MeApiV1AuthMeGetResponses, MfaActivateApiV1AuthMfaActivatePostData, MfaActivateApiV1AuthMfaActivatePostErrors, MfaActivateApiV1AuthMfaActivatePostResponses, MfaSetupApiV1AuthMfaSetupPostData, MfaSetupApiV1AuthMfaSetupPostResponses, MfaVerifyApiV1AuthMfaVerifyPostData, MfaVerifyApiV1AuthMfaVerifyPostErrors, MfaVerifyApiV1AuthMfaVerifyPostResponses, ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetData, ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetResponses, ObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGetData, ObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGetErrors, ObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGetResponses, ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetData, ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetErrors, ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetResponses, ObterPainelTelemetriaApiV1TelemetriaPainelGetData, ObterPainelTelemetriaApiV1TelemetriaPainelGetErrors, ObterPainelTelemetriaApiV1TelemetriaPainelGetResponses, ObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGetData, ObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGetErrors, ObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGetResponses, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetData, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetErrors, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetResponses, ObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGetData, ObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGetErrors, ObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGetResponses, PostAuthPacienteCadsusData, PostAuthPacienteCadsusErrors, PostAuthPacienteCadsusResponses, PostAuthPatientWebauthnAuthenticateOptionsData, PostAuthPatientWebauthnAuthenticateOptionsErrors, PostAuthPatientWebauthnAuthenticateOptionsResponses, PostAuthPatientWebauthnAuthenticateVerifyData, PostAuthPatientWebauthnAuthenticateVerifyErrors, PostAuthPatientWebauthnAuthenticateVerifyResponses, PostAuthPatientWebauthnRegisterOptionsData, PostAuthPatientWebauthnRegisterOptionsResponses, PostAuthPatientWebauthnRegisterVerifyData, PostAuthPatientWebauthnRegisterVerifyErrors, PostAuthPatientWebauthnRegisterVerifyResponses, RefreshTokenApiV1AuthRefreshPostData, RefreshTokenApiV1AuthRefreshPostErrors, RefreshTokenApiV1AuthRefreshPostResponses, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostData, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostErrors, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostResponses, RequestOtpApiV1AuthPatientOtpRequestPostData, RequestOtpApiV1AuthPatientOtpRequestPostErrors, RequestOtpApiV1AuthPatientOtpRequestPostResponses, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostData, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostErrors, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostResponses, SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostData, SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostErrors, SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponses, ValidarDocumentoApiV1DocumentsValidateTokenValidacaoGetData, ValidarDocumentoApiV1DocumentsValidateTokenValidacaoGetErrors, ValidarDocumentoApiV1DocumentsValidateTokenValidacaoGetResponses, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostData, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostErrors, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostResponses, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostData, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostErrors, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses, VerifyOtpApiV1AuthPatientOtpVerifyPostData, VerifyOtpApiV1AuthPatientOtpVerifyPostErrors, VerifyOtpApiV1AuthPatientOtpVerifyPostResponses } from './types.gen';
+import type { AdmitirPacienteApiV1FilaAdmissaoPostData, AdmitirPacienteApiV1FilaAdmissaoPostErrors, AdmitirPacienteApiV1FilaAdmissaoPostResponses, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostData, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostErrors, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostResponses, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutData, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutErrors, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses, CadastrarDependenteApiV1PacientesIdDependentesPostData, CadastrarDependenteApiV1PacientesIdDependentesPostErrors, CadastrarDependenteApiV1PacientesIdDependentesPostResponses, CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostData, CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostErrors, CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostResponses, CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostData, CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostErrors, CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostResponses, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostData, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostErrors, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostResponses, ChamarProximoPacienteApiV1FilaChamarProximoPostData, ChamarProximoPacienteApiV1FilaChamarProximoPostResponses, ComunicarPioraClinicaApiV1FilaPioraPostData, ComunicarPioraClinicaApiV1FilaPioraPostErrors, ComunicarPioraClinicaApiV1FilaPioraPostResponses, CriarAgendamentoApiV1SchedulingAgendamentosPostData, CriarAgendamentoApiV1SchedulingAgendamentosPostErrors, CriarAgendamentoApiV1SchedulingAgendamentosPostResponses, DownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGetData, DownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGetErrors, DownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGetResponses, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostData, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostErrors, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostResponses, EnrichmentFase2ApiV1OnboardingFase2PostData, EnrichmentFase2ApiV1OnboardingFase2PostErrors, EnrichmentFase2ApiV1OnboardingFase2PostResponses, ExportarBpaApiV1AmbulatoryProducaoExportarGetData, ExportarBpaApiV1AmbulatoryProducaoExportarGetErrors, ExportarBpaApiV1AmbulatoryProducaoExportarGetResponses, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostData, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostErrors, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostData, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostErrors, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostResponses, GetAuthPatientMethodsData, GetAuthPatientMethodsResponses, HealthcheckHealthzGetData, HealthcheckHealthzGetResponses, IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostData, IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostErrors, IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponses, IntakeFase1ApiV1OnboardingFase1PostData, IntakeFase1ApiV1OnboardingFase1PostErrors, IntakeFase1ApiV1OnboardingFase1PostResponses, ListarAgendaDiaApiV1SchedulingAgendaDiaGetData, ListarAgendaDiaApiV1SchedulingAgendaDiaGetErrors, ListarAgendaDiaApiV1SchedulingAgendaDiaGetResponses, ListarDependentesApiV1PacientesIdDependentesGetData, ListarDependentesApiV1PacientesIdDependentesGetErrors, ListarDependentesApiV1PacientesIdDependentesGetResponses, ListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetData, ListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetResponses, ListarEspecialidadesApiV1SchedulingEspecialidadesGetData, ListarEspecialidadesApiV1SchedulingEspecialidadesGetResponses, ListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetData, ListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetResponses, ListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetData, ListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetResponses, ListarProducaoApiV1AmbulatoryProducaoGetData, ListarProducaoApiV1AmbulatoryProducaoGetErrors, ListarProducaoApiV1AmbulatoryProducaoGetResponses, ListarSlotsApiV1SchedulingSlotsGetData, ListarSlotsApiV1SchedulingSlotsGetErrors, ListarSlotsApiV1SchedulingSlotsGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, MeApiV1AuthMeGetData, MeApiV1AuthMeGetResponses, MfaActivateApiV1AuthMfaActivatePostData, MfaActivateApiV1AuthMfaActivatePostErrors, MfaActivateApiV1AuthMfaActivatePostResponses, MfaSetupApiV1AuthMfaSetupPostData, MfaSetupApiV1AuthMfaSetupPostResponses, MfaVerifyApiV1AuthMfaVerifyPostData, MfaVerifyApiV1AuthMfaVerifyPostErrors, MfaVerifyApiV1AuthMfaVerifyPostResponses, ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetData, ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetResponses, ObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGetData, ObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGetErrors, ObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGetResponses, ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetData, ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetErrors, ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetResponses, ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetData, ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetErrors, ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetResponses, ObterPainelTelemetriaApiV1TelemetriaPainelGetData, ObterPainelTelemetriaApiV1TelemetriaPainelGetErrors, ObterPainelTelemetriaApiV1TelemetriaPainelGetResponses, ObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGetData, ObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGetErrors, ObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGetResponses, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetData, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetErrors, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetResponses, ObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGetData, ObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGetErrors, ObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGetResponses, PostAuthPacienteCadsusData, PostAuthPacienteCadsusErrors, PostAuthPacienteCadsusResponses, PostAuthPatientIdentifyData, PostAuthPatientIdentifyErrors, PostAuthPatientIdentifyResponses, PostAuthPatientLoginPasswordData, PostAuthPatientLoginPasswordErrors, PostAuthPatientLoginPasswordResponses, PostAuthPatientRegisterData, PostAuthPatientRegisterErrors, PostAuthPatientRegisterResponses, PostAuthPatientWebauthnAuthenticateOptionsData, PostAuthPatientWebauthnAuthenticateOptionsErrors, PostAuthPatientWebauthnAuthenticateOptionsResponses, PostAuthPatientWebauthnAuthenticateVerifyData, PostAuthPatientWebauthnAuthenticateVerifyErrors, PostAuthPatientWebauthnAuthenticateVerifyResponses, PostAuthPatientWebauthnRegisterOptionsData, PostAuthPatientWebauthnRegisterOptionsResponses, PostAuthPatientWebauthnRegisterVerifyData, PostAuthPatientWebauthnRegisterVerifyErrors, PostAuthPatientWebauthnRegisterVerifyResponses, RefreshTokenApiV1AuthRefreshPostData, RefreshTokenApiV1AuthRefreshPostErrors, RefreshTokenApiV1AuthRefreshPostResponses, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostData, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostErrors, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostResponses, RequestOtpApiV1AuthPatientOtpRequestPostData, RequestOtpApiV1AuthPatientOtpRequestPostErrors, RequestOtpApiV1AuthPatientOtpRequestPostResponses, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostData, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostErrors, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostResponses, SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostData, SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostErrors, SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponses, ValidarDocumentoApiV1DocumentsValidateTokenValidacaoGetData, ValidarDocumentoApiV1DocumentsValidateTokenValidacaoGetErrors, ValidarDocumentoApiV1DocumentsValidateTokenValidacaoGetResponses, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostData, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostErrors, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostResponses, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostData, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostErrors, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses, VerifyOtpApiV1AuthPatientOtpVerifyPostData, VerifyOtpApiV1AuthPatientOtpVerifyPostErrors, VerifyOtpApiV1AuthPatientOtpVerifyPostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -172,6 +172,55 @@ export const postAuthPacienteCadsus = <ThrowOnError extends boolean = false>(opt
         ...options.headers
     }
 });
+
+/**
+ * Auto-cadastro do cidadão com disparo inicial de OTP
+ *
+ * Registra novo paciente na organização com aceite LGPD, credencial opcional (e-mail/senha Argon2id) e envio inicial de código OTP via SMS.
+ */
+export const postAuthPatientRegister = <ThrowOnError extends boolean = false>(options: Options<PostAuthPatientRegisterData, ThrowOnError>): RequestResult<PostAuthPatientRegisterResponses, PostAuthPatientRegisterErrors, ThrowOnError> => (options.client ?? client).post<PostAuthPatientRegisterResponses, PostAuthPatientRegisterErrors, ThrowOnError>({
+    url: '/api/v1/auth/patient/register',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Identificação única anti-enumeração do paciente
+ *
+ * Consulta métodos de login habilitados para CPF ou e-mail com rate limiting e mascaramento estrito de dados pessoais.
+ */
+export const postAuthPatientIdentify = <ThrowOnError extends boolean = false>(options: Options<PostAuthPatientIdentifyData, ThrowOnError>): RequestResult<PostAuthPatientIdentifyResponses, PostAuthPatientIdentifyErrors, ThrowOnError> => (options.client ?? client).post<PostAuthPatientIdentifyResponses, PostAuthPatientIdentifyErrors, ThrowOnError>({
+    url: '/api/v1/auth/patient/identify',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Login tradicional do paciente com identificador e senha
+ *
+ * Autentica paciente via Argon2id e lockout progressivo (sem MFA TOTP) emitindo Bearer JWT Role.PACIENTE.
+ */
+export const postAuthPatientLoginPassword = <ThrowOnError extends boolean = false>(options: Options<PostAuthPatientLoginPasswordData, ThrowOnError>): RequestResult<PostAuthPatientLoginPasswordResponses, PostAuthPatientLoginPasswordErrors, ThrowOnError> => (options.client ?? client).post<PostAuthPatientLoginPasswordResponses, PostAuthPatientLoginPasswordErrors, ThrowOnError>({
+    url: '/api/v1/auth/patient/login-password',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Consultar capacidades de autenticação habilitadas para pacientes
+ *
+ * Retorna flags de disponibilidade dos métodos híbridos de autenticação (Gov.br OIDC, Passkeys, OTP e senha tradicional).
+ */
+export const getAuthPatientMethods = <ThrowOnError extends boolean = false>(options?: Options<GetAuthPatientMethodsData, ThrowOnError>): RequestResult<GetAuthPatientMethodsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetAuthPatientMethodsResponses, unknown, ThrowOnError>({ url: '/api/v1/auth/patient/methods', ...options });
 
 /**
  * Gerar opções e desafio para cadastro de biometria Passkey (US-14)
@@ -377,6 +426,39 @@ export const generateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekit
         'Content-Type': 'application/json',
         ...options.headers
     }
+});
+
+/**
+ * Lista histórico de teleconsultas do paciente autenticado
+ *
+ * Retorna histórico de consultas do paciente com isolamento Anti-IDOR.
+ */
+export const listarHistoricoPacienteApiV1ConsultationsMeHistoricoGet = <ThrowOnError extends boolean = false>(options?: Options<ListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetData, ThrowOnError>): RequestResult<ListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/consultations/me/historico',
+    ...options
+});
+
+/**
+ * Lista receitas e documentos clínicos do paciente autenticado
+ *
+ * Retorna documentos clínicos do paciente sem expor chaves internas S3.
+ */
+export const listarDocumentosPacienteApiV1ConsultationsMeDocumentosGet = <ThrowOnError extends boolean = false>(options?: Options<ListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetData, ThrowOnError>): RequestResult<ListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/consultations/me/documentos',
+    ...options
+});
+
+/**
+ * Download autorizado de documento clínico em PDF/A do paciente
+ *
+ * Retorna PDF/A compilado após validar titularidade do paciente autenticado.
+ */
+export const obterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGet = <ThrowOnError extends boolean = false>(options: Options<ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetData, ThrowOnError>): RequestResult<ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetResponses, ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetErrors, ThrowOnError> => (options.client ?? client).get<ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetResponses, ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/consultations/me/documents/{documento_id}/pdf',
+    ...options
 });
 
 /**
@@ -598,4 +680,96 @@ export const exportarBpaApiV1AmbulatoryProducaoExportarGet = <ThrowOnError exten
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/ambulatory/producao/exportar',
     ...options
+});
+
+/**
+ * Lista especialidades disponíveis na agenda multiprofissional
+ *
+ * Lista especialidades programadas com descrição e duração padrão.
+ */
+export const listarEspecialidadesApiV1SchedulingEspecialidadesGet = <ThrowOnError extends boolean = false>(options?: Options<ListarEspecialidadesApiV1SchedulingEspecialidadesGetData, ThrowOnError>): RequestResult<ListarEspecialidadesApiV1SchedulingEspecialidadesGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListarEspecialidadesApiV1SchedulingEspecialidadesGetResponses, unknown, ThrowOnError>({ url: '/api/v1/scheduling/especialidades', ...options });
+
+/**
+ * Lista slots disponíveis por especialidade e período
+ *
+ * Gera e retorna slots livres a partir das disponibilidades ativas.
+ */
+export const listarSlotsApiV1SchedulingSlotsGet = <ThrowOnError extends boolean = false>(options: Options<ListarSlotsApiV1SchedulingSlotsGetData, ThrowOnError>): RequestResult<ListarSlotsApiV1SchedulingSlotsGetResponses, ListarSlotsApiV1SchedulingSlotsGetErrors, ThrowOnError> => (options.client ?? client).get<ListarSlotsApiV1SchedulingSlotsGetResponses, ListarSlotsApiV1SchedulingSlotsGetErrors, ThrowOnError>({ url: '/api/v1/scheduling/slots', ...options });
+
+/**
+ * Agenda horário multiprofissional para o paciente autenticado
+ *
+ * Cria agendamento vinculado ao usuário autenticado prevenindo double-booking.
+ */
+export const criarAgendamentoApiV1SchedulingAgendamentosPost = <ThrowOnError extends boolean = false>(options: Options<CriarAgendamentoApiV1SchedulingAgendamentosPostData, ThrowOnError>): RequestResult<CriarAgendamentoApiV1SchedulingAgendamentosPostResponses, CriarAgendamentoApiV1SchedulingAgendamentosPostErrors, ThrowOnError> => (options.client ?? client).post<CriarAgendamentoApiV1SchedulingAgendamentosPostResponses, CriarAgendamentoApiV1SchedulingAgendamentosPostErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/scheduling/agendamentos',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Lista agendamentos do paciente autenticado
+ *
+ * Retorna os agendamentos pertencentes ao paciente autenticado.
+ */
+export const listarMeusAgendamentosApiV1SchedulingAgendamentosMeGet = <ThrowOnError extends boolean = false>(options?: Options<ListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetData, ThrowOnError>): RequestResult<ListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/scheduling/agendamentos/me',
+    ...options
+});
+
+/**
+ * Cancela um agendamento do paciente autenticado
+ *
+ * Cancela o agendamento se pertencer ao paciente autenticado.
+ */
+export const cancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPost = <ThrowOnError extends boolean = false>(options: Options<CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostData, ThrowOnError>): RequestResult<CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostResponses, CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostErrors, ThrowOnError> => (options.client ?? client).post<CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostResponses, CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/scheduling/agendamentos/{agendamento_id}/cancelar',
+    ...options
+});
+
+/**
+ * Cadastra janela semanal de agenda do profissional autenticado
+ *
+ * Registra janela recorrente de atendimento do profissional.
+ */
+export const cadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPost = <ThrowOnError extends boolean = false>(options: Options<CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostData, ThrowOnError>): RequestResult<CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostResponses, CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostErrors, ThrowOnError> => (options.client ?? client).post<CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostResponses, CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/scheduling/disponibilidades',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Lista agendamentos do profissional no período (padrão sem filtro: data UTC corrente)
+ *
+ * Lista os agendamentos vinculados ao profissional autenticado (default UTC).
+ */
+export const listarAgendaDiaApiV1SchedulingAgendaDiaGet = <ThrowOnError extends boolean = false>(options?: Options<ListarAgendaDiaApiV1SchedulingAgendaDiaGetData, ThrowOnError>): RequestResult<ListarAgendaDiaApiV1SchedulingAgendaDiaGetResponses, ListarAgendaDiaApiV1SchedulingAgendaDiaGetErrors, ThrowOnError> => (options?.client ?? client).get<ListarAgendaDiaApiV1SchedulingAgendaDiaGetResponses, ListarAgendaDiaApiV1SchedulingAgendaDiaGetErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/scheduling/agenda/dia',
+    ...options
+});
+
+/**
+ * Inicia atendimento clínico para um agendamento
+ *
+ * Transiciona o agendamento do profissional para EM_ATENDIMENTO.
+ */
+export const iniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPost = <ThrowOnError extends boolean = false>(options: Options<IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostData, ThrowOnError>): RequestResult<IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponses, IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostErrors, ThrowOnError> => (options.client ?? client).post<IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponses, IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/scheduling/agendamentos/{agendamento_id}/iniciar',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });

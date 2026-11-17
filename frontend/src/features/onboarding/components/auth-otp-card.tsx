@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { VerificarOtpResponse } from "@/api/generated/types.gen";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { startSafeViewTransition } from "@/lib/view-transitions";
 import { SolicitarOtpForm } from "./solicitar-otp-form";
 import { VerificarOtpForm } from "./verificar-otp-form";
 
@@ -20,20 +21,7 @@ export function AuthOtpCard({ onAuthenticated, className }: AuthOtpCardProps) {
   const [codigoDebug, setCodigoDebug] = React.useState<string | null>(null);
 
   const changeStep = (nextStep: "solicitar" | "verificar") => {
-    const prefersReducedMotion =
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    if (
-      !prefersReducedMotion &&
-      typeof document !== "undefined" &&
-      "startViewTransition" in document
-    ) {
-      document.startViewTransition(() => setStep(nextStep));
-    } else {
-      setStep(nextStep);
-    }
+    startSafeViewTransition(() => setStep(nextStep));
   };
 
   const handleOtpSent = (data: {

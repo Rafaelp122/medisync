@@ -60,6 +60,14 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
       });
     });
 
+    await page.route("**/api/v1/scheduling/especialidades", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+    });
+
     await page.route("**/api/v1/fila/cancelar/*", async (route) => {
       await route.fulfill({
         status: 200,
@@ -199,5 +207,17 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
 
     // Transição para tela de cancelamento
     await expect(page.getByText(/atendimento cancelado/i)).toBeVisible();
+
+    // Retorna para /home mantendo a sessão do cidadão sem atendimentoId ativo
+    await page.getByRole("button", { name: /voltar ao início/i }).click();
+    await expect(page).toHaveURL(/\/home$/);
+    await expect(
+      page.getByRole("heading", { level: 1, name: /serviços de saúde digital/i }),
+    ).toBeVisible();
+    const updatedSession = await page.evaluate(() => localStorage.getItem("medisync_session"));
+    expect(updatedSession).not.toBeNull();
+    const parsed = JSON.parse(updatedSession ?? "{}");
+    expect(parsed.token).toBe(MOCK_SESSION.token);
+    expect(parsed.atendimentoId).toBeUndefined();
   });
 });

@@ -1,5 +1,5 @@
 import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
-import { client, getActiveTenantId } from "@/api/client";
+import { client, getTenantHeaders } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { obterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet } from "@/api/generated/sdk.gen";
 import type { ProntuarioResponse } from "@/api/generated/types.gen";
@@ -19,7 +19,7 @@ export function useProntuario(
     queryFn: async () => {
       try {
         const headers: Record<string, string> = {
-          "X-Tenant-ID": getActiveTenantId(),
+          ...getTenantHeaders(),
         };
         if (token) {
           headers.Authorization = `Bearer ${token}`;

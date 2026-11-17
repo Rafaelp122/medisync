@@ -24,7 +24,7 @@ export function createChamarProximoResponse(
     medico_id: MOCK_MEDICO_ID,
     prioridade_clinica: 2,
     status: "EM_ATENDIMENTO",
-    chamada_iniciada_em: "2026-11-01T12:00:00Z",
+    chamada_iniciada_em: new Date(Date.now() - 5 * 60_000).toISOString(),
     ttl_segundos: 900,
     mensagem: "Paciente alocado com sucesso.",
     ...overrides,

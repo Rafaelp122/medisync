@@ -113,6 +113,62 @@ export type AdmissaoResponse = {
 };
 
 /**
+ * AgendamentoResponse
+ *
+ * Schema de resposta de agendamento multiprofissional.
+ */
+export type AgendamentoResponse = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Organizacao Id
+     */
+    organizacao_id: number;
+    /**
+     * Paciente Id
+     */
+    paciente_id: string;
+    /**
+     * Profissional Id
+     */
+    profissional_id: string;
+    /**
+     * Especialidade
+     */
+    especialidade: string;
+    /**
+     * Slot Inicio
+     */
+    slot_inicio: string;
+    /**
+     * Slot Fim
+     */
+    slot_fim: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Observacoes
+     */
+    observacoes?: string | null;
+    /**
+     * Atendimento Id
+     */
+    atendimento_id?: string | null;
+    /**
+     * Criado Em
+     */
+    criado_em: string;
+    /**
+     * Atualizado Em
+     */
+    atualizado_em: string;
+};
+
+/**
  * AssinarDocumentoRequest
  *
  * Payload to authorize digital signature via cloud PSC.
@@ -495,6 +551,44 @@ export type ConfigPlantaoResponse = {
 };
 
 /**
+ * CriarAgendamentoRequest
+ *
+ * Payload de reserva de horário pelo paciente autenticado (Anti-IDOR).
+ */
+export type CriarAgendamentoRequest = {
+    /**
+     * Profissional Id
+     *
+     * Identificador do profissional
+     */
+    profissional_id: string;
+    /**
+     * Especialidade
+     *
+     * Especialidade agendada
+     */
+    especialidade: string;
+    /**
+     * Slot Inicio
+     *
+     * Data/hora de início do slot
+     */
+    slot_inicio: string;
+    /**
+     * Slot Fim
+     *
+     * Data/hora de término do slot (opcional; calculada se omitida)
+     */
+    slot_fim?: string | null;
+    /**
+     * Observacoes
+     *
+     * Observações opcionais do paciente
+     */
+    observacoes?: string | null;
+};
+
+/**
  * CriarDependenteRequest
  *
  * Payload for linking or creating a patient dependent.
@@ -542,6 +636,44 @@ export type CriarDependenteRequest = {
      * Telefone de contato do dependente (opcional, herda do titular)
      */
     telefone?: string | null;
+};
+
+/**
+ * CriarDisponibilidadeRequest
+ *
+ * Payload para cadastro de janela semanal de agenda do profissional.
+ */
+export type CriarDisponibilidadeRequest = {
+    /**
+     * Especialidade
+     *
+     * Especialidade (PSICOLOGIA ou NUTRICAO)
+     */
+    especialidade: string;
+    /**
+     * Dia Semana
+     *
+     * Dia da semana (0=segunda .. 6=domingo)
+     */
+    dia_semana: number;
+    /**
+     * Hora Inicio
+     *
+     * Horário inicial da janela (naive UTC)
+     */
+    hora_inicio: string;
+    /**
+     * Hora Fim
+     *
+     * Horário final da janela (naive UTC)
+     */
+    hora_fim: string;
+    /**
+     * Duracao Minutos
+     *
+     * Duração de cada slot (15 a 120 min)
+     */
+    duracao_minutos: number;
 };
 
 /**
@@ -618,6 +750,50 @@ export type DependenteResponse = {
      * Vinculado Em
      */
     vinculado_em: string;
+};
+
+/**
+ * DisponibilidadeResponse
+ *
+ * Schema de resposta da janela semanal cadastrada.
+ */
+export type DisponibilidadeResponse = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Organizacao Id
+     */
+    organizacao_id: number;
+    /**
+     * Profissional Id
+     */
+    profissional_id: string;
+    /**
+     * Especialidade
+     */
+    especialidade: string;
+    /**
+     * Dia Semana
+     */
+    dia_semana: number;
+    /**
+     * Hora Inicio
+     */
+    hora_inicio: string;
+    /**
+     * Hora Fim
+     */
+    hora_fim: string;
+    /**
+     * Duracao Minutos
+     */
+    duracao_minutos: number;
+    /**
+     * Ativo
+     */
+    ativo: boolean;
 };
 
 /**
@@ -738,6 +914,38 @@ export type EmitirDocumentoRequest = {
      * Identificador da organização
      */
     organizacao_id?: number | null;
+};
+
+/**
+ * EspecialidadeResponse
+ *
+ * Schema de resposta para especialidade disponível na agenda eMulti.
+ */
+export type EspecialidadeResponse = {
+    /**
+     * Codigo
+     *
+     * Código da especialidade (PSICOLOGIA, NUTRICAO)
+     */
+    codigo: string;
+    /**
+     * Nome
+     *
+     * Nome amigável da especialidade
+     */
+    nome: string;
+    /**
+     * Descricao
+     *
+     * Descrição clínica da especialidade
+     */
+    descricao: string;
+    /**
+     * Duracao Padrao Minutos
+     *
+     * Duração padrão da consulta em minutos
+     */
+    duracao_padrao_minutos: number;
 };
 
 /**
@@ -1150,6 +1358,102 @@ export type HealthCheckResponse = {
 };
 
 /**
+ * HistoricoAtendimentoItemResponse
+ *
+ * Patient-facing attendance history entry (finalized SOAP summary only).
+ */
+export type HistoricoAtendimentoItemResponse = {
+    /**
+     * Atendimento Id
+     */
+    atendimento_id: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Prioridade Clinica
+     */
+    prioridade_clinica: number;
+    /**
+     * Queixa Principal
+     */
+    queixa_principal?: string | null;
+    /**
+     * Criado Em
+     */
+    criado_em: string;
+    /**
+     * Finalizado Em
+     */
+    finalizado_em?: string | null;
+    /**
+     * Medico Id
+     */
+    medico_id?: string | null;
+    /**
+     * Diagnostico Cid10
+     */
+    diagnostico_cid10?: string | null;
+    /**
+     * Conduta Resumo
+     */
+    conduta_resumo?: string | null;
+};
+
+/**
+ * IdentificarPacienteRequest
+ *
+ * Payload for anti-enumeration patient identification lookup.
+ */
+export type IdentificarPacienteRequest = {
+    /**
+     * Identificador
+     *
+     * CPF (11 dígitos) ou e-mail do paciente
+     */
+    identificador: string;
+};
+
+/**
+ * IdentificarPacienteResponse
+ *
+ * Response indicating available patient authentication methods without PII.
+ */
+export type IdentificarPacienteResponse = {
+    /**
+     * Possui Conta
+     */
+    possui_conta: boolean;
+    /**
+     * Metodos Disponiveis
+     */
+    metodos_disponiveis: Array<'otp' | 'senha' | 'passkey' | 'govbr'>;
+    /**
+     * Telefone Mascarado
+     */
+    telefone_mascarado?: string | null;
+    /**
+     * Govbr Habilitado
+     */
+    govbr_habilitado: boolean;
+};
+
+/**
+ * IniciarAgendamentoRequest
+ *
+ * Payload opcional para iniciar atendimento a partir de agendamento.
+ */
+export type IniciarAgendamentoRequest = {
+    /**
+     * Atendimento Id
+     *
+     * ID do atendimento clínico associado (opcional)
+     */
+    atendimento_id?: string | null;
+};
+
+/**
  * ItemPrescricaoRequest
  *
  * Prescription medication item input.
@@ -1300,9 +1604,9 @@ export type LiveKitTokenRequest = {
     /**
      * Organizacao Id
      *
-     * Identificador único da organização de saúde
+     * Identificador opcional da organização (resolvido via contexto HTTP quando omitido)
      */
-    organizacao_id: number;
+    organizacao_id?: number | null;
     /**
      * Participant Id
      *
@@ -1435,6 +1739,26 @@ export type LivenessVerifyResponse = {
 };
 
 /**
+ * LoginPacienteSenhaRequest
+ *
+ * Payload for traditional patient login with password fallback.
+ */
+export type LoginPacienteSenhaRequest = {
+    /**
+     * Identificador
+     *
+     * E-mail ou CPF do paciente
+     */
+    identificador: string;
+    /**
+     * Senha
+     *
+     * Senha em texto puro
+     */
+    senha: string;
+};
+
+/**
  * LoginRequest
  *
  * Payload for user credentials authentication.
@@ -1482,6 +1806,30 @@ export type MedicoTmaResponse = {
      * Tma Segundos
      */
     tma_segundos: number;
+};
+
+/**
+ * MetodosAutenticacaoPacienteResponse
+ *
+ * Response describing globally enabled patient authentication capabilities.
+ */
+export type MetodosAutenticacaoPacienteResponse = {
+    /**
+     * Govbr Oidc Enabled
+     */
+    govbr_oidc_enabled: boolean;
+    /**
+     * Passkeys Enabled
+     */
+    passkeys_enabled?: boolean;
+    /**
+     * Otp Enabled
+     */
+    otp_enabled?: boolean;
+    /**
+     * Password Fallback Enabled
+     */
+    password_fallback_enabled?: boolean;
 };
 
 /**
@@ -1556,6 +1904,42 @@ export type MfaVerificarLoginRequest = {
      * Código TOTP de 6 dígitos do autenticador
      */
     codigo: string;
+};
+
+/**
+ * PacienteDocumentoItemResponse
+ *
+ * Patient-facing clinical document metadata (never exposes S3 keys).
+ */
+export type PacienteDocumentoItemResponse = {
+    /**
+     * Documento Id
+     */
+    documento_id: string;
+    /**
+     * Atendimento Id
+     */
+    atendimento_id: string;
+    /**
+     * Tipo Documento
+     */
+    tipo_documento: string;
+    /**
+     * Status Assinatura
+     */
+    status_assinatura: string;
+    /**
+     * Token Validacao
+     */
+    token_validacao: string;
+    /**
+     * Criado Em
+     */
+    criado_em?: string | null;
+    /**
+     * Assinado Em
+     */
+    assinado_em?: string | null;
 };
 
 /**
@@ -1802,6 +2186,84 @@ export type RefreshTokenRequest = {
 };
 
 /**
+ * RegistrarPacienteRequest
+ *
+ * Payload for citizen self-service registration with mandatory email.
+ */
+export type RegistrarPacienteRequest = {
+    /**
+     * Cpf
+     *
+     * CPF do cidadão
+     */
+    cpf: string;
+    /**
+     * Nome Completo
+     *
+     * Nome completo do cidadão
+     */
+    nome_completo: string;
+    /**
+     * Data Nascimento
+     *
+     * Data de nascimento (AAAA-MM-DD)
+     */
+    data_nascimento: string;
+    /**
+     * Telefone
+     *
+     * Telefone celular com DDD
+     */
+    telefone: string;
+    /**
+     * Email
+     *
+     * E-mail obrigatório do cidadão
+     */
+    email: string;
+    /**
+     * Aceite Privacidade
+     *
+     * Aceite explícito da política de privacidade (LGPD)
+     */
+    aceite_privacidade: boolean;
+    /**
+     * Senha
+     *
+     * Senha opcional de acesso (>= 8 caracteres)
+     */
+    senha?: string | null;
+};
+
+/**
+ * RegistrarPacienteResponse
+ *
+ * Response returned after registering citizen and dispatching initial OTP.
+ */
+export type RegistrarPacienteResponse = {
+    /**
+     * Paciente Id
+     */
+    paciente_id: string;
+    /**
+     * Telefone Mascarado
+     */
+    telefone_mascarado: string;
+    /**
+     * Otp Enviado
+     */
+    otp_enviado: boolean;
+    /**
+     * Expira Em Segundos
+     */
+    expira_em_segundos: number;
+    /**
+     * Codigo Debug
+     */
+    codigo_debug?: string | null;
+};
+
+/**
  * RegistrarSOAPRequest
  *
  * Payload to record or update SOAP clinical notes.
@@ -1955,6 +2417,44 @@ export type RegularizacaoFilaResponse = {
      * Mensagem descritiva do resultado da operação
      */
     mensagem: string;
+};
+
+/**
+ * SlotDisponivelResponse
+ *
+ * Schema de resposta representando um horário livre para agendamento.
+ */
+export type SlotDisponivelResponse = {
+    /**
+     * Profissional Id
+     *
+     * Identificador do profissional
+     */
+    profissional_id: string;
+    /**
+     * Especialidade
+     *
+     * Especialidade do atendimento
+     */
+    especialidade: string;
+    /**
+     * Slot Inicio
+     *
+     * Início do horário em UTC
+     */
+    slot_inicio: string;
+    /**
+     * Slot Fim
+     *
+     * Fim do horário em UTC
+     */
+    slot_fim: string;
+    /**
+     * Duracao Minutos
+     *
+     * Duração do slot em minutos
+     */
+    duracao_minutos: number;
 };
 
 /**
@@ -2812,6 +3312,97 @@ export type PostAuthPacienteCadsusResponses = {
 
 export type PostAuthPacienteCadsusResponse = PostAuthPacienteCadsusResponses[keyof PostAuthPacienteCadsusResponses];
 
+export type PostAuthPatientRegisterData = {
+    body: RegistrarPacienteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/patient/register';
+};
+
+export type PostAuthPatientRegisterErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostAuthPatientRegisterError = PostAuthPatientRegisterErrors[keyof PostAuthPatientRegisterErrors];
+
+export type PostAuthPatientRegisterResponses = {
+    /**
+     * Successful Response
+     */
+    201: RegistrarPacienteResponse;
+};
+
+export type PostAuthPatientRegisterResponse = PostAuthPatientRegisterResponses[keyof PostAuthPatientRegisterResponses];
+
+export type PostAuthPatientIdentifyData = {
+    body: IdentificarPacienteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/patient/identify';
+};
+
+export type PostAuthPatientIdentifyErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostAuthPatientIdentifyError = PostAuthPatientIdentifyErrors[keyof PostAuthPatientIdentifyErrors];
+
+export type PostAuthPatientIdentifyResponses = {
+    /**
+     * Successful Response
+     */
+    200: IdentificarPacienteResponse;
+};
+
+export type PostAuthPatientIdentifyResponse = PostAuthPatientIdentifyResponses[keyof PostAuthPatientIdentifyResponses];
+
+export type PostAuthPatientLoginPasswordData = {
+    body: LoginPacienteSenhaRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/patient/login-password';
+};
+
+export type PostAuthPatientLoginPasswordErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostAuthPatientLoginPasswordError = PostAuthPatientLoginPasswordErrors[keyof PostAuthPatientLoginPasswordErrors];
+
+export type PostAuthPatientLoginPasswordResponses = {
+    /**
+     * Successful Response
+     */
+    200: VerificarOtpResponse;
+};
+
+export type PostAuthPatientLoginPasswordResponse = PostAuthPatientLoginPasswordResponses[keyof PostAuthPatientLoginPasswordResponses];
+
+export type GetAuthPatientMethodsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/patient/methods';
+};
+
+export type GetAuthPatientMethodsResponses = {
+    /**
+     * Successful Response
+     */
+    200: MetodosAutenticacaoPacienteResponse;
+};
+
+export type GetAuthPatientMethodsResponse = GetAuthPatientMethodsResponses[keyof GetAuthPatientMethodsResponses];
+
 export type PostAuthPatientWebauthnRegisterOptionsData = {
     body?: never;
     path?: never;
@@ -3212,6 +3803,82 @@ export type GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitT
 };
 
 export type GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostResponse = GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostResponses[keyof GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostResponses];
+
+export type ListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/consultations/me/historico';
+};
+
+export type ListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetResponses = {
+    /**
+     * Response Listar Historico Paciente Api V1 Consultations Me Historico Get
+     *
+     * Successful Response
+     */
+    200: Array<HistoricoAtendimentoItemResponse>;
+};
+
+export type ListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetResponse = ListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetResponses[keyof ListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetResponses];
+
+export type ListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/consultations/me/documentos';
+};
+
+export type ListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetResponses = {
+    /**
+     * Response Listar Documentos Paciente Api V1 Consultations Me Documentos Get
+     *
+     * Successful Response
+     */
+    200: Array<PacienteDocumentoItemResponse>;
+};
+
+export type ListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetResponse = ListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetResponses[keyof ListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetResponses];
+
+export type ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetData = {
+    body?: never;
+    path: {
+        /**
+         * Documento Id
+         *
+         * Identificador único do documento clínico
+         */
+        documento_id: string;
+    };
+    query?: never;
+    url: '/api/v1/consultations/me/documents/{documento_id}/pdf';
+};
+
+export type ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetErrors = {
+    /**
+     * Documento pertence a outro paciente ou organização
+     */
+    403: unknown;
+    /**
+     * Documento não encontrado
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetError = ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetErrors[keyof ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetErrors];
+
+export type ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetResponses = {
+    /**
+     * Arquivo PDF/A válido do paciente autenticado
+     */
+    200: Blob | File;
+};
+
+export type ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetResponse = ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetResponses[keyof ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetResponses];
 
 export type ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetData = {
     body?: never;
@@ -3817,3 +4484,248 @@ export type ExportarBpaApiV1AmbulatoryProducaoExportarGetResponses = {
      */
     200: unknown;
 };
+
+export type ListarEspecialidadesApiV1SchedulingEspecialidadesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/scheduling/especialidades';
+};
+
+export type ListarEspecialidadesApiV1SchedulingEspecialidadesGetResponses = {
+    /**
+     * Response Listar Especialidades Api V1 Scheduling Especialidades Get
+     *
+     * Successful Response
+     */
+    200: Array<EspecialidadeResponse>;
+};
+
+export type ListarEspecialidadesApiV1SchedulingEspecialidadesGetResponse = ListarEspecialidadesApiV1SchedulingEspecialidadesGetResponses[keyof ListarEspecialidadesApiV1SchedulingEspecialidadesGetResponses];
+
+export type ListarSlotsApiV1SchedulingSlotsGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Especialidade
+         *
+         * Especialidade (PSICOLOGIA ou NUTRICAO)
+         */
+        especialidade: string;
+        /**
+         * Data Inicio
+         *
+         * Data inicial (YYYY-MM-DD)
+         */
+        data_inicio: string;
+        /**
+         * Data Fim
+         *
+         * Data final (YYYY-MM-DD)
+         */
+        data_fim: string;
+    };
+    url: '/api/v1/scheduling/slots';
+};
+
+export type ListarSlotsApiV1SchedulingSlotsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListarSlotsApiV1SchedulingSlotsGetError = ListarSlotsApiV1SchedulingSlotsGetErrors[keyof ListarSlotsApiV1SchedulingSlotsGetErrors];
+
+export type ListarSlotsApiV1SchedulingSlotsGetResponses = {
+    /**
+     * Response Listar Slots Api V1 Scheduling Slots Get
+     *
+     * Successful Response
+     */
+    200: Array<SlotDisponivelResponse>;
+};
+
+export type ListarSlotsApiV1SchedulingSlotsGetResponse = ListarSlotsApiV1SchedulingSlotsGetResponses[keyof ListarSlotsApiV1SchedulingSlotsGetResponses];
+
+export type CriarAgendamentoApiV1SchedulingAgendamentosPostData = {
+    body: CriarAgendamentoRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/scheduling/agendamentos';
+};
+
+export type CriarAgendamentoApiV1SchedulingAgendamentosPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CriarAgendamentoApiV1SchedulingAgendamentosPostError = CriarAgendamentoApiV1SchedulingAgendamentosPostErrors[keyof CriarAgendamentoApiV1SchedulingAgendamentosPostErrors];
+
+export type CriarAgendamentoApiV1SchedulingAgendamentosPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: AgendamentoResponse;
+};
+
+export type CriarAgendamentoApiV1SchedulingAgendamentosPostResponse = CriarAgendamentoApiV1SchedulingAgendamentosPostResponses[keyof CriarAgendamentoApiV1SchedulingAgendamentosPostResponses];
+
+export type ListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/scheduling/agendamentos/me';
+};
+
+export type ListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetResponses = {
+    /**
+     * Response Listar Meus Agendamentos Api V1 Scheduling Agendamentos Me Get
+     *
+     * Successful Response
+     */
+    200: Array<AgendamentoResponse>;
+};
+
+export type ListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetResponse = ListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetResponses[keyof ListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetResponses];
+
+export type CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostData = {
+    body?: never;
+    path: {
+        /**
+         * Agendamento Id
+         *
+         * ID do agendamento
+         */
+        agendamento_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scheduling/agendamentos/{agendamento_id}/cancelar';
+};
+
+export type CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostError = CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostErrors[keyof CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostErrors];
+
+export type CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgendamentoResponse;
+};
+
+export type CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostResponse = CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostResponses[keyof CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostResponses];
+
+export type CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostData = {
+    body: CriarDisponibilidadeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/scheduling/disponibilidades';
+};
+
+export type CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostError = CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostErrors[keyof CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostErrors];
+
+export type CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DisponibilidadeResponse;
+};
+
+export type CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostResponse = CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostResponses[keyof CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostResponses];
+
+export type ListarAgendaDiaApiV1SchedulingAgendaDiaGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Data
+         *
+         * Data única (YYYY-MM-DD). Quando omitida junto a data_inicio, assume a data UTC corrente.
+         */
+        data?: string | null;
+        /**
+         * Data Inicio
+         *
+         * Data inicial (YYYY-MM-DD). Quando omitida junto a data, assume a data UTC corrente.
+         */
+        data_inicio?: string | null;
+        /**
+         * Data Fim
+         *
+         * Data final (YYYY-MM-DD). Quando omitida, assume data_inicio (padrão: data UTC corrente).
+         */
+        data_fim?: string | null;
+    };
+    url: '/api/v1/scheduling/agenda/dia';
+};
+
+export type ListarAgendaDiaApiV1SchedulingAgendaDiaGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListarAgendaDiaApiV1SchedulingAgendaDiaGetError = ListarAgendaDiaApiV1SchedulingAgendaDiaGetErrors[keyof ListarAgendaDiaApiV1SchedulingAgendaDiaGetErrors];
+
+export type ListarAgendaDiaApiV1SchedulingAgendaDiaGetResponses = {
+    /**
+     * Response Listar Agenda Dia Api V1 Scheduling Agenda Dia Get
+     *
+     * Successful Response
+     */
+    200: Array<AgendamentoResponse>;
+};
+
+export type ListarAgendaDiaApiV1SchedulingAgendaDiaGetResponse = ListarAgendaDiaApiV1SchedulingAgendaDiaGetResponses[keyof ListarAgendaDiaApiV1SchedulingAgendaDiaGetResponses];
+
+export type IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostData = {
+    /**
+     * Body
+     */
+    body?: IniciarAgendamentoRequest | null;
+    path: {
+        /**
+         * Agendamento Id
+         *
+         * ID do agendamento
+         */
+        agendamento_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scheduling/agendamentos/{agendamento_id}/iniciar';
+};
+
+export type IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostError = IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostErrors[keyof IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostErrors];
+
+export type IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgendamentoResponse;
+};
+
+export type IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponse = IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponses[keyof IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponses];

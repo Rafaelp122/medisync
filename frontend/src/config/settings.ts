@@ -37,7 +37,7 @@ export const envSchema = z
     apiBaseUrl: z.string().default(""),
 
     /** Identificador padrão do Tenant (Organização de Saúde) */
-    defaultTenantId: z.string().min(1, "Tenant ID obrigatório").default("1"),
+    defaultTenantId: z.string().min(1).optional(),
 
     /** Flag de habilitação de atalhos e preenchimentos demo */
     isDemoMode: z.boolean().default(false),
@@ -186,7 +186,7 @@ export function createSettings(rawEnv: Record<string, unknown> = import.meta.env
 
   // Resolução do Tenant ID
   const rawTenantId = typeof rawEnv.VITE_TENANT_ID === "string" ? rawEnv.VITE_TENANT_ID.trim() : "";
-  const defaultTenantId = rawTenantId || "1";
+  const defaultTenantId = rawTenantId || undefined;
 
   // Resolução da flag isDemoMode
   let isDemoMode: boolean;

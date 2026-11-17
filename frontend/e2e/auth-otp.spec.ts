@@ -1,9 +1,34 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-test.describe("Autenticação OTP de Paciente (E2E)", () => {
+test.describe("Autenticação OTP de Paciente via /entrar (E2E)", () => {
   test.beforeEach(async ({ page }) => {
-    // Intercept API routes
+    await page.route("**/api/v1/auth/patient/methods", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          govbr_oidc_enabled: false,
+          passkeys_enabled: true,
+          otp_enabled: true,
+          password_fallback_enabled: true,
+        }),
+      });
+    });
+
+    await page.route("**/api/v1/auth/patient/identify", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          possui_conta: true,
+          metodos_disponiveis: ["otp", "senha", "passkey"],
+          telefone_mascarado: "(11) 9****-4321",
+          govbr_habilitado: false,
+        }),
+      });
+    });
+
     await page.route("**/api/v1/auth/patient/otp/request", async (route) => {
       await route.fulfill({
         status: 200,
@@ -26,51 +51,61 @@ test.describe("Autenticação OTP de Paciente (E2E)", () => {
           expires_in: 3600,
           paciente_id: "00000000-0000-0000-0000-000000000001",
           role: "PACIENTE",
+          atendimento_id: null,
         }),
+      });
+    });
+
+    await page.route("**/api/v1/scheduling/especialidades", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
       });
     });
   });
 
-  test("E2E-01: Jornada Completa do Paciente com Login OTP", async ({ page }) => {
+  test("E2E-01: Redirecionamento /otp -> /entrar e Jornada Completa OTP até /home", async ({
+    page,
+  }) => {
     await page.goto("/otp");
+    await expect(page).toHaveURL(/\/entrar$/);
 
-    // Verify title and prompt
-    await expect(page.getByRole("heading", { level: 1, name: /medisync express/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /entrar no medisync/i })).toBeVisible();
 
-    // Fill phone number
-    const phoneInput = page.getByLabel(/telefone celular/i);
+    // Passo 1: Identificação por CPF
+    await page.getByLabel(/cpf ou e-mail/i).fill("52998224725");
+    await page.getByRole("button", { name: /continuar/i }).click();
+
+    // Passo 2A: Confirmação de celular e solicitação de OTP SMS
+    await expect(page.getByText("(11) 9****-4321")).toBeVisible();
+    const phoneInput = page.getByLabel(/confirme seu celular para receber o código sms/i);
     await phoneInput.fill("11987654321");
     await expect(phoneInput).toHaveValue("(11) 98765-4321");
 
-    // Click submit
-    await page.getByRole("button", { name: /receber código/i }).click();
+    await page.getByRole("button", { name: /receber código de 6 dígitos por sms/i }).click();
 
-    // Verify transition to OTP code verification
-    await expect(page.getByText(/código de 6 dígitos/i)).toBeVisible();
+    // Confirmação do código de 6 dígitos
+    const otpInput = page.getByLabel(/código sms de 6 dígitos/i);
+    await expect(otpInput).toBeVisible();
+    await otpInput.fill("123456");
 
-    // Fill OTP digits
-    await page.getByLabel("Dígito 1").fill("1");
-    await page.getByLabel("Dígito 2").fill("2");
-    await page.getByLabel("Dígito 3").fill("3");
-    await page.getByLabel("Dígito 4").fill("4");
-    await page.getByLabel("Dígito 5").fill("5");
-    await page.getByLabel("Dígito 6").fill("6");
-
-    // Submit OTP
     await page.getByRole("button", { name: /confirmar e entrar/i }).click();
 
-    // Verify successful authentication via unified canonical card (Acesso Autorizado sem atendimento em curso)
-    await expect(page.getByRole("heading", { name: /acesso autorizado/i })).toBeVisible();
-    await expect(page.getByText(/papel:\s*paciente/i)).toBeVisible();
+    // Redirecionamento para o Portal do Cidadão (/home)
+    await expect(page).toHaveURL(/\/home$/);
+    await expect(
+      page.getByRole("heading", { level: 1, name: /serviços de saúde digital/i }),
+    ).toBeVisible();
 
-    // Verify localStorage session persistence
+    // Persistência da sessão no localStorage
     const rawSession = await page.evaluate(() => localStorage.getItem("medisync_session"));
     expect(rawSession).not.toBeNull();
     const parsed = JSON.parse(rawSession ?? "{}");
     expect(parsed.token).toBe("fake-e2e-jwt-token");
     expect(parsed.pacienteId).toBe("00000000-0000-0000-0000-000000000001");
 
-    // Verify that client attaches Authorization Bearer header to network requests
+    // Verifica que o client anexa Authorization Bearer automaticamente
     const tokenHeader = await page.evaluate(async () => {
       const client = (
         window as unknown as { __medisyncClient: { get: (opts: unknown) => Promise<unknown> } }
@@ -87,20 +122,22 @@ test.describe("Autenticação OTP de Paciente (E2E)", () => {
     });
     expect(tokenHeader).toBe("Bearer fake-e2e-jwt-token");
 
-    // Verify persistence across page reload (F5)
+    // Persistência após recarregar a página (F5)
     await page.reload();
-    await expect(page.getByRole("heading", { name: /acesso autorizado/i })).toBeVisible();
-    await expect(page.getByLabel(/telefone celular/i)).not.toBeVisible();
+    await expect(page).toHaveURL(/\/home$/);
+    await expect(
+      page.getByRole("heading", { level: 1, name: /serviços de saúde digital/i }),
+    ).toBeVisible();
 
-    // Verify logout / session termination
-    await page.getByRole("button", { name: /encerrar sessão \/ novo atendimento/i }).click();
-    await expect(page.getByLabel(/telefone celular/i)).toBeVisible();
+    // Logout pela sidebar limpa a sessão e retorna para /
+    await page.getByRole("button", { name: /^sair$/i }).click();
+    await expect(page).toHaveURL(/\/$/);
     const clearedSession = await page.evaluate(() => localStorage.getItem("medisync_session"));
     expect(clearedSession).toBeNull();
   });
 
-  test("E2E-02: Auditoria de Acessibilidade WCAG 2.1 AA", async ({ page }) => {
-    await page.goto("/otp");
+  test("E2E-02: Auditoria de Acessibilidade WCAG 2.1 AA em /entrar", async ({ page }) => {
+    await page.goto("/entrar");
 
     const accessibilityScanResults = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -109,21 +146,20 @@ test.describe("Autenticação OTP de Paciente (E2E)", () => {
     expect(accessibilityScanResults.violations).toEqual([]);
   });
 
-  test("E2E-03: Respeito estrito a prefers-reduced-motion", async ({ page }) => {
+  test("E2E-03: Respeito estrito a prefers-reduced-motion em /entrar", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/otp");
+    await page.goto("/entrar");
 
-    const button = page.getByRole("button", { name: /receber código/i });
+    const button = page.getByRole("button", { name: /continuar/i });
     const duration = await button.evaluate((el) => {
       return window.getComputedStyle(el).getPropertyValue("transition-duration");
     });
 
-    // In CSS we set transition-duration: 0.01ms !important under prefers-reduced-motion
     const durationSeconds = Number.parseFloat(duration) * (duration.endsWith("ms") ? 0.001 : 1);
     expect(durationSeconds).toBeLessThanOrEqual(0.001);
   });
 
-  test("E2E-04: Passkeys WebAuthn — Cadastro em /fila e Login em 1 Toque em /otp (US-14)", async ({
+  test("E2E-04: Passkeys WebAuthn — Cadastro em /fila e Login em 1 Toque em /entrar (US-14)", async ({
     page,
     context,
   }, testInfo) => {
@@ -222,7 +258,7 @@ test.describe("Autenticação OTP de Paciente (E2E)", () => {
       await expect(page.getByText(/biometria ativada com sucesso neste aparelho/i)).toBeVisible();
       expect(registeredCredentialId.length).toBeGreaterThan(0);
 
-      // Agora testa Login em 1 Toque em /otp usando a credencial virtual recém-registrada
+      // Login em 1 Toque via Passkey em /entrar usando a credencial virtual recém-registrada
       await page.route("**/api/v1/auth/patient/webauthn/authenticate/options", async (route) => {
         await route.fulfill({
           status: 200,
@@ -253,10 +289,13 @@ test.describe("Autenticação OTP de Paciente (E2E)", () => {
       });
 
       await page.evaluate(() => localStorage.removeItem("medisync_session"));
-      await page.goto(`${localhostOrigin}/otp`);
-      await page.getByRole("button", { name: /entrar com biometria do aparelho/i }).click();
+      await page.goto(`${localhostOrigin}/entrar`);
+      await page.getByLabel(/cpf ou e-mail/i).fill("52998224725");
+      await page.getByRole("button", { name: /continuar/i }).click();
 
-      await page.waitForURL("**/fila");
+      await page.getByRole("button", { name: /entrar com passkey \(biometria\)/i }).click();
+
+      await expect(page).toHaveURL(/\/fila$/);
       await expect(page.getByRole("heading", { name: /sala de espera virtual/i })).toBeVisible();
       await expect(page.getByText(/2º na fila/i)).toBeVisible();
     } finally {

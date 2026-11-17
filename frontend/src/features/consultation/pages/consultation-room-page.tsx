@@ -47,6 +47,13 @@ export function ConsultationRoomPage({ session, callData }: ConsultationRoomPage
     }
   }, []);
 
+  const handleRegisterLivenessSender = useCallback(
+    (sender: ((message: LivenessChannelMessage) => Promise<void>) | null) => {
+      livenessSenderRef.current = sender;
+    },
+    [],
+  );
+
   const handleTeleconsultaEncerrada = () => {
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
@@ -56,39 +63,42 @@ export function ConsultationRoomPage({ session, callData }: ConsultationRoomPage
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-4">
-      <Suspense
-        fallback={
-          <div className="h-80 flex items-center justify-center bg-slate-900 rounded-xl text-slate-300 text-xs">
-            Conectando à Sala de Teleconsulta LiveKit SFU…
-          </div>
-        }
-      >
-        <LazyLiveKitVideoCall
-          wsUrl={callData.server_url}
-          token={callData.token}
-          roomName={callData.room_name}
-          participantName={callData.participant_identity}
-          remoteParticipantName="Dr. Eduardo Rocha (Médico Plantonista)"
-          onDisconnected={handleTeleconsultaEncerrada}
-          onLivenessMessage={handleLivenessMessage}
-          onRegisterLivenessSender={(sender) => {
-            livenessSenderRef.current = sender;
-          }}
-          className="min-h-[420px]"
-        />
-      </Suspense>
+    <main
+      id="main-content"
+      className="min-h-screen w-full flex flex-col items-center justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-background text-foreground"
+    >
+      <div className="w-full max-w-2xl mx-auto space-y-4">
+        <Suspense
+          fallback={
+            <div className="h-80 flex items-center justify-center bg-slate-900 rounded-xl text-slate-300 text-xs">
+              Conectando à Sala de Teleconsulta LiveKit SFU…
+            </div>
+          }
+        >
+          <LazyLiveKitVideoCall
+            wsUrl={callData.server_url}
+            token={callData.token}
+            roomName={callData.room_name}
+            participantName={callData.participant_identity}
+            remoteParticipantName="Dr. Eduardo Rocha (Médico Plantonista)"
+            onDisconnected={handleTeleconsultaEncerrada}
+            onLivenessMessage={handleLivenessMessage}
+            onRegisterLivenessSender={handleRegisterLivenessSender}
+            className="min-h-[420px]"
+          />
+        </Suspense>
 
-      {activeChallenge && session.atendimentoId && (
-        <PatientLivenessModal
-          key={activeChallenge.challenge_id}
-          atendimentoId={session.atendimentoId}
-          token={session.token}
-          challenge={activeChallenge}
-          onResult={handleLivenessResult}
-          onClose={() => setActiveChallenge(null)}
-        />
-      )}
-    </div>
+        {activeChallenge && session.atendimentoId && (
+          <PatientLivenessModal
+            key={activeChallenge.challenge_id}
+            atendimentoId={session.atendimentoId}
+            token={session.token}
+            challenge={activeChallenge}
+            onResult={handleLivenessResult}
+            onClose={() => setActiveChallenge(null)}
+          />
+        )}
+      </div>
+    </main>
   );
 }

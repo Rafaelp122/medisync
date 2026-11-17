@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { client, getActiveTenantId } from "@/api/client";
+import { client, getTenantHeaders } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
   atualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut,
@@ -34,7 +34,7 @@ export function useTelemetriaPainel(
     queryFn: async () => {
       try {
         const headers: Record<string, string> = {
-          "X-Tenant-ID": getActiveTenantId(),
+          ...getTenantHeaders(),
         };
         if (token) {
           headers.Authorization = `Bearer ${token}`;
@@ -70,7 +70,7 @@ export function useConfigPlantao(
     queryFn: async () => {
       try {
         const headers: Record<string, string> = {
-          "X-Tenant-ID": getActiveTenantId(),
+          ...getTenantHeaders(),
         };
         if (token) {
           headers.Authorization = `Bearer ${token}`;
@@ -105,7 +105,7 @@ export function useAtualizarConfigPlantao(
     mutationFn: async (body: ConfigPlantaoRequest) => {
       try {
         const headers: Record<string, string> = {
-          "X-Tenant-ID": getActiveTenantId(),
+          ...getTenantHeaders(),
         };
         if (token) {
           headers.Authorization = `Bearer ${token}`;

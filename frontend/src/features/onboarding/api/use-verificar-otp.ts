@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getActiveTenantId } from "@/api/client";
+import { client, getTenantHeaders } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { verifyOtpApiV1AuthPatientOtpVerifyPost } from "@/api/generated/sdk.gen";
 import type { VerificarOtpRequest, VerificarOtpResponse } from "@/api/generated/types.gen";
@@ -18,9 +18,7 @@ export function useVerificarOtp(
         const response = await verifyOtpApiV1AuthPatientOtpVerifyPost({
           client,
           body: payload,
-          headers: {
-            "X-Tenant-ID": getActiveTenantId(),
-          },
+          headers: getTenantHeaders(),
           throwOnError: true,
         });
         return response.data;

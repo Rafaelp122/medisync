@@ -47,8 +47,21 @@ const MOCK_CONFIG_PLANTAO = {
   atualizado_por_id: null,
 };
 
-test.describe("Portais Corporativos (/login, /medico e /gestor)", () => {
+test.describe("Portais Corporativos (/interno/login, /medico e /gestor)", () => {
   test.beforeEach(async ({ page }) => {
+    await page.route("**/api/v1/auth/patient/methods", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          govbr_oidc_enabled: false,
+          passkeys_enabled: true,
+          otp_enabled: true,
+          password_fallback_enabled: true,
+        }),
+      });
+    });
+
     await page.route("**/api/v1/auth/login", async (route) => {
       await route.fulfill({
         status: 200,
@@ -59,6 +72,14 @@ test.describe("Portais Corporativos (/login, /medico e /gestor)", () => {
           expires_in: 3600,
           mfa_requerido: false,
         }),
+      });
+    });
+
+    await page.route("**/api/v1/scheduling/agenda/dia*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
       });
     });
 
@@ -123,10 +144,10 @@ test.describe("Portais Corporativos (/login, /medico e /gestor)", () => {
     });
   });
 
-  test("E2E-STAFF-01: Autentica médico em /login, redireciona para /medico e valida WCAG 2.1 AA", async ({
+  test("E2E-STAFF-01: Autentica médico em /interno/login, redireciona para /medico e valida WCAG 2.1 AA", async ({
     page,
   }) => {
-    await page.goto("/login");
+    await page.goto("/interno/login");
 
     const loginAxe = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -139,7 +160,7 @@ test.describe("Portais Corporativos (/login, /medico e /gestor)", () => {
     await page.getByLabel(/senha de acesso/i).fill("Medisync@2026");
     await page.getByRole("button", { name: /entrar no plantão/i }).click();
 
-    await expect(page).toHaveURL(/\/medico/);
+    await expect(page).toHaveURL(/\/medico$/);
     await expect(page.getByRole("button", { name: /chamar próximo paciente/i })).toBeVisible();
 
     const medicoAxe = await new AxeBuilder({ page })
@@ -148,17 +169,17 @@ test.describe("Portais Corporativos (/login, /medico e /gestor)", () => {
     expect(medicoAxe.violations).toEqual([]);
   });
 
-  test("E2E-STAFF-02: Autentica gestor em /login, opera US-11/US-12 em /gestor e valida WCAG 2.1 AA", async ({
+  test("E2E-STAFF-02: Autentica gestor em /interno/login, opera US-11/US-12 em /gestor e valida WCAG 2.1 AA", async ({
     page,
   }) => {
-    await page.goto("/login");
+    await page.goto("/interno/login");
 
     await page.getByRole("tab", { name: /gestor/i }).click();
     await page.getByLabel(/e-mail institucional/i).fill("gestor@medisync.sus.gov.br");
     await page.getByLabel(/senha institucional/i).fill("Gestor@2026");
     await page.getByRole("button", { name: /acessar painel da regulação/i }).click();
 
-    await expect(page).toHaveURL(/\/gestor/);
+    await expect(page).toHaveURL(/\/gestor$/);
     await expect(page.getByText("Dr. Eduardo Rocha")).toBeVisible();
 
     // US-12: Atualiza política do plantão
@@ -177,5 +198,33 @@ test.describe("Portais Corporativos (/login, /medico e /gestor)", () => {
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
       .analyze();
     expect(gestorAxe.violations).toEqual([]);
+  });
+
+  test("E2E-STAFF-03: Segregação estrita — /, /entrar e /login não expõem acesso médico/gestor", async ({
+    page,
+  }) => {
+    // Landing page pública (/) não possui links nem formulários corporativos
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: /pronto-atendimento digital para casos leves/i,
+      }),
+    ).toBeVisible();
+    await expect(page.locator('a[href*="/interno/login"], a[href="/login"]')).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: /médico|gestor/i })).toHaveCount(0);
+
+    // Portal de entrada do cidadão (/entrar) não expõe login médico ou gestor
+    await page.goto("/entrar");
+    await expect(page.getByRole("heading", { name: /entrar no medisync/i })).toBeVisible();
+    await expect(page.locator('a[href*="/interno/login"], a[href="/login"]')).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: /médico|gestor/i })).toHaveCount(0);
+    await expect(page.getByText(/acesso à estação médica/i)).toHaveCount(0);
+
+    // Rota legada /login redireciona para / sem expor /interno/login
+    await page.goto("/login");
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('a[href*="/interno/login"]')).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: /médico|gestor/i })).toHaveCount(0);
   });
 });

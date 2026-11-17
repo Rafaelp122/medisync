@@ -1,10 +1,11 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getActiveTenantId } from "@/api/client";
+import { client, getTenantHeaders } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { generateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost } from "@/api/generated/sdk.gen";
 import type { LiveKitTokenRequest, LiveKitTokenResponse } from "@/api/generated/types.gen";
 
-export interface LiveKitTokenParams extends LiveKitTokenRequest {
+export interface LiveKitTokenParams extends Omit<LiveKitTokenRequest, "organizacao_id"> {
+  organizacao_id?: number;
   atendimento_id?: string;
   token?: string;
 }
@@ -26,7 +27,7 @@ export function useLiveKitToken(
 
       try {
         const headers: Record<string, string> = {
-          "X-Tenant-ID": getActiveTenantId(),
+          ...getTenantHeaders(),
         };
         if (token) {
           headers.Authorization = `Bearer ${token}`;
@@ -38,7 +39,7 @@ export function useLiveKitToken(
             path: {
               atendimento_id: resolvedAtendimentoId,
             },
-            body,
+            body: body as LiveKitTokenRequest,
             headers,
             throwOnError: true,
           });

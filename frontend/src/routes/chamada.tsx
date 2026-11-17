@@ -18,13 +18,13 @@ export const chamadaRoute = createRoute({
   beforeLoad: ({ location }) => {
     const session = getStoredSession();
     if (!session?.token) {
-      throw redirect({ to: "/" });
+      throw redirect({ to: "/entrar" });
     }
 
     const state = location.state as ChamadaLocationState | undefined;
     const callData = state?.callData ?? getStoredCallData();
     if (!callData?.token) {
-      throw redirect({ to: session.atendimentoId ? "/fila" : "/" });
+      throw redirect({ to: session.atendimentoId ? "/fila" : "/home" });
     }
 
     return { session, callData };

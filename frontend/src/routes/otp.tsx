@@ -1,5 +1,4 @@
 import { createRoute, redirect } from "@tanstack/react-router";
-import { OtpPage } from "@/features/onboarding/pages/otp-page";
 import {
   getStoredDoctorSession,
   getStoredManagerSession,
@@ -15,6 +14,9 @@ export const otpRoute = createRoute({
     if (session?.atendimentoId) {
       throw redirect({ to: "/fila" });
     }
+    if (session?.token) {
+      throw redirect({ to: "/home" });
+    }
 
     const doctor = getStoredDoctorSession();
     if (doctor) {
@@ -25,6 +27,7 @@ export const otpRoute = createRoute({
     if (manager) {
       throw redirect({ to: "/gestor" });
     }
+
+    throw redirect({ to: "/entrar" });
   },
-  component: OtpPage,
 });
