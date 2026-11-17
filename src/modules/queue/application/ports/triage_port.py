@@ -1,6 +1,7 @@
 """Port and DTO for delegating triage and clinical risk classification (NC-ARQ-01)."""
 
-from typing import Protocol
+from collections.abc import Sequence
+from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 
@@ -49,4 +50,17 @@ class TriagePort(Protocol):
         escala_dor: int = 0,
     ) -> UUID:
         """Persist Triagem aggregate associated 1:1 with attendance."""
+        ...
+
+
+@runtime_checkable
+class TriageQueixaReaderPort(Protocol):
+    """Complementary port for reading primary clinical complaints by attendance."""
+
+    async def obter_queixas_por_atendimentos(
+        self,
+        organizacao_id: int,
+        atendimento_ids: Sequence[UUID],
+    ) -> dict[UUID, str | None]:
+        """Fetch mapping atendimento_id -> queixa_principal for tenant."""
         ...

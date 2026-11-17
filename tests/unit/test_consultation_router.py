@@ -11,14 +11,23 @@ from src.core.authz.models import AuthenticatedUser
 from src.core.authz.roles import Role
 from src.main import create_app
 from src.modules.consultation.application.dtos import DocumentoAssinadoResult
+from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoReaderPort,
+    HistoricoAtendimentoReaderPort,
+)
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
 )
 from src.modules.consultation.application.services.pep_service import PEPService
-from src.modules.consultation.composition import get_pep_service
+from src.modules.consultation.composition import (
+    QueueStoreAtendimentoReaderAdapter,
+    get_atendimento_reader,
+    get_pep_service,
+)
 from src.modules.consultation.presentation.dependencies import (
     require_clinical_mutation_access,
     require_clinical_read_access,
+    require_paciente_autenticado,
 )
 from src.modules.consultation.presentation.routers.consultation_router import (
     consultation_router,
@@ -33,6 +42,17 @@ def _make_doctor(user_id: UUID | None = None, org_id: int = 1) -> AuthenticatedU
         papel=Role.MEDICO,
         token_id=uuid4(),
         raw_token="fake-jwt-token",
+    )
+
+
+def _make_patient(user_id: UUID | None = None, org_id: int = 2) -> AuthenticatedUser:
+    uid = user_id if user_id is not None else uuid4()
+    return AuthenticatedUser(
+        usuario_id=uid,
+        organizacao_id=org_id,
+        papel=Role.PACIENTE,
+        token_id=uuid4(),
+        raw_token="fake-patient-jwt",
     )
 
 
@@ -141,3 +161,91 @@ async def test_assinar_documento_route_uses_pep_service() -> None:
             certificate_alias="cert-1",
         ),
     )
+
+
+@pytest.mark.asyncio
+async def test_patient_portal_routes_delegate_to_pep_service() -> None:
+    """GET /me/historico, /me/documentos, /me/documents/{id}/pdf delegate via Dep."""
+    from src.modules.consultation.application.dtos import (
+        HistoricoAtendimentoItemDTO,
+        PacienteDocumentoItemDTO,
+    )
+
+    app = create_app()
+    patient = _make_patient(org_id=2)
+    atend_id = uuid4()
+    doc_id = uuid4()
+    now = datetime.now(UTC)
+
+    mock_pep = MagicMock(spec=PEPService)
+    mock_pep.listar_historico_paciente = AsyncMock(
+        return_value=[
+            HistoricoAtendimentoItemDTO(
+                atendimento_id=atend_id,
+                status="CONCLUIDO",
+                prioridade_clinica=3,
+                queixa_principal="Dor torácica leve",
+                criado_em=now,
+                finalizado_em=now,
+                medico_id=uuid4(),
+                diagnostico_cid10="R07.4",
+                conduta_resumo="Acompanhamento ambulatorial",
+            )
+        ]
+    )
+    mock_pep.listar_documentos_paciente = AsyncMock(
+        return_value=[
+            PacienteDocumentoItemDTO(
+                documento_id=doc_id,
+                atendimento_id=atend_id,
+                tipo_documento="RECEITA_SIMPLES",
+                status_assinatura="ASSINADO",
+                token_validacao=str(doc_id),
+                criado_em=now,
+                assinado_em=now,
+            )
+        ]
+    )
+    mock_pep.compilar_pdf_para_paciente = AsyncMock(return_value=b"%PDF-patient%")
+
+    app.dependency_overrides[get_pep_service] = lambda: mock_pep
+    app.dependency_overrides[require_paciente_autenticado] = lambda: patient
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        r_hist = await client.get("/api/v1/consultations/me/historico")
+        r_docs = await client.get("/api/v1/consultations/me/documentos")
+        r_pdf = await client.get(f"/api/v1/consultations/me/documents/{doc_id}/pdf")
+
+    assert r_hist.status_code == 200
+    assert r_hist.json()[0]["atendimento_id"] == str(atend_id)
+    mock_pep.listar_historico_paciente.assert_awaited_once_with(
+        organizacao_id=2,
+        paciente_id=patient.usuario_id,
+    )
+
+    assert r_docs.status_code == 200
+    assert r_docs.json()[0]["documento_id"] == str(doc_id)
+    mock_pep.listar_documentos_paciente.assert_awaited_once_with(
+        organizacao_id=2,
+        paciente_id=patient.usuario_id,
+    )
+
+    assert r_pdf.status_code == 200
+    assert r_pdf.content == b"%PDF-patient%"
+    mock_pep.compilar_pdf_para_paciente.assert_awaited_once_with(
+        documento_id=doc_id,
+        organizacao_id=2,
+        paciente_id=patient.usuario_id,
+    )
+
+
+def test_get_atendimento_reader_provides_queue_adapter_with_historico_port() -> None:
+    """get_atendimento_reader wires QueueStore adapter with Historico port."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    mock_session = MagicMock(spec=AsyncSession)
+    reader = get_atendimento_reader(mock_session)
+    assert isinstance(reader, QueueStoreAtendimentoReaderAdapter)
+    assert isinstance(reader, AtendimentoReaderPort)
+    assert isinstance(reader, HistoricoAtendimentoReaderPort)

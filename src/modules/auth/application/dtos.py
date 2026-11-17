@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -238,3 +239,68 @@ class WebAuthnAuthVerifyCommand:
     raw_id: str
     response: dict[str, object] = field(default_factory=dict)
     type: str = "public-key"
+
+
+@dataclass(frozen=True)
+class RegistrarPacienteCommand:
+    """Command encapsulating citizen self-service registration and client IP."""
+
+    organizacao_id: int
+    cpf: str
+    nome_completo: str
+    data_nascimento: date
+    telefone: str
+    email: str
+    aceite_privacidade: bool
+    senha: str | None = None
+    client_ip: str = "127.0.0.1"
+
+
+@dataclass(frozen=True)
+class RegistrarPacienteOutputDTO:
+    """Output DTO returned after registering a patient and dispatching initial OTP."""
+
+    paciente_id: UUID
+    telefone_mascarado: str
+    otp_enviado: bool
+    expira_em_segundos: int
+    codigo_debug: str | None = None
+
+
+@dataclass(frozen=True)
+class IdentificarPacienteCommand:
+    """Command for anti-enumeration patient identification lookup."""
+
+    organizacao_id: int
+    identificador: str
+    client_ip: str = "127.0.0.1"
+
+
+@dataclass(frozen=True)
+class IdentificarPacienteOutputDTO:
+    """Output DTO containing available auth methods without leaking PII."""
+
+    possui_conta: bool
+    metodos_disponiveis: list[Literal["otp", "senha", "passkey", "govbr"]]
+    telefone_mascarado: str | None = None
+    govbr_habilitado: bool = False
+
+
+@dataclass(frozen=True)
+class LoginPacienteSenhaCommand:
+    """Command encapsulating patient password fallback login and client IP."""
+
+    organizacao_id: int
+    identificador: str
+    senha: str
+    client_ip: str = "127.0.0.1"
+
+
+@dataclass(frozen=True)
+class MetodosAutenticacaoPacienteOutputDTO:
+    """Output DTO describing enabled patient authentication capabilities."""
+
+    govbr_oidc_enabled: bool
+    passkeys_enabled: bool = True
+    otp_enabled: bool = True
+    password_fallback_enabled: bool = True

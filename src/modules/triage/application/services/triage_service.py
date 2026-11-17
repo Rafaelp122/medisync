@@ -1,5 +1,8 @@
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 from uuid import UUID
+
+from sqlalchemy import select
 
 from src.core.errors import ValidationError
 from src.core.uuid7 import uuid7
@@ -135,3 +138,35 @@ class TriageService:
         self._session.add(triagem)
         await self._session.flush()
         return triagem.id
+
+    async def obter_queixas_por_atendimentos(
+        self,
+        organizacao_id: int,
+        atendimento_ids: Sequence[UUID],
+    ) -> dict[UUID, str | None]:
+        """Consulta queixas principais das triagens por atendimento via ORM (RF-01).
+
+        Retorna mapa atendimento_id -> queixa_principal isolado por organizacao_id.
+        Regras: docs/explanation/domains/triage-domain.md.
+        """
+        if not atendimento_ids:
+            return {}
+        if self._session is None:
+            raise RuntimeError(
+                "AsyncSession é necessária para consultar queixas de Triagem "
+                f"na organização '{organizacao_id}'."
+            )
+
+        ids_unicos = list(dict.fromkeys(atendimento_ids))
+        stmt = select(Triagem).where(
+            Triagem.organizacao_id == organizacao_id,
+            Triagem.atendimento_id.in_(ids_unicos),
+        )
+        res = await self._session.execute(stmt)
+        triagens = res.scalars().all()
+        queixas: dict[UUID, str | None] = {
+            triagem.atendimento_id: triagem.queixa_principal
+            for triagem in triagens
+            if triagem.organizacao_id == organizacao_id
+        }
+        return queixas

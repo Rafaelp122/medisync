@@ -20,9 +20,19 @@ from src.modules.auth.application.ports.active_attendance_lookup_port import (
 from src.modules.auth.application.ports.auth_rate_limiter_port import (
     AuthRateLimiterPort,
 )
+from src.modules.auth.application.ports.identity_reader_port import (
+    IdentityReaderPort,
+)
+from src.modules.auth.application.ports.identity_writer_port import (
+    IdentityWriterPort,
+)
 from src.modules.auth.application.ports.password_hasher_port import (
     PasswordHasherPort,
 )
+from src.modules.auth.application.ports.patient_credential_repository_port import (
+    PatientCredentialRepositoryPort,
+)
+from src.modules.auth.application.ports.sms_sender_port import SmsSenderPort
 from src.modules.auth.application.ports.token_revocation_port import (
     TokenRevocationPort,
 )
@@ -36,6 +46,9 @@ from src.modules.auth.application.services.patient_webauthn_service import (
 )
 from src.modules.auth.infrastructure.argon2_hasher import Argon2PasswordHasher
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
+from src.modules.auth.infrastructure.patient_credential_repository_sql import (
+    SqlPatientCredentialRepository,
+)
 from src.modules.auth.infrastructure.valkey_rate_limiter import (
     FakeAuthRateLimiter,
     ValkeyAuthRateLimiter,
@@ -44,12 +57,9 @@ from src.modules.auth.infrastructure.valkey_token_revocation import (
     MemoryTokenRevocation,
     ValkeyTokenRevocation,
 )
-from src.modules.identity.application.ports.identity_reader_port import (
-    IdentityReaderPort,
-)
-from src.modules.identity.application.ports.sms_sender_port import SmsSenderPort
 from src.modules.identity.composition import (
     build_identity_reader_sql_for_session,
+    build_identity_writer_sql_for_session,
     get_sms_sender,
 )
 from src.modules.queue.composition import (
@@ -123,11 +133,20 @@ def build_patient_auth_service_for_session(
     sms_sender: SmsSenderPort | None = None,
     identity_reader: IdentityReaderPort | None = None,
     active_attendance_lookup: ActiveAttendanceLookupPort | None = None,
+    identity_writer: IdentityWriterPort | None = None,
+    credential_repo: PatientCredentialRepositoryPort | None = None,
+    password_hasher: PasswordHasherPort | None = None,
+    govbr_oidc_enabled: bool | None = None,
+    rate_limiter: AuthRateLimiterPort | None = None,
 ) -> PatientAuthService:
     """Build PatientAuthService outside request scope (tests/worker tooling)."""
     settings = get_settings()
     reader = identity_reader or build_identity_reader_sql_for_session(session)
+    writer = identity_writer or build_identity_writer_sql_for_session(session)
+    cred_repo = credential_repo or SqlPatientCredentialRepository(session=session)
+    hasher = password_hasher or get_password_hasher()
     sender = sms_sender or get_sms_sender()
+    limiter = rate_limiter or get_rate_limiter()
     attendance_lookup = (
         active_attendance_lookup or build_active_attendance_reader_for_session(session)
     )
@@ -138,8 +157,20 @@ def build_patient_auth_service_for_session(
         secret_key=settings.JWT_SECRET_KEY,
         algorithm=settings.JWT_ALGORITHM,
         access_token_expire_minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
-        is_debug=settings.DEBUG,
+        expose_debug_otp=(
+            settings.DEBUG and settings.ENVIRONMENT in ("development", "test")
+        ),
         active_attendance_lookup=attendance_lookup,
+        identity_writer=writer,
+        credential_repo=cred_repo,
+        password_hasher=hasher,
+        govbr_oidc_enabled=(
+            settings.GOVBR_OIDC_ENABLED
+            if govbr_oidc_enabled is None
+            else govbr_oidc_enabled
+        ),
+        session=session,
+        rate_limiter=limiter,
     )
 
 

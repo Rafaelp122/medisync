@@ -1,6 +1,7 @@
 """Pydantic v2 schemas for authentication endpoints."""
 
 from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -354,3 +355,92 @@ class WebAuthnAuthVerifyRequest(BaseModel):
     rawId: str = Field(min_length=1, max_length=1024)
     response: dict[str, object]
     type: str = Field(default="public-key", max_length=32)
+
+
+class RegistrarPacienteRequest(BaseModel):
+    """Payload for citizen self-service registration with mandatory email."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    cpf: str = Field(min_length=11, max_length=14, description="CPF do cidadão")
+    nome_completo: str = Field(
+        min_length=2, max_length=255, description="Nome completo do cidadão"
+    )
+    data_nascimento: date = Field(description="Data de nascimento (AAAA-MM-DD)")
+    telefone: str = Field(
+        min_length=10, max_length=20, description="Telefone celular com DDD"
+    )
+    email: str = Field(
+        min_length=5, max_length=255, description="E-mail obrigatório do cidadão"
+    )
+    aceite_privacidade: bool = Field(
+        description="Aceite explícito da política de privacidade (LGPD)"
+    )
+    senha: str | None = Field(
+        default=None,
+        max_length=128,
+        description="Senha opcional de acesso (>= 8 caracteres)",
+    )
+
+
+class RegistrarPacienteResponse(BaseModel):
+    """Response returned after registering citizen and dispatching initial OTP."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    paciente_id: UUID
+    telefone_mascarado: str
+    otp_enviado: bool
+    expira_em_segundos: int
+    codigo_debug: str | None = None
+
+
+class IdentificarPacienteRequest(BaseModel):
+    """Payload for anti-enumeration patient identification lookup."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, frozen=True)
+
+    identificador: str = Field(
+        min_length=3,
+        max_length=255,
+        description="CPF (11 dígitos) ou e-mail do paciente",
+    )
+
+
+class IdentificarPacienteResponse(BaseModel):
+    """Response indicating available patient authentication methods without PII."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    possui_conta: bool
+    metodos_disponiveis: list[Literal["otp", "senha", "passkey", "govbr"]]
+    telefone_mascarado: str | None = None
+    govbr_habilitado: bool
+
+
+class LoginPacienteSenhaRequest(BaseModel):
+    """Payload for traditional patient login with password fallback."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    identificador: str = Field(
+        min_length=3,
+        max_length=255,
+        description="E-mail ou CPF do paciente",
+    )
+    senha: str = Field(
+        min_length=1,
+        max_length=128,
+        description="Senha em texto puro",
+    )
+
+
+class MetodosAutenticacaoPacienteResponse(BaseModel):
+    """Response describing globally enabled patient authentication capabilities."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    govbr_oidc_enabled: bool
+    passkeys_enabled: bool = True
+    otp_enabled: bool = True
+    password_fallback_enabled: bool = True

@@ -12,8 +12,14 @@ from src.modules.auth.application.ports.identity_reader_port import (
     PacientePasskeyData,
     PacientePasskeyDTO,
 )
+from src.modules.auth.application.ports.identity_writer_port import (
+    IdentityWriterPort,
+)
 from src.modules.auth.application.ports.password_hasher_port import (
     PasswordHasherPort,
+)
+from src.modules.auth.application.ports.patient_credential_repository_port import (
+    PatientCredentialRepositoryPort,
 )
 from src.modules.auth.application.ports.sms_sender_port import (
     SmsSenderPort,
@@ -29,10 +35,12 @@ __all__ = [
     "ActiveAttendanceLookupPort",
     "AuthRateLimiterPort",
     "IdentityReaderPort",
+    "IdentityWriterPort",
     "PacienteAuthLookupDTO",
     "PacientePasskeyDTO",
     "PacientePasskeyData",
     "PasswordHasherPort",
+    "PatientCredentialRepositoryPort",
     "SmsSenderPort",
     "TokenRevocationPort",
     "TokenServicePort",

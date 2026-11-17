@@ -24,6 +24,7 @@ from src.modules.consultation.presentation.dependencies import (
     DocumentoIdPath,
     LivenessChallengeMedicoDep,
     LivenessVerifyPacienteDep,
+    PacienteAutenticadoDep,
 )
 from src.modules.consultation.presentation.schemas import (
     AssinarDocumentoRequest,
@@ -33,9 +34,11 @@ from src.modules.consultation.presentation.schemas import (
     EvolucaoSOAPResponse,
     FinalizarConsultaRequest,
     FinalizarConsultaResponse,
+    HistoricoAtendimentoItemResponse,
     LivenessChallengeResponse,
     LivenessVerifyRequest,
     LivenessVerifyResponse,
+    PacienteDocumentoItemResponse,
     ProntuarioResponse,
     RegistrarSOAPRequest,
     TMAStatusResponse,
@@ -54,6 +57,75 @@ def _require_matching_tenant(provided: int | None, tenant_id: int) -> int:
             f"no cabeçalho X-Tenant-ID (esperado: '{tenant_id}')."
         )
     return tenant_id
+
+
+@consultation_router.get(
+    "/me/historico",
+    status_code=status.HTTP_200_OK,
+    summary="Lista histórico de teleconsultas do paciente autenticado",
+)
+async def listar_historico_paciente(
+    current_user: PacienteAutenticadoDep,
+    service: PEPServiceDep,
+) -> list[HistoricoAtendimentoItemResponse]:
+    """Retorna histórico de consultas do paciente com isolamento Anti-IDOR."""
+    items = await service.listar_historico_paciente(
+        organizacao_id=current_user.organizacao_id,
+        paciente_id=current_user.usuario_id,
+    )
+    return [HistoricoAtendimentoItemResponse.model_validate(item) for item in items]
+
+
+@consultation_router.get(
+    "/me/documentos",
+    status_code=status.HTTP_200_OK,
+    summary="Lista receitas e documentos clínicos do paciente autenticado",
+)
+async def listar_documentos_paciente(
+    current_user: PacienteAutenticadoDep,
+    service: PEPServiceDep,
+) -> list[PacienteDocumentoItemResponse]:
+    """Retorna documentos clínicos do paciente sem expor chaves internas S3."""
+    items = await service.listar_documentos_paciente(
+        organizacao_id=current_user.organizacao_id,
+        paciente_id=current_user.usuario_id,
+    )
+    return [PacienteDocumentoItemResponse.model_validate(item) for item in items]
+
+
+@consultation_router.get(
+    "/me/documents/{documento_id}/pdf",
+    summary="Download autorizado de documento clínico em PDF/A do paciente",
+    status_code=status.HTTP_200_OK,
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "Arquivo PDF/A válido do paciente autenticado",
+        },
+        403: {"description": "Documento pertence a outro paciente ou organização"},
+        404: {"description": "Documento não encontrado"},
+    },
+)
+async def obter_documento_pdf_paciente(
+    documento_id: DocumentoIdPath,
+    current_user: PacienteAutenticadoDep,
+    service: PEPServiceDep,
+) -> Response:
+    """Retorna PDF/A compilado após validar titularidade do paciente autenticado."""
+    pdf_bytes = await service.compilar_pdf_para_paciente(
+        documento_id=documento_id,
+        organizacao_id=current_user.organizacao_id,
+        paciente_id=current_user.usuario_id,
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{documento_id}.pdf"',
+            "Content-Type": "application/pdf",
+        },
+    )
 
 
 @consultation_router.post(

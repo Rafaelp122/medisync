@@ -1,15 +1,41 @@
 """SQL reader: single SELECT on atendimentos (queue-owned table)."""
 
+from collections.abc import Mapping
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoHistoricoDTO,
     AtendimentoResumoDTO,
 )
 
 _TERMINAIS = frozenset({"CONCLUIDO", "PACIENTE_AUSENTE", "CANCELADO_PACIENTE"})
+
+
+def _parse_optional_uuid(raw: Any) -> UUID | None:
+    if raw is None or isinstance(raw, UUID):
+        return raw
+    return UUID(str(raw))
+
+
+def _row_to_historico_dto(row: Mapping[Any, Any]) -> AtendimentoHistoricoDTO:
+    raw_atend = row["atendimento_id"]
+    raw_pac = row["paciente_id"]
+    atend_id = raw_atend if isinstance(raw_atend, UUID) else UUID(str(raw_atend))
+    return AtendimentoHistoricoDTO(
+        atendimento_id=atend_id,
+        organizacao_id=int(row["organizacao_id"]),
+        paciente_id=raw_pac if isinstance(raw_pac, UUID) else UUID(str(raw_pac)),
+        status=str(row["status"]).strip().upper(),
+        prioridade_clinica=int(row["prioridade_clinica"]),
+        criado_em=row["criado_em"],
+        finalizado_em=row.get("finalizado_em"),
+        medico_id=_parse_optional_uuid(row.get("medico_id")),
+        queixa_principal=row.get("queixa_principal"),
+    )
 
 
 class SqlAtendimentoReader:
@@ -70,3 +96,23 @@ class SqlAtendimentoReader:
             {"id": atendimento_id},
         )
         await self._session.commit()
+
+    async def listar_historico_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> list[AtendimentoHistoricoDTO]:
+        res = await self._session.execute(
+            text(
+                "SELECT id AS atendimento_id, organizacao_id, paciente_id, "
+                "status, prioridade_clinica, criado_em, "
+                "chamada_finalizada_em AS finalizado_em, medico_id "
+                "FROM atendimentos "
+                "WHERE organizacao_id = :organizacao_id "
+                "AND paciente_id = :paciente_id "
+                "ORDER BY criado_em DESC, id DESC"
+            ),
+            {"organizacao_id": organizacao_id, "paciente_id": paciente_id},
+        )
+        rows = res.mappings().all()
+        return [_row_to_historico_dto(row) for row in rows]

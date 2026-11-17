@@ -74,7 +74,12 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # 2. Setup HTTP middlewares pipeline
-    setup_middlewares(app, debug=settings.DEBUG)
+    setup_middlewares(
+        app,
+        debug=settings.DEBUG,
+        multi_tenancy_enabled=settings.MULTI_TENANCY_ENABLED,
+        default_tenant_id=settings.DEFAULT_TENANT_ID,
+    )
 
     # 3. Configure CORSMiddleware
     cors_origins = ["*"] if settings.DEBUG else settings.CORS_ORIGINS
@@ -108,6 +113,9 @@ def create_app() -> FastAPI:
     from src.modules.queue.presentation.routers import (
         ws_router as queue_ws_router,
     )
+    from src.modules.scheduling.presentation.routers import (
+        http_router as scheduling_router,
+    )
     from src.modules.telemetry.presentation.routers import (
         http_router as telemetry_router,
     )
@@ -119,6 +127,7 @@ def create_app() -> FastAPI:
     api_v1.include_router(consultation_router)
     api_v1.include_router(telemetry_router)
     api_v1.include_router(ambulatory_router)
+    api_v1.include_router(scheduling_router)
     app.include_router(api_v1)
 
     # 5. Real-time WebSocket signaling routers

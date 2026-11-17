@@ -2,12 +2,23 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, status
+from fastapi import APIRouter, Body, Request, status
 
 from src.core.dependencies import TenantDep
+from src.modules.auth.application.dtos import (
+    IdentificarPacienteCommand,
+    LoginPacienteSenhaCommand,
+    RegistrarPacienteCommand,
+)
 from src.modules.auth.composition import PatientAuthServiceDep
 from src.modules.auth.presentation.schemas import (
     AutenticarCadsusRequest,
+    IdentificarPacienteRequest,
+    IdentificarPacienteResponse,
+    LoginPacienteSenhaRequest,
+    MetodosAutenticacaoPacienteResponse,
+    RegistrarPacienteRequest,
+    RegistrarPacienteResponse,
     SolicitarOtpRequest,
     SolicitarOtpResponse,
     VerificarOtpRequest,
@@ -81,3 +92,109 @@ async def post_auth_paciente_cadsus(
         nome_mae=body.nome_mae,
     )
     return VerificarOtpResponse.model_validate(result)
+
+
+@patient_auth_router.post(
+    "/auth/patient/register",
+    status_code=status.HTTP_201_CREATED,
+    summary="Auto-cadastro do cidadão com disparo inicial de OTP",
+    description=(
+        "Registra novo paciente na organização com aceite LGPD, credencial "
+        "opcional (e-mail/senha Argon2id) e envio inicial de código OTP via SMS."
+    ),
+    operation_id="post_auth_patient_register",
+)
+async def register_patient(
+    request: Request,
+    body: Annotated[RegistrarPacienteRequest, Body()],
+    tenant_id: TenantDep,
+    service: PatientAuthServiceDep,
+) -> RegistrarPacienteResponse:
+    """Register a new citizen patient and dispatch initial verification OTP."""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    cmd = RegistrarPacienteCommand(
+        organizacao_id=tenant_id,
+        cpf=body.cpf,
+        nome_completo=body.nome_completo,
+        data_nascimento=body.data_nascimento,
+        telefone=body.telefone,
+        email=body.email,
+        aceite_privacidade=body.aceite_privacidade,
+        senha=body.senha,
+        client_ip=client_ip,
+    )
+    result = await service.registrar_paciente(cmd)
+    return RegistrarPacienteResponse.model_validate(result)
+
+
+@patient_auth_router.post(
+    "/auth/patient/identify",
+    status_code=status.HTTP_200_OK,
+    summary="Identificação única anti-enumeração do paciente",
+    description=(
+        "Consulta métodos de login habilitados para CPF ou e-mail com rate limiting "
+        "e mascaramento estrito de dados pessoais."
+    ),
+    operation_id="post_auth_patient_identify",
+)
+async def identify_patient(
+    request: Request,
+    body: Annotated[IdentificarPacienteRequest, Body()],
+    tenant_id: TenantDep,
+    service: PatientAuthServiceDep,
+) -> IdentificarPacienteResponse:
+    """Identify available authentication methods for a patient identifier."""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    cmd = IdentificarPacienteCommand(
+        organizacao_id=tenant_id,
+        identificador=body.identificador,
+        client_ip=client_ip,
+    )
+    result = await service.identificar_paciente(cmd)
+    return IdentificarPacienteResponse.model_validate(result)
+
+
+@patient_auth_router.post(
+    "/auth/patient/login-password",
+    status_code=status.HTTP_200_OK,
+    summary="Login tradicional do paciente com identificador e senha",
+    description=(
+        "Autentica paciente via Argon2id e lockout progressivo (sem MFA TOTP) "
+        "emitindo Bearer JWT Role.PACIENTE."
+    ),
+    operation_id="post_auth_patient_login_password",
+)
+async def login_patient_password(
+    request: Request,
+    body: Annotated[LoginPacienteSenhaRequest, Body()],
+    tenant_id: TenantDep,
+    service: PatientAuthServiceDep,
+) -> VerificarOtpResponse:
+    """Authenticate patient with password fallback and issue patient JWT."""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    cmd = LoginPacienteSenhaCommand(
+        organizacao_id=tenant_id,
+        identificador=body.identificador,
+        senha=body.senha,
+        client_ip=client_ip,
+    )
+    result = await service.autenticar_paciente_senha(cmd)
+    return VerificarOtpResponse.model_validate(result)
+
+
+@patient_auth_router.get(
+    "/auth/patient/methods",
+    status_code=status.HTTP_200_OK,
+    summary="Consultar capacidades de autenticação habilitadas para pacientes",
+    description=(
+        "Retorna flags de disponibilidade dos métodos híbridos de autenticação "
+        "(Gov.br OIDC, Passkeys, OTP e senha tradicional)."
+    ),
+    operation_id="get_auth_patient_methods",
+)
+async def get_patient_auth_methods(
+    service: PatientAuthServiceDep,
+) -> MetodosAutenticacaoPacienteResponse:
+    """Return enabled patient authentication method capabilities."""
+    result = service.obter_capacidades_metodos()
+    return MetodosAutenticacaoPacienteResponse.model_validate(result)

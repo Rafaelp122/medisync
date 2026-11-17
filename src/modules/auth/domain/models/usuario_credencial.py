@@ -99,7 +99,7 @@ class UsuarioCredencial(Base):
     def is_bloqueado(self, agora: datetime | None = None) -> bool:
         """Verifica se a conta está em lockout temporário por falhas consecutivas.
 
-        Regras: RN-AUT-04 (auth-domain.md), ADR-007, RF-01.
+        Regras: RN-AUT-02 (docs/explanation/domains/auth-domain.md), ADR-012, RF-01.
         """
         if self.bloqueado_ate is None:
             return False
@@ -141,7 +141,7 @@ class UsuarioCredencial(Base):
     def atualizar_senha(self, novo_hash: str, agora: datetime | None = None) -> None:
         """Atualiza hash Argon2id e reseta contadores de segurança.
 
-        Regras: docs/adrs/ADR-005-Autenticacao-Passwordless-Argon2id.md
+        Regras: RN-AUT-01 (docs/explanation/domains/auth-domain.md), ADR-012, RF-01.
         """
         self.senha_hash = novo_hash.strip()
         self.falhas_login_consecutivas = 0
