@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getActiveTenantId } from "@/api/client";
+import { client, getTenantHeaders } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { enrichmentFase2ApiV1OnboardingFase2Post } from "@/api/generated/sdk.gen";
 import type {
@@ -32,7 +32,7 @@ export function useEnrichmentFase2(
     mutationFn: async ({ body, token }: EnrichmentFase2Params) => {
       try {
         const headers: Record<string, string> = {
-          "X-Tenant-ID": getActiveTenantId(),
+          ...getTenantHeaders(),
         };
         if (token) {
           headers.Authorization = `Bearer ${token}`;

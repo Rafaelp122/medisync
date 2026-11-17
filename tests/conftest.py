@@ -8,6 +8,12 @@ from uuid import UUID, uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.core.config import CommonSettings, DevelopmentSettings, get_settings
+
+CommonSettings.model_config["env_file"] = None
+DevelopmentSettings.model_config["env_file"] = None
+get_settings.cache_clear()
+
 from src.core.database import async_session_factory
 from src.core.valkey import close_valkey_pool
 from src.main import app

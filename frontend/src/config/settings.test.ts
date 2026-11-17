@@ -7,7 +7,7 @@ describe("Frontend Canonical Settings (Issue #126 / ADR-009)", () => {
     const config = createSettings({});
 
     // env
-    expect(config.env.defaultTenantId).toBe("1");
+    expect(config.env.defaultTenantId).toBeUndefined();
     expect(config.env.isDemoMode).toBe(false);
     expect(config.env.defaultPscProvider).toBe("birdid");
     expect(config.env.apiBaseUrl).toBeDefined();
@@ -99,7 +99,12 @@ describe("Frontend Canonical Settings (Issue #126 / ADR-009)", () => {
   });
 
   it("UT-SET-06: singleton settings em runtime deve estar íntegro e congelado", () => {
-    expect(settings.env.defaultTenantId).toBeDefined();
+    const expectedTenant =
+      typeof import.meta.env.VITE_TENANT_ID === "string" && import.meta.env.VITE_TENANT_ID.trim()
+        ? import.meta.env.VITE_TENANT_ID.trim()
+        : undefined;
+    expect(settings.env.defaultTenantId).toBe(expectedTenant);
+    expect(settings.env.apiBaseUrl).toBeDefined();
     expect(PSC_PROVIDERS).toContain(settings.env.defaultPscProvider);
     expect(Object.isFrozen(settings)).toBe(true);
   });

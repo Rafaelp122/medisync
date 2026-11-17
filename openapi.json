@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MediSync Express",
-    "version": "0.16.2"
+    "version": "0.17.0"
   },
   "paths": {
     "/healthz": {
@@ -427,6 +427,154 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/patient/register": {
+      "post": {
+        "tags": [
+          "Auth Paciente"
+        ],
+        "summary": "Auto-cadastro do cidad\u00e3o com disparo inicial de OTP",
+        "description": "Registra novo paciente na organiza\u00e7\u00e3o com aceite LGPD, credencial opcional (e-mail/senha Argon2id) e envio inicial de c\u00f3digo OTP via SMS.",
+        "operationId": "post_auth_patient_register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrarPacienteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrarPacienteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/patient/identify": {
+      "post": {
+        "tags": [
+          "Auth Paciente"
+        ],
+        "summary": "Identifica\u00e7\u00e3o \u00fanica anti-enumera\u00e7\u00e3o do paciente",
+        "description": "Consulta m\u00e9todos de login habilitados para CPF ou e-mail com rate limiting e mascaramento estrito de dados pessoais.",
+        "operationId": "post_auth_patient_identify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentificarPacienteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentificarPacienteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/patient/login-password": {
+      "post": {
+        "tags": [
+          "Auth Paciente"
+        ],
+        "summary": "Login tradicional do paciente com identificador e senha",
+        "description": "Autentica paciente via Argon2id e lockout progressivo (sem MFA TOTP) emitindo Bearer JWT Role.PACIENTE.",
+        "operationId": "post_auth_patient_login_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginPacienteSenhaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificarOtpResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/patient/methods": {
+      "get": {
+        "tags": [
+          "Auth Paciente"
+        ],
+        "summary": "Consultar capacidades de autentica\u00e7\u00e3o habilitadas para pacientes",
+        "description": "Retorna flags de disponibilidade dos m\u00e9todos h\u00edbridos de autentica\u00e7\u00e3o (Gov.br OIDC, Passkeys, OTP e senha tradicional).",
+        "operationId": "get_auth_patient_methods",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetodosAutenticacaoPacienteResponse"
                 }
               }
             }
@@ -1146,6 +1294,133 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/me/historico": {
+      "get": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Lista hist\u00f3rico de teleconsultas do paciente autenticado",
+        "description": "Retorna hist\u00f3rico de consultas do paciente com isolamento Anti-IDOR.",
+        "operationId": "listar_historico_paciente_api_v1_consultations_me_historico_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HistoricoAtendimentoItemResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Listar Historico Paciente Api V1 Consultations Me Historico Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": [
+              "patient:doc_view",
+              "paciente",
+              "PACIENTE"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/consultations/me/documentos": {
+      "get": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Lista receitas e documentos cl\u00ednicos do paciente autenticado",
+        "description": "Retorna documentos cl\u00ednicos do paciente sem expor chaves internas S3.",
+        "operationId": "listar_documentos_paciente_api_v1_consultations_me_documentos_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PacienteDocumentoItemResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Listar Documentos Paciente Api V1 Consultations Me Documentos Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": [
+              "patient:doc_view",
+              "paciente",
+              "PACIENTE"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/consultations/me/documents/{documento_id}/pdf": {
+      "get": {
+        "tags": [
+          "teleconsulta-pep"
+        ],
+        "summary": "Download autorizado de documento cl\u00ednico em PDF/A do paciente",
+        "description": "Retorna PDF/A compilado ap\u00f3s validar titularidade do paciente autenticado.",
+        "operationId": "obter_documento_pdf_paciente_api_v1_consultations_me_documents__documento_id__pdf_get",
+        "security": [
+          {
+            "HTTPBearer": [
+              "patient:doc_view",
+              "paciente",
+              "PACIENTE"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "documento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador \u00fanico do documento cl\u00ednico",
+              "title": "Documento Id"
+            },
+            "description": "Identificador \u00fanico do documento cl\u00ednico"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Arquivo PDF/A v\u00e1lido do paciente autenticado",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "403": {
+            "description": "Documento pertence a outro paciente ou organiza\u00e7\u00e3o"
+          },
+          "404": {
+            "description": "Documento n\u00e3o encontrado"
           },
           "422": {
             "description": "Validation Error",
@@ -2231,6 +2506,461 @@
           }
         }
       }
+    },
+    "/api/v1/scheduling/especialidades": {
+      "get": {
+        "tags": [
+          "Agendamento Multiprofissional"
+        ],
+        "summary": "Lista especialidades dispon\u00edveis na agenda multiprofissional",
+        "description": "Lista especialidades programadas com descri\u00e7\u00e3o e dura\u00e7\u00e3o padr\u00e3o.",
+        "operationId": "listar_especialidades_api_v1_scheduling_especialidades_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EspecialidadeResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Listar Especialidades Api V1 Scheduling Especialidades Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scheduling/slots": {
+      "get": {
+        "tags": [
+          "Agendamento Multiprofissional"
+        ],
+        "summary": "Lista slots dispon\u00edveis por especialidade e per\u00edodo",
+        "description": "Gera e retorna slots livres a partir das disponibilidades ativas.",
+        "operationId": "listar_slots_api_v1_scheduling_slots_get",
+        "parameters": [
+          {
+            "name": "especialidade",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Especialidade (PSICOLOGIA ou NUTRICAO)",
+              "title": "Especialidade"
+            },
+            "description": "Especialidade (PSICOLOGIA ou NUTRICAO)"
+          },
+          {
+            "name": "data_inicio",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "Data inicial (YYYY-MM-DD)",
+              "title": "Data Inicio"
+            },
+            "description": "Data inicial (YYYY-MM-DD)"
+          },
+          {
+            "name": "data_fim",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "Data final (YYYY-MM-DD)",
+              "title": "Data Fim"
+            },
+            "description": "Data final (YYYY-MM-DD)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SlotDisponivelResponse"
+                  },
+                  "title": "Response Listar Slots Api V1 Scheduling Slots Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scheduling/agendamentos": {
+      "post": {
+        "tags": [
+          "Agendamento Multiprofissional"
+        ],
+        "summary": "Agenda hor\u00e1rio multiprofissional para o paciente autenticado",
+        "description": "Cria agendamento vinculado ao usu\u00e1rio autenticado prevenindo double-booking.",
+        "operationId": "criar_agendamento_api_v1_scheduling_agendamentos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CriarAgendamentoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgendamentoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": [
+              "PACIENTE"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/scheduling/agendamentos/me": {
+      "get": {
+        "tags": [
+          "Agendamento Multiprofissional"
+        ],
+        "summary": "Lista agendamentos do paciente autenticado",
+        "description": "Retorna os agendamentos pertencentes ao paciente autenticado.",
+        "operationId": "listar_meus_agendamentos_api_v1_scheduling_agendamentos_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgendamentoResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Listar Meus Agendamentos Api V1 Scheduling Agendamentos Me Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": [
+              "PACIENTE"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/scheduling/agendamentos/{agendamento_id}/cancelar": {
+      "post": {
+        "tags": [
+          "Agendamento Multiprofissional"
+        ],
+        "summary": "Cancela um agendamento do paciente autenticado",
+        "description": "Cancela o agendamento se pertencer ao paciente autenticado.",
+        "operationId": "cancelar_agendamento_api_v1_scheduling_agendamentos__agendamento_id__cancelar_post",
+        "security": [
+          {
+            "HTTPBearer": [
+              "PACIENTE"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agendamento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "ID do agendamento",
+              "title": "Agendamento Id"
+            },
+            "description": "ID do agendamento"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgendamentoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scheduling/disponibilidades": {
+      "post": {
+        "tags": [
+          "Agendamento Multiprofissional"
+        ],
+        "summary": "Cadastra janela semanal de agenda do profissional autenticado",
+        "description": "Registra janela recorrente de atendimento do profissional.",
+        "operationId": "cadastrar_disponibilidade_api_v1_scheduling_disponibilidades_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CriarDisponibilidadeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisponibilidadeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": [
+              "MEDICO"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/scheduling/agenda/dia": {
+      "get": {
+        "tags": [
+          "Agendamento Multiprofissional"
+        ],
+        "summary": "Lista agendamentos do profissional no per\u00edodo (padr\u00e3o sem filtro: data UTC corrente)",
+        "description": "Lista os agendamentos vinculados ao profissional autenticado (default UTC).",
+        "operationId": "listar_agenda_dia_api_v1_scheduling_agenda_dia_get",
+        "security": [
+          {
+            "HTTPBearer": [
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "data",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Data \u00fanica (YYYY-MM-DD). Quando omitida junto a data_inicio, assume a data UTC corrente.",
+              "title": "Data"
+            },
+            "description": "Data \u00fanica (YYYY-MM-DD). Quando omitida junto a data_inicio, assume a data UTC corrente."
+          },
+          {
+            "name": "data_inicio",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Data inicial (YYYY-MM-DD). Quando omitida junto a data, assume a data UTC corrente.",
+              "title": "Data Inicio"
+            },
+            "description": "Data inicial (YYYY-MM-DD). Quando omitida junto a data, assume a data UTC corrente."
+          },
+          {
+            "name": "data_fim",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Data final (YYYY-MM-DD). Quando omitida, assume data_inicio (padr\u00e3o: data UTC corrente).",
+              "title": "Data Fim"
+            },
+            "description": "Data final (YYYY-MM-DD). Quando omitida, assume data_inicio (padr\u00e3o: data UTC corrente)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgendamentoResponse"
+                  },
+                  "title": "Response Listar Agenda Dia Api V1 Scheduling Agenda Dia Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scheduling/agendamentos/{agendamento_id}/iniciar": {
+      "post": {
+        "tags": [
+          "Agendamento Multiprofissional"
+        ],
+        "summary": "Inicia atendimento cl\u00ednico para um agendamento",
+        "description": "Transiciona o agendamento do profissional para EM_ATENDIMENTO.",
+        "operationId": "iniciar_atendimento_agendado_api_v1_scheduling_agendamentos__agendamento_id__iniciar_post",
+        "security": [
+          {
+            "HTTPBearer": [
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agendamento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "ID do agendamento",
+              "title": "Agendamento Id"
+            },
+            "description": "ID do agendamento"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/IniciarAgendamentoRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgendamentoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2395,6 +3125,95 @@
         ],
         "title": "AdmissaoResponse",
         "description": "Response payload for patient admission and triage."
+      },
+      "AgendamentoResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "organizacao_id": {
+            "type": "integer",
+            "title": "Organizacao Id"
+          },
+          "paciente_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paciente Id"
+          },
+          "profissional_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profissional Id"
+          },
+          "especialidade": {
+            "type": "string",
+            "title": "Especialidade"
+          },
+          "slot_inicio": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Slot Inicio"
+          },
+          "slot_fim": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Slot Fim"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "observacoes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observacoes"
+          },
+          "atendimento_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Atendimento Id"
+          },
+          "criado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Criado Em"
+          },
+          "atualizado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Atualizado Em"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "organizacao_id",
+          "paciente_id",
+          "profissional_id",
+          "especialidade",
+          "slot_inicio",
+          "slot_fim",
+          "status",
+          "criado_em",
+          "atualizado_em"
+        ],
+        "title": "AgendamentoResponse",
+        "description": "Schema de resposta de agendamento multiprofissional."
       },
       "AssinarDocumentoRequest": {
         "properties": {
@@ -2959,6 +3778,61 @@
         "title": "ConfigPlantaoResponse",
         "description": "Response representation of shift configuration and operational SLAs (RF-09)."
       },
+      "CriarAgendamentoRequest": {
+        "properties": {
+          "profissional_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profissional Id",
+            "description": "Identificador do profissional"
+          },
+          "especialidade": {
+            "type": "string",
+            "title": "Especialidade",
+            "description": "Especialidade agendada"
+          },
+          "slot_inicio": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Slot Inicio",
+            "description": "Data/hora de in\u00edcio do slot"
+          },
+          "slot_fim": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slot Fim",
+            "description": "Data/hora de t\u00e9rmino do slot (opcional; calculada se omitida)"
+          },
+          "observacoes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observacoes",
+            "description": "Observa\u00e7\u00f5es opcionais do paciente"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profissional_id",
+          "especialidade",
+          "slot_inicio"
+        ],
+        "title": "CriarAgendamentoRequest",
+        "description": "Payload de reserva de hor\u00e1rio pelo paciente autenticado (Anti-IDOR)."
+      },
       "CriarDependenteRequest": {
         "properties": {
           "grau_parentesco": {
@@ -3069,6 +3943,51 @@
         ],
         "title": "CriarDependenteRequest",
         "description": "Payload for linking or creating a patient dependent."
+      },
+      "CriarDisponibilidadeRequest": {
+        "properties": {
+          "especialidade": {
+            "type": "string",
+            "title": "Especialidade",
+            "description": "Especialidade (PSICOLOGIA ou NUTRICAO)"
+          },
+          "dia_semana": {
+            "type": "integer",
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Dia Semana",
+            "description": "Dia da semana (0=segunda .. 6=domingo)"
+          },
+          "hora_inicio": {
+            "type": "string",
+            "format": "time",
+            "title": "Hora Inicio",
+            "description": "Hor\u00e1rio inicial da janela (naive UTC)"
+          },
+          "hora_fim": {
+            "type": "string",
+            "format": "time",
+            "title": "Hora Fim",
+            "description": "Hor\u00e1rio final da janela (naive UTC)"
+          },
+          "duracao_minutos": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 15.0,
+            "title": "Duracao Minutos",
+            "description": "Dura\u00e7\u00e3o de cada slot (15 a 120 min)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "especialidade",
+          "dia_semana",
+          "hora_inicio",
+          "hora_fim",
+          "duracao_minutos"
+        ],
+        "title": "CriarDisponibilidadeRequest",
+        "description": "Payload para cadastro de janela semanal de agenda do profissional."
       },
       "DependenteDetalheResponse": {
         "properties": {
@@ -3194,6 +4113,64 @@
         ],
         "title": "DependenteResponse",
         "description": "Summary of created dependent relationship."
+      },
+      "DisponibilidadeResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "organizacao_id": {
+            "type": "integer",
+            "title": "Organizacao Id"
+          },
+          "profissional_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profissional Id"
+          },
+          "especialidade": {
+            "type": "string",
+            "title": "Especialidade"
+          },
+          "dia_semana": {
+            "type": "integer",
+            "title": "Dia Semana"
+          },
+          "hora_inicio": {
+            "type": "string",
+            "format": "time",
+            "title": "Hora Inicio"
+          },
+          "hora_fim": {
+            "type": "string",
+            "format": "time",
+            "title": "Hora Fim"
+          },
+          "duracao_minutos": {
+            "type": "integer",
+            "title": "Duracao Minutos"
+          },
+          "ativo": {
+            "type": "boolean",
+            "title": "Ativo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "organizacao_id",
+          "profissional_id",
+          "especialidade",
+          "dia_semana",
+          "hora_inicio",
+          "hora_fim",
+          "duracao_minutos",
+          "ativo"
+        ],
+        "title": "DisponibilidadeResponse",
+        "description": "Schema de resposta da janela semanal cadastrada."
       },
       "DocumentoClinicoResponse": {
         "properties": {
@@ -3416,6 +4393,39 @@
         ],
         "title": "EmitirDocumentoRequest",
         "description": "Payload to issue a digital clinical document."
+      },
+      "EspecialidadeResponse": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "title": "Codigo",
+            "description": "C\u00f3digo da especialidade (PSICOLOGIA, NUTRICAO)"
+          },
+          "nome": {
+            "type": "string",
+            "title": "Nome",
+            "description": "Nome amig\u00e1vel da especialidade"
+          },
+          "descricao": {
+            "type": "string",
+            "title": "Descricao",
+            "description": "Descri\u00e7\u00e3o cl\u00ednica da especialidade"
+          },
+          "duracao_padrao_minutos": {
+            "type": "integer",
+            "title": "Duracao Padrao Minutos",
+            "description": "Dura\u00e7\u00e3o padr\u00e3o da consulta em minutos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "codigo",
+          "nome",
+          "descricao",
+          "duracao_padrao_minutos"
+        ],
+        "title": "EspecialidadeResponse",
+        "description": "Schema de resposta para especialidade dispon\u00edvel na agenda eMulti."
       },
       "EvolucaoSOAPResponse": {
         "properties": {
@@ -4117,6 +5127,178 @@
         "title": "HealthCheckResponse",
         "description": "System health check and observability telemetry envelope."
       },
+      "HistoricoAtendimentoItemResponse": {
+        "properties": {
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "prioridade_clinica": {
+            "type": "integer",
+            "title": "Prioridade Clinica"
+          },
+          "queixa_principal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queixa Principal"
+          },
+          "criado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Criado Em"
+          },
+          "finalizado_em": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalizado Em"
+          },
+          "medico_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medico Id"
+          },
+          "diagnostico_cid10": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostico Cid10"
+          },
+          "conduta_resumo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conduta Resumo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "atendimento_id",
+          "status",
+          "prioridade_clinica",
+          "criado_em"
+        ],
+        "title": "HistoricoAtendimentoItemResponse",
+        "description": "Patient-facing attendance history entry (finalized SOAP summary only)."
+      },
+      "IdentificarPacienteRequest": {
+        "properties": {
+          "identificador": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Identificador",
+            "description": "CPF (11 d\u00edgitos) ou e-mail do paciente"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "identificador"
+        ],
+        "title": "IdentificarPacienteRequest",
+        "description": "Payload for anti-enumeration patient identification lookup."
+      },
+      "IdentificarPacienteResponse": {
+        "properties": {
+          "possui_conta": {
+            "type": "boolean",
+            "title": "Possui Conta"
+          },
+          "metodos_disponiveis": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "otp",
+                "senha",
+                "passkey",
+                "govbr"
+              ]
+            },
+            "type": "array",
+            "title": "Metodos Disponiveis"
+          },
+          "telefone_mascarado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telefone Mascarado"
+          },
+          "govbr_habilitado": {
+            "type": "boolean",
+            "title": "Govbr Habilitado"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "possui_conta",
+          "metodos_disponiveis",
+          "govbr_habilitado"
+        ],
+        "title": "IdentificarPacienteResponse",
+        "description": "Response indicating available patient authentication methods without PII."
+      },
+      "IniciarAgendamentoRequest": {
+        "properties": {
+          "atendimento_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Atendimento Id",
+            "description": "ID do atendimento cl\u00ednico associado (opcional)"
+          }
+        },
+        "type": "object",
+        "title": "IniciarAgendamentoRequest",
+        "description": "Payload opcional para iniciar atendimento a partir de agendamento."
+      },
       "ItemPrescricaoRequest": {
         "properties": {
           "medicamento": {
@@ -4303,9 +5485,16 @@
       "LiveKitTokenRequest": {
         "properties": {
           "organizacao_id": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Organizacao Id",
-            "description": "Identificador \u00fanico da organiza\u00e7\u00e3o de sa\u00fade"
+            "description": "Identificador opcional da organiza\u00e7\u00e3o (resolvido via contexto HTTP quando omitido)"
           },
           "participant_id": {
             "type": "string",
@@ -4352,7 +5541,6 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "organizacao_id",
           "participant_id",
           "role"
         ],
@@ -4492,6 +5680,32 @@
         "title": "LivenessVerifyResponse",
         "description": "Biometric liveness verification outcome with SHA-256 hash proof."
       },
+      "LoginPacienteSenhaRequest": {
+        "properties": {
+          "identificador": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Identificador",
+            "description": "E-mail ou CPF do paciente"
+          },
+          "senha": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Senha",
+            "description": "Senha em texto puro"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "identificador",
+          "senha"
+        ],
+        "title": "LoginPacienteSenhaRequest",
+        "description": "Payload for traditional patient login with password fallback."
+      },
       "LoginRequest": {
         "properties": {
           "identificador": {
@@ -4563,6 +5777,36 @@
         ],
         "title": "MedicoTMAResponse",
         "description": "Average attendance time metrics per medical professional."
+      },
+      "MetodosAutenticacaoPacienteResponse": {
+        "properties": {
+          "govbr_oidc_enabled": {
+            "type": "boolean",
+            "title": "Govbr Oidc Enabled"
+          },
+          "passkeys_enabled": {
+            "type": "boolean",
+            "title": "Passkeys Enabled",
+            "default": true
+          },
+          "otp_enabled": {
+            "type": "boolean",
+            "title": "Otp Enabled",
+            "default": true
+          },
+          "password_fallback_enabled": {
+            "type": "boolean",
+            "title": "Password Fallback Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "govbr_oidc_enabled"
+        ],
+        "title": "MetodosAutenticacaoPacienteResponse",
+        "description": "Response describing globally enabled patient authentication capabilities."
       },
       "MfaAtivarRequest": {
         "properties": {
@@ -4654,6 +5898,67 @@
         ],
         "title": "MfaVerificarLoginRequest",
         "description": "Payload to complete two-factor authentication login."
+      },
+      "PacienteDocumentoItemResponse": {
+        "properties": {
+          "documento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Documento Id"
+          },
+          "atendimento_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Atendimento Id"
+          },
+          "tipo_documento": {
+            "type": "string",
+            "title": "Tipo Documento"
+          },
+          "status_assinatura": {
+            "type": "string",
+            "title": "Status Assinatura"
+          },
+          "token_validacao": {
+            "type": "string",
+            "title": "Token Validacao"
+          },
+          "criado_em": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Criado Em"
+          },
+          "assinado_em": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assinado Em"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "documento_id",
+          "atendimento_id",
+          "tipo_documento",
+          "status_assinatura",
+          "token_validacao"
+        ],
+        "title": "PacienteDocumentoItemResponse",
+        "description": "Patient-facing clinical document metadata (never exposes S3 keys)."
       },
       "PainelTelemetriaResponse": {
         "properties": {
@@ -4999,6 +6304,116 @@
         "title": "RefreshTokenRequest",
         "description": "Payload for rotating refresh token."
       },
+      "RegistrarPacienteRequest": {
+        "properties": {
+          "cpf": {
+            "type": "string",
+            "maxLength": 14,
+            "minLength": 11,
+            "title": "Cpf",
+            "description": "CPF do cidad\u00e3o"
+          },
+          "nome_completo": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 2,
+            "title": "Nome Completo",
+            "description": "Nome completo do cidad\u00e3o"
+          },
+          "data_nascimento": {
+            "type": "string",
+            "format": "date",
+            "title": "Data Nascimento",
+            "description": "Data de nascimento (AAAA-MM-DD)"
+          },
+          "telefone": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 10,
+            "title": "Telefone",
+            "description": "Telefone celular com DDD"
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 5,
+            "title": "Email",
+            "description": "E-mail obrigat\u00f3rio do cidad\u00e3o"
+          },
+          "aceite_privacidade": {
+            "type": "boolean",
+            "title": "Aceite Privacidade",
+            "description": "Aceite expl\u00edcito da pol\u00edtica de privacidade (LGPD)"
+          },
+          "senha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Senha",
+            "description": "Senha opcional de acesso (>= 8 caracteres)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "cpf",
+          "nome_completo",
+          "data_nascimento",
+          "telefone",
+          "email",
+          "aceite_privacidade"
+        ],
+        "title": "RegistrarPacienteRequest",
+        "description": "Payload for citizen self-service registration with mandatory email."
+      },
+      "RegistrarPacienteResponse": {
+        "properties": {
+          "paciente_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paciente Id"
+          },
+          "telefone_mascarado": {
+            "type": "string",
+            "title": "Telefone Mascarado"
+          },
+          "otp_enviado": {
+            "type": "boolean",
+            "title": "Otp Enviado"
+          },
+          "expira_em_segundos": {
+            "type": "integer",
+            "title": "Expira Em Segundos"
+          },
+          "codigo_debug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Debug"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "paciente_id",
+          "telefone_mascarado",
+          "otp_enviado",
+          "expira_em_segundos"
+        ],
+        "title": "RegistrarPacienteResponse",
+        "description": "Response returned after registering citizen and dispatching initial OTP."
+      },
       "RegistrarSOAPRequest": {
         "properties": {
           "anamnese": {
@@ -5217,6 +6632,48 @@
         ],
         "title": "RegularizacaoFilaResponse",
         "description": "Resposta com resultado da regulariza\u00e7\u00e3o ou promo\u00e7\u00e3o por conting\u00eancia na fila."
+      },
+      "SlotDisponivelResponse": {
+        "properties": {
+          "profissional_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profissional Id",
+            "description": "Identificador do profissional"
+          },
+          "especialidade": {
+            "type": "string",
+            "title": "Especialidade",
+            "description": "Especialidade do atendimento"
+          },
+          "slot_inicio": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Slot Inicio",
+            "description": "In\u00edcio do hor\u00e1rio em UTC"
+          },
+          "slot_fim": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Slot Fim",
+            "description": "Fim do hor\u00e1rio em UTC"
+          },
+          "duracao_minutos": {
+            "type": "integer",
+            "title": "Duracao Minutos",
+            "description": "Dura\u00e7\u00e3o do slot em minutos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profissional_id",
+          "especialidade",
+          "slot_inicio",
+          "slot_fim",
+          "duracao_minutos"
+        ],
+        "title": "SlotDisponivelResponse",
+        "description": "Schema de resposta representando um hor\u00e1rio livre para agendamento."
       },
       "SolicitarOtpRequest": {
         "properties": {

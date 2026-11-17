@@ -22,6 +22,21 @@ class AtendimentoResumoDTO:
     exige_liveness_controle_especial: bool = True
 
 
+@dataclass(frozen=True)
+class AtendimentoHistoricoDTO:
+    """Immutable patient attendance history entry from queue-owned tables."""
+
+    atendimento_id: UUID
+    organizacao_id: int
+    paciente_id: UUID
+    status: str
+    prioridade_clinica: int
+    criado_em: datetime
+    finalizado_em: datetime | None = None
+    medico_id: UUID | None = None
+    queixa_principal: str | None = None
+
+
 @runtime_checkable
 class AtendimentoReaderPort(Protocol):
     """Reads attendance summaries without touching queue domain models."""
@@ -33,6 +48,17 @@ class AtendimentoReaderPort(Protocol):
     async def concluir_atendimento(self, atendimento_id: UUID) -> None: ...
 
     async def atender_chamada(self, atendimento_id: UUID) -> None: ...
+
+
+@runtime_checkable
+class HistoricoAtendimentoReaderPort(Protocol):
+    """Reads patient attendance history without touching queue domain models."""
+
+    async def listar_historico_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> list[AtendimentoHistoricoDTO]: ...
 
 
 async def is_atendimento_terminal(

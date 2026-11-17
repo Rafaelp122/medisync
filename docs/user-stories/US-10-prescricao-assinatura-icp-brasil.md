@@ -33,11 +33,11 @@
 - **Então** a emissão é imediatamente bloqueada com erro de validação (HTTP 422 Unprocessable Entity),
 - **E** apresenta alerta legal informando que tais substâncias exigem talonário físico específico e não podem ser emitidas por teleconsulta (Portaria SVS/MS 344/98).
 
-### Cenário 3: Validação pública de autenticidade por farmácias e pacientes (Fatia de Verificação)
-- **Dado que** um farmacêutico ou paciente faz a leitura do QR Code presente no receituário emitido,
-- **Quando** consulta a URL de validação em `GET /api/v1/documents/validate/{token_validacao}`,
-- **Então** o sistema confirma a validade e integridade criptográfica da assinatura ICP-Brasil,
-- **E** exibe o nome completo do médico emissor, CRM, UF e data/hora oficial UTC da emissão,
+### Cenário 3: Validação pública de autenticidade por farmácias e pacientes (UI `/validar` e `/validar/$token`)
+- **Dado que** um farmacêutico ou paciente faz a leitura do QR Code presente no receituário emitido ou copia o código em `/receitas`,
+- **Quando** acessa a interface pública em `/validar` (`frontend/src/routes/validar.tsx`) ou diretamente `/validar/$token` (`frontend/src/routes/validar-token.tsx`), disparando consulta para `GET /api/v1/documents/validate/{token_validacao}`,
+- **Então** o sistema confirma a validade e integridade criptográfica da assinatura ICP-Brasil exibindo o selo oficial ICP-Brasil / ITI,
+- **E** exibe o nome completo do médico emissor, CRM, UF, data/hora oficial UTC da emissão e dados mascarados do paciente (LGPD),
 - **E** autoriza a visualização e download seguro do PDF original assinado.
 
 ---
@@ -68,9 +68,12 @@
 - [x] **Assinador ICP-Brasil:** Adaptador PyHanko aplicando assinatura digital padrão ICP-Brasil PAdES e handshake CSC com suporte a contêiner CMS (`src/modules/consultation/infrastructure/pyhanko_signer.py`).
 - [x] **Cache Distribuído de Integridade:** `SignedCachePort` respaldado por `ValkeySignedCache` (`src/modules/consultation/infrastructure/valkey_signed_cache.py`) sob `SIGNED_CACHE_BACKEND` para validação sem sobrecarga no storage.
 - [x] **Armazenamento em Nuvem:** Adaptador MinIO/S3 com chaves canônicas e portal de validação público (`src/modules/consultation/infrastructure/s3_storage.py`).
-- [x] **Frontend Pós-Consulta (Issue #141):** Rota `/pos-consulta` (`frontend/src/routes/pos-consulta.tsx`) para visualização de documentos assinados e download seguro.
+- [x] **Frontend Pós-Consulta & Portal (`/pos-consulta` e `/receitas`):** Rota `/pos-consulta` (`frontend/src/routes/pos-consulta.tsx`) e central de receitas `/receitas` (`frontend/src/routes/receitas.tsx`, `PrescriptionsPage`) para visualização de documentos assinados e download autorizado de PDF/A.
+- [x] **Frontend Validação Pública (`/validar` e `/validar/$token`):** Página `DocumentValidationPage` (`frontend/src/features/consultation/pages/document-validation-page.tsx`), hook `useValidateDocument` (`frontend/src/features/consultation/api/use-validate-document.ts`) e rotas `frontend/src/routes/validar.tsx` e `frontend/src/routes/validar-token.tsx` com preenchimento automático do token de QR Code.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_pyhanko_signer.py`
   - `tests/unit/test_pdf_generator.py`
   - `tests/integration/test_document_signing_endpoint.py`
   - `tests/integration/test_storage_and_validation_portal.py`
+  - `frontend/src/features/consultation/tests/document-validation-page.test.tsx`
+  - `frontend/src/features/citizen/tests/prescriptions-page.test.tsx`

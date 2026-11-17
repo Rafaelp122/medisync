@@ -39,9 +39,13 @@ from src.modules.queue.application.ports.paciente_ausente_notifier import (
 )
 from src.modules.queue.application.ports.queue_store_port import (
     AdmissaoAptoResult,
+    AtendimentoHistoricoQueueDTO,
     AtendimentoSnapshotDTO,
 )
-from src.modules.queue.application.ports.triage_port import TriagePort
+from src.modules.queue.application.ports.triage_port import (
+    TriagePort,
+    TriageQueixaReaderPort,
+)
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
@@ -769,6 +773,57 @@ class FilaService:
             criado_em=atend.criado_em,
             is_terminal=atend.status in TERMINAL_STATUSES,
         )
+
+    async def listar_historico_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> list[AtendimentoHistoricoQueueDTO]:
+        """Lista histórico de atendimentos do paciente via ORM e TriagePort (RF-07).
+
+        Isola leitura por tenant/paciente e enriquece queixa principal quando
+        triage_port satisfaz TriageQueixaReaderPort.
+        Regras: docs/explanation/domains/queue-domain.md
+        """
+        stmt = (
+            select(Atendimento)
+            .where(
+                Atendimento.organizacao_id == organizacao_id,
+                Atendimento.paciente_id == paciente_id,
+            )
+            .order_by(Atendimento.criado_em.desc(), Atendimento.id.desc())
+        )
+        res = await self._db_session.execute(stmt)
+        atendimentos = [
+            atend
+            for atend in res.scalars().all()
+            if atend.organizacao_id == organizacao_id
+            and atend.paciente_id == paciente_id
+        ]
+        if not atendimentos:
+            return []
+
+        queixas: dict[UUID, str | None] = {}
+        if isinstance(self._triage_port, TriageQueixaReaderPort):
+            queixas = await self._triage_port.obter_queixas_por_atendimentos(
+                organizacao_id=organizacao_id,
+                atendimento_ids=[atend.id for atend in atendimentos],
+            )
+
+        return [
+            AtendimentoHistoricoQueueDTO(
+                atendimento_id=atend.id,
+                organizacao_id=int(atend.organizacao_id),
+                paciente_id=atend.paciente_id,
+                status=str(atend.status).strip().upper(),
+                prioridade_clinica=int(atend.prioridade_clinica),
+                criado_em=atend.criado_em,
+                finalizado_em=atend.chamada_finalizada_em,
+                medico_id=atend.medico_id,
+                queixa_principal=queixas.get(atend.id),
+            )
+            for atend in atendimentos
+        ]
 
     async def obter_posicao_e_estimativa(
         self,

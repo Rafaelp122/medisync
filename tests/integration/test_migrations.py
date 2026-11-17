@@ -28,6 +28,8 @@ _EXPECTED_TABLES = frozenset(
         "configuracoes_plantao",
         "producoes_ambulatoriais",
         "paciente_passkeys",
+        "agenda_disponibilidades",
+        "agendamentos",
     ]
 )
 
@@ -137,6 +139,11 @@ async def test_check_constraints_registered() -> None:
         "chk_config_plantao_tma",
         "chk_config_plantao_ring",
         "chk_config_plantao_modo",
+        "chk_agenda_disp_dia_semana",
+        "chk_agenda_disp_horarios",
+        "chk_agenda_disp_duracao",
+        "chk_agendamento_slot_valido",
+        "chk_agendamento_status",
     }
     assert expected_checks.issubset(constraints)
 

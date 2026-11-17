@@ -152,3 +152,32 @@ def test_resolve_login_tenant_id_interpolates_offending_value() -> None:
         resolve_login_tenant_id(-5, 10)
     assert "'-5'" in exc_info.value.detail
     assert "esperado valor inteiro positivo" in exc_info.value.detail
+
+
+def test_resolve_login_tenant_id_interpolates_missing_context_values() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        resolve_login_tenant_id(None, -2, multi_tenancy_enabled=True)
+    assert "body_org_id=None" in exc_info.value.detail
+    assert "context_tenant_id=-2" in exc_info.value.detail
+
+
+def test_resolve_cookie_secure_returns_false_on_http_regardless_of_debug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core.config import CommonSettings
+    from src.modules.auth.presentation import helpers
+
+    scope: Scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "scheme": "http",
+        "headers": [],
+    }
+    request = Request(scope)
+
+    monkeypatch.setattr(helpers, "get_settings", lambda: CommonSettings(DEBUG=False))
+    assert resolve_cookie_secure(request) is False
+
+    monkeypatch.setattr(helpers, "get_settings", lambda: CommonSettings(DEBUG=True))
+    assert resolve_cookie_secure(request) is False

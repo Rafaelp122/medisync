@@ -12,7 +12,7 @@ flowchart LR
 
     subgraph P2["2. Produto (Solution Space)"]
         SP["docs/explanation/<br/>product-specification.md<br/><i>O QUÊ</i>"]
-        US["docs/user-stories/<br/>US-01 a US-13<br/><i>LIVING SPECIFICATIONS</i>"]
+        US["docs/user-stories/<br/>US-01 a US-16<br/><i>LIVING SPECIFICATIONS</i>"]
     end
 
     subgraph P3["3. Engenharia (Architecture)"]
@@ -21,7 +21,7 @@ flowchart LR
     end
 
     subgraph P4["4. Decisões Estruturais (ADRs)"]
-        ADR["docs/adrs/<br/>ADR-001 a ADR-010<br/><i>TRADE-OFFS & EVOLUÇÃO</i>"]
+        ADR["docs/adrs/<br/>ADR-001 a ADR-012<br/><i>TRADE-OFFS & EVOLUÇÃO</i>"]
     end
 
     BV -->|Direciona| SP
@@ -58,6 +58,8 @@ flowchart LR
     * **RN05**: Controle de Admissão, Backpressure Estocástico ($\alpha$) e Transbordo;
     * **RN06**: Preservação Soberana do Ato Médico (sem corte temporal de chamada);
     * **RN07**: Imutabilidade, Carimbo UTC e Hash Criptográfico do TCLE;
+    * **RN08**: Governança de IA no Prontuário e Supervisão Médica (CFM nº 2.454/2026);
+    * **RN09**: Trava Temporal Anti-Fraude em Atestados Médicos ($\ge 180\text{ s}$);
   * Requisitos Funcionais de Usuário (RF-01 a RF-10);
   * Requisitos de Transição (RT-01 a RT-03);
   * Matriz de Rastreabilidade Vertical Auditável.
@@ -68,16 +70,16 @@ flowchart LR
   * **Hexagonal Pragmático em Python**:
     * Modelos Ricos no SQLAlchemy 2.0 (`Mapped[...]`) para o domínio persistido (zero *Mapper Hell*);
     * Portas externas e de fronteira inter-módulos modeladas com `typing.Protocol` (PEP 544);
-    * Comunicação inter-módulos em duas vias: *Ports & Adapters* (síncrona) e *Event Bus em memória* (assíncrona);
+    * Comunicação inter-módulos em duas vias: *Ports & Adapters* (síncrona) e notificadores ponto a ponto (assíncrona);
     * Isolamento estrito de fronteiras e módulos auditado via **Tach** (`tach check`);
   * **Topologia C4**: Diagramas de Contexto (Nível 1) e Contêineres (Nível 2);
-  * Decomposição Modular do Código (`src/` dividido em módulos verticais: `auth`, `identity`, `triage`, `queue`, `consultation`, `telemetry`, `ambulatory`);
+  * Decomposição Modular do Código (`src/` dividido em 8 módulos verticais: `auth`, `identity`, `triage`, `queue`, `consultation`, `scheduling`, `telemetry`, `ambulatory`);
   * Matriz de Requisitos Não Funcionais (FURPS+ / ISO 25010: fila $\le 200\text{ ms}$, resiliência do worker, WebRTC $\le 150\text{ ms}$, segurança TLS 1.3/AES-256 e acessibilidade WCAG 2.1 AA).
 
 ### 📄 [04. Especificações Vivas & Catálogo de User Stories](user-stories/README.md)
 * **Responsabilidade**: *Living Specifications & BDD* (Critérios de Aceite e Qualidade).
 * **Conteúdo**:
-  * Jornadas Assistenciais e Operacionais Primárias (US-01 a US-03, US-06 a US-13);
+  * Jornadas Assistenciais e Operacionais Primárias (US-01 a US-03, US-06 a US-16);
   * Políticas Transversais de Salvaguarda e Backpressure (US-04, US-05);
   * Critérios de aceite em Gherkin puro (*Dado / Quando / Então*);
   * Checklist técnico de inspeção vertical e rastreabilidade com o código.
@@ -87,7 +89,7 @@ flowchart LR
 ## 2. Blueprints Técnicos de Engenharia
 
 Para orientar a implementação sem burocracia de RFCs estáticas:
-* 📄 **[Modelo de Dados Relacional e Governança Forense](explanation/architecture/data-model.md)**: Diagrama Entidade-Relacionamento (DER), DDL das 10 tabelas relacionais, políticas PostgreSQL RLS nativas e regras forenses do CFM para snapshots clínicos.
+* 📄 **[Modelo de Dados Relacional e Governança Forense](explanation/architecture/data-model.md)**: Diagrama Entidade-Relacionamento (DER), DDL das 15 tabelas multi-tenant com RLS (16 no total com `organizacoes`), políticas PostgreSQL RLS nativas e regras forenses do CFM para snapshots clínicos.
 * 📄 **[Concorrência, Fila Valkey e Ring Timeout](explanation/architecture/concurrency-and-queues.md)**: Script Lua atômico com double-locking de 45s, fórmula do score ponderado de 64 bits para o ZSET do Valkey e agendamento de tarefas no ARQ Worker.
 * 📄 **[Conformidade Clínica, Telemedicina e ICP-Brasil](explanation/architecture/compliance-and-telemedicine.md)**: Topologia WebRTC com LiveKit SFU, fluxo de assinatura digital PAdES-LTV com PyHanko e armazenamento de PDFs no S3/MinIO via presigned URLs.
 * 📄 **[Observabilidade, Logging Estruturado e OpenTelemetry](explanation/architecture/observability-and-opentelemetry.md)**: Tracing distribuído nativo via FastAPI OTel, correlação de traces em logs JSON com UUIDv7 e conformidade LGPD.
@@ -108,4 +110,6 @@ Para orientar a implementação sem burocracia de RFCs estáticas:
   * **[ADR-008](adrs/ADR-008-Padronizacao-de-DTOs-e-Eliminacao-de-Mapper-Hell-na-Apresentacao.md)**: Padronização de DTOs e Eliminação de Mapper Hell na Apresentação
   * **[ADR-009](adrs/ADR-009-Configuracoes-Polimorficas-por-Perfil-e-Desacoplamento-nos-Composition-Roots.md)**: Configurações Polimórficas por Perfil e Desacoplamento nos Composition Roots
   * **[ADR-010](adrs/ADR-010-Estrategia-DevSecOps-Defesa-em-Profundidade-de-Segredos-e-SAST.md)**: Estratégia de DevSecOps — Defesa em Profundidade de Segredos e SAST em Camadas
+  * **[ADR-011](adrs/ADR-011-Arquitetura-Frontend-SPA-PWA-e-Estrategia-de-Testes.md)**: Arquitetura de Frontend SPA/PWA com React 19, Hey API e Troféu de Testes
+  * **[ADR-012](adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md)**: Transição 100% SUS, Consórcios Intermunicipais e Autenticação Tripartida
 * **Diretriz Ágil**: Novas decisões são registradas sob demanda quando a equipe de engenharia se depara com encruzilhadas técnicas reais ao longo da implementação.

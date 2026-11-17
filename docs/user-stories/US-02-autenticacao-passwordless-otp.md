@@ -43,13 +43,13 @@
 - **Então** o sistema retorna HTTP 200 OK com mensagem padronizada e genérica (*"Se o número informado estiver cadastrado, enviamos um código de verificação"*),
 - **E** NÃO indica para o remetente se o paciente existe ou não na base de dados, prevenindo ataques de enumeração cadastral e violação de sigilo médico.
 
-### Cenário 5: Rota Declarativa `/otp`, Reconexão de Sessão Interrompida e Escopos Clínicos (Issue #141)
-- **Dado que** a paciente teve a sessão desconectada ou acessa a plataforma pela rota `/otp` (`frontend/src/routes/otp.tsx`) ou link legado `/?mode=otp`,
-- **Quando** a paciente submete o formulário de verificação OTP na rota `/otp`,
+### Cenário 5: Rota Declarativa `/entrar` (Redirect Legado `/otp`), Reconexão e Escopos Clínicos (Issue #141)
+- **Dado que** a paciente teve a sessão desconectada ou acessa a plataforma pela rota `/entrar` (`frontend/src/routes/entrar.tsx`) ou pela rota legada `/otp` (redirecionada para `/entrar` por `frontend/src/routes/otp.tsx`),
+- **Quando** a paciente submete o formulário de verificação OTP na rota `/entrar`,
 - **E quando** ela valida o código OTP com sucesso em `POST /api/v1/auth/patient/otp/verify`,
 - **Então** o sistema retorna um Bearer JWT contendo o papel `PACIENTE` e as permissões `patient:queue_track` e `patient:doc_view`,
 - **E** o frontend persiste a credencial no storage local do navegador (`localStorage` sob a chave `medisync_session`),
-- **E** exibe a confirmação de ingresso ou navega declarativamente para a rota `/fila` caso haja atendimento ativo associado.
+- **E** navega declarativamente para `/fila` caso haja `atendimento_id` ativo associado, ou para o Portal do Cidadão `/home`.
 
 ---
 
@@ -82,10 +82,10 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Segurança Criptográfica:** Geração via CSPRNG (`secrets.choice`) e armazenamento com hash SHA-256 no Valkey com TTL de 300s (`src/modules/auth/application/services/patient_auth_service.py`).
-- [x] **Proteção de Acesso:** Rate limiting com contadores voláteis no Valkey bloqueando após 3 falhas com HTTP 429 `OtpTentativasExcedidasError` (`Retry-After: 900`) e 3 envios/15min via `OtpRateLimitExcedidoError`; payload inclui campo `role: "PACIENTE"` emitido conforme ADR-005.
+- [x] **Segurança Criptográfica:** Geração via CSPRNG (`secrets.randbelow(1_000_000)`) e armazenamento com hash SHA-256 no Valkey com TTL de 300s (`src/modules/auth/application/services/patient_auth_service.py`).
+- [x] **Proteção de Acesso:** Rate limiting com contadores voláteis no Valkey bloqueando após 3 falhas com HTTP 429 `OtpTentativasExcedidasError` (`Retry-After: 900`) e 3 envios/15min via `OtpRateLimitExcedidoError`; payload inclui campo `role: "PACIENTE"` emitido conforme ADR-012.
 - [x] **Apresentação:** Router fino `patient_auth_router.py` integrado em `src/modules/auth/presentation/routers/`.
-- [x] **Frontend Roteamento (Issue #141):** Rota declarativa `/otp` (`frontend/src/routes/otp.tsx`), suporte a deep link legado `/?mode=otp` e navegação declarativa.
+- [x] **Frontend Roteamento (Issue #141):** Rota declarativa `/entrar` (`frontend/src/routes/entrar.tsx`, `PatientHybridAuthCard`) e redirect legado em `/otp` (`frontend/src/routes/otp.tsx`) com navegação declarativa para `/fila` ou `/home`.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_patient_auth_service.py`
   - `tests/integration/test_patient_auth_endpoints.py`
@@ -110,8 +110,8 @@
 
 ### 5.3 Troféu de Testes do Frontend
 - **Integração de Tela (Vitest + RTL + MSW v2):**
-  - `frontend/src/features/onboarding/tests/solicitar-otp-form.test.tsx` e `frontend/src/features/onboarding/tests/verificar-otp-form.test.tsx`.
-  - `frontend/src/App.test.tsx`: validação de orquestração de abas, login OTP e encerramento de sessão.
+  - `frontend/src/features/onboarding/tests/solicitar-otp-form.test.tsx`, `frontend/src/features/onboarding/tests/verificar-otp-form.test.tsx` e `frontend/src/features/auth/tests/patient-hybrid-auth.test.tsx`.
+  - `frontend/src/App.test.tsx`: validação de rotas, guards e login OTP do cidadão.
   - Simulação HTTP na camada de transporte via factory tipada `solicitarOtpPacienteMock` (`@/api/generated/msw.gen`).
   - Avanço determinístico do cooldown de 60s via `vi.useFakeTimers()` e `await vi.advanceTimersByTimeAsync(60_000)` com teardown mandatório em `afterEach(() => vi.useRealTimers())`.
 - **E2E e A11y (Playwright):**

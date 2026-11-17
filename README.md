@@ -23,21 +23,21 @@
 
 ## 🎯 Visão Geral da Solução
 
-O **MediSync Express** foi concebido para endereçar um dos maiores gargalos dos sistemas de saúde públicos e privados: a sobrecarga de prontos-socorros físicos por queixas de baixa e média complexidade (fichas verdes e azuis).
+O **MediSync Express** foi concebido para endereçar um dos maiores gargalos do Sistema Único de Saúde (SUS): a sobrecarga de prontos-socorros físicos por queixas de baixa e média complexidade (fichas verdes e azuis).
 
-A plataforma opera sob regime de **demanda espontânea (sem agendamento prévio)** através de uma esteira assistencial contínua:
+A plataforma opera sob regime de **demanda espontânea (sem agendamento prévio)** e suporte programado (**eMulti agendado**), através de uma esteira assistencial contínua:
 
 ```mermaid
 flowchart LR
     A["1. Acolhimento Ágil<br/>(TCLE Hash < 45s)"] --> B["2. Fila Dinâmica<br/>(Valkey ZSET + SAMU 192)"]
-    B --> C["3. Validação Concorrente<br/>(Faturamento / SUS No-Op)"]
+    B --> C["3. Qualificação Cadastral SUS<br/>(CADSUS / Assíncrona)"]
     C --> D["4. Teleconsulta Integrada<br/>(LiveKit SFU + PEP)"]
     D --> E["5. Emissão & Auditoria<br/>(PAdES ICP-Brasil + S3)"]
 ```
 
-### 🏛️ Dualidade Operacional Nativa (SUS vs. Saúde Privada)
-* **Atenção Pública (SUS)**: Entrada universal via CPF ou Cartão Nacional de Saúde (CNS). A validação de cobertura opera como instrução nula (*no-op*), inserindo o cidadão imediatamente na esteira de atendimento médico com custo de infraestrutura reduzido para municípios.
-* **Saúde Suplementar / Particular**: Pacientes ingressam na fila sem paywalls obstrutivos na tela inicial. A validação de elegibilidade de convênio ocorre de forma concorrente em segundo plano enquanto o paciente aguarda; em caso de pendência ou rejeição temporária, o paciente é alertado e pode optar por contingência assistencial imediata ou reenvio de dados (`POST /api/v1/fila/atendimentos/{id}/regularizar`), preservando rigorosamente seu tempo de espera original na fila virtual ($T_0$ / NC-QUE-04).
+### 🏛️ Arquitetura 100% SUS & Consórcios Intermunicipais (ADR-012)
+* **Atenção Pública Universal (SUS)**: Entrada universal, gratuita e sem barreiras financeiras via Gov.br, CADSUS, CPF ou Cartão Nacional de Saúde (CNS). A admissão insere o cidadão diretamente na fila de atendimento apto (`APTO_PARA_CHAMADA`) com qualificação cadastral assíncrona em segundo plano; eventuais pendências podem ser regularizadas (`POST /api/v1/fila/atendimentos/{id}/regularizar`), preservando rigorosamente o tempo de espera original ($T_0$ / NC-QUE-04).
+* **Consórcios Intermunicipais & Produção Ambulatorial**: Suporte nativo a consórcios públicos intermunicipais (Lei nº 11.107/2005) com isolamento lógico via PostgreSQL RLS (ou implantação dedicada em modo single-tenant via `MULTI_TENANCY_ENABLED=false`) e consolidação ambulatorial SUS (`ambulatory` — BPA-I / SISAB / SIGTAP `03.01.01.025-0`, CNES 160/006).
 
 ---
 
@@ -57,7 +57,8 @@ flowchart TD
         Queue["modules/queue<br/>(Fila Dinâmica & Lua)"]
         Identity["modules/identity<br/>(Multi-Tenancy & Organizações)"]
         Consultation["modules/consultation<br/>(PEP & LiveKit Tokens)"]
-        Billing["modules/billing<br/>(Elegibilidade & SUS)"]
+        Ambulatory["modules/ambulatory<br/>(Produção SUS BPA-I / SIGTAP)"]
+        Scheduling["modules/scheduling<br/>(Agenda eMulti & Slots GiST)"]
         Telemetry["modules/telemetry<br/>(Painel CQRS & Métricas)"]
 
         Protocols["typing.Protocol (PEP 544)<br/>(Portas de Entrada e Notificadores Ponto a Ponto)"]
@@ -103,7 +104,7 @@ flowchart TD
 * Agendamento de precisão via tarefas diferidas no ARQ (`_defer_by=timedelta(seconds=45)`), superando a fragilidade e imprecisão de eventos pub/sub de expiração de chaves (`notify-keyspace-events`) do Redis.
 
 ### 5. Multi-Tenancy com Defesa em Profundidade no PostgreSQL (RLS)
-* Segregação lógica de dados entre municípios e operadoras orientada por `organizacao_id`.
+* Segregação lógica de dados entre municípios consorciados orientada por `organizacao_id` (com suporte opcional a modo single-tenant via `MULTI_TENANCY_ENABLED=false` e `DEFAULT_TENANT_ID`).
 * O tenant ativo é isolado via `ContextVar` assíncrona por requisição e forçado nativamente no motor do PostgreSQL 17 via **Row-Level Security (RLS)** (`SET LOCAL app.current_tenant_id`), impedindo vazamento de dados mesmo em caso de falha de filtro no código de aplicação.
 
 ### 6. Isolamento e Governança Modular com Tach
@@ -126,10 +127,10 @@ src/
 └── modules/
     ├── ambulatory/                    # Produção ambulatorial SUS (BPA-I/SISAB) e qualificação cadastral
     ├── auth/                          # Autenticação Argon2id, lockout, OTP passwordless e revogação
-
     ├── consultation/                  # PEP SOAP, LiveKit WebRTC e assinatura digital ICP-Brasil
     ├── identity/                      # Cadastro bifásico, dependentes e isolamento de tenant
     ├── queue/                         # Fila dinâmica ZSET 64-bit, scripts Lua e ring timeout 45s
+    ├── scheduling/                    # Agenda multiprofissional programada (eMulti: Psicologia e Nutrição)
     ├── telemetry/                     # Painel analítico CQRS, cache volátil 5s e governança estocástica
     └── triage/                        # Acolhimento ágil, TCLE hash e rota SAMU 192
 ```
@@ -143,13 +144,13 @@ A governança do repositório é estritamente segregada em três pilares ortogon
 | Documento | Pilar Metodológico | Conteúdo Central |
 | :--- | :--- | :--- |
 | **[Business Vision](docs/explanation/business-vision.md)** | *Problem Space* (O Porquê) | Contexto de PA Virtual 24/7, Canvas de Requisitos, Metas SMART, Personas e Matriz de Necessidades de Negócio (NEC-01 a NEC-08). |
-| **[Product Specification](docs/explanation/product-specification.md)** | *Solution Space* (O Quê) | Invariantes Formais de Domínio (**RN01 a RN07**), Requisitos Funcionais (**RF-01 a RF-10**) e Matriz de Rastreabilidade Vertical. |
-| **[User Stories & Living Specs](docs/user-stories/README.md)** | *Living Specifications* (Qualidade & BDD) | Linha de base comportamental em Gherkin puro, checklists técnicos de inspeção e rastreabilidade vertical ([US-01 a US-13](docs/user-stories/README.md)). |
-| **[Architecture Overview](docs/explanation/architecture/overview.md)** | *Engineering Foundations* (O Como) | Hexagonal Pragmático, protocolos, Event Bus, diagramas C4 (Contexto e Contêineres) e Matriz FURPS+ / ISO 25010. |
-| **[Data Model](docs/explanation/architecture/data-model.md)** | Blueprint Técnico | Diagrama Entidade-Relacionamento (DER), DDL das 10 tabelas relacionais, regras de RLS e snapshots forenses do CFM. |
+| **[Product Specification](docs/explanation/product-specification.md)** | *Solution Space* (O Quê) | Invariantes Formais de Domínio (**RN01 a RN09**), Requisitos Funcionais (**RF-01 a RF-10**) e Matriz de Rastreabilidade Vertical. |
+| **[User Stories & Living Specs](docs/user-stories/README.md)** | *Living Specifications* (Qualidade & BDD) | Linha de base comportamental em Gherkin puro, checklists técnicos de inspeção e rastreabilidade vertical ([US-01 a US-16](docs/user-stories/README.md)). |
+| **[Architecture Overview](docs/explanation/architecture/overview.md)** | *Engineering Foundations* (O Como) | Hexagonal Pragmático, protocolos, notificadores ponto a ponto, diagramas C4 (Contexto e Contêineres) e Matriz FURPS+ / ISO 25010. |
+| **[Data Model](docs/explanation/architecture/data-model.md)** | Blueprint Técnico | Diagrama Entidade-Relacionamento (DER), DDL das 15 tabelas multi-tenant com RLS (16 no catálogo total), regras de RLS e snapshots forenses do CFM. |
 | **[Concurrency & Queues](docs/explanation/architecture/concurrency-and-queues.md)** | Blueprint Técnico | Script Lua atômico (`alocar_chamada.lua`), fórmula do score do ZSET e resolução determinística de No-Show via ARQ. |
 | **[Compliance & Telemedicine](docs/explanation/architecture/compliance-and-telemedicine.md)** | Blueprint Técnico | Topologia LiveKit SFU WebRTC, fluxo de assinatura digital PAdES-LTV com PyHanko e guarda em Object Storage S3/MinIO. |
-| **[Architecture Decision Records (ADRs)](docs/adrs/README.md)** | Governança & Trade-offs | Registro formal das 10 decisões estruturais fundamentais ([ADR-001 a ADR-010](docs/adrs/README.md)). |
+| **[Architecture Decision Records (ADRs)](docs/adrs/README.md)** | Governança & Trade-offs | Registro formal das 12 decisões estruturais fundamentais ([ADR-001 a ADR-012](docs/adrs/README.md)). |
 
 ---
 

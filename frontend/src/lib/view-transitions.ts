@@ -15,7 +15,7 @@ export function isReducedMotionPreferred(): boolean {
  * respeitando estritamente a preferência do usuário por movimento reduzido
  * (`prefers-reduced-motion: reduce`) e prevenindo erros em ambientes sem suporte.
  *
- * @see docs/adrs/ADR-011-arquitetura-frontend.md (Seção 2.8)
+ * @see docs/adrs/ADR-011-Arquitetura-Frontend-SPA-PWA-e-Estrategia-de-Testes.md (Seção 2.8)
  */
 export function startSafeViewTransition(callback: () => void): void {
   if (

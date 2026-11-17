@@ -2,8 +2,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { PosConsultaSummary } from "@/features/consultation/components/pos-consulta-summary";
 import {
   clearStoredCallData,
-  clearStoredSession,
   type StoredPatientSession,
+  saveStoredSession,
 } from "@/lib/session-storage";
 
 export interface PostConsultationPageProps {
@@ -14,9 +14,14 @@ export function PostConsultationPage({ session }: PostConsultationPageProps) {
   const navigate = useNavigate();
 
   const handleNovaConsulta = () => {
-    clearStoredSession();
+    saveStoredSession({
+      token: session.token,
+      pacienteId: session.pacienteId,
+      role: session.role,
+      tipo: session.tipo,
+    });
     clearStoredCallData();
-    navigate({ to: "/" });
+    navigate({ to: "/home" });
   };
 
   return (

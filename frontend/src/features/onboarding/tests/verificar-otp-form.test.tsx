@@ -164,4 +164,17 @@ describe("VerificarOtpForm (Integração de Tela)", () => {
     expect(handleAuthenticated).not.toHaveBeenCalled();
     expect(inputs[5]).toHaveFocus();
   });
+
+  it("IT-11: Exibe codigoDebug apenas em ambientes dev, demo ou test", () => {
+    const { getByText } = renderWithProviders(
+      <VerificarOtpForm
+        telefone={defaultTelefone}
+        codigoDebug="778899"
+        onAuthenticated={vi.fn()}
+      />,
+    );
+
+    expect(getByText(/ambiente de teste:/i)).toBeInTheDocument();
+    expect(getByText("778899")).toBeInTheDocument();
+  });
 });

@@ -27,6 +27,21 @@ class AtendimentoSnapshotDTO:
 
 
 @dataclass(frozen=True)
+class AtendimentoHistoricoQueueDTO:
+    """Immutable attendance history entry for cross-module history readers."""
+
+    atendimento_id: UUID
+    organizacao_id: int
+    paciente_id: UUID
+    status: str
+    prioridade_clinica: int
+    criado_em: datetime
+    finalizado_em: datetime | None = None
+    medico_id: UUID | None = None
+    queixa_principal: str | None = None
+
+
+@dataclass(frozen=True)
 class AdmissaoAptoResult:
     """Result of admitting an attendance to APTO status."""
 
@@ -99,4 +114,12 @@ class QueueStorePort(Protocol):
         atendimento_id: UUID,
     ) -> AtendimentoSnapshotDTO | None:
         """Fetch attendance snapshot by ID without leaking ORM model across modules."""
+        ...
+
+    async def listar_historico_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> list[AtendimentoHistoricoQueueDTO]:
+        """List patient attendance history entries ordered newest first."""
         ...

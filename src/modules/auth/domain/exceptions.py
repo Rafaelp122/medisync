@@ -188,11 +188,43 @@ class PasskeyNaoEncontradaError(UnauthorizedError):
         super().__init__(detail, title=self.title, code=self.code)
 
 
+class IdentificacaoRateLimitExcedidoError(DomainError):
+    """Raised when anti-enumeration patient identify rate limit is exceeded."""
+
+    status_code = 429
+    title = "Muitas Requisições de Identificação"
+    code = "IDENTIFY_RATE_LIMIT_EXCEEDED"
+
+    def __init__(
+        self,
+        detail: str = (
+            "Limite de solicitações de identificação excedido. "
+            "Tente novamente mais tarde."
+        ),
+        *,
+        retry_after_segundos: int | None = None,
+    ) -> None:
+        headers = (
+            {"Retry-After": str(retry_after_segundos)}
+            if retry_after_segundos is not None
+            else None
+        )
+        super().__init__(
+            detail,
+            status_code=self.status_code,
+            title=self.title,
+            code=self.code,
+            headers=headers,
+        )
+        self.retry_after_segundos = retry_after_segundos
+
+
 __all__ = [
     "AuthError",
     "ContaBloqueadaError",
     "ContaDesativadaError",
     "CredenciaisInvalidasError",
+    "IdentificacaoRateLimitExcedidoError",
     "OtpInvalidoOuExpiradoError",
     "OtpRateLimitExcedidoError",
     "OtpTentativasExcedidasError",

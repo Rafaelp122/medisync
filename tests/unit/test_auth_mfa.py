@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid4
 
 import pytest
+from src.core.authz.roles import Role
 from src.core.errors import MfaCodigoInvalidoError, NotFoundError
 from src.core.uuid7 import uuid7
 from src.modules.auth.application.dtos import (
@@ -20,9 +21,6 @@ from src.modules.auth.application.ports.auth_rate_limiter_port import (
 from src.modules.auth.application.ports.identity_reader_port import (
     PacienteAuthLookupData,
 )
-from src.modules.auth.application.ports.password_hasher_port import (
-    PasswordHasherPort,
-)
 from src.modules.auth.application.services.auth_service import AuthService
 from src.modules.auth.application.services.patient_auth_service import (
     PatientAuthService,
@@ -31,6 +29,7 @@ from src.modules.auth.application.services.patient_auth_service import (
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.auth.domain.exceptions import (
+    CredenciaisInvalidasError,
     PacienteNaoEncontradoError,
 )
 from src.modules.auth.domain.models import UsuarioCredencial
@@ -45,23 +44,12 @@ from src.modules.auth.infrastructure.valkey_token_revocation import (
     MemoryTokenRevocation,
 )
 
-from tests.doubles import FakeAsyncSession, FakeIdentityReader, FakeResult
-
-
-class FakePasswordHasher(PasswordHasherPort):
-    """Named fake implementation of PasswordHasherPort."""
-
-    def hash(self, password: str) -> str:
-        return f"hashed_{password}"
-
-    def verify(self, plain_password: str, hashed_password: str) -> bool:
-        return hashed_password == f"hashed_{plain_password}"
-
-    def needs_rehash(self, hashed_password: str) -> bool:
-        return False
-
-    def dummy_verify(self) -> None:
-        pass
+from tests.doubles import (
+    FakeAsyncSession,
+    FakeIdentityReader,
+    FakePasswordHasher,
+    FakeResult,
+)
 
 
 class FakeAuthRateLimiter(AuthRateLimiterPort):
@@ -103,7 +91,7 @@ def _make_credencial(
         organizacao_id=organizacao_id,
         usuario_id=usuario_id or uuid7(),
         identificador=identificador,
-        senha_hash=f"hashed_{senha_pura}",
+        senha_hash=f"$argon2id$fake${senha_pura}",
         papel=papel,
         mfa_secret=mfa_secret,
         mfa_ativo=mfa_ativo,
@@ -113,13 +101,15 @@ def _make_credencial(
 def _make_auth_service(
     session: FakeAsyncSession,
     token_service: JWTTokenService | None = None,
+    hasher: FakePasswordHasher | None = None,
+    revocation: MemoryTokenRevocation | None = None,
 ) -> AuthService:
     return AuthService(
         session=cast("AsyncSession", session),
-        hasher=FakePasswordHasher(),
+        hasher=hasher or FakePasswordHasher(),
         token_service=token_service or JWTTokenService(secret_key=TEST_JWT_SECRET),
         rate_limiter=FakeAuthRateLimiter(),
-        revocation=MemoryTokenRevocation(),
+        revocation=revocation or MemoryTokenRevocation(),
     )
 
 
@@ -467,3 +457,55 @@ async def test_autenticar_cadsus_govbr_paciente_nao_encontrado() -> None:
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.code == "PACIENTE_NAO_ENCONTRADO"
+
+
+@pytest.mark.asyncio
+async def test_autenticar_rejeita_papel_paciente_com_dummy_verify() -> None:
+    """Contas PACIENTE não podem autenticar via /auth/login corporativo."""
+    cred = _make_credencial(
+        identificador="paciente@example.com",
+        senha_pura="SenhaPaciente123",
+        papel=Role.PACIENTE.value,
+    )
+    session = FakeAsyncSession(results=[FakeResult(cred)])
+    hasher = FakePasswordHasher()
+    service = _make_auth_service(session, hasher=hasher)
+
+    cmd = LoginCommand(
+        identificador="paciente@example.com",
+        senha="SenhaPaciente123",
+        organizacao_id=1,
+        client_ip="127.0.0.1",
+    )
+    with pytest.raises(CredenciaisInvalidasError):
+        await service.autenticar(cmd)
+
+    assert hasher.dummy_calls == 1
+    assert session.commits == 0
+
+
+@pytest.mark.asyncio
+async def test_rotacionar_refresh_token_rejeita_papel_paciente() -> None:
+    """Refresh tokens associados a contas PACIENTE não podem ser rotacionados."""
+    cred = _make_credencial(
+        identificador="paciente@example.com",
+        senha_pura="SenhaPaciente123",
+        papel=Role.PACIENTE.value,
+    )
+    token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
+    pair = token_svc.gerar_tokens(
+        usuario_id=cred.usuario_id,
+        organizacao_id=cred.organizacao_id,
+        papel=Role.PACIENTE.value,
+    )
+    revocation = MemoryTokenRevocation()
+    session = FakeAsyncSession(results=[FakeResult(cred)])
+    service = _make_auth_service(
+        session, token_service=token_svc, revocation=revocation
+    )
+
+    with pytest.raises(CredenciaisInvalidasError):
+        await service.rotacionar_refresh_token(pair.refresh_token)
+
+    payload = token_svc.validar_refresh_token(pair.refresh_token)
+    assert await revocation.is_revogado(payload.jti) is True

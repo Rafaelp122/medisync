@@ -1,12 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Lock, LogOut, PhoneCall, Users } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { getActiveTenantId } from "@/api/client";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { extractTenantIdFromJwt, getActiveTenantId } from "@/api/client";
 import type { ChamarProximoResponse, DocumentoClinicoResponse } from "@/api/generated/types.gen";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { getAccessToken } from "@/lib/auth-token";
+import { getStoredToken } from "@/lib/session-storage";
 import { useChamarProximo } from "../api/use-chamar-proximo";
 import { useLiveKitToken } from "../api/use-livekit-token";
 import { usePainelTelemetria } from "../api/use-painel-telemetria";
@@ -28,6 +30,7 @@ export interface DoctorWorkstationProps {
   organizacaoId?: number;
   onLogout?: () => void;
   idleTimeoutMs?: number;
+  renderSchedulePanel?: ReactNode;
 }
 
 /**
@@ -46,6 +49,7 @@ export function DoctorWorkstation({
   organizacaoId,
   onLogout,
   idleTimeoutMs = 15 * 60 * 1000,
+  renderSchedulePanel,
 }: DoctorWorkstationProps) {
   // Inatividade Clínica (Auto-Logout em estações de pronto atendimento compartilhadas)
   // Regras: CFM nº 2.314/2022, LGPD Art. 11, OWASP Session Management
@@ -93,6 +97,13 @@ export function DoctorWorkstation({
     }
   }, []);
 
+  const handleRegisterLivenessSender = useCallback(
+    (sender: ((message: LivenessChannelMessage) => Promise<void>) | null) => {
+      livenessSenderRef.current = sender;
+    },
+    [],
+  );
+
   const queryClient = useQueryClient();
   const { data: painelTelemetria, isLoading: isCarregandoPainel } = usePainelTelemetria(token);
   const totalPacientesFila = painelTelemetria?.total_pacientes_fila ?? 0;
@@ -117,12 +128,16 @@ export function DoctorWorkstation({
             setIsFinalizado(false);
 
             // Emite token LiveKit WebRTC para a sala médica
-            const tenantVal = Number(getActiveTenantId());
-            const fallbackOrgId = Number.isFinite(tenantVal) && tenantVal > 0 ? tenantVal : 1;
+            const activeTenant = getActiveTenantId();
+            const parsedTenant = activeTenant ? Number.parseInt(activeTenant, 10) : Number.NaN;
+            const resolvedOrgId =
+              organizacaoId ??
+              extractTenantIdFromJwt(token ?? getAccessToken() ?? getStoredToken()) ??
+              (Number.isFinite(parsedTenant) && parsedTenant > 0 ? parsedTenant : undefined);
             emitirLivekitToken({
               token,
               atendimento_id: data.atendimento_id,
-              organizacao_id: organizacaoId ?? fallbackOrgId,
+              ...(resolvedOrgId !== undefined ? { organizacao_id: resolvedOrgId } : {}),
               participant_id: medicoId,
               role: "medico",
               participant_name: medicoNome,
@@ -168,7 +183,7 @@ export function DoctorWorkstation({
                 CRM {crmUf}
               </Badge>
               <Badge variant="success" className="text-[10px] py-0 px-1.5 gap-1">
-                <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
+                <span className="inline-block size-1.5 rounded-full bg-acr-green-foreground" />
                 Em Plantão
               </Badge>
               <Badge
@@ -240,8 +255,8 @@ export function DoctorWorkstation({
 
       {/* Banner de Consulta Finalizada (Imutabilidade Legal) */}
       {isFinalizado && (
-        <Alert className="py-2.5 text-xs border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200">
-          <CheckCircle2 className="size-4 text-emerald-600 inline mr-2" />
+        <Alert className="py-2.5 text-xs border-acr-green/40 bg-acr-green/10 text-foreground">
+          <CheckCircle2 className="size-4 text-acr-green inline mr-2" />
           <AlertDescription className="text-xs inline font-medium">
             Atendimento concluído com sucesso. Todos os registros clínicos PEP e prescrições foram
             congelados em modo imutável conforme a Resolução CFM nº 1.821/2007 e LGPD Art. 16.
@@ -251,33 +266,37 @@ export function DoctorWorkstation({
 
       {/* Estado Vazio: Nenhum Paciente em Atendimento */}
       {!atendimentoAtivo?.atendimento_id ? (
-        <Card className="border-dashed border-2 border-border p-12 text-center bg-card/50">
-          <CardContent className="flex flex-col items-center justify-center p-0 space-y-3">
-            <div className="size-14 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
-              <Users className="size-7" />
-            </div>
-            <CardTitle className="text-base font-semibold">
-              Nenhum atendimento clínico ativo
-            </CardTitle>
-            <p className="text-xs text-muted-foreground max-w-md">
-              A fila virtual está monitorada em tempo real.{" "}
-              {totalPacientesFila > 0 ? (
-                <span>
-                  Há{" "}
-                  <strong>
-                    {totalPacientesFila}{" "}
-                    {totalPacientesFila === 1 ? "paciente aguardando" : "pacientes aguardando"}
-                  </strong>{" "}
-                  por atendimento.
-                </span>
-              ) : (
-                <span>Não há pacientes aguardando no momento.</span>
-              )}{" "}
-              Clique em <strong>"Chamar Próximo Paciente"</strong> para alocar o próximo atendimento
-              por ordem de prioridade clínica.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          <Card className="border-dashed border-2 border-border p-12 text-center bg-card/50">
+            <CardContent className="flex flex-col items-center justify-center p-0 space-y-3">
+              <div className="size-14 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+                <Users className="size-7" />
+              </div>
+              <CardTitle className="text-base font-semibold">
+                Nenhum atendimento clínico ativo
+              </CardTitle>
+              <p className="text-xs text-muted-foreground max-w-md">
+                A fila virtual está monitorada em tempo real.{" "}
+                {totalPacientesFila > 0 ? (
+                  <span>
+                    Há{" "}
+                    <strong>
+                      {totalPacientesFila}{" "}
+                      {totalPacientesFila === 1 ? "paciente aguardando" : "pacientes aguardando"}
+                    </strong>{" "}
+                    por atendimento.
+                  </span>
+                ) : (
+                  <span>Não há pacientes aguardando no momento.</span>
+                )}{" "}
+                Clique em <strong>"Chamar Próximo Paciente"</strong> para alocar o próximo
+                atendimento por ordem de prioridade clínica.
+              </p>
+            </CardContent>
+          </Card>
+
+          {renderSchedulePanel}
+        </div>
       ) : (
         /* Workstation Clínica Single-Pane em 3 Colunas Integradas */
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
@@ -294,9 +313,7 @@ export function DoctorWorkstation({
               wsUrl={livekitData?.server_url}
               roomName={livekitData?.room_name}
               onLivenessMessage={handleLivenessMessage}
-              onRegisterLivenessSender={(sender) => {
-                livenessSenderRef.current = sender;
-              }}
+              onRegisterLivenessSender={handleRegisterLivenessSender}
             />
 
             <CfmIdentityGate
@@ -369,7 +386,7 @@ export function DoctorWorkstation({
                 type="button"
                 size="sm"
                 onClick={() => setModalFinalizarAberto(true)}
-                className="w-full h-9 text-xs font-semibold gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                className="w-full h-9 text-xs font-semibold gap-2 bg-acr-green hover:bg-acr-green/90 text-acr-green-foreground shadow-xs"
               >
                 <Lock className="size-4" />
                 <span>Concluir Atendimento & Assinar</span>

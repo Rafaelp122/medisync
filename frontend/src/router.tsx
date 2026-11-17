@@ -8,25 +8,43 @@ import {
 import type { LiveKitTokenResponse } from "@/api/generated/types.gen";
 import { defaultQueryClient } from "@/lib/query-client";
 import { isReducedMotionPreferred } from "@/lib/view-transitions";
+import { agendarRoute } from "@/routes/agendar";
+import { cadastroRoute } from "@/routes/cadastro";
 import { chamadaRoute } from "@/routes/chamada";
+import { entrarRoute } from "@/routes/entrar";
 import { filaRoute } from "@/routes/fila";
 import { gestorRoute } from "@/routes/gestor";
+import { historicoRoute } from "@/routes/historico";
+import { homeRoute } from "@/routes/home";
 import { indexRoute } from "@/routes/index";
-import { loginRoute } from "@/routes/login";
+import { internoLoginRoute } from "@/routes/interno-login";
 import { medicoRoute } from "@/routes/medico";
 import { otpRoute } from "@/routes/otp";
+import { perfilRoute } from "@/routes/perfil";
 import { posConsultaRoute } from "@/routes/pos-consulta";
+import { receitasRoute } from "@/routes/receitas";
 import { rootRoute } from "@/routes/root";
 import { triagemRoute } from "@/routes/triagem";
+import { validarRoute } from "@/routes/validar";
+import { validarTokenRoute } from "@/routes/validar-token";
 
 export const routeTree = rootRoute.addChildren([
   indexRoute,
+  entrarRoute,
+  cadastroRoute,
+  internoLoginRoute,
+  homeRoute,
+  agendarRoute,
+  historicoRoute,
+  receitasRoute,
+  perfilRoute,
   triagemRoute,
   otpRoute,
-  loginRoute,
   filaRoute,
   chamadaRoute,
   posConsultaRoute,
+  validarRoute,
+  validarTokenRoute,
   medicoRoute,
   gestorRoute,
 ]);

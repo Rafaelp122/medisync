@@ -234,3 +234,31 @@ class FinalizarConsultaResult:
     mensagem: str = (
         "Consulta finalizada com sucesso. Registros PEP travados de forma imutável."
     )
+
+
+@dataclass(frozen=True)
+class HistoricoAtendimentoItemDTO:
+    """Patient-facing summary of a clinical attendance without draft PEP leaks."""
+
+    atendimento_id: UUID
+    status: str
+    prioridade_clinica: int
+    queixa_principal: str | None
+    criado_em: datetime
+    finalizado_em: datetime | None
+    medico_id: UUID | None
+    diagnostico_cid10: str | None = None
+    conduta_resumo: str | None = None
+
+
+@dataclass(frozen=True)
+class PacienteDocumentoItemDTO:
+    """Patient-facing clinical document metadata (never exposes internal S3 keys)."""
+
+    documento_id: UUID
+    atendimento_id: UUID
+    tipo_documento: str
+    status_assinatura: str
+    token_validacao: str
+    criado_em: datetime | None = None
+    assinado_em: datetime | None = None

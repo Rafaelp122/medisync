@@ -3,7 +3,7 @@
 Adheres to ADR-003 and ADR-007.
 """
 
-from datetime import date
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -30,6 +30,11 @@ from src.modules.identity.domain.models import (
     Profissional,
 )
 from src.modules.queue.domain.models import Atendimento
+from src.modules.scheduling.domain.models import (
+    AgendaDisponibilidade,
+    Agendamento,
+    EspecialidadeAgenda,
+)
 from src.modules.telemetry.domain.models import (
     ConfiguracaoPlantao,
     ModoOperacao,
@@ -54,6 +59,8 @@ _MULTI_TENANT_TABLES = (
     "configuracoes_plantao",
     "producoes_ambulatoriais",
     "paciente_passkeys",
+    "agenda_disponibilidades",
+    "agendamentos",
 )
 
 _SAMPLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -74,7 +81,8 @@ async def test_rls_flags_and_policies_on_all_tables() -> None:
                     'profissionais', 'pacientes', 'dependentes', 'atendimentos',
                     'triagens', 'evolucoes_clinicas', 'documentos_clinicos',
                     'documento_itens', 'audit_events', 'configuracoes_plantao',
-                    'producoes_ambulatoriais', 'paciente_passkeys', 'organizacoes'
+                    'producoes_ambulatoriais', 'paciente_passkeys',
+                    'agenda_disponibilidades', 'agendamentos', 'organizacoes'
                 )
                 ORDER BY relname;
                 """
@@ -221,7 +229,24 @@ async def test_tenant_isolation_across_all_ten_tables(
                 alpha_backpressure=Decimal("1.25"),
                 modo_operacao=ModoOperacao.SUS,
             )
-            session.add(cfg1)
+            disp1 = AgendaDisponibilidade(
+                organizacao_id=tenant_1_id,
+                profissional_id=prof1_id,
+                especialidade=EspecialidadeAgenda.PSICOLOGIA,
+                dia_semana=0,
+                hora_inicio=time(8, 0),
+                hora_fim=time(12, 0),
+                duracao_minutos=50,
+            )
+            ag1 = Agendamento(
+                organizacao_id=tenant_1_id,
+                paciente_id=pac1_id,
+                profissional_id=prof1_id,
+                especialidade=EspecialidadeAgenda.PSICOLOGIA,
+                slot_inicio=datetime(2026, 11, 23, 8, 0, tzinfo=UTC),
+                slot_fim=datetime(2026, 11, 23, 8, 50, tzinfo=UTC),
+            )
+            session.add_all([cfg1, disp1, ag1])
             await session.commit()
 
     # 3. Insert complete aggregate records for Tenant 2
@@ -326,7 +351,24 @@ async def test_tenant_isolation_across_all_ten_tables(
                 alpha_backpressure=Decimal("1.28"),
                 modo_operacao=ModoOperacao.PRIVADO,
             )
-            session.add(cfg2)
+            disp2 = AgendaDisponibilidade(
+                organizacao_id=tenant_2_id,
+                profissional_id=prof2_id,
+                especialidade=EspecialidadeAgenda.NUTRICAO,
+                dia_semana=1,
+                hora_inicio=time(14, 0),
+                hora_fim=time(18, 0),
+                duracao_minutos=30,
+            )
+            ag2 = Agendamento(
+                organizacao_id=tenant_2_id,
+                paciente_id=pac2_id,
+                profissional_id=prof2_id,
+                especialidade=EspecialidadeAgenda.NUTRICAO,
+                slot_inicio=datetime(2026, 11, 24, 14, 0, tzinfo=UTC),
+                slot_fim=datetime(2026, 11, 24, 14, 30, tzinfo=UTC),
+            )
+            session.add_all([cfg2, disp2, ag2])
             await session.commit()
 
     # 4. Verify queries under Tenant 1 return ONLY Tenant 1 data
@@ -376,6 +418,16 @@ async def test_tenant_isolation_across_all_ten_tables(
             assert cfgs[0].organizacao_id == tenant_1_id
             assert cfgs[0].medicos_ativos_planejados == 3
 
+            disps = (
+                (await session.execute(select(AgendaDisponibilidade))).scalars().all()
+            )
+            assert len(disps) == 1
+            assert disps[0].organizacao_id == tenant_1_id
+
+            ags = (await session.execute(select(Agendamento))).scalars().all()
+            assert len(ags) == 1
+            assert ags[0].organizacao_id == tenant_1_id
+
     # 5. Verify queries under Tenant 2 return ONLY Tenant 2 data
     with tenant_context(tenant_2_id):
         async with async_session_factory() as session:
@@ -422,6 +474,16 @@ async def test_tenant_isolation_across_all_ten_tables(
             assert len(cfgs) == 1
             assert cfgs[0].organizacao_id == tenant_2_id
             assert cfgs[0].medicos_ativos_planejados == 5
+
+            disps = (
+                (await session.execute(select(AgendaDisponibilidade))).scalars().all()
+            )
+            assert len(disps) == 1
+            assert disps[0].organizacao_id == tenant_2_id
+
+            ags = (await session.execute(select(Agendamento))).scalars().all()
+            assert len(ags) == 1
+            assert ags[0].organizacao_id == tenant_2_id
 
 
 @pytest.mark.asyncio

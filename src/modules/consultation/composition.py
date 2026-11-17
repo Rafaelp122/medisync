@@ -27,6 +27,7 @@ from src.modules.ambulatory.composition import (
     build_producao_ambulatorial_service,
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoHistoricoDTO,
     AtendimentoReaderPort,
     AtendimentoResumoDTO,
 )
@@ -135,6 +136,29 @@ class QueueStoreAtendimentoReaderAdapter:
 
     async def atender_chamada(self, atendimento_id: UUID) -> None:
         await self._queue_store.atender_chamada(atendimento_id)
+
+    async def listar_historico_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> list[AtendimentoHistoricoDTO]:
+        items = await self._queue_store.listar_historico_paciente(
+            organizacao_id, paciente_id
+        )
+        return [
+            AtendimentoHistoricoDTO(
+                atendimento_id=item.atendimento_id,
+                organizacao_id=item.organizacao_id,
+                paciente_id=item.paciente_id,
+                status=item.status,
+                prioridade_clinica=item.prioridade_clinica,
+                criado_em=item.criado_em,
+                finalizado_em=item.finalizado_em,
+                medico_id=item.medico_id,
+                queixa_principal=item.queixa_principal,
+            )
+            for item in items
+        ]
 
 
 class IdentityDocumentDirectoryAdapter:

@@ -3,7 +3,7 @@
 > Biblioteca canônica de especificações técnicas, contratos, dicionários de dados e padrões de engenharia do MediSync Express.
 
 ## 1. Persistência & Isolamento de Dados
-- [Database Schema & Row-Level Security (RLS)](database/schema-and-rls.md) — Catálogo físico das 12 tabelas, chaves primárias UUIDv7, índices B-Tree e políticas RLS de tenant.
+- [Database Schema & Row-Level Security (RLS)](database/schema-and-rls.md) — Catálogo físico das 16 tabelas (15 multi-tenant com RLS), chaves primárias UUIDv7, índices B-Tree e políticas RLS de tenant.
 - [Catálogo de Eventos de Auditoria Clínica](audit/event-catalog.md) — Taxonomia dos 11 eventos auditáveis append-only sob ADR-007, CFM nº 2.314/2022 e LGPD.
 
 ## 2. Cache, Concorrência & Atomicidade
@@ -17,7 +17,7 @@
 - [ARQ Background Tasks](worker/arq-tasks.md) — Catálogo de jobs assíncronos (`validar_elegibilidade`, `ring_timeout`, `sweeper`), cron schedules e retries.
 
 ## 4. Arquitetura, Governança & Qualidade
-- [Tach Boundaries Matrix](architecture-standards/tach-boundaries-matrix.md) — Matriz completa de dependências permitidas entre os 7 módulos, core e worker.
+- [Tach Boundaries Matrix](architecture-standards/tach-boundaries-matrix.md) — Matriz completa de dependências permitidas entre os 8 módulos, core e worker.
 - [Documentation Standards](architecture-standards/documentation-standards.md) — Padrão atômico-denso (80–250L), 5 seções obrigatórias e regra link-sem-cola.
 - [Test Doubles & Fakes Catalog](testing/test-doubles-catalog.md) — Catálogo dos Fakes tipados em memória (`tests/doubles.py`) e asserções de teste.
 - [Testing Fixtures & Factories](testing/fixtures-and-factories.md) — Fixtures pytest assíncronas, factories e geradores de dados de teste.

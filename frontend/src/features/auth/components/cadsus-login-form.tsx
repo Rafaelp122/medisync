@@ -72,7 +72,7 @@ export function CadsusLoginForm({ onSuccess, onAlternarOtp, className }: CadsusL
         </div>
         <div className="flex justify-center pt-1">
           <Badge variant="outline" className="text-[11px] py-0 px-2 gap-1 text-muted-foreground">
-            <ShieldCheck className="size-3 text-emerald-600" />
+            <ShieldCheck className="size-3 text-acr-green" />
             <span>Validação Federal DATASUS • Lei Geral de Proteção de Dados</span>
           </Badge>
         </div>

@@ -177,3 +177,271 @@ def test_security_headers_debug_mode_vs_production_mode():
         "https://cdn.jsdelivr.net",
     ]
     assert debug_directives["connect-src"] == ["'self'", "wss:", "ws:", "https:"]
+
+
+def test_tenant_resolution_multi_tenant_priority_without_fallback() -> None:
+    from fastapi import FastAPI, Request
+    from fastapi.testclient import TestClient
+    from src.core.context import get_current_tenant_id
+    from src.core.middleware import setup_middlewares
+
+    app = FastAPI()
+    setup_middlewares(app, multi_tenancy_enabled=True, default_tenant_id=None)
+
+    @app.get("/tenant-echo")
+    def tenant_echo(request: Request) -> dict[str, int | None]:
+        return {
+            "context": get_current_tenant_id(),
+            "state": request.state.tenant_id,
+        }
+
+    settings = get_settings()
+    jwt_token = create_test_token(
+        usuario_id=uuid4(),
+        organizacao_id=77,
+        papel=Role.MEDICO,
+        secret_key=settings.JWT_SECRET_KEY,
+    )
+    client = TestClient(app)
+
+    # Sem header/JWT/subdomínio -> None (zero fallback silencioso)
+    r_none = client.get("/tenant-echo", headers={"host": "medisync.app"})
+    assert r_none.status_code == 200
+    assert r_none.json() == {"context": None, "state": None}
+
+    # Subdomínio
+    r_sub = client.get("/tenant-echo", headers={"host": "101.medisync.local"})
+    assert r_sub.json() == {"context": 101, "state": 101}
+
+    # JWT prevalece sobre subdomínio
+    r_jwt = client.get(
+        "/tenant-echo",
+        headers={
+            "Authorization": f"Bearer {jwt_token}",
+            "host": "101.medisync.local",
+        },
+    )
+    assert r_jwt.json() == {"context": 77, "state": 77}
+
+    # X-Tenant-ID prevalece sobre JWT e subdomínio
+    r_hdr = client.get(
+        "/tenant-echo",
+        headers={
+            "X-Tenant-ID": "55",
+            "Authorization": f"Bearer {jwt_token}",
+            "host": "101.medisync.local",
+        },
+    )
+    assert r_hdr.json() == {"context": 55, "state": 55}
+
+
+def test_tenant_resolution_single_tenant_anti_spoofing() -> None:
+    from fastapi import FastAPI, Request
+    from fastapi.testclient import TestClient
+    from src.core.context import get_current_tenant_id
+    from src.core.middleware import setup_middlewares
+
+    app = FastAPI()
+    setup_middlewares(app, multi_tenancy_enabled=False, default_tenant_id=7)
+
+    @app.get("/tenant-echo")
+    def tenant_echo(request: Request) -> dict[str, int | None]:
+        return {
+            "context": get_current_tenant_id(),
+            "state": request.state.tenant_id,
+        }
+
+    settings = get_settings()
+    spoofed_jwt = create_test_token(
+        usuario_id=uuid4(),
+        organizacao_id=88,
+        papel=Role.MEDICO,
+        secret_key=settings.JWT_SECRET_KEY,
+    )
+    client = TestClient(app)
+
+    # Sem headers -> vincula default_tenant_id=7
+    assert client.get("/tenant-echo").json() == {"context": 7, "state": 7}
+
+    # Tentativa de spoofing via X-Tenant-ID, JWT e subdomínio -> sempre 7
+    resp = client.get(
+        "/tenant-echo",
+        headers={
+            "X-Tenant-ID": "999",
+            "Authorization": f"Bearer {spoofed_jwt}",
+            "host": "101.medisync.local",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"context": 7, "state": 7}
+
+
+def test_tenant_resolution_middleware_single_tenant_requires_valid_default() -> None:
+    import pytest
+    from fastapi import FastAPI
+    from src.core.middleware import TenantResolutionMiddleware
+
+    app = FastAPI()
+    for invalid in (None, 0, -3):
+        with pytest.raises(ValueError, match="default_tenant_id="):
+            TenantResolutionMiddleware(
+                app,
+                multi_tenancy_enabled=False,
+                default_tenant_id=invalid,
+            )
+
+
+def test_resolve_login_tenant_id_single_tenant_anti_spoofing() -> None:
+    import pytest
+    from src.core.errors import ValidationError
+    from src.modules.auth.presentation.helpers import resolve_login_tenant_id
+
+    assert (
+        resolve_login_tenant_id(
+            999,
+            1,
+            multi_tenancy_enabled=False,
+            default_tenant_id=7,
+        )
+        == 7
+    )
+    assert (
+        resolve_login_tenant_id(
+            None,
+            None,
+            multi_tenancy_enabled=False,
+            default_tenant_id=7,
+        )
+        == 7
+    )
+    with pytest.raises(ValidationError, match="DEFAULT_TENANT_ID"):
+        resolve_login_tenant_id(
+            999,
+            888,
+            multi_tenancy_enabled=False,
+            default_tenant_id=None,
+        )
+
+
+def test_livekit_token_request_accepts_optional_organizacao_id() -> None:
+    from src.modules.consultation.presentation.schemas import LiveKitTokenRequest
+
+    req = LiveKitTokenRequest(participant_id=uuid4(), role="paciente")
+    assert req.organizacao_id is None
+
+
+def test_livekit_router_resolves_tenant_when_organizacao_id_omitted() -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.core.authz.roles import Role as AuthRole
+    from src.core.errors import register_exception_handlers
+    from src.core.middleware import setup_middlewares
+    from src.modules.consultation.application.ports.atendimento_reader_port import (
+        AtendimentoResumoDTO,
+    )
+    from src.modules.consultation.composition import get_atendimento_reader
+    from src.modules.consultation.presentation.routers.livekit_router import (
+        livekit_router,
+    )
+
+    from tests.doubles import FakeAtendimentoReader
+
+    atend_id = uuid4()
+    doctor_id = uuid4()
+    org_id = 7
+    reader = FakeAtendimentoReader(
+        AtendimentoResumoDTO(
+            atendimento_id=atend_id,
+            organizacao_id=org_id,
+            medico_id=doctor_id,
+            paciente_id=uuid4(),
+            status="EM_ATENDIMENTO",
+            tcle_hash="a" * 64,
+            is_terminal=False,
+        )
+    )
+
+    app = FastAPI()
+    register_exception_handlers(app)
+    setup_middlewares(app, multi_tenancy_enabled=False, default_tenant_id=org_id)
+    app.include_router(livekit_router, prefix="/api/v1")
+    app.dependency_overrides[get_atendimento_reader] = lambda: reader
+
+    settings = get_settings()
+    token = create_test_token(
+        usuario_id=doctor_id,
+        organizacao_id=org_id,
+        papel=AuthRole.MEDICO,
+        secret_key=settings.JWT_SECRET_KEY,
+    )
+    client = TestClient(app)
+
+    # Sem organizacao_id no payload -> resolve via context_tenant_id (7)
+    resp = client.post(
+        f"/api/v1/consultations/{atend_id}/livekit/token",
+        json={"participant_id": str(doctor_id), "role": "medico"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["room_name"] == f"org_{org_id}_atend_{atend_id}"
+
+    # Com organizacao_id divergente -> 403 Forbidden
+    resp_div = client.post(
+        f"/api/v1/consultations/{atend_id}/livekit/token",
+        json={
+            "organizacao_id": 999,
+            "participant_id": str(doctor_id),
+            "role": "medico",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp_div.status_code == 403
+
+
+def test_livekit_router_multi_tenant_rejects_missing_tenant_when_omitted() -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.core.config import get_settings as _get_settings
+    from src.core.errors import register_exception_handlers
+    from src.core.middleware import setup_middlewares
+    from src.core.security import create_intake_token
+    from src.modules.consultation.application.ports.atendimento_reader_port import (
+        AtendimentoResumoDTO,
+    )
+    from src.modules.consultation.composition import get_atendimento_reader
+    from src.modules.consultation.presentation.routers.livekit_router import (
+        livekit_router,
+    )
+
+    from tests.doubles import FakeAtendimentoReader
+
+    atend_id = uuid4()
+    patient_id = uuid4()
+    org_id = 7
+    reader = FakeAtendimentoReader(
+        AtendimentoResumoDTO(
+            atendimento_id=atend_id,
+            organizacao_id=org_id,
+            medico_id=uuid4(),
+            paciente_id=patient_id,
+            status="CHAMANDO_PACIENTE",
+            tcle_hash="a" * 64,
+            is_terminal=False,
+        )
+    )
+
+    app = FastAPI()
+    register_exception_handlers(app)
+    setup_middlewares(app, multi_tenancy_enabled=True, default_tenant_id=None)
+    app.include_router(livekit_router, prefix="/api/v1")
+    app.dependency_overrides[get_atendimento_reader] = lambda: reader
+
+    intake_token = create_intake_token(patient_id, org_id, _get_settings().SECRET_KEY)
+    client = TestClient(app)
+    resp = client.post(
+        f"/api/v1/consultations/{atend_id}/livekit/token",
+        json={"participant_id": str(patient_id), "role": "paciente"},
+        headers={"Authorization": f"Bearer {intake_token}"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "TENANT_INVALIDO"

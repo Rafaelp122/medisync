@@ -9,19 +9,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
+from src.core.errors import ForbiddenError, NotFoundError
 from src.modules.consultation.application.dtos import (
     DocumentoAssinadoResult,
     EmitirDocumentoClinicoCommand,
     FinalizarConsultaCommand,
     FinalizarConsultaResult,
+    HistoricoAtendimentoItemDTO,
+    PacienteDocumentoItemDTO,
     ProntuarioResumoDTO,
     RegistrarEvolucaoSOAPCommand,
     TMAStatusDTO,
     VerificarLivenessCommand,
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoHistoricoDTO,
     AtendimentoReaderPort,
     AtendimentoResumoDTO,
+    HistoricoAtendimentoReaderPort,
     is_atendimento_terminal,
 )
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
@@ -48,6 +53,7 @@ from src.modules.consultation.application.services.evolucao_service import (
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     ConsultaInvalidaError,
+    DocumentoClinicoNaoEncontradoError,
 )
 from src.modules.consultation.domain.models import (
     DocumentoClinico,
@@ -58,6 +64,59 @@ from src.modules.consultation.domain.models._substances import (
 )
 
 logger = logging.getLogger("medisync.consultation.pep")
+
+_EPOCH_MIN_UTC = datetime.min.replace(tzinfo=UTC)
+
+
+def _extrair_criado_em_documento(
+    doc: DocumentoClinico,
+    atendimento_criado_em: datetime | None,
+) -> datetime | None:
+    if doc.id.version == 7:
+        timestamp_ms = int.from_bytes(doc.id.bytes[:6], "big")
+        return datetime.fromtimestamp(timestamp_ms / 1000.0, tz=UTC)
+    return doc.assinado_em or doc.finalizado_em or atendimento_criado_em
+
+
+def _montar_historico_item(
+    item: AtendimentoHistoricoDTO,
+    evolucao: EvolucaoClinica | None,
+) -> HistoricoAtendimentoItemDTO:
+    finalizada = evolucao is not None and evolucao.is_finalizado
+    diagnostico = (
+        evolucao.cid10_principal if evolucao is not None and finalizada else None
+    )
+    conduta = evolucao.conduta if evolucao is not None and finalizada else None
+    finalizado_em = item.finalizado_em or (
+        evolucao.finalizado_em if evolucao is not None and finalizada else None
+    )
+    return HistoricoAtendimentoItemDTO(
+        atendimento_id=item.atendimento_id,
+        status=item.status,
+        prioridade_clinica=item.prioridade_clinica,
+        queixa_principal=item.queixa_principal,
+        criado_em=item.criado_em,
+        finalizado_em=finalizado_em,
+        medico_id=item.medico_id,
+        diagnostico_cid10=diagnostico,
+        conduta_resumo=conduta,
+    )
+
+
+def _montar_paciente_documento_dto(
+    doc: DocumentoClinico,
+    atendimento_criado_em: datetime | None,
+) -> PacienteDocumentoItemDTO:
+    status_assinatura = "ASSINADO" if doc.assinado_em is not None else "EMITIDO"
+    return PacienteDocumentoItemDTO(
+        documento_id=doc.id,
+        atendimento_id=doc.atendimento_id,
+        tipo_documento=str(doc.tipo_documento),
+        status_assinatura=status_assinatura,
+        token_validacao=str(doc.id),
+        criado_em=_extrair_criado_em_documento(doc, atendimento_criado_em),
+        assinado_em=doc.assinado_em,
+    )
 
 
 class PEPService:
@@ -397,3 +456,160 @@ class PEPService:
         Regras: RN06 e docs/explanation/domains/consultation-domain.md.
         """
         return await self._evolucao.obter_evolucao(atendimento_id)
+
+    async def _listar_atendimentos_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> list[AtendimentoHistoricoDTO]:
+        if isinstance(self._reader, HistoricoAtendimentoReaderPort):
+            return await self._reader.listar_historico_paciente(
+                organizacao_id, paciente_id
+            )
+        raise RuntimeError(
+            "HistoricoAtendimentoReaderPort não configurado em PEPService para "
+            f"consultar histórico do paciente '{paciente_id}' na organização "
+            f"'{organizacao_id}' (reader atual: '{type(self._reader).__name__}')."
+        )
+
+    async def _validar_titularidade_documento(
+        self,
+        doc: DocumentoClinico,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> None:
+        if doc.organizacao_id != organizacao_id:
+            raise ForbiddenError(
+                f"Acesso negado ao documento '{doc.id}': organização do documento "
+                f"({doc.organizacao_id}) diverge da organização do paciente "
+                f"({organizacao_id})."
+            )
+        if self._reader is None:
+            raise RuntimeError(
+                "AtendimentoReaderPort não configurado em PEPService para "
+                f"validar titularidade do documento '{doc.id}'."
+            )
+
+        resumo = await self._reader.obter_resumo(doc.atendimento_id)
+        if resumo is None:
+            raise NotFoundError(
+                f"Atendimento '{doc.atendimento_id}' vinculado ao documento "
+                f"'{doc.id}' não encontrado para o paciente '{paciente_id}'."
+            )
+        if resumo.organizacao_id != organizacao_id:
+            raise ForbiddenError(
+                f"Acesso negado ao documento '{doc.id}': organização do "
+                f"atendimento ({resumo.organizacao_id}) diverge da organização "
+                f"({organizacao_id})."
+            )
+        if resumo.paciente_id != paciente_id:
+            raise ForbiddenError(
+                f"Acesso negado ao documento '{doc.id}': paciente '{paciente_id}' "
+                f"não é o titular do atendimento '{doc.atendimento_id}'."
+            )
+
+    async def listar_historico_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> list[HistoricoAtendimentoItemDTO]:
+        """Lista histórico de consultas do paciente com resumo SOAP finalizado.
+
+        Assegura isolamento Anti-IDOR e veda vazamento de rascunhos em aberto.
+        Regras: LGPD Art. 18, CFM nº 1.821/2007 e
+        docs/explanation/domains/consultation-domain.md.
+        """
+        atendimentos = await self._listar_atendimentos_paciente(
+            organizacao_id, paciente_id
+        )
+        if not atendimentos:
+            return []
+
+        atendimento_ids = [item.atendimento_id for item in atendimentos]
+        stmt = select(EvolucaoClinica).where(
+            EvolucaoClinica.organizacao_id == organizacao_id,
+            EvolucaoClinica.atendimento_id.in_(atendimento_ids),
+            EvolucaoClinica.finalizado_em.is_not(None),
+        )
+        res = await self._session.execute(stmt)
+        evolucoes = {
+            ev.atendimento_id: ev
+            for ev in res.scalars().all()
+            if ev.organizacao_id == organizacao_id and ev.is_finalizado
+        }
+        return [
+            _montar_historico_item(item, evolucoes.get(item.atendimento_id))
+            for item in atendimentos
+        ]
+
+    async def listar_documentos_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> list[PacienteDocumentoItemDTO]:
+        """Lista documentos do paciente ordenados do mais recente ao mais antigo.
+
+        Omite chaves internas S3 e aplica isolamento estrito por paciente e tenant.
+        Regras: LGPD Art. 18, CFM nº 2.314/2022 e
+        docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
+        atendimentos = await self._listar_atendimentos_paciente(
+            organizacao_id, paciente_id
+        )
+        if not atendimentos:
+            return []
+
+        atendimento_map = {item.atendimento_id: item for item in atendimentos}
+        stmt = (
+            select(DocumentoClinico)
+            .where(
+                DocumentoClinico.organizacao_id == organizacao_id,
+                DocumentoClinico.atendimento_id.in_(list(atendimento_map.keys())),
+            )
+            .order_by(
+                DocumentoClinico.assinado_em.desc().nullslast(),
+                DocumentoClinico.id.desc(),
+            )
+        )
+        res = await self._session.execute(stmt)
+        items = [
+            _montar_paciente_documento_dto(
+                doc, atendimento_map[doc.atendimento_id].criado_em
+            )
+            for doc in res.scalars().all()
+            if doc.organizacao_id == organizacao_id
+            and doc.atendimento_id in atendimento_map
+        ]
+        items.sort(
+            key=lambda d: (
+                d.criado_em or _EPOCH_MIN_UTC,
+                d.assinado_em or _EPOCH_MIN_UTC,
+                str(d.documento_id),
+            ),
+            reverse=True,
+        )
+        return items
+
+    async def compilar_pdf_para_paciente(
+        self,
+        documento_id: UUID,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> bytes:
+        """Compila PDF/A de documento clínico após validar titularidade do paciente.
+
+        Bloqueia acesso cruzado entre pacientes ou organizações (Anti-IDOR).
+        Regras: LGPD Art. 18, CFM nº 2.314/2022 e
+        docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
+        stmt = select(DocumentoClinico).where(DocumentoClinico.id == documento_id)
+        res = await self._session.execute(stmt)
+        doc = res.scalar_one_or_none()
+        if doc is None:
+            raise DocumentoClinicoNaoEncontradoError(
+                f"Documento clínico '{documento_id}' não encontrado "
+                f"para o paciente '{paciente_id}'."
+            )
+
+        await self._validar_titularidade_documento(doc, organizacao_id, paciente_id)
+        return await self.compilar_pdf(documento_id)

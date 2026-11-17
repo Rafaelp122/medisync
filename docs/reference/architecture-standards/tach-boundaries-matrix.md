@@ -6,7 +6,7 @@
 
 O MediSync Express adota a arquitetura Hexagonal Pragmática (ADR-001) para conciliar desacoplamento modular, tipagem estrita e alta performance de execução.
 Para impedir a erosão arquitetural e o acoplamento desordenado entre domínios clínicos, o repositório emprega o `tach` (`tach.toml`) como linter arquitetural estrito no pipeline de integração contínua (`just tach`).
-A governança estabelece isolamento físico e lógico entre os módulos de negócio (`auth`, `identity`, `triage`, `queue`, `consultation`, `ambulatory`, `telemetry`), a base compartilhada (`core`) e o executor assíncrono (`worker`).
+A governança estabelece isolamento físico e lógico entre os 8 módulos de negócio (`auth`, `identity`, `triage`, `queue`, `consultation`, `ambulatory`, `scheduling`, `telemetry`), a base compartilhada (`core`) e o executor assíncrono (`worker`).
 Qualquer violação das regras de dependência ou importação direta não autorizada entre camadas ou módulos causa falha imediata na checagem estática.
 A barreira estrutural garante que regras de transação (um commit por caso de uso no service) e o padrão de routers finos sejam rigorosamente respeitados.
 
@@ -32,7 +32,7 @@ A separação modular segue o princípio *Inside-Out* estrito (Stage B), onde ca
 | `src.modules.auth.domain` | `src.core` | Isolado. Regras de credenciais e hashing. |
 | `src.modules.auth.application` | `src.core`, `auth.domain` | Isolado. Casos de uso de login, tokens e OTP. |
 | `src.modules.auth.infrastructure` | `src.core`, `auth.application`, `auth.domain` | Adaptador Valkey de revogação de tokens JWT. |
-| `src.modules.auth.composition` | `src.core`, `auth.*`, `identity.application`, `identity.composition` | Consome serviços de `identity` via composition. |
+| `src.modules.auth.composition` | `src.core`, `auth.*`, `identity.application`, `identity.composition`, `queue.application`, `queue.composition` | Consome leitor/escritor de `identity` e lookup de atendimento ativo de `queue` via composition. |
 | `src.modules.auth.presentation` | `src.core`, `auth.application`, `auth.composition` | Routers finos e schemas de autenticação. |
 | `src.modules.ambulatory.domain` | `src.core` | Isolado. Modelos de produção ambulatorial SUS, enums e regras de BPA-I / SISAB. |
 | `src.modules.ambulatory.application` | `src.core`, `ambulatory.domain` | Orquestra consolidação de teleconsulta, portas de elegibilidade e DTOs BPA-I. |
@@ -57,12 +57,17 @@ A separação modular segue o princípio *Inside-Out* estrito (Stage B), onde ca
 | `src.modules.triage.application` | `src.core`, `triage.domain` | Orquestra protocolo Manchester e cálculo de score. |
 | `src.modules.triage.infrastructure` | `src.core`, `triage.application`, `triage.domain` | Persistência de respostas e avaliações de triagem. |
 | `src.modules.triage.composition` | `src.core`, `triage.application`, `triage.domain`, `triage.infrastructure` | Expõe serviço de triagem para a fila. |
+| `src.modules.scheduling.domain` | `src.core` | Isolado. Agregados `AgendaDisponibilidade` e `Agendamento`, enums e exceções eMulti. |
+| `src.modules.scheduling.application` | `src.core`, `scheduling.domain` | Orquestra geração de slots, reservas e portas `SchedulingRepositoryPort` / `AttendanceLookupPort`. |
+| `src.modules.scheduling.infrastructure` | `src.core`, `scheduling.application`, `scheduling.domain` | `SqlSchedulingRepository` assíncrono com `for_update=True` e consultas por tenant. |
+| `src.modules.scheduling.composition` | `src.core`, `scheduling.*`, `queue.application`, `queue.composition` | Adapta `QueueStorePort` para `AttendanceLookupPort` e injeta `SchedulingServiceDep`. |
+| `src.modules.scheduling.presentation` | `src.core`, `scheduling.application`, `scheduling.composition` | Router fino `/api/v1/scheduling` (`scheduling_router.py`), schemas e dependências RBAC. |
 | `src.modules.telemetry.domain` | `src.core` | Isolado. Modelos de telemetria, painel e plantão. |
 | `src.modules.telemetry.application` | `src.core`, `telemetry.domain` | Define portas de métricas operacionais e plantão. |
 | `src.modules.telemetry.infrastructure` | `src.core`, `telemetry.application`, `telemetry.domain` | Agregações Valkey e repositórios analíticos. |
 | `src.modules.telemetry.composition` | `src.core`, `telemetry.application`, `telemetry.domain`, `telemetry.infrastructure` | Fornece dependências do painel e plantão. |
 | `src.modules.telemetry.presentation` | `src.core`, `telemetry.application`, `telemetry.composition` | Routers de métricas e painel em tempo real. |
-| `src.worker` | `src.core`, `queue.*`, `ambulatory.*`, `identity.*` | Executa jobs em background (timeout de ring, consolidação e elegibilidade). |
+| `src.worker` | `src.core`, `queue.*`, `ambulatory.*`, `identity.application`, `identity.composition` | Executa jobs em background (timeout de ring, consolidação e elegibilidade). |
 
 ### Proibição de Imports Cross-Module Diretos
 

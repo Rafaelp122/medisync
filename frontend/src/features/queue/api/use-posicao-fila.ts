@@ -1,5 +1,5 @@
 import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
-import { client, getActiveTenantId } from "@/api/client";
+import { client, getTenantHeaders } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { obterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet } from "@/api/generated/sdk.gen";
 import type { PosicaoFilaResponse } from "@/api/generated/types.gen";
@@ -33,7 +33,7 @@ export function usePosicaoFila(
       }
       try {
         const headers: Record<string, string> = {
-          "X-Tenant-ID": getActiveTenantId(),
+          ...getTenantHeaders(),
         };
         if (token) {
           headers.Authorization = `Bearer ${token}`;

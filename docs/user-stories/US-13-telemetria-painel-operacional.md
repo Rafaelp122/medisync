@@ -24,7 +24,7 @@
 
 ### Cenário 1: Consulta do Painel no Dashboard Gerencial (`/gestor`) (Caso Feliz - Issue #141)
 - **Dado que** o plantão possui atendimentos em andamento, concluídos e ausências registradas,
-- **E** o gestor acessa a rota protegida `/gestor` (`frontend/src/routes/gestor.tsx`) com sessão corporativa sem tokens em storage (Issue #144), access token mantido exclusivamente em memória volátil e reidratado via cookie HttpOnly silencioso no F5 (caso contrário o guard `beforeLoad` redireciona para `/login`),
+- **E** o gestor acessa a rota protegida `/gestor` (`frontend/src/routes/gestor.tsx`) com sessão corporativa sem tokens em storage (Issue #144), access token mantido exclusivamente em memória volátil e reidratado via cookie HttpOnly silencioso no F5 (caso contrário o guard `beforeLoad` redireciona para `/interno/login`),
 - **Quando** o painel operacional consulta `GET /api/v1/telemetria/painel`,
 - **Então** o sistema apresenta os indicadores consolidados de desempenho:
   1. Tempo Médio de Espera (TME) geral e estratificado pelos 5 níveis de triagem;

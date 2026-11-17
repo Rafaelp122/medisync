@@ -51,6 +51,31 @@ MedicoUserDep = Annotated[
     AuthenticatedUser, Security(require_role(Role.MEDICO), scopes=["medico"])
 ]
 
+
+async def require_paciente_autenticado(
+    current_user: Annotated[
+        AuthenticatedUser,
+        Security(require_role(Role.PACIENTE), scopes=["paciente"]),
+    ],
+) -> AuthenticatedUser:
+    """Enforce Tier 1 PACIENTE RBAC and Anti-IDOR identity extraction.
+
+    Garante chamador PACIENTE autenticado com organizacao_id e usuario_id válidos
+    extraídos exclusivamente do JWT (nunca de query/path params).
+    """
+    if current_user.organizacao_id <= 0:
+        raise ForbiddenError(
+            f"Organização inválida no token do paciente '{current_user.usuario_id}': "
+            f"{current_user.organizacao_id} (esperado inteiro positivo > 0)."
+        )
+    return current_user
+
+
+PacienteAutenticadoDep = Annotated[
+    AuthenticatedUser,
+    Security(require_paciente_autenticado, scopes=["patient:doc_view"]),
+]
+
 AtendimentoIdPath = Annotated[
     UUID, Path(description="Identificador único do atendimento")
 ]
@@ -494,7 +519,10 @@ async def validar_acesso_livekit(
         atendimento=atendimento,
     )
 
-    if request.organizacao_id != atendimento.organizacao_id:
+    if (
+        request.organizacao_id is not None
+        and request.organizacao_id != atendimento.organizacao_id
+    ):
         raise ForbiddenError(
             f"Acesso negado: organizacao_id informada ({request.organizacao_id}) "
             f"diverge do atendimento ({atendimento.organizacao_id})."

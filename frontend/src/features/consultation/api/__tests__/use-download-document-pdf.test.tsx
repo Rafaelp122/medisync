@@ -61,14 +61,12 @@ describe("useDownloadDocumentoPdf Hook (ADR-011 §2.3, US-09)", () => {
     expect(clickedLinks[0].download).toBe(`receita-${MOCK_DOC_ID.substring(0, 8)}.pdf`);
   });
 
-  it("trata erro de rede sem travar estado downloadingId", async () => {
+  it("trata erro de rede sem travar estado downloadingId e expõe ProblemDetailsError", async () => {
     server.use(
       http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/documents/${MOCK_DOC_ID}/pdf`, () => {
         return new HttpResponse(null, { status: 500 });
       }),
     );
-
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const { result } = renderHook(() => useDownloadDocumentoPdf(MOCK_ATENDIMENTO_ID));
 
@@ -78,6 +76,8 @@ describe("useDownloadDocumentoPdf Hook (ADR-011 §2.3, US-09)", () => {
 
     expect(result.current.isDownloading).toBe(false);
     expect(result.current.downloadingId).toBeNull();
-    expect(consoleSpy).toHaveBeenCalled();
+    expect(result.current.error).not.toBeNull();
+    expect(result.current.error?.status).toBe(500);
+    expect(result.current.downloadError).toBeTruthy();
   });
 });

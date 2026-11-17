@@ -37,6 +37,26 @@ export const zAdmissaoResponse = z.object({
 });
 
 /**
+ * AgendamentoResponse
+ *
+ * Schema de resposta de agendamento multiprofissional.
+ */
+export const zAgendamentoResponse = z.object({
+    id: z.uuid(),
+    organizacao_id: z.int(),
+    paciente_id: z.uuid(),
+    profissional_id: z.uuid(),
+    especialidade: z.string(),
+    slot_inicio: z.iso.datetime(),
+    slot_fim: z.iso.datetime(),
+    status: z.string(),
+    observacoes: z.string().nullish(),
+    atendimento_id: z.uuid().nullish(),
+    criado_em: z.iso.datetime(),
+    atualizado_em: z.iso.datetime()
+});
+
+/**
  * AssinarDocumentoRequest
  *
  * Payload to authorize digital signature via cloud PSC.
@@ -171,6 +191,19 @@ export const zConfigPlantaoResponse = z.object({
 });
 
 /**
+ * CriarAgendamentoRequest
+ *
+ * Payload de reserva de horário pelo paciente autenticado (Anti-IDOR).
+ */
+export const zCriarAgendamentoRequest = z.object({
+    profissional_id: z.uuid(),
+    especialidade: z.string(),
+    slot_inicio: z.iso.datetime(),
+    slot_fim: z.iso.datetime().nullish(),
+    observacoes: z.string().max(500).nullish()
+});
+
+/**
  * CriarDependenteRequest
  *
  * Payload for linking or creating a patient dependent.
@@ -183,6 +216,19 @@ export const zCriarDependenteRequest = z.object({
     cpf: z.string().max(14).nullish(),
     cns: z.string().max(18).nullish(),
     telefone: z.string().max(20).nullish()
+});
+
+/**
+ * CriarDisponibilidadeRequest
+ *
+ * Payload para cadastro de janela semanal de agenda do profissional.
+ */
+export const zCriarDisponibilidadeRequest = z.object({
+    especialidade: z.string(),
+    dia_semana: z.int().gte(0).lte(6),
+    hora_inicio: z.iso.time(),
+    hora_fim: z.iso.time(),
+    duracao_minutos: z.int().gte(15).lte(120)
 });
 
 /**
@@ -214,6 +260,35 @@ export const zDependenteResponse = z.object({
     dependente_id: z.uuid(),
     grau_parentesco: z.string(),
     vinculado_em: z.iso.datetime()
+});
+
+/**
+ * DisponibilidadeResponse
+ *
+ * Schema de resposta da janela semanal cadastrada.
+ */
+export const zDisponibilidadeResponse = z.object({
+    id: z.uuid(),
+    organizacao_id: z.int(),
+    profissional_id: z.uuid(),
+    especialidade: z.string(),
+    dia_semana: z.int(),
+    hora_inicio: z.iso.time(),
+    hora_fim: z.iso.time(),
+    duracao_minutos: z.int(),
+    ativo: z.boolean()
+});
+
+/**
+ * EspecialidadeResponse
+ *
+ * Schema de resposta para especialidade disponível na agenda eMulti.
+ */
+export const zEspecialidadeResponse = z.object({
+    codigo: z.string(),
+    nome: z.string(),
+    descricao: z.string(),
+    duracao_padrao_minutos: z.int()
 });
 
 /**
@@ -346,6 +421,58 @@ export const zGeolocalizacaoLivenessSchema = z.object({
 });
 
 /**
+ * HistoricoAtendimentoItemResponse
+ *
+ * Patient-facing attendance history entry (finalized SOAP summary only).
+ */
+export const zHistoricoAtendimentoItemResponse = z.object({
+    atendimento_id: z.uuid(),
+    status: z.string(),
+    prioridade_clinica: z.int(),
+    queixa_principal: z.string().nullish(),
+    criado_em: z.iso.datetime(),
+    finalizado_em: z.iso.datetime().nullish(),
+    medico_id: z.uuid().nullish(),
+    diagnostico_cid10: z.string().nullish(),
+    conduta_resumo: z.string().nullish()
+});
+
+/**
+ * IdentificarPacienteRequest
+ *
+ * Payload for anti-enumeration patient identification lookup.
+ */
+export const zIdentificarPacienteRequest = z.object({
+    identificador: z.string().min(3).max(255)
+});
+
+/**
+ * IdentificarPacienteResponse
+ *
+ * Response indicating available patient authentication methods without PII.
+ */
+export const zIdentificarPacienteResponse = z.object({
+    possui_conta: z.boolean(),
+    metodos_disponiveis: z.array(z.enum([
+        'otp',
+        'senha',
+        'passkey',
+        'govbr'
+    ])),
+    telefone_mascarado: z.string().nullish(),
+    govbr_habilitado: z.boolean()
+});
+
+/**
+ * IniciarAgendamentoRequest
+ *
+ * Payload opcional para iniciar atendimento a partir de agendamento.
+ */
+export const zIniciarAgendamentoRequest = z.object({
+    atendimento_id: z.uuid().nullish()
+});
+
+/**
  * ItemPrescricaoRequest
  *
  * Prescription medication item input.
@@ -443,7 +570,7 @@ export const zListaProducaoAmbulatorialResponse = z.object({
  * Payload to request an authenticated LiveKit room access token.
  */
 export const zLiveKitTokenRequest = z.object({
-    organizacao_id: z.int(),
+    organizacao_id: z.int().nullish(),
     participant_id: z.uuid(),
     role: z.enum(['medico', 'paciente']),
     participant_name: z.string().nullish(),
@@ -499,6 +626,16 @@ export const zLivenessVerifyResponse = z.object({
 });
 
 /**
+ * LoginPacienteSenhaRequest
+ *
+ * Payload for traditional patient login with password fallback.
+ */
+export const zLoginPacienteSenhaRequest = z.object({
+    identificador: z.string().min(3).max(255),
+    senha: z.string().min(1).max(128)
+});
+
+/**
  * LoginRequest
  *
  * Payload for user credentials authentication.
@@ -519,6 +656,18 @@ export const zMedicoTmaResponse = z.object({
     nome: z.string(),
     total_atendimentos: z.int(),
     tma_segundos: z.number()
+});
+
+/**
+ * MetodosAutenticacaoPacienteResponse
+ *
+ * Response describing globally enabled patient authentication capabilities.
+ */
+export const zMetodosAutenticacaoPacienteResponse = z.object({
+    govbr_oidc_enabled: z.boolean(),
+    passkeys_enabled: z.boolean().optional().default(true),
+    otp_enabled: z.boolean().optional().default(true),
+    password_fallback_enabled: z.boolean().optional().default(true)
 });
 
 /**
@@ -558,6 +707,21 @@ export const zMfaSetupResponse = z.object({
 export const zMfaVerificarLoginRequest = z.object({
     temp_token: z.string().min(10),
     codigo: z.string().length(6)
+});
+
+/**
+ * PacienteDocumentoItemResponse
+ *
+ * Patient-facing clinical document metadata (never exposes S3 keys).
+ */
+export const zPacienteDocumentoItemResponse = z.object({
+    documento_id: z.uuid(),
+    atendimento_id: z.uuid(),
+    tipo_documento: z.string(),
+    status_assinatura: z.string(),
+    token_validacao: z.string(),
+    criado_em: z.iso.datetime().nullish(),
+    assinado_em: z.iso.datetime().nullish()
 });
 
 /**
@@ -649,6 +813,34 @@ export const zRefreshTokenRequest = z.object({
 });
 
 /**
+ * RegistrarPacienteRequest
+ *
+ * Payload for citizen self-service registration with mandatory email.
+ */
+export const zRegistrarPacienteRequest = z.object({
+    cpf: z.string().min(11).max(14),
+    nome_completo: z.string().min(2).max(255),
+    data_nascimento: z.iso.date(),
+    telefone: z.string().min(10).max(20),
+    email: z.string().min(5).max(255),
+    aceite_privacidade: z.boolean(),
+    senha: z.string().max(128).nullish()
+});
+
+/**
+ * RegistrarPacienteResponse
+ *
+ * Response returned after registering citizen and dispatching initial OTP.
+ */
+export const zRegistrarPacienteResponse = z.object({
+    paciente_id: z.uuid(),
+    telefone_mascarado: z.string(),
+    otp_enviado: z.boolean(),
+    expira_em_segundos: z.int(),
+    codigo_debug: z.string().nullish()
+});
+
+/**
  * RegistrarSOAPRequest
  *
  * Payload to record or update SOAP clinical notes.
@@ -698,6 +890,19 @@ export const zRegularizacaoFilaResponse = z.object({
     score: z.int(),
     tipo_contingencia: z.string(),
     mensagem: z.string()
+});
+
+/**
+ * SlotDisponivelResponse
+ *
+ * Schema de resposta representando um horário livre para agendamento.
+ */
+export const zSlotDisponivelResponse = z.object({
+    profissional_id: z.uuid(),
+    especialidade: z.string(),
+    slot_inicio: z.iso.datetime(),
+    slot_fim: z.iso.datetime(),
+    duracao_minutos: z.int()
 });
 
 /**
@@ -1080,6 +1285,32 @@ export const zPostAuthPacienteCadsusBody = zAutenticarCadsusRequest;
  */
 export const zPostAuthPacienteCadsusResponse = zVerificarOtpResponse;
 
+export const zPostAuthPatientRegisterBody = zRegistrarPacienteRequest;
+
+/**
+ * Successful Response
+ */
+export const zPostAuthPatientRegisterResponse = zRegistrarPacienteResponse;
+
+export const zPostAuthPatientIdentifyBody = zIdentificarPacienteRequest;
+
+/**
+ * Successful Response
+ */
+export const zPostAuthPatientIdentifyResponse = zIdentificarPacienteResponse;
+
+export const zPostAuthPatientLoginPasswordBody = zLoginPacienteSenhaRequest;
+
+/**
+ * Successful Response
+ */
+export const zPostAuthPatientLoginPasswordResponse = zVerificarOtpResponse;
+
+/**
+ * Successful Response
+ */
+export const zGetAuthPatientMethodsResponse = zMetodosAutenticacaoPacienteResponse;
+
 /**
  * Successful Response
  */
@@ -1208,6 +1439,29 @@ export const zGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLiveki
  * Successful Response
  */
 export const zGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostResponse = zLiveKitTokenResponse;
+
+/**
+ * Response Listar Historico Paciente Api V1 Consultations Me Historico Get
+ *
+ * Successful Response
+ */
+export const zListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetResponse = z.array(zHistoricoAtendimentoItemResponse);
+
+/**
+ * Response Listar Documentos Paciente Api V1 Consultations Me Documentos Get
+ *
+ * Successful Response
+ */
+export const zListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetResponse = z.array(zPacienteDocumentoItemResponse);
+
+export const zObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetPath = z.object({
+    documento_id: z.uuid()
+});
+
+/**
+ * Arquivo PDF/A válido do paciente autenticado
+ */
+export const zObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetResponse = z.string();
 
 export const zObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetPath = z.object({
     atendimento_id: z.uuid()
@@ -1380,3 +1634,80 @@ export const zListarProducaoApiV1AmbulatoryProducaoGetResponse = zListaProducaoA
 export const zExportarBpaApiV1AmbulatoryProducaoExportarGetQuery = z.object({
     competencia: z.string()
 });
+
+/**
+ * Response Listar Especialidades Api V1 Scheduling Especialidades Get
+ *
+ * Successful Response
+ */
+export const zListarEspecialidadesApiV1SchedulingEspecialidadesGetResponse = z.array(zEspecialidadeResponse);
+
+export const zListarSlotsApiV1SchedulingSlotsGetQuery = z.object({
+    especialidade: z.string(),
+    data_inicio: z.iso.date(),
+    data_fim: z.iso.date()
+});
+
+/**
+ * Response Listar Slots Api V1 Scheduling Slots Get
+ *
+ * Successful Response
+ */
+export const zListarSlotsApiV1SchedulingSlotsGetResponse = z.array(zSlotDisponivelResponse);
+
+export const zCriarAgendamentoApiV1SchedulingAgendamentosPostBody = zCriarAgendamentoRequest;
+
+/**
+ * Successful Response
+ */
+export const zCriarAgendamentoApiV1SchedulingAgendamentosPostResponse = zAgendamentoResponse;
+
+/**
+ * Response Listar Meus Agendamentos Api V1 Scheduling Agendamentos Me Get
+ *
+ * Successful Response
+ */
+export const zListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetResponse = z.array(zAgendamentoResponse);
+
+export const zCancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostPath = z.object({
+    agendamento_id: z.uuid()
+});
+
+/**
+ * Successful Response
+ */
+export const zCancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostResponse = zAgendamentoResponse;
+
+export const zCadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostBody = zCriarDisponibilidadeRequest;
+
+/**
+ * Successful Response
+ */
+export const zCadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostResponse = zDisponibilidadeResponse;
+
+export const zListarAgendaDiaApiV1SchedulingAgendaDiaGetQuery = z.object({
+    data: z.iso.date().nullish(),
+    data_inicio: z.iso.date().nullish(),
+    data_fim: z.iso.date().nullish()
+});
+
+/**
+ * Response Listar Agenda Dia Api V1 Scheduling Agenda Dia Get
+ *
+ * Successful Response
+ */
+export const zListarAgendaDiaApiV1SchedulingAgendaDiaGetResponse = z.array(zAgendamentoResponse);
+
+/**
+ * Body
+ */
+export const zIniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostBody = zIniciarAgendamentoRequest.nullable();
+
+export const zIniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostPath = z.object({
+    agendamento_id: z.uuid()
+});
+
+/**
+ * Successful Response
+ */
+export const zIniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponse = zAgendamentoResponse;

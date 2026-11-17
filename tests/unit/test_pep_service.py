@@ -10,11 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.consultation.application.dtos import (
     DocumentoAssinadoResult,
     FinalizarConsultaCommand,
+    HistoricoAtendimentoItemDTO,
+    PacienteDocumentoItemDTO,
     RegistrarEvolucaoSOAPCommand,
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
     AtendimentoResumoDTO,
+    HistoricoAtendimentoReaderPort,
     is_atendimento_terminal,
 )
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
@@ -253,7 +256,40 @@ def test_build_pep_service_for_session(mock_session: AsyncMock) -> None:
     assert isinstance(svc, PEPService)
     assert isinstance(svc.documento_service, DocumentoService)
     assert isinstance(svc.evolucao_service, EvolucaoService)
+    assert isinstance(svc.atendimento_reader, AtendimentoReaderPort)
+    assert isinstance(svc.atendimento_reader, HistoricoAtendimentoReaderPort)
     assert svc.producao_port is not None
+
+
+def test_pep_service_has_no_raw_sql_text_or_cross_module_table_queries() -> None:
+    """PEPService must never import sqlalchemy.text or run raw cross-module SQL."""
+    import ast
+    from pathlib import Path
+
+    pep_path = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "modules"
+        / "consultation"
+        / "application"
+        / "services"
+        / "pep_service.py"
+    )
+    source = pep_path.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(pep_path))
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "") == "sqlalchemy":
+            imported = {alias.name for alias in node.names}
+            assert "text" not in imported, "PEPService must not import sqlalchemy.text"
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id == "text":
+                raise AssertionError("PEPService must not call sqlalchemy.text()")
+
+    lowered = source.lower()
+    assert "from atendimentos" not in lowered
+    assert "join triagens" not in lowered
 
 
 @pytest.mark.asyncio
@@ -569,3 +605,92 @@ async def test_finalizar_consulta_bloqueia_sem_identidade_verificada_cfm() -> No
                 medico_id=medico_id,
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_pep_service_patient_portal_empty_history_and_uuid7_docs() -> None:
+    """Empty patient history skips DB queries and UUIDv7 docs extract criado_em."""
+    from src.core.uuid7 import uuid7
+    from src.modules.consultation.application.ports.atendimento_reader_port import (
+        AtendimentoHistoricoDTO,
+    )
+    from src.modules.consultation.domain.models import (
+        DocumentoClinico,
+        TipoDocumentoClinico,
+    )
+
+    paciente_id_val = uuid7()
+    medico_id = uuid7()
+    atend_id = uuid7()
+
+    class _EmptyReader:
+        async def obter_resumo(
+            self, atendimento_id: object
+        ) -> AtendimentoResumoDTO | None:
+            return None
+
+        async def concluir_atendimento(self, atendimento_id: object) -> None:
+            return None
+
+        async def atender_chamada(self, atendimento_id: object) -> None:
+            return None
+
+        async def listar_historico_paciente(
+            self, organizacao_id: int, paciente_id: object
+        ) -> list[AtendimentoHistoricoDTO]:
+            return []
+
+    fake_session_empty = FakeAsyncSession()
+    svc_empty = _build_test_pep_service(
+        session=fake_session_empty,
+        atendimento_reader=_EmptyReader(),  # pyright: ignore[reportArgumentType]
+    )
+    assert await svc_empty.listar_historico_paciente(1, paciente_id_val) == []
+    assert await svc_empty.listar_documentos_paciente(1, paciente_id_val) == []
+    assert fake_session_empty.executes == 0
+
+    class _OneReader(_EmptyReader):
+        async def listar_historico_paciente(
+            self, organizacao_id: int, paciente_id: object
+        ) -> list[AtendimentoHistoricoDTO]:
+            return [
+                AtendimentoHistoricoDTO(
+                    atendimento_id=atend_id,
+                    organizacao_id=1,
+                    paciente_id=paciente_id_val,
+                    status="CONCLUIDO",
+                    prioridade_clinica=3,
+                    criado_em=datetime.now(UTC),
+                )
+            ]
+
+    doc = DocumentoClinico(
+        id=uuid7(),
+        organizacao_id=1,
+        atendimento_id=atend_id,
+        medico_id=medico_id,
+        tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
+        chave_s3="orgs/1/consultations/doc.pdf",
+    )
+    fake_session_doc = FakeAsyncSession(results=[FakeResult([doc])])
+    svc_doc = _build_test_pep_service(
+        session=fake_session_doc,
+        atendimento_reader=_OneReader(),  # pyright: ignore[reportArgumentType]
+    )
+    docs = await svc_doc.listar_documentos_paciente(1, paciente_id_val)
+    assert len(docs) == 1
+    assert isinstance(docs[0], PacienteDocumentoItemDTO)
+    assert docs[0].status_assinatura == "EMITIDO"
+    assert docs[0].criado_em is not None
+    assert isinstance(
+        HistoricoAtendimentoItemDTO(
+            atendimento_id=atend_id,
+            status="CONCLUIDO",
+            prioridade_clinica=3,
+            queixa_principal=None,
+            criado_em=datetime.now(UTC),
+            finalizado_em=None,
+            medico_id=None,
+        ),
+        HistoricoAtendimentoItemDTO,
+    )

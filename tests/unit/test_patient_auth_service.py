@@ -66,6 +66,7 @@ async def test_solicitar_otp_sucesso(
     service = PatientAuthService(
         identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
+        expose_debug_otp=True,
     )
 
     dados = SolicitarOtpInputDTO(telefone="11987654321")
@@ -101,6 +102,7 @@ async def test_solicitar_otp_sucesso_com_prefixo_internacional_e164(
     service = PatientAuthService(
         identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
+        expose_debug_otp=True,
     )
 
     dados = SolicitarOtpInputDTO(telefone="+5511987654321")
@@ -120,6 +122,7 @@ async def test_solicitar_otp_paciente_nao_encontrado(
     service = PatientAuthService(
         identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
+        expose_debug_otp=True,
     )
 
     dados = SolicitarOtpInputDTO(telefone="11987654321")
@@ -141,6 +144,7 @@ async def test_solicitar_otp_rate_limit_excedido(
     service = PatientAuthService(
         identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
+        expose_debug_otp=True,
     )
 
     dados = SolicitarOtpInputDTO(telefone="11987654321")
@@ -169,6 +173,7 @@ async def test_verificar_otp_sucesso_emite_jwt(
     service = PatientAuthService(
         identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
+        expose_debug_otp=True,
     )
 
     # 1. Request OTP
@@ -209,6 +214,7 @@ async def test_verificar_otp_codigo_incorreto(
     service = PatientAuthService(
         identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
+        expose_debug_otp=True,
     )
 
     req_dados = SolicitarOtpInputDTO(telefone="11987654321")
@@ -234,6 +240,7 @@ async def test_verificar_otp_bloqueio_por_forca_bruta(
     service = PatientAuthService(
         identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
+        expose_debug_otp=True,
     )
 
     req_dados = SolicitarOtpInputDTO(telefone="11987654321")
@@ -431,6 +438,7 @@ async def test_verificar_otp_sucesso_retorna_atendimento_ativo_quando_existente(
         identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
         active_attendance_lookup=_FakeLookup(),
+        expose_debug_otp=True,
     )
     req_out = await service.solicitar_otp(
         organizacao_id=1,
@@ -458,3 +466,165 @@ async def test_autenticar_cadsus_sem_cpf_e_sem_cns_interpola_valores_ofensivos(
             cpf=None,
             cns="   ",
         )
+
+
+@pytest.mark.asyncio
+async def test_patient_auth_service_default_oculta_codigo_debug(
+    fake_identity_reader: FakeIdentityReader,
+    fake_sms: FakeSmsSenderAdapter,
+) -> None:
+    """Por padrão seguro, PatientAuthService não expõe codigo_debug."""
+    fake_identity_reader.paciente = _make_mock_paciente()
+    service = PatientAuthService(
+        identity_reader=fake_identity_reader,
+        sms_sender=fake_sms,
+    )
+
+    output = await service.solicitar_otp(
+        organizacao_id=1,
+        dados=SolicitarOtpInputDTO(telefone="11987654321"),
+    )
+    assert output.codigo_debug is None
+    assert len(fake_sms.sent_otps) == 1
+
+
+@pytest.mark.asyncio
+async def test_solicitar_otp_usa_auth_rate_limiter_port_quando_injetado(
+    fake_identity_reader: FakeIdentityReader,
+    fake_sms: FakeSmsSenderAdapter,
+) -> None:
+    """Quando rate_limiter é injetado, solicitar_otp delega para AuthRateLimiterPort."""
+    from src.modules.auth.infrastructure.valkey_rate_limiter import FakeAuthRateLimiter
+
+    fake_identity_reader.paciente = _make_mock_paciente()
+    limiter = FakeAuthRateLimiter()
+    service = PatientAuthService(
+        identity_reader=fake_identity_reader,
+        sms_sender=fake_sms,
+        rate_limiter=limiter,
+    )
+
+    dados = SolicitarOtpInputDTO(telefone="11987654321")
+    for _ in range(3):
+        await service.solicitar_otp(organizacao_id=1, dados=dados)
+
+    with pytest.raises(OtpRateLimitExcedidoError) as exc_info:
+        await service.solicitar_otp(organizacao_id=1, dados=dados)
+
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.headers is not None
+    assert "Retry-After" in exc_info.value.headers
+
+
+@pytest.mark.asyncio
+async def test_valkey_sliding_window_hashes_pii_and_uses_window_seconds(
+    fake_identity_reader: FakeIdentityReader,
+    fake_sms: FakeSmsSenderAdapter,
+) -> None:
+    """Chaves Valkey devem hashear PII e Retry-After deve respeitar window_seconds."""
+    import time
+    from typing import Any
+
+    from redis.asyncio import Redis
+    from src.modules.auth.application.dtos import IdentificarPacienteCommand
+
+    class _ZSetValkeyPipeline:
+        def __init__(self, store: "_ZSetFakeValkey") -> None:
+            self._store = store
+            self._ops: list[tuple[str, Any]] = []
+
+        async def __aenter__(self) -> "_ZSetValkeyPipeline":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def zremrangebyscore(
+            self, key: str, min_score: float, max_score: float
+        ) -> None:
+            self._ops.append(("zremrangebyscore", (key, min_score, max_score)))
+
+        async def zcard(self, key: str) -> None:
+            self._ops.append(("zcard", key))
+
+        async def zadd(self, key: str, mapping: dict[str, float]) -> None:
+            self._ops.append(("zadd", (key, mapping)))
+
+        async def expire(self, key: str, seconds: int) -> None:
+            self._ops.append(("expire", (key, seconds)))
+
+        async def execute(self) -> list[Any]:
+            results: list[Any] = []
+            for op, arg in self._ops:
+                if op == "zremrangebyscore":
+                    key, min_s, max_s = arg
+                    zset = self._store.zsets.setdefault(key, {})
+                    to_del = [m for m, s in zset.items() if min_s <= s <= max_s]
+                    for m in to_del:
+                        del zset[m]
+                    results.append(len(to_del))
+                elif op == "zcard":
+                    results.append(len(self._store.zsets.get(arg, {})))
+                elif op == "zadd":
+                    key, mapping = arg
+                    zset = self._store.zsets.setdefault(key, {})
+                    zset.update(mapping)
+                    results.append(len(mapping))
+                elif op == "expire":
+                    results.append(True)
+            self._ops.clear()
+            return results
+
+    class _ZSetFakeValkey:
+        def __init__(self) -> None:
+            self.zsets: dict[str, dict[str, float]] = {}
+            self.kv: dict[str, str] = {}
+
+        def pipeline(self, transaction: bool = True) -> _ZSetValkeyPipeline:
+            return _ZSetValkeyPipeline(self)
+
+        async def set(self, key: str, value: str, ex: int | None = None) -> bool:
+            self.kv[key] = value
+            return True
+
+        async def zrange(
+            self, key: str, start: int, end: int, withscores: bool = False
+        ) -> list[tuple[str, float]]:
+            items = sorted(self.zsets.get(key, {}).items(), key=lambda x: x[1])
+            sliced = items[start : end + 1 if end >= 0 else None]
+            return sliced if withscores else [(m, 0.0) for m, _ in sliced]  # type: ignore[return-value]
+
+    valkey = _ZSetFakeValkey()
+    fake_identity_reader.paciente = _make_mock_paciente(telefone="11987654321")
+    service = PatientAuthService(
+        identity_reader=fake_identity_reader,
+        valkey_client=valkey,  # type: ignore[arg-type]
+        sms_sender=fake_sms,
+    )
+
+    await service.solicitar_otp(
+        organizacao_id=1,
+        dados=SolicitarOtpInputDTO(telefone="11987654321"),
+    )
+    await service.identificar_paciente(
+        IdentificarPacienteCommand(
+            organizacao_id=1,
+            identificador="paciente.sigiloso@example.com",
+            client_ip="10.1.2.3",
+        )
+    )
+
+    assert len(valkey.zsets) == 3
+    for key in valkey.zsets:
+        assert "11987654321" not in key
+        assert "paciente.sigiloso@example.com" not in key
+
+    # Validate _calculate_valkey_retry_after uses the provided window_seconds (e.g. 120)
+    custom_key = "ratelimit:custom:test"
+    now = time.time()
+    valkey.zsets[custom_key] = {"entry-1": now - 10}
+    retry_after = await service._calculate_valkey_retry_after(  # pyright: ignore[reportPrivateUsage]
+        custom_key, now, 120
+    )
+    assert 105 <= retry_after <= 110
+    assert isinstance(valkey, object) and Redis is not None

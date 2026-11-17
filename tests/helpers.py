@@ -29,7 +29,8 @@ from src.modules.queue.application.services.alocacao_service import (
 from src.modules.queue.application.services.fila_service import FilaService
 
 CLEAN_TABLES_SQL = text(
-    "TRUNCATE TABLE configuracoes_plantao, producoes_ambulatoriais, "
+    "TRUNCATE TABLE agendamentos, agenda_disponibilidades, "
+    "configuracoes_plantao, producoes_ambulatoriais, "
     "paciente_passkeys, documento_itens, "
     "documentos_clinicos, evolucoes_clinicas, triagens, audit_events, "
     "atendimentos, dependentes, pacientes, profissionais, organizacoes, "

@@ -19,7 +19,7 @@
 ## 2. Critérios de Aceite Formais (Gherkin)
 
 ### Cenário 1: Acolhimento e admissão com sucesso (Caso Feliz)
-- **Dado que** informo meu CPF válido, data de nascimento, telefone celular, queixa principal, sintomas e escala de dor (ex: nível 4),
+- **Dado que** estou autenticada no Portal do Cidadão (`/entrar` $\to$ `/home`) e acesso `/triagem` informando meu CPF válido, data de nascimento, telefone celular, queixa principal, sintomas e escala de dor (ex: nível 4),
 - **E** manifesto aceite formal ao Termo de Consentimento Livre e Esclarecido (TCLE),
 - **Quando** submeto o formulário de admissão em `POST /api/v1/fila/admissao`,
 - **Então** o sistema registra a comprovação imutável do consentimento com carimbo de data/hora oficial UTC,
@@ -77,7 +77,7 @@
   {
     "atendimento_id": "018f3a5b-...",
     "prioridade_clinica": 3,
-    "status_atendimento": "TRIADO_AGUARDANDO_ELEGIBILIDADE",
+    "status_atendimento": "APTO_PARA_CHAMADA",
     "tcle_hash": "a1b2c3d4...",
     "alerta_samu_disparado": false
   }
@@ -89,11 +89,11 @@
 
 - [x] **Domínio:** Entidade rica `Triagem` com cálculo de prioridade aberta ACR (`src/modules/triage/domain/classification.py`).
 - [x] **Hash TCLE:** Hash SHA-256 gerado e armazenado com timestamp UTC (`src/modules/triage/domain/classification.py`).
-- [x] **Aplicação:** `FilaService.admitir_paciente()` orquestra persistência atômica e enfileira job ARQ de elegibilidade (`src/modules/queue/application/services/fila_service.py`).
+- [x] **Aplicação:** `FilaService.admitir_paciente()` orquestra persistência atômica direta em `APTO_PARA_CHAMADA` e inserção no ZSET do Valkey `fila:{org}:aptos` (`src/modules/queue/application/services/fila_service.py`).
 - [x] **Apresentação:** Router fino `admissao_router.py` montado em `/api/v1/fila/admissao` com `AdmissaoResponse` expondo `tcle_hash` validado via `model_validate` (ADR-001).
 - [x] **Frontend (Fase 1 & TCLE):** `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx`, `frontend/src/features/onboarding/components/pain-scale-selector.tsx` (alvos de toque >= 44x44px em grid responsivo), `frontend/src/components/samu-emergency-modal.tsx` (safe area inset e saída acessível via Escape sem keyboard trap) e `frontend/src/features/onboarding/components/tcle-dialog.tsx` com cálculo de hash forense nativo Web Crypto API (`frontend/src/lib/validators.ts:calcularHashTcle`).
 - [x] **Frontend Hooks:** `frontend/src/features/onboarding/api/use-intake-fase1.ts` e `frontend/src/features/onboarding/api/use-admitir-paciente.ts`.
-- [x] **Sessão & Roteamento (Issue #113, Issue #141):** Persistência em `frontend/src/lib/session-storage.ts`, rotas declarativas `/triagem` (`frontend/src/routes/triagem.tsx`) e `/fila` (`frontend/src/routes/fila.tsx`) com guard `beforeLoad` e orquestração em `frontend/src/router.tsx`.
+- [x] **Sessão & Roteamento (Issue #113, Issue #141):** Persistência em `frontend/src/lib/session-storage.ts`, rota autenticada pós-portal `/triagem` (`frontend/src/routes/triagem.tsx`, `beforeLoad` exige sessão de cidadão em `/entrar`) e rota `/fila` (`frontend/src/routes/fila.tsx`) com guard `beforeLoad` e orquestração em `frontend/src/router.tsx`.
 - [x] **Testes Automatizados:**
   - Backend: `tests/unit/test_triage_model.py`, `tests/unit/test_admissao_service.py`, `tests/integration/test_admissao_integrada_flow.py`
   - Frontend Unitários: `frontend/src/lib/validators.test.ts`, `frontend/src/features/onboarding/schemas/onboarding-schema.test.ts`, `frontend/src/lib/session-storage.test.ts`, `frontend/src/api/client.test.ts`, `frontend/src/features/onboarding/tests/pain-scale-selector.test.tsx`, `frontend/src/features/onboarding/tests/samu-emergency-modal.test.tsx`

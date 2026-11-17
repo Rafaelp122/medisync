@@ -11,9 +11,9 @@ import {
 } from "@/components/ui/dialog";
 import { VirtualWaitingRoom } from "@/features/queue/components/virtual-waiting-room";
 import {
-  clearStoredSession,
   type StoredPatientSession,
   saveStoredCallData,
+  saveStoredSession,
 } from "@/lib/session-storage";
 
 export interface QueuePageProps {
@@ -31,8 +31,13 @@ export function QueuePage({ session, renderComplementarForm }: QueuePageProps) {
   const [modalComplementarAberto, setModalComplementarAberto] = useState(false);
 
   const handleEncerrarSessao = () => {
-    clearStoredSession();
-    navigate({ to: "/" });
+    saveStoredSession({
+      token: session.token,
+      pacienteId: session.pacienteId,
+      role: session.role,
+      tipo: session.tipo,
+    });
+    navigate({ to: "/home" });
   };
 
   const handleAtendimentoIniciado = (data: LiveKitTokenResponse) => {

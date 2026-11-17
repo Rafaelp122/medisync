@@ -1,5 +1,5 @@
 import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
-import { client, getActiveTenantId } from "@/api/client";
+import { client, getTenantHeaders } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { obterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGet } from "@/api/generated/sdk.gen";
 import type { TmaStatusResponse } from "@/api/generated/types.gen";
@@ -26,7 +26,7 @@ export function useTmaStatus(
     queryFn: async () => {
       try {
         const headers: Record<string, string> = {
-          "X-Tenant-ID": getActiveTenantId(),
+          ...getTenantHeaders(),
         };
         if (token) {
           headers.Authorization = `Bearer ${token}`;

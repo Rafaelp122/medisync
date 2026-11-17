@@ -228,3 +228,38 @@ depends_on = [
     "src.modules.telemetry.application",
     "src.modules.telemetry.composition",
 ]
+
+[[modules]]
+path = "src.modules.scheduling.domain"
+depends_on = ["src.core"]
+
+[[modules]]
+path = "src.modules.scheduling.application"
+depends_on = ["src.core", "src.modules.scheduling.domain"]
+
+[[modules]]
+path = "src.modules.scheduling.infrastructure"
+depends_on = [
+    "src.core",
+    "src.modules.scheduling.application",
+    "src.modules.scheduling.domain",
+]
+
+[[modules]]
+path = "src.modules.scheduling.composition"
+depends_on = [
+    "src.core",
+    "src.modules.queue.application",
+    "src.modules.queue.composition",
+    "src.modules.scheduling.application",
+    "src.modules.scheduling.domain",
+    "src.modules.scheduling.infrastructure",
+]
+
+[[modules]]
+path = "src.modules.scheduling.presentation"
+depends_on = [
+    "src.core",
+    "src.modules.scheduling.application",
+    "src.modules.scheduling.composition",
+]

@@ -11,7 +11,7 @@
 
 ## 1. Contexto e Declaração do Problema
 
-O **MediSync Express** opera em modelo multi-tenant atendendo simultaneamente municípios do SUS e instituições de saúde privadas. Tratando-se de dados sensíveis de saúde (Art. 11 da LGPD), é mandatório garantir que nenhum usuário, query de relatório ou falha em código de aplicação consiga vazar prontuários de uma organização para outra.
+O **MediSync Express** opera em modelo multi-tenant atendendo simultaneamente municípios e consórcios públicos intermunicipais do SUS (ADR-012), além de permitir implantação dedicada a um único município (modo single-tenant configurável). Tratando-se de dados sensíveis de saúde (Art. 11 da LGPD), é mandatório garantir que nenhum usuário, query de relatório ou falha em código de aplicação consiga vazar prontuários de uma organização para outra.
 
 ---
 
@@ -47,6 +47,9 @@ Adotamos a **Opção 3: Multi-Tenancy Lógico com Defesa em Profundidade via Pos
 1. Todas as tabelas multi-tenant (inclusive `dependentes` e `documento_itens`) contêm `organizacao_id BIGINT NOT NULL` indexada diretamente.
 2. Políticas `tenant_isolation_*` declaradas e habilitadas com `ENABLE ROW LEVEL SECURITY` e `FORCE ROW LEVEL SECURITY` em 100% das tabelas, eliminando bloqueios silenciosos (*silent deny*).
 3. Listener do SQLAlchemy injeta o comando `SET LOCAL app.current_tenant_id` no início de cada transação assíncrona.
+4. **Modo Multi-Tenant vs. Single-Tenant Opcional (IoC via Settings)**:
+   - Por padrão (`MULTI_TENANCY_ENABLED=True`), o `TenantResolutionMiddleware` resolve o tenant estritamente na ordem `X-Tenant-ID` $\to$ JWT Bearer $\to$ subdomínio, sem fallback silencioso (`DEFAULT_TENANT_ID` deve ser `None`).
+   - Em implantações dedicadas a uma única prefeitura/unidade (`MULTI_TENANCY_ENABLED=False`), `DEFAULT_TENANT_ID` ($\ge 1$) é validado em *fail-fast* no boot (`src/core/config.py:CommonSettings.validate_multi_tenancy_config`) e injetado no middleware (`src/core/middleware.py:TenantResolutionMiddleware`), que **ignora** cabeçalhos `X-Tenant-ID`, tokens ou subdomínios externos (prevenção anti-spoofing), mantendo intactas as políticas RLS no banco de dados.
 
 ---
 

@@ -4,6 +4,8 @@ import {
   clearStoredDoctorSession,
   clearStoredManagerSession,
   clearStoredSession,
+  getStoredDoctorSession,
+  getStoredSession,
   getStoredToken,
 } from "@/lib/session-storage";
 import { toProblemDetailsError } from "./errors";
@@ -11,23 +13,115 @@ import { client } from "./generated/client.gen";
 
 const baseUrl = settings.env.apiBaseUrl;
 
-export function getActiveTenantId(): string {
+export function getActiveTenantId(): string | null {
   if (typeof window !== "undefined" && window.localStorage) {
     const stored = window.localStorage.getItem(settings.storage.tenantId);
     if (stored) return stored;
   }
-  return settings.env.defaultTenantId;
+  return settings.env.defaultTenantId ?? null;
+}
+
+export function getTenantHeaders(): Record<string, string> {
+  const tenantId = getActiveTenantId();
+  return tenantId ? { "X-Tenant-ID": tenantId } : {};
+}
+
+function decodeJwtPayload(token?: string | null): Record<string, unknown> | undefined {
+  if (!token || typeof token !== "string") return undefined;
+  const parts = token.split(".");
+  if (parts.length < 2 || !parts[1]) return undefined;
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const parsed: unknown = JSON.parse(atob(padded));
+    if (parsed && typeof parsed === "object") {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Extrai o identificador numérico de organização (claim `organizacao_id`) do payload JWT
+ * sem validar assinatura (apenas leitura de metadado no cliente).
+ */
+export function extractTenantIdFromJwt(token?: string | null): number | undefined {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return undefined;
+  const rawTenant = payload.organizacao_id;
+  if (typeof rawTenant === "number" && Number.isFinite(rawTenant) && rawTenant > 0) {
+    return rawTenant;
+  }
+  if (typeof rawTenant === "string") {
+    const parsed = Number.parseInt(rawTenant, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return undefined;
+}
+
+function hashTokenFingerprint(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/**
+ * Retorna cabeçalho Authorization explícito apenas quando o caller fornece
+ * um token distinto do armazenado em memória/localStorage; caso contrário delega ao interceptor.
+ */
+export function resolveExplicitAuthHeaders(token?: string): Record<string, string> | undefined {
+  const explicit = token?.trim();
+  if (!explicit) return undefined;
+  const current = getAccessToken() || getStoredToken();
+  if (explicit === current) return undefined;
+  return { Authorization: `Bearer ${explicit}` };
+}
+
+/**
+ * Deriva chave de escopo (tenant + identidade/sessão) para isolar entradas do TanStack Query.
+ */
+export function getSessionQueryScope(explicitToken?: string): string {
+  const tenantScope = getActiveTenantId() ?? "default";
+  const trimmedExplicit = explicitToken?.trim();
+  const activeToken = trimmedExplicit || getAccessToken() || getStoredToken();
+
+  const patientSession = getStoredSession();
+  const doctorSession = getStoredDoctorSession();
+  const payload = decodeJwtPayload(activeToken);
+  const jwtSub = typeof payload?.sub === "string" ? payload.sub.trim() : "";
+
+  let userScope = "anon";
+  if (jwtSub) {
+    userScope = `sub:${jwtSub}`;
+  } else if (
+    patientSession?.pacienteId &&
+    (!trimmedExplicit || trimmedExplicit === patientSession.token)
+  ) {
+    userScope = `pac:${patientSession.pacienteId}`;
+  } else if (
+    doctorSession?.medicoId &&
+    (!trimmedExplicit || trimmedExplicit === getAccessToken())
+  ) {
+    userScope = `med:${doctorSession.medicoId}`;
+  } else if (activeToken) {
+    userScope = `tok:${hashTokenFingerprint(activeToken)}`;
+  }
+
+  return `${tenantScope}:${userScope}`;
 }
 
 client.setConfig({
   baseUrl,
   credentials: "include",
-  headers: {
-    "X-Tenant-ID": getActiveTenantId(),
-  },
 });
 
 let refreshPromise: Promise<string | null> | null = null;
+const retryRequestClones = new WeakMap<Request, Request>();
 
 /**
  * Executa o silent refresh de forma coordenada via Promise compartilhada (mutex anti-concorrência).
@@ -42,13 +136,12 @@ export async function silentRefreshToken(): Promise<string | null> {
   refreshPromise = (async () => {
     try {
       const refreshUrl = `${baseUrl.replace(/\/+$/, "")}/api/v1/auth/refresh`;
-      const tenantId = getActiveTenantId();
       const res = await fetch(refreshUrl, {
         method: "POST",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          "X-Tenant-ID": tenantId,
+          ...getTenantHeaders(),
         },
         body: JSON.stringify({}),
       });
@@ -79,21 +172,28 @@ export async function silentRefreshToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-// Configure client request interceptor to inject default X-Tenant-ID and Authorization headers
+// Configure client request interceptor to inject dynamic X-Tenant-ID and Authorization headers
+// and preserve an unconsumed Request clone for safe 401 retries on POST/PUT/PATCH.
 client.interceptors.request.use((request) => {
   const tenantId = getActiveTenantId();
-  if (!request.headers.has("X-Tenant-ID")) {
+  if (tenantId && !request.headers.has("X-Tenant-ID")) {
     request.headers.set("X-Tenant-ID", tenantId);
   }
   const token = getAccessToken() || getStoredToken();
   if (token && !request.headers.has("Authorization")) {
     request.headers.set("Authorization", `Bearer ${token}`);
   }
+  if (!request.bodyUsed) {
+    retryRequestClones.set(request, request.clone());
+  }
   return request;
 });
 
 // Configure client response interceptor for silent refresh on 401 with loop protection
 client.interceptors.response.use(async (response, request, opts) => {
+  const clonedRequest = retryRequestClones.get(request);
+  retryRequestClones.delete(request);
+
   if (response.status === 401) {
     const url = request.url;
     const isAuthRoute =
@@ -111,10 +211,9 @@ client.interceptors.response.use(async (response, request, opts) => {
         headers.set("Authorization", `Bearer ${newToken}`);
         headers.set("X-Retry", "1");
 
-        const retryRequest = new Request(request.url, {
-          method: request.method,
+        const retryBase = clonedRequest && !clonedRequest.bodyUsed ? clonedRequest : request;
+        const retryRequest = new Request(retryBase, {
           headers,
-          body: request.body,
           credentials: "include",
         });
 
@@ -138,7 +237,7 @@ client.interceptors.error.use((error, response) => {
   return toProblemDetailsError(error, status);
 });
 
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && (settings.env.isDev || settings.env.mode === "test")) {
   (window as unknown as { __medisyncClient?: typeof client }).__medisyncClient = client;
 }
 

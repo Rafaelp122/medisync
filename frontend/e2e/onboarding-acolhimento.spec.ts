@@ -1,8 +1,29 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+const INITIAL_PATIENT_SESSION = {
+  tipo: "otp",
+  role: "PACIENTE",
+  pacienteId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
+  token: "fake-jwt-citizen-token-e2e",
+};
+
 test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript((sessionData) => {
+      if (!window.localStorage.getItem("medisync_session")) {
+        window.localStorage.setItem("medisync_session", JSON.stringify(sessionData));
+      }
+    }, INITIAL_PATIENT_SESSION);
+
+    await page.route("**/api/v1/scheduling/especialidades", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+    });
+
     // Intercepta rotas do backend e ViaCEP
     await page.route("**/api/v1/onboarding/fase-1", async (route) => {
       await route.fulfill({
@@ -170,9 +191,12 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
     await page.getByRole("button", { name: /confirmar desistência/i }).click();
     await expect(page.getByText(/atendimento cancelado/i)).toBeVisible();
     await page.getByRole("button", { name: /voltar ao início/i }).click();
-    await expect(page).toHaveURL(/\/$/);
-    const clearedSession = await page.evaluate(() => localStorage.getItem("medisync_session"));
-    expect(clearedSession).toBeNull();
+    await expect(page).toHaveURL(/\/home$/);
+    const updatedSession = await page.evaluate(() => localStorage.getItem("medisync_session"));
+    expect(updatedSession).not.toBeNull();
+    const parsedAfterCancel = JSON.parse(updatedSession ?? "{}");
+    expect(parsedAfterCancel.token).toBe("fake-jwt-intake-token-e2e");
+    expect(parsedAfterCancel.atendimentoId).toBeUndefined();
   });
 
   test("E2E-ONB-02: Salvaguarda SAMU 192 imediata e recuperação por engano (Red Flag RN04)", async ({

@@ -10,6 +10,9 @@ from src.core.database import DbSessionDep
 from src.modules.identity.application.ports.identity_reader_port import (
     IdentityReaderPort,
 )
+from src.modules.identity.application.ports.identity_writer_port import (
+    IdentityWriterPort,
+)
 from src.modules.identity.application.ports.sms_sender_port import SmsSenderPort
 from src.modules.identity.application.services.dependente_service import (
     DependenteService,
@@ -20,6 +23,9 @@ from src.modules.identity.application.services.onboarding_service import (
 from src.modules.identity.infrastructure.fake_sms_adapter import FakeSmsSenderAdapter
 from src.modules.identity.infrastructure.identity_reader_sql import (
     SqlIdentityReader,
+)
+from src.modules.identity.infrastructure.identity_writer_sql import (
+    SqlIdentityWriter,
 )
 
 
@@ -69,6 +75,14 @@ def get_identity_reader(session: DbSessionDep) -> IdentityReaderPort:
 
 
 IdentityReaderDep = Annotated[IdentityReaderPort, Depends(get_identity_reader)]
+
+
+def build_identity_writer_sql_for_session(
+    session: AsyncSession,
+) -> IdentityWriterPort:
+    """Build identity writer outside request scope (tests/worker tooling)."""
+    return SqlIdentityWriter(session=session)
+
 
 _sms_adapter_instance = FakeSmsSenderAdapter()
 

@@ -4,7 +4,7 @@
 > **Jornada Vinculada:** [`US-03 — Validação de Elegibilidade e Onboarding Fase 2`](./US-03-elegibilidade-onboarding-fase2.md)  
 > **Requisito Base:** RF-05  
 > **Invariantes Relacionadas:** RN01 (Prevalência Clínica), RN03 (Desvio Temporário e Preservação de Antiguidade)  
-> **Personas:** Juliana Silva (Paciente) e Patrícia Mendes (Faturamento)  
+> **Personas:** Juliana Silva (Paciente) e Patrícia Mendes (Coordenação de Regulação e Produção Ambulatorial)  
 > **Módulos:** `queue`, `ambulatory`  
 > **Status de Qualidade:** 🟢 **Conforme** *(Resolução NC-QUE-04: preservação de timestamp de acolhimento original e endpoint REST de regularização/contingência)*
 

@@ -303,8 +303,12 @@ class LiveKitTokenRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    organizacao_id: int = Field(
-        description="Identificador único da organização de saúde"
+    organizacao_id: int | None = Field(
+        default=None,
+        description=(
+            "Identificador opcional da organização "
+            "(resolvido via contexto HTTP quando omitido)"
+        ),
     )
     participant_id: UUID = Field(
         description="Identificador único do usuário (médico ou paciente)"
@@ -419,3 +423,36 @@ class LivenessVerifyResponse(BaseModel):
     liveness_score: float
     verificacao_hash: str
     validado_em: datetime
+
+
+# --- Patient Portal Schemas ---
+
+
+class HistoricoAtendimentoItemResponse(BaseModel):
+    """Patient-facing attendance history entry (finalized SOAP summary only)."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    atendimento_id: UUID
+    status: str
+    prioridade_clinica: int
+    queixa_principal: str | None = None
+    criado_em: datetime
+    finalizado_em: datetime | None = None
+    medico_id: UUID | None = None
+    diagnostico_cid10: str | None = None
+    conduta_resumo: str | None = None
+
+
+class PacienteDocumentoItemResponse(BaseModel):
+    """Patient-facing clinical document metadata (never exposes S3 keys)."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    documento_id: UUID
+    atendimento_id: UUID
+    tipo_documento: str
+    status_assinatura: str
+    token_validacao: str
+    criado_em: datetime | None = None
+    assinado_em: datetime | None = None

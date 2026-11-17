@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.authz.roles import ROLES_REQUIRING_MFA
+from src.core.authz.roles import ROLES_REQUIRING_MFA, Role
 from src.core.errors import ConflictError, MfaCodigoInvalidoError, NotFoundError
 from src.modules.auth.application.dtos import (
     CadastrarCredencialCommand,
@@ -100,7 +100,8 @@ class AuthService:
     async def autenticar(self, command: LoginCommand) -> TokenPairDTO:
         """Autentica com rate limiting anti-brute force e checagem constant-time.
 
-        Regras: RN-AUT-02, RN-AUT-03, RN-AUT-04 (auth-domain.md), ADR-007, RF-01.
+        Regras: RN-AUT-01, RN-AUT-02 (docs/explanation/domains/auth-domain.md),
+        ADR-012, RF-01.
         Raises: ContaBloqueadaError, CredenciaisInvalidasError.
         """
         clean_ident = command.identificador.strip().lower()
@@ -138,8 +139,8 @@ class AuthService:
         res = await self._session.execute(stmt)
         cred = res.scalar_one_or_none()
 
-        # 3. User enumeration mitigation: constant-time dummy verify if absent
-        if cred is None:
+        # 3. User enumeration mitigation & role isolation (PACIENTE cannot login here)
+        if cred is None or cred.papel == Role.PACIENTE.value:
             await asyncio.to_thread(self._hasher.dummy_verify)
             raise CredenciaisInvalidasError()
 
@@ -327,7 +328,13 @@ class AuthService:
         res = await self._session.execute(stmt)
         cred = res.scalar_one_or_none()
 
-        if cred is None or not cred.ativo or cred.is_bloqueado():
+        if (
+            cred is None
+            or cred.papel == Role.PACIENTE.value
+            or payload.papel == Role.PACIENTE.value
+            or not cred.ativo
+            or cred.is_bloqueado()
+        ):
             raise CredenciaisInvalidasError(
                 "Sessão expirada ou conta indisponível para renovação."
             )

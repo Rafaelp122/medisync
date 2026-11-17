@@ -1,16 +1,25 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { client } from "@/api/client";
 import { logoutApiV1AuthLogoutPost } from "@/api/generated/sdk.gen";
 import { DoctorWorkstation } from "@/features/consultation/components/doctor-workstation";
-import { clearAccessToken, getAccessToken } from "@/lib/auth-token";
+import { clearAccessToken } from "@/lib/auth-token";
 import { clearStoredDoctorSession, type StoredDoctorSession } from "@/lib/session-storage";
 
 export interface DoctorWorkstationPageProps {
   doctorSession: StoredDoctorSession;
+  token?: string;
+  renderSchedulePanel?: ReactNode;
 }
 
-export function DoctorWorkstationPage({ doctorSession }: DoctorWorkstationPageProps) {
+export function DoctorWorkstationPage({
+  doctorSession,
+  token,
+  renderSchedulePanel,
+}: DoctorWorkstationPageProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const handleDoctorLogout = async () => {
     try {
@@ -20,17 +29,19 @@ export function DoctorWorkstationPage({ doctorSession }: DoctorWorkstationPagePr
     }
     clearAccessToken();
     clearStoredDoctorSession();
-    navigate({ to: "/login" });
+    queryClient.clear();
+    navigate({ to: "/interno/login" });
   };
 
   return (
     <div className="w-full max-w-[1600px] mx-auto">
       <DoctorWorkstation
-        token={getAccessToken() ?? undefined}
+        token={token}
         medicoId={doctorSession.medicoId}
         medicoNome={doctorSession.medicoNome}
         crmUf={doctorSession.crmUf}
         onLogout={handleDoctorLogout}
+        renderSchedulePanel={renderSchedulePanel}
       />
     </div>
   );

@@ -76,6 +76,9 @@ ignore = [
     "S603", # Allow subprocess call in tests
     "S607", # Allow partial executable path in tests
 ]
+"tests/conftest.py" = [
+    "E402", # Isolate Settings from local .env before importing app database/main
+]
 
 [tool.basedpyright]
 include = ["src", "tests"]

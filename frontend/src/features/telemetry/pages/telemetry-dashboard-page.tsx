@@ -1,16 +1,19 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { client } from "@/api/client";
 import { logoutApiV1AuthLogoutPost } from "@/api/generated/sdk.gen";
 import { PainelGestor } from "@/features/telemetry/components/painel-gestor";
-import { clearAccessToken, getAccessToken } from "@/lib/auth-token";
+import { clearAccessToken } from "@/lib/auth-token";
 import { clearStoredManagerSession, type StoredManagerSession } from "@/lib/session-storage";
 
 export interface TelemetryDashboardPageProps {
   managerSession: StoredManagerSession;
+  token?: string;
 }
 
-export function TelemetryDashboardPage({ managerSession }: TelemetryDashboardPageProps) {
+export function TelemetryDashboardPage({ managerSession, token }: TelemetryDashboardPageProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const handleManagerLogout = async () => {
     try {
@@ -20,14 +23,11 @@ export function TelemetryDashboardPage({ managerSession }: TelemetryDashboardPag
     }
     clearAccessToken();
     clearStoredManagerSession();
-    navigate({ to: "/login" });
+    queryClient.clear();
+    navigate({ to: "/interno/login" });
   };
 
   return (
-    <PainelGestor
-      token={getAccessToken() ?? undefined}
-      gestorNome={managerSession.nome}
-      onLogout={handleManagerLogout}
-    />
+    <PainelGestor token={token} gestorNome={managerSession.nome} onLogout={handleManagerLogout} />
   );
 }

@@ -51,7 +51,8 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 
 ## 4. Relações
 
-- Lê atendimento sem importar queue. `src/modules/consultation/application/ports/atendimento_reader_port.py` devolve `AtendimentoResumoDTO` com `status` e `is_terminal`; adaptado em `consultation.composition` via `QueueStoreAtendimentoReaderAdapter` sem queries SQL cruas.
+- Lê atendimento e histórico sem importar queue nem executar SQL crua cross-module. `src/modules/consultation/application/ports/atendimento_reader_port.py` define `AtendimentoReaderPort` (`obter_resumo`, `is_terminal`) e `HistoricoAtendimentoReaderPort` (`listar_historico_paciente`), ambos adaptados em `src/modules/consultation/composition.py` via `QueueStoreAtendimentoReaderAdapter` sobre `QueueStorePort` (que por sua vez consulta `TriageQueixaReaderPort` em `FilaService` sem SQL crua cross-module).
+- Portal do Cidadão protegido por Anti-IDOR (`PacienteAutenticadoDep` com `Role.PACIENTE`). `consultation_router.py` expõe `GET /api/v1/consultations/me/historico` (`PEPService.listar_historico_paciente`, omitindo evoluções SOAP não finalizadas), `GET /api/v1/consultations/me/documentos` (`PEPService.listar_documentos_paciente`, omitindo chaves S3 internas) e `GET /api/v1/consultations/me/documents/{documento_id}/pdf` (`PEPService.compilar_pdf_para_paciente`, validando titularidade via `_validar_titularidade_documento`).
 - Emite PDF via porta abstrata. `src/modules/consultation/application/ports/pdf_generator_port.py` recebe `DocumentoPDFPayload` e devolve bytes PDF/A com QR de verificação ITI.
 - Assina via porta abstrata. `src/modules/consultation/application/ports/icp_brasil_signer_port.py` aplica PAdES com `DoctorCertificateCredentials` (PSC OAuth2); infra PyHanko pluga sem tocar serviço.
 - Guarda bytes via porta abstrata. `src/modules/consultation/application/ports/storage_port.py` persiste em `chave_s3` canônica e gera URL pré-assinada de 300s para download.
@@ -90,6 +91,8 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - `src/modules/consultation/application/services/documento_service.py`
 - `src/modules/consultation/application/services/pep_service.py`
 - `src/modules/consultation/presentation/dependencies.py`
+- `src/modules/consultation/presentation/routers/consultation_router.py`
+- `src/modules/consultation/composition.py`
 - `src/modules/consultation/infrastructure/livekit_adapter.py`
 - `frontend/src/features/consultation/components/doctor-workstation.tsx`
 - `frontend/src/features/consultation/components/cfm-identity-gate.tsx`
@@ -97,6 +100,7 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - `frontend/src/features/consultation/components/soap-editor.tsx`
 - `frontend/src/features/consultation/tests/consultation-workstation.test.tsx`
 - `tests/unit/test_consultation_models.py`
+- `tests/unit/test_consultation_patient_portal.py`
 - `tests/unit/test_evolucao_service.py`
 - `tests/unit/test_documento_service.py`
 - `tests/unit/test_clinical_ai_governance.py`

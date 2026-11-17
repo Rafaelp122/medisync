@@ -7,7 +7,7 @@
 Toda resposta de erro usa `application/problem+json`, nunca corpo ad-hoc por módulo.
 Routers não montam envelope na mão; handlers centrais convertem exceção em problema.
 Exceções de negócio herdam de `DomainError` e expõem `status_code` e `code` estáveis.
-O status 429 atua em duas frentes: `OtpRateLimitExcedidoError` como `DomainError` estruturado (`OTP_RATE_LIMIT_EXCEEDED`) e `exigir_rate_limit` (helper de IP) como único `HTTPException` permitido fora de `DomainError` com header `Retry-After`.
+O status 429 atua em duas frentes: `OtpRateLimitExcedidoError` (`OTP_RATE_LIMIT_EXCEEDED`), `OtpTentativasExcedidasError` (`OTP_TENTATIVAS_EXCEDIDAS`) e `IdentificacaoRateLimitExcedidoError` (`IDENTIFY_RATE_LIMIT_EXCEEDED`, com header `Retry-After`) como `DomainError` estruturados, além de `exigir_rate_limit` (helper de IP) como único `HTTPException` permitido fora de `DomainError` com header `Retry-After`.
 
 ## Conceito
 
@@ -58,9 +58,12 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 404 | `DOCUMENTO_CLINICO_NAO_ENCONTRADO` | Documento clínico inexistente (`DocumentoClinicoNaoEncontradoError`) |
 | 404 | `DOCUMENTO_STORAGE_NAO_ENCONTRADO` | Chave de arquivo ausente no MinIO/S3 (`DocumentoNaoEncontradoNoStorageError`) |
 | 404 | `PRODUCAO_NAO_ENCONTRADA` | Lote ou produção ambulatorial inexistente na competência/tenant (`ProducaoNaoEncontradaError`) |
+| 404 | `AGENDAMENTO_NAO_ENCONTRADO` | Agendamento multiprofissional não localizado ou pertencente a outro tenant (`AgendamentoNaoEncontradoError`) |
 | 409 | `CONFLICT` | Conflito de estado concorrente genérico (`ConflictError`) |
 | 409 | `VINCULO_DEPENDENTE_EXISTENTE` | Vínculo titular-dependente já existente (`VinculoDependenteExistenteError`) |
 | 409 | `TRANSICAO_ESTADO_INVALIDA` | Transição ilegal na máquina de estados de atendimento (`TransicaoEstadoInvalidaError`) |
+| 409 | `TRANSICAO_AGENDAMENTO_INVALIDA` | Transição ilegal na máquina de estados de agendamento eMulti (`TransicaoAgendamentoInvalidaError`) |
+| 409 | `SLOT_INDISPONIVEL` | Conflito de horário (double-booking), sobreposição de janela ou profissional sem agenda ativa no slot (`SlotIndisponivelError`) |
 | 409 | `MEDICO_OCUPADO` | Médico com chamada ativa ou lock de consulta - RN02 (`MedicoOcupadoError`) |
 | 409 | `ATENDIMENTO_NAO_DISPONIVEL` | Atendimento capturado por outro médico (`AtendimentoNaoDisponivelError`) |
 | 409 | `ATENDIMENTO_EXPIRADO_NO_SHOW` | Ingresso em sala LiveKit com atendimento expirado por no-show (`ConflictError`) |
@@ -82,6 +85,7 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 423 | `CONTA_BLOQUEADA` | Bloqueio temporário por tentativas falhas consecutivas (`ContaBloqueadaError`) |
 | 429 | `OTP_RATE_LIMIT_EXCEEDED` | Limite de requisições de OTP excedido (`OtpRateLimitExcedidoError`) |
 | 429 | `OTP_TENTATIVAS_EXCEDIDAS` | Máximo de 3 tentativas falhas de OTP excedido (`OtpTentativasExcedidasError`) |
+| 429 | `IDENTIFY_RATE_LIMIT_EXCEEDED` | Limite de requisições de identificação, cadastro ou login de paciente excedido com header `Retry-After` (`IdentificacaoRateLimitExcedidoError`) |
 | 429 | sem `code` | Rate limit de rede por IP (`Retry-After` obrigatório via `exigir_rate_limit`) |
 | 500 | `DOCUMENTO_INTEGRIDADE` | Metadados de médico/paciente ausentes (`DocumentoIntegridadeError`) |
 | 500 | `INTERNAL_SERVER_ERROR` | Fallback genérico para erros internos não tratados |
@@ -93,7 +97,7 @@ Notas de semântica:
 - 404 carrega `code` discriminado para o cliente diferenciar recursos clínicos sem inspecionar `detail`.
 - 409 protege concorrência de alocação médica e imutabilidade de prontuário e registros forenses.
 - 423 (Locked): formalmente mapeado para contas bloqueadas temporariamente por proteção contra força bruta.
-- 429 (Too Many Requests): suporta tanto `DomainError` com códigos `OTP_RATE_LIMIT_EXCEEDED` e `OTP_TENTATIVAS_EXCEDIDAS` quanto `HTTPException` com header `Retry-After`.
+- 429 (Too Many Requests): suporta tanto `DomainError` com códigos `OTP_RATE_LIMIT_EXCEEDED`, `OTP_TENTATIVAS_EXCEDIDAS` e `IDENTIFY_RATE_LIMIT_EXCEEDED` (emitindo header `Retry-After` quando definido) quanto `HTTPException` com header `Retry-After`.
 - 503 (Service Unavailable): formalmente mapeado para suspensão de admissão por backpressure ou cota saturada.
 - 500: falha de integridade documental ou fallback interno; jamais vaza stack traces.
 
@@ -110,6 +114,10 @@ Notas de semântica:
 - Impl: `src/modules/auth/domain/exceptions.py:OtpTentativasExcedidasError`
 - Impl: `src/modules/auth/domain/exceptions.py:WebAuthnChallengeInvalidoError`
 - Impl: `src/modules/auth/domain/exceptions.py:PasskeyNaoEncontradaError`
+- Impl: `src/modules/auth/domain/exceptions.py:IdentificacaoRateLimitExcedidoError`
+- Impl: `src/modules/scheduling/domain/exceptions.py:AgendamentoNaoEncontradoError`
+- Impl: `src/modules/scheduling/domain/exceptions.py:TransicaoAgendamentoInvalidaError`
+- Impl: `src/modules/scheduling/domain/exceptions.py:SlotIndisponivelError`
 - Impl: `src/modules/identity/domain/exceptions.py:IdentificacaoObrigatoriaError`
 - Impl: `src/modules/queue/domain/exceptions.py:AdmissaoFilaSuspensaError`
 - Impl: `src/modules/queue/domain/exceptions.py:MedicoOcupadoError`
@@ -125,7 +133,7 @@ Notas de semântica:
 ```bash
 rg -n "code = |class \w+Error|status_code" src/core/errors.py | head -15
 rg -n "status_code = (423|429|503)" src/
-rg -n "ADMISSAO_FILA_SUSPENSA|CONTA_BLOQUEADA|OTP_RATE_LIMIT_EXCEEDED|OTP_TENTATIVAS_EXCEDIDAS" src/
+rg -n "ADMISSAO_FILA_SUSPENSA|CONTA_BLOQUEADA|OTP_RATE_LIMIT_EXCEEDED|OTP_TENTATIVAS_EXCEDIDAS|IDENTIFY_RATE_LIMIT_EXCEEDED|AGENDAMENTO_NAO_ENCONTRADO|SLOT_INDISPONIVEL" src/
 ```
 
 ## Ver também

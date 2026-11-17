@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getActiveTenantId } from "@/api/client";
+import { client, getTenantHeaders } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { postAuthPacienteCadsus } from "@/api/generated/sdk.gen";
 import type { VerificarOtpResponse } from "@/api/generated/types.gen";
@@ -12,13 +12,9 @@ export function useCadsusLogin(
   return useMutation<VerificarOtpResponse, ProblemDetailsError, CadsusAuthFormData>({
     mutationFn: async (formData: CadsusAuthFormData) => {
       try {
-        const headers: Record<string, string> = {
-          "X-Tenant-ID": getActiveTenantId(),
-        };
-
         const response = await postAuthPacienteCadsus({
           client,
-          headers,
+          headers: getTenantHeaders(),
           body: {
             cpf: limparDigitos(formData.cpf),
             cns: formData.cns ? limparDigitos(formData.cns) : null,

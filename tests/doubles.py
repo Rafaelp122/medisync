@@ -1,15 +1,24 @@
 """Canonical test doubles and scripted in-memory adapters for unit tests."""
 
 import asyncio
+import hmac
 import queue as queue_module
+import re
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime
 from typing import Any, cast
 from uuid import UUID
 
 from src.core.audit import AtorPapel, AtorTipo
+from src.core.authz.roles import Role
+from src.core.errors import ConflictError
 from src.core.uuid7 import uuid7
+from src.modules.auth.application.ports.password_hasher_port import PasswordHasherPort
+from src.modules.auth.application.ports.patient_credential_repository_port import (
+    PatientCredentialRepositoryPort,
+)
+from src.modules.auth.domain.models.usuario_credencial import UsuarioCredencial
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
     AtendimentoResumoDTO,
@@ -20,9 +29,13 @@ from src.modules.consultation.application.ports.producao_ambulatorial_port impor
 from src.modules.identity.application.ports.identity_reader_port import (
     IdentityDirectoryDTO,
     IdentityReaderPort,
+    PacienteAuthLookupData,
     PacienteAuthLookupDTO,
     PacientePasskeyData,
     PacientePasskeyDTO,
+)
+from src.modules.identity.application.ports.identity_writer_port import (
+    IdentityWriterPort,
 )
 from src.modules.queue.application.ports.allocation_port import (
     AllocationPort,
@@ -31,6 +44,14 @@ from src.modules.queue.application.ports.allocation_port import (
 from src.modules.queue.application.ports.triage_port import (
     TriageEvaluationDTO,
     TriagePort,
+)
+from src.modules.scheduling.application.ports.scheduling_repository_port import (
+    SchedulingRepositoryPort,
+)
+from src.modules.scheduling.domain.models import (
+    AgendaDisponibilidade,
+    Agendamento,
+    StatusAgendamento,
 )
 
 
@@ -871,3 +892,244 @@ class FakeAllocationPort(AllocationPort):
     ) -> AlocacaoCodigo:
         self.chamadas.append({"keys": list(keys), "args": list(args)})
         return self.codigo
+
+
+class FakePasswordHasher(PasswordHasherPort):
+    """Canonical deterministic hasher double implementing PasswordHasherPort."""
+
+    def __init__(self, prefix: str = "$argon2id$fake$") -> None:
+        self._prefix = prefix
+        self.dummy_calls = 0
+        self.hash_calls = 0
+
+    def hash(self, password: str) -> str:
+        self.hash_calls += 1
+        return f"{self._prefix}{password}"
+
+    def verify(self, plain_password: str, hashed_password: str) -> bool:
+        expected = f"{self._prefix}{plain_password}"
+        return hmac.compare_digest(expected, hashed_password)
+
+    def needs_rehash(self, hashed_password: str) -> bool:
+        return not hashed_password.startswith(self._prefix)
+
+    def dummy_verify(self) -> None:
+        self.dummy_calls += 1
+
+
+class FakeIdentityWriter(IdentityWriterPort):
+    """Canonical in-memory IdentityWriterPort backed by FakeIdentityReader."""
+
+    def __init__(self, reader: FakeIdentityReader) -> None:
+        self._reader = reader
+        if self._reader.pacientes is None:
+            self._reader.pacientes = []
+
+    async def criar_paciente(
+        self,
+        *,
+        organizacao_id: int,
+        cpf: str,
+        nome_completo: str,
+        data_nascimento: date,
+        telefone: str,
+    ) -> PacienteAuthLookupDTO:
+        clean_cpf = re.sub(r"\D", "", cpf)
+        items = list(self._reader.pacientes or [])
+        for existing in items:
+            if existing.organizacao_id == organizacao_id and existing.cpf == clean_cpf:
+                raise ConflictError(
+                    "Não foi possível concluir o cadastro com os dados informados. "
+                    "Caso já possua conta, utilize a opção Entrar."
+                )
+
+        created = PacienteAuthLookupData(
+            id=uuid7(),
+            organizacao_id=organizacao_id,
+            telefone=telefone,
+            cpf=clean_cpf,
+            nome_completo=nome_completo,
+            nome_mae=None,
+        )
+        items.append(created)
+        self._reader.pacientes = items
+        return created
+
+
+class FakePatientCredentialRepository(PatientCredentialRepositoryPort):
+    """Canonical in-memory PatientCredentialRepositoryPort double."""
+
+    def __init__(self) -> None:
+        self.by_key: dict[tuple[int, str], UsuarioCredencial] = {}
+        self.identificador_lookups: list[tuple[int, str, str]] = []
+        self.existe_calls: list[tuple[int, str]] = []
+
+    async def buscar_por_identificador(
+        self,
+        organizacao_id: int,
+        identificador: str,
+        papel: str = Role.PACIENTE.value,
+    ) -> UsuarioCredencial | None:
+        self.identificador_lookups.append((organizacao_id, identificador, papel))
+        cred = self.by_key.get((organizacao_id, identificador.strip().lower()))
+        if cred is None or cred.papel != papel.strip().upper():
+            return None
+        return cred
+
+    async def buscar_por_usuario_id(
+        self,
+        organizacao_id: int,
+        usuario_id: UUID,
+        papel: str = Role.PACIENTE.value,
+    ) -> UsuarioCredencial | None:
+        target_papel = papel.strip().upper()
+        for cred in self.by_key.values():
+            if (
+                cred.organizacao_id == organizacao_id
+                and cred.usuario_id == usuario_id
+                and cred.papel == target_papel
+            ):
+                return cred
+        return None
+
+    async def existe_identificador(
+        self,
+        organizacao_id: int,
+        identificador: str,
+    ) -> bool:
+        self.existe_calls.append((organizacao_id, identificador))
+        return (organizacao_id, identificador.strip().lower()) in self.by_key
+
+    async def criar_credencial(
+        self,
+        credencial: UsuarioCredencial,
+    ) -> UsuarioCredencial:
+        key = (credencial.organizacao_id, credencial.identificador)
+        if key in self.by_key:
+            raise ConflictError(
+                "Não foi possível concluir o cadastro com os dados informados. "
+                "Caso já possua conta, utilize a opção Entrar."
+            )
+        self.by_key[key] = credencial
+        return credencial
+
+
+class FakeSchedulingRepository(SchedulingRepositoryPort):
+    """Canonical in-memory SchedulingRepositoryPort double."""
+
+    def __init__(self) -> None:
+        self.disponibilidades: list[AgendaDisponibilidade] = []
+        self.agendamentos: list[Agendamento] = []
+        self.last_for_update: bool | None = None
+
+    async def listar_disponibilidades_ativas(
+        self,
+        organizacao_id: int,
+        especialidade: str,
+    ) -> Sequence[AgendaDisponibilidade]:
+        return [
+            d
+            for d in self.disponibilidades
+            if d.organizacao_id == organizacao_id
+            and d.especialidade == especialidade
+            and d.ativo
+        ]
+
+    async def listar_agendamentos_ocupados(
+        self,
+        organizacao_id: int,
+        inicio: datetime,
+        fim: datetime,
+    ) -> Sequence[Agendamento]:
+        inativos = {StatusAgendamento.CANCELADO.value, StatusAgendamento.FALTA.value}
+        return [
+            a
+            for a in self.agendamentos
+            if a.organizacao_id == organizacao_id
+            and a.status not in inativos
+            and a.slot_inicio < fim
+            and a.slot_fim > inicio
+        ]
+
+    async def buscar_agendamento_conflitante(
+        self,
+        organizacao_id: int,
+        profissional_id: UUID,
+        slot_inicio: datetime,
+        slot_fim: datetime,
+    ) -> Agendamento | None:
+        inativos = {StatusAgendamento.CANCELADO.value, StatusAgendamento.FALTA.value}
+        for a in self.agendamentos:
+            if (
+                a.organizacao_id == organizacao_id
+                and a.profissional_id == profissional_id
+                and a.status not in inativos
+                and a.slot_inicio < slot_fim
+                and a.slot_fim > slot_inicio
+            ):
+                return a
+        return None
+
+    async def buscar_disponibilidade_profissional(
+        self,
+        organizacao_id: int,
+        profissional_id: UUID,
+        especialidade: str | None,
+        dia_semana: int,
+    ) -> Sequence[AgendaDisponibilidade]:
+        return [
+            d
+            for d in self.disponibilidades
+            if d.organizacao_id == organizacao_id
+            and d.profissional_id == profissional_id
+            and (especialidade is None or d.especialidade == especialidade)
+            and d.dia_semana == dia_semana
+            and d.ativo
+        ]
+
+    async def buscar_agendamento_por_id(
+        self,
+        organizacao_id: int,
+        agendamento_id: UUID,
+        for_update: bool = False,
+    ) -> Agendamento | None:
+        self.last_for_update = for_update
+        for a in self.agendamentos:
+            if a.organizacao_id == organizacao_id and a.id == agendamento_id:
+                return a
+        return None
+
+    async def listar_agendamentos_paciente(
+        self,
+        organizacao_id: int,
+        paciente_id: UUID,
+    ) -> Sequence[Agendamento]:
+        itens = [
+            a
+            for a in self.agendamentos
+            if a.organizacao_id == organizacao_id and a.paciente_id == paciente_id
+        ]
+        return sorted(itens, key=lambda a: a.slot_inicio)
+
+    async def listar_agendamentos_profissional(
+        self,
+        organizacao_id: int,
+        profissional_id: UUID,
+        inicio: datetime,
+        fim: datetime,
+    ) -> Sequence[Agendamento]:
+        itens = [
+            a
+            for a in self.agendamentos
+            if a.organizacao_id == organizacao_id
+            and a.profissional_id == profissional_id
+            and a.slot_inicio >= inicio
+            and a.slot_inicio < fim
+        ]
+        return sorted(itens, key=lambda a: a.slot_inicio)
+
+    def adicionar_disponibilidade(self, disponibilidade: AgendaDisponibilidade) -> None:
+        self.disponibilidades.append(disponibilidade)
+
+    def adicionar_agendamento(self, agendamento: Agendamento) -> None:
+        self.agendamentos.append(agendamento)

@@ -10,10 +10,11 @@ import src.modules.auth.domain.models
 import src.modules.consultation.domain.models
 import src.modules.identity.domain.models
 import src.modules.queue.domain.models
+import src.modules.scheduling.domain.models
 import src.modules.telemetry.domain.models
 import src.modules.triage.domain.models  # noqa: F401
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from src.core.config import get_settings
@@ -52,6 +53,19 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     """Execute migrations within an active synchronous or adapted connection."""
+    connection.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS alembic_version ("
+            "version_num VARCHAR(128) NOT NULL, "
+            "CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)"
+            ")"
+        )
+    )
+    connection.execute(
+        text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)")
+    )
+    connection.commit()
+
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
