@@ -119,7 +119,7 @@ Run:
 just logs
 ```
 
-Expected: stream de logs (`Ctrl-C` para sair; use `docker compose logs -f <serviço>` para filtrar).
+Expected: stream de logs (`Ctrl-C` para sair; use `just logs <serviço>` para filtrar por serviço).
 
 Run:
 

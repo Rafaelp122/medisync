@@ -77,9 +77,73 @@ def test_readme_just_commands_exist_in_justfile() -> None:
     defined_recipes = set(
         re.findall(r"^([a-zA-Z0-9_-]+)(?:\s+[^:]*)?:", justfile_text, re.MULTILINE)
     )
-    just_commands = set(re.findall(r"\bjust\s+([a-zA-Z0-9_-]+)\b", readme_text))
+    just_commands = {
+        cmd
+        for cmd in re.findall(r"\bjust\s+([a-zA-Z0-9_-]+)\b", readme_text)
+        if not cmd.startswith("-")
+    }
 
     unknown_commands = just_commands - defined_recipes
     assert not unknown_commands, (
         f"README.md references unknown just commands: {sorted(unknown_commands)}"
+    )
+
+
+def test_justfile_recipes_are_grouped() -> None:
+    """Ensure all recipes in justfile are categorized under canonical groups."""
+    justfile_text = (REPO_ROOT / "justfile").read_text(encoding="utf-8")
+    canonical_groups = {"geral", "infra", "backend", "frontend"}
+
+    current_group: str | None = None
+    ungrouped_recipes: list[str] = []
+    invalid_grouped_recipes: list[str] = []
+
+    for line in justfile_text.splitlines():
+        group_match = re.match(r"^\s*\[group\(['\"]([^'\"]+)['\"]\)\]", line)
+        if group_match:
+            current_group = group_match.group(1)
+            continue
+
+        recipe_match = re.match(r"^([a-zA-Z0-9_-]+)(?:\s+[^:]*)?:", line)
+        if recipe_match:
+            recipe = recipe_match.group(1)
+            if recipe == "default":
+                current_group = None
+                continue
+            if current_group is None:
+                ungrouped_recipes.append(recipe)
+            elif current_group not in canonical_groups:
+                invalid_grouped_recipes.append(f"{recipe} -> {current_group}")
+            current_group = None
+
+    assert not ungrouped_recipes, (
+        f"Recipes in justfile missing [group('...')]: {ungrouped_recipes}"
+    )
+    assert not invalid_grouped_recipes, (
+        f"Recipes with non-canonical groups: {invalid_grouped_recipes}. "
+        f"Expected: {sorted(canonical_groups)}"
+    )
+
+
+def test_justfile_container_and_log_recipes_exist() -> None:
+    """Ensure container helper recipes and parameterized logs exist in justfile."""
+    justfile_text = (REPO_ROOT / "justfile").read_text(encoding="utf-8")
+
+    expected_recipes = [
+        "docker-migrate",
+        "docker-seed",
+        "docker-shell",
+        "docker-test",
+    ]
+    for recipe in expected_recipes:
+        assert re.search(rf"^{recipe}(?:\s+[^:]*)?:", justfile_text, re.MULTILINE), (
+            f"Recipe '{recipe}' not found in justfile"
+        )
+
+    # Verifica se logs aceita o parâmetro opcional service
+    logs_match = re.search(
+        r"^logs(?:\s+service=\"[^\"]*\")?:", justfile_text, re.MULTILINE
+    )
+    assert logs_match is not None, (
+        "Recipe 'logs' with optional service parameter not found in justfile"
     )

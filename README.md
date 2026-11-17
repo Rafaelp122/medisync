@@ -206,14 +206,31 @@ just check-fast
 
 ### 3. Execução dos Serviços Locais
 ```bash
-# Iniciar o servidor HTTP ASGI de alta performance (Granian)
-uv run granian --interface asgi --reload src.main:app
+# Iniciar o servidor HTTP ASGI localmente com hot-reload (Granian)
+just backend-dev
 
-# Em outro terminal: iniciar o background worker ARQ para ring timeout de 45s
+# Ou iniciar o ambiente integrado completo (backend + worker + frontend)
+just dev
+
+# Iniciar o background worker assíncrono ARQ sobre Valkey
 just worker
 ```
 
-### 4. Portão de Qualidade Completo (com Infraestrutura Real)
+### 4. Acompanhamento de Logs e Operações em Contêiner
+As tarefas de automação são organizadas por grupos nativos do Just (`geral`, `infra`, `backend`, `frontend` — listados com `just`):
+```bash
+# Acompanhar logs de todos os contêineres ou filtrar por serviço específico
+just logs
+just logs backend
+
+# Executar comandos diretamente no contêiner backend (quando operando via Docker)
+just docker-migrate
+just docker-seed
+just docker-shell
+just docker-test
+```
+
+### 5. Portão de Qualidade Completo (com Infraestrutura Real)
 ```bash
 just check
 ```
