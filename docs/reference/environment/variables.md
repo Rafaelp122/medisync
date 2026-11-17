@@ -87,6 +87,9 @@ Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3
 | `WEBAUTHN_RP_ID` | `src/core/config.py:CommonSettings.WEBAUTHN_RP_ID` | Domínio RFC 6454 | `localhost` | Relying Party ID WebAuthn (US-14; proibido `localhost` em prod) |
 | `WEBAUTHN_RP_NAME` | `src/core/config.py:CommonSettings.WEBAUTHN_RP_NAME` | Texto | `MediSync Express` | Nome exibido no prompt nativo FIDO2/Passkeys |
 | `WEBAUTHN_ALLOWED_ORIGINS` | `src/core/config.py:CommonSettings.WEBAUTHN_ALLOWED_ORIGINS` | Lista URL HTTP(S) | `["http://localhost:5173"]` | Origens permitidas no `clientDataJSON` (prod exige `https://`) |
+| `MULTI_TENANCY_ENABLED` | `src/core/config.py:CommonSettings.MULTI_TENANCY_ENABLED` | `true`, `false` | `true` | Habilita resolução dinâmica multi-tenant (Header/JWT/Subdomínio). Quando `false`, vincula `DEFAULT_TENANT_ID` ignorando headers/tokens externos (anti-spoofing) |
+| `DEFAULT_TENANT_ID` | `src/core/config.py:CommonSettings.DEFAULT_TENANT_ID` | Inteiro $\ge 1$ ou `None` | `None` | Obrigatório ($\ge 1$) quando `MULTI_TENANCY_ENABLED=false`; proibido quando `MULTI_TENANCY_ENABLED=true` (*fail-fast* contra fallback silencioso) |
+| `GOVBR_OIDC_ENABLED` | `src/core/config.py:CommonSettings.GOVBR_OIDC_ENABLED` | `true`, `false` | `false` | Habilita opção Gov.br OIDC no endpoint `/auth/patient/methods` e portal do cidadão (`GOVBR_CLIENT_ID` e `GOVBR_REDIRECT_URI` foram removidos por YAGNI até integração OIDC real) |
 
 ### 7. Perfis Polimórficos de Ambiente
 
@@ -108,8 +111,8 @@ Variáveis do cliente web (`frontend/src/config/settings.ts` via `import.meta.en
 | Var | Lida em | Padrão | Notas |
 |---|---|---|---|
 | `VITE_API_BASE_URL` | `frontend/src/config/settings.ts:settings.env.apiBaseUrl` | `""` (origin) | URL base da API REST/WebSocket |
-| `VITE_TENANT_ID` | `frontend/src/config/settings.ts:settings.env.defaultTenantId` | `"1"` | Tenant padrão do profissional médico |
-| `VITE_ENABLE_DEMO_HELPERS` | `frontend/src/config/settings.ts:settings.env.isDemoMode` | `DEV ? "true" : "false"` | Controla botões de preenchimento demo e simulador ICP |
+| `VITE_TENANT_ID` | `frontend/src/config/settings.ts:settings.env.defaultTenantId` | `undefined` | Tenant padrão opcional (inteiro positivo compatível com `extract_tenant_from_header`); vazio em `.env.example` para não enviar `X-Tenant-ID` estático sem seleção |
+| `VITE_ENABLE_DEMO_HELPERS` | `frontend/src/config/settings.ts:settings.env.isDemoMode` | `isDev` (`false` forçado em `isProd` quando não sobrescrito) | Controla atalhos/botões demo, simulador PSC e exibição de `codigo_debug` do OTP em dev/demo |
 | `VITE_DEFAULT_PSC_PROVIDER` | `frontend/src/config/settings.ts:settings.env.defaultPscProvider` | `DEV ? "fake" : "birdid"` | Provedor padrão de PSC selecionado na interface |
 
 Propriedades utilitárias de runtime derivadas do Vite expostas em `settings.env`: `mode` (string do modo ativo), `isDev` (boolean equivalente a `import.meta.env.DEV`) e `isProd` (boolean equivalente a `import.meta.env.PROD`).
@@ -117,13 +120,18 @@ Propriedades utilitárias de runtime derivadas do Vite expostas em `settings.env
 ## Onde no código
 
 - Impl: `src/core/config.py:CommonSettings`
+- Impl: `src/core/config.py:CommonSettings.validate_multi_tenancy_config`
 - Impl: `src/core/config.py:DevelopmentSettings`
 - Impl: `src/core/config.py:TestSettings`
 - Impl: `src/core/config.py:ProductionSettings`
 - Impl: `src/core/config.py:get_settings`
 - Impl: `src/core/config.py:async_database_url`
 - Impl: `src/core/config.py:async_valkey_url`
+- Impl middleware: `src/core/middleware.py:TenantResolutionMiddleware`
+- Impl tenant header: `src/core/middleware.py:extract_tenant_from_header`
+- Impl auth composition: `src/modules/auth/composition.py:build_patient_auth_service_for_session`
 - Impl frontend: `frontend/src/config/settings.ts:settings`
+- Impl frontend client: `frontend/src/api/client.ts:getTenantHeaders`
 - Impl queue composition: `src/modules/queue/composition.py:get_notification_adapter`
 - Spec: `.env.example`
 - Prova viva: `tests/unit/test_config_profiles.py`

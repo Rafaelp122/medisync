@@ -11,6 +11,8 @@ Enforces:
 - Forbidden legacy terms: event_bus.py and In-Memory Event Bus are banned.
 - Python code blocks <= 5 lines outside of reference/, adrs/, and how-to/.
 - Mandatory 5 sections for reference documents in docs/reference/.
+- Citations `docs/...md` inside src/ and frontend/src/ resolve to existing files.
+- Minimum length (>= 40 lines) for docs/explanation/domains/*-domain.md.
 """
 
 from __future__ import annotations
@@ -19,14 +21,23 @@ import re
 import sys
 import tomllib
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 ROOT = Path(__file__).resolve().parent.parent
 
 PATH_RE = re.compile(r"`((?:src|docs|tests|frontend)/[^`:\s#]+)")
+CODE_DOCS_LINK_RE = re.compile(r"(docs/[^\s`\"'),;\]]+?\.md)")
 MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 FENCE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
 PYTHON_FENCE_RE = re.compile(r"```python(.*?)```", re.DOTALL)
 TS_FENCE_RE = re.compile(r"```(?:tsx?|typescript)(.*?)```", re.DOTALL)
+
+MIN_DOMAIN_DOC_LINES = 40
+CODE_SOURCE_EXTENSIONS = frozenset({".py", ".ts", ".tsx", ".js", ".jsx"})
+IGNORED_CODE_DIRS = frozenset({"__pycache__", "node_modules", ".vite", "dist"})
 
 POSTGRES_VERSION_RE = re.compile(r"\b(?:PostgreSQL|Postgres)\s+(\d+)\b")
 VALKEY_VERSION_RE = re.compile(r"\bValkey\s+(\d+(?:\.\d+)?\+?)\b")
@@ -80,6 +91,58 @@ def _is_lower_version(v1: str, v2: str) -> bool:
         return p1 < p2
     except ValueError:
         return False
+
+
+def _is_valid_code_source(candidate: Path) -> bool:
+    """Return True when candidate is a non-cached backend/frontend source file."""
+    if not candidate.is_file() or candidate.suffix not in CODE_SOURCE_EXTENSIONS:
+        return False
+    return not any(part in IGNORED_CODE_DIRS for part in candidate.parts)
+
+
+def _iter_dir_source_files(base: Path) -> Iterator[Path]:
+    """Yield source files inside a single root directory."""
+    if not base.exists():
+        return
+    for candidate in sorted(base.rglob("*")):
+        if _is_valid_code_source(candidate):
+            yield candidate
+
+
+def _validate_source_file_docs_links(source_file: Path, errors: list[str]) -> None:
+    """Validate all `docs/...md` citations inside a single source file."""
+    rel_posix = source_file.relative_to(ROOT).as_posix()
+    text = source_file.read_text(encoding="utf-8")
+    for match in CODE_DOCS_LINK_RE.finditer(text):
+        ref = match.group(1).strip()
+        if any(ch in ref for ch in ("*", "<", ">")) or "..." in ref:
+            continue
+        if not (ROOT / ref).exists():
+            errors.append(f"{rel_posix}: missing docs reference '{ref}'")
+
+
+def _check_code_docs_links(errors: list[str]) -> None:
+    """Ensure `docs/...md` citations in src/ and frontend/src/ resolve on disk."""
+    for base in (ROOT / "src", ROOT / "frontend" / "src"):
+        for source_file in _iter_dir_source_files(base):
+            _validate_source_file_docs_links(source_file, errors)
+
+
+def _check_domain_doc_floor(
+    md: Path, rel_posix: str, text: str, errors: list[str]
+) -> None:
+    """Enforce minimum line floor for domain explanation docs."""
+    if not (
+        rel_posix.startswith("docs/explanation/domains/")
+        and md.name.endswith("-domain.md")
+    ):
+        return
+    line_count = len(text.splitlines())
+    if line_count < MIN_DOMAIN_DOC_LINES:
+        errors.append(
+            f"{rel_posix}: domain doc has {line_count} lines "
+            f"(< {MIN_DOMAIN_DOC_LINES} minimum)"
+        )
 
 
 def main() -> int:
@@ -192,6 +255,12 @@ def main() -> int:
             errors.append(
                 f"{rel_posix}: forbidden reference to deprecated 'In-Memory Event Bus'"
             )
+
+        # 8b. Piso mínimo de linhas em documentos de domínio
+        _check_domain_doc_floor(md, rel_posix, text, errors)
+
+    # 8c. Links docs/...md citados em src/ e frontend/src/
+    _check_code_docs_links(errors)
 
     # 9. Paridade modular dinâmica no README.md
     if readme_path.exists():

@@ -87,16 +87,24 @@ Adotamos a **Opção 3: Arquitetura de Frontend SPA/PWA com React 19, Hey API e 
 
 ### 4.4 Decomposição em Rotas Declarativas, Route Guards e Deep Linking (Issue #141)
 Para eliminar monolitos de estado (*god components*) na raiz do frontend, a navegação é orquestrada por rotas tipadas em `frontend/src/routes/`:
-1. **9 Rotas Canônicas Tipadas:**
-   - `/`: Recepção Virtual do Cidadão (`HomeLanding`), focada no paciente com cards assistenciais imediatos e link discreto de rodapé para a Área do Profissional.
-   - `/triagem`: Acolhimento e triagem clínica estruturada com TCLE digital (`ProgressiveOnboardingWizard`).
-   - `/otp`: Reconexão rápida passwordless por SMS/WhatsApp (`AuthOtpCard`).
-   - `/login`: Portal de credenciais da equipe médica e de gestão (`TripartiteAuthCard`).
+1. **Mapa de Rotas Canônico (Portal Público, Portal Cidadão & Equipe Interna):**
+   - `/`: Landing Page pública de portfólio e apresentação 100% SUS do MediSync Express (`PortfolioLandingPage`, com links para `/home`, `/cadastro`, `/entrar` e `/validar`, sem exposição da área interna).
+   - `/home`: Portal fechado autenticado do cidadão/paciente (`CitizenHomePage`), centralizando fila ativa, agendamentos eMulti, histórico de atendimentos e receitas digitais.
+   - `/entrar`: Entrada do cidadão (`PatientAuthPage` / `PatientHybridAuthCard` — IAM Híbrido: identificação única anti-enumeração, OTP SMS, Passkeys WebAuthn, senha opcional e Gov.br opcional via `GOVBR_OIDC_ENABLED`).
+   - `/cadastro`: Auto-cadastro civil do cidadão no portal SUS (`PatientRegisterPage` / `PatientRegisterForm` com e-mail obrigatório, senha opcional e disparo inicial de OTP).
+   - `/interno/login`: Portal restrito e isolado de credenciais da equipe médica e gestora (`InternalLoginPage` / `StaffAuthCard` — Médico CRM+MFA e Gestor/Regulador RBAC).
+   - `/agendar`: Agendamento programado de atendimentos multiprofissionais eMulti (`ScheduleAppointmentPage`).
+   - `/triagem`: Rota autenticada pós-portal da esteira imediata de PA Virtual (`beforeLoad` exige sessão de paciente em `/entrar` e redireciona para `/fila` se houver `atendimentoId`).
+   - `/otp`: Redirect legado (`otpRoute`) para `/fila`, `/home`, `/medico`, `/gestor` ou `/entrar`.
    - `/fila`: Sala de espera virtual do paciente, protegida por guarda de sessão com `atendimentoId`.
    - `/chamada`: Teleconsulta LiveKit SFU em tela cheia com proteção contra vazamento de tokens na URL.
    - `/pos-consulta`: Resumo de encerramento do atendimento e download de documentos ICP-Brasil.
-   - `/medico`: Estação de trabalho clínica do médico plantonista protegida por guarda de CRM e token médico.
-   - `/gestor`: Painel operacional de telemetria da gestão e consórcios intermunicipais.
+   - `/historico`: Histórico clínico e longitudinal unificado (PA + eMulti) do cidadão (`HistoryPage`).
+   - `/receitas`: Visualização e download de receitas digitais, atestados e documentos ICP-Brasil (`PrescriptionsPage`).
+   - `/perfil`: Dados cadastrais CFM do cidadão, dependentes legais e gerenciamento de Passkeys (`ProfilePage`).
+   - `/validar` e `/validar/$token`: Portal público de verificação de autenticidade de prescrições e atestados ICP-Brasil (`DocumentValidationPage` por QR Code / hash SHA-256, com preenchimento automático de token na rota parametrizada).
+   - `/medico`: Estação de trabalho clínica do médico plantonista (`DoctorWorkstationPage` + `ProfessionalSchedulePanel`) protegida por guarda de sessão médica e cookie de refresh (redireciona para `/interno/login` se ausente).
+   - `/gestor`: Painel operacional de telemetria da gestão e consórcios intermunicipais (`TelemetryDashboardPage`), redirecionando para `/interno/login` se não autenticado.
 2. **Route Guards Síncronos (`beforeLoad`):**
    - Interceptação de transição antes da renderização de componentes com `throw redirect({ to: '...' })`.
    - Leitura de sessões isolada nos helpers puros de `frontend/src/lib/session-storage.ts`.

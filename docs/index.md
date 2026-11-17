@@ -29,10 +29,12 @@ O registro formal das decisões arquiteturais adotadas no projeto está cataloga
 - [ADR-008](adrs/ADR-008-Padronizacao-de-DTOs-e-Eliminacao-de-Mapper-Hell-na-Apresentacao.md) — Padronização de DTOs e Eliminação de Mapper Hell
 - [ADR-009](adrs/ADR-009-Configuracoes-Polimorficas-por-Perfil-e-Desacoplamento-nos-Composition-Roots.md) — Configurações Polimórficas e Desacoplamento nos Composition Roots
 - [ADR-010](adrs/ADR-010-Estrategia-DevSecOps-Defesa-em-Profundidade-de-Segredos-e-SAST.md) — Estratégia DevSecOps e Prevenção de Vazamento de Segredos
+- [ADR-011](adrs/ADR-011-Arquitetura-Frontend-SPA-PWA-e-Estrategia-de-Testes.md) — Arquitetura Frontend SPA/PWA com React 19, Hey API e Troféu de Testes
+- [ADR-012](adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md) — Transição 100% SUS, Consórcios Intermunicipais e Autenticação Tripartida
 
 ---
 
-## 3. Living Specifications (User Stories US-01 a US-13)
+## 3. Living Specifications (User Stories US-01 a US-16)
 
 Especificações comportamentais em Gherkin com checklist de código vivo, consolidadas no [Catálogo de User Stories](user-stories/README.md):
 
@@ -49,6 +51,9 @@ Especificações comportamentais em Gherkin com checklist de código vivo, conso
 - [US-11](user-stories/US-11-liquidacao-fechamento-contabil.md): Conclusão de Atendimento e Consolidação Ambulatorial SUS (BPA-I)
 - [US-12](user-stories/US-12-parametrizacao-politicas-plantao.md): Parametrização e Políticas Operacionais do Plantão
 - [US-13](user-stories/US-13-telemetria-painel-operacional.md): Telemetria Operacional e Painel do Plantão (CQRS)
+- [US-14](user-stories/US-14-biometria-passkeys-webauthn.md): Autenticação e Registro de Biometria do Dispositivo (Passkeys / WebAuthn)
+- [US-15](user-stories/US-15-prova-de-vida-facial-liveness.md): Verificação Facial e Prova de Vida para Receituário de Controle Especial
+- [US-16](user-stories/US-16-portal-cidadao-e-agendamento-emulti.md): Portal do Cidadão, IAM Híbrido e Agendamento Multiprofissional (eMulti)
 
 ---
 

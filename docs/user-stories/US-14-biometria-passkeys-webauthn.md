@@ -83,12 +83,12 @@
 - [x] **Aplicação:** Serviço `src/modules/auth/application/services/patient_webauthn_service.py:PatientWebAuthnService` com verificação criptográfica `py-webauthn`, `authenticatorSelection` discoverable (`residentKey="required"`), desafios de uso único em Valkey e emissão de JWT `Role.PACIENTE` após checagem de vínculo ativo no tenant.
 - [x] **Apresentação:** Router fino `src/modules/auth/presentation/routers/patient_webauthn_router.py:patient_webauthn_router` integrado em `/api/v1/auth/patient/webauthn`.
 - [x] **Frontend Registro e Login em 1 Toque (ADR-011):**
-  - Registro FIDO2 via `frontend/src/features/queue/api/use-passkey-register.ts:usePasskeyRegister` e `frontend/src/features/queue/components/passkey-invitation-card.tsx:PasskeyInvitationCard`.
-  - Autenticação 1-toque em `/otp` via `frontend/src/features/onboarding/api/use-passkey-auth.ts:usePasskeyAuth` e `frontend/src/features/onboarding/components/solicitar-otp-form.tsx:SolicitarOtpForm`.
+  - Registro FIDO2 na sala de espera via `frontend/src/features/queue/api/use-passkey-register.ts:usePasskeyRegister` e `frontend/src/features/queue/components/passkey-invitation-card.tsx:PasskeyInvitationCard`, e no perfil do cidadão (`/perfil`) via `frontend/src/features/citizen/api/use-citizen-profile-actions.ts:useCitizenPasskeyRegister` e `frontend/src/features/citizen/components/profile-passkey-section.tsx:ProfilePasskeySection`.
+  - Autenticação 1-toque em `/entrar` via `frontend/src/features/auth/api/use-patient-methods.ts:usePatientPasskeyAuth` e `frontend/src/features/auth/components/patient-hybrid-auth-card.tsx:PatientHybridAuthCard` (preservando `frontend/src/features/onboarding/api/use-passkey-auth.ts:usePasskeyAuth`).
 - [x] **Testes Automatizados (Backend Unitário + Integração HTTP/DB + Frontend Vitest + E2E CDP):**
   - `tests/unit/test_patient_webauthn_service.py` e `tests/integration/test_webauthn_endpoints.py` (desafios, replay, HMAC, isolamento multi-tenant, auditoria e JWT ativo)
-  - `frontend/src/features/queue/tests/queue-unit.test.ts` e `passkey-invitation-card.test.tsx`
-  - `frontend/e2e/auth-otp.spec.ts` (`E2E-04`: CDP Virtual Authenticator WebAuthn cadastro em `/fila` + login 1-toque em `/otp`)
+  - `frontend/src/features/queue/tests/queue-unit.test.ts`, `passkey-invitation-card.test.tsx` e `frontend/src/features/citizen/tests/profile-page.test.tsx`
+  - `frontend/e2e/auth-otp.spec.ts` (`E2E-04`: CDP Virtual Authenticator WebAuthn cadastro em `/fila` + login 1-toque em `/entrar`)
 
 ---
 

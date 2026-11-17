@@ -8,7 +8,7 @@
 
 ## 1. Objetivo e Papel do Catálogo
 
-Este diretório consolida a especificação comportamental dos **Requisitos de Produto (RF-01 a RF-10)** e **Invariantes Contratuais (RN01 a RN07)** do **MediSync Express**.
+Este diretório consolida a especificação comportamental dos **Requisitos de Produto (RF-01 a RF-10)** e **Invariantes Contratuais (RN01 a RN09)** do **MediSync Express**.
 
 O catálogo cumpre três propósitos estruturais:
 1. **Especificação Comportamental Viva (Living Spec):** Descreve em linguagem de negócio (*User Voice*) as jornadas reais dos usuários (pacientes, médicos, gestores) sem acoplamento a detalhes efêmeros de implementação.
@@ -49,6 +49,7 @@ O catálogo é estruturado entre **Jornadas Assistenciais e Operacionais Primár
 | **US-13** | [`US-13-telemetria-painel-operacional.md`](./US-13-telemetria-painel-operacional.md) | RF-10 | RNF-10, SMART 1-5 | Carlos Drumond / Dr. Eduardo Rocha | 🟢 **Conforme** *(Resoluções NC-TEL-01, NC-TEL-02 e NC-SEC-01 na Issue #87; Issue #144)* |
 | **US-14** | [`US-14-biometria-passkeys-webauthn.md`](./US-14-biometria-passkeys-webauthn.md) | RF-01, RF-07 | LGPD Art. 11, OWASP | Juliana Silva | 🟢 **Conforme** *(Issue #115)* |
 | **US-15** | [`US-15-prova-de-vida-facial-liveness.md`](./US-15-prova-de-vida-facial-liveness.md) | RF-07 | Portaria 344/98, CFM 2.314 | Dr. Eduardo / Juliana | 🟡 **Parcial** *(Issue #116)* |
+| **US-16** | [`US-16-portal-cidadao-e-agendamento-emulti.md`](./US-16-portal-cidadao-e-agendamento-emulti.md) | RF-01, RF-07, RT-01 | RN-AUT-09, RN-SCH-01..05 | Juliana / Dr. Eduardo | 🟢 **Conforme** |
 
 ### 3.2 Políticas e Salvaguardas Transversais de Regra de Negócio
 

@@ -9,6 +9,7 @@ Visão conceitual por domínio clínico — regras, invariantes e vocabulário u
 - [queue-domain.md](./queue-domain.md) — ordenação, alocação atômica e backpressure.
 - [consultation-domain.md](./consultation-domain.md) — ato médico, evolução e PEP.
 - [ambulatory-domain.md](./ambulatory-domain.md) — produção ambulatorial SUS, BPA-I, SISAB e SIGTAP.
+- [scheduling-domain.md](./scheduling-domain.md) — agenda multiprofissional programada (eMulti: Psicologia e Nutrição), slots livres e exclusão temporal GiST.
 - [telemetry-domain.md](./telemetry-domain.md) — governança de plantão, parametrização estocástica e painel CQRS.
 
 ## Transversais

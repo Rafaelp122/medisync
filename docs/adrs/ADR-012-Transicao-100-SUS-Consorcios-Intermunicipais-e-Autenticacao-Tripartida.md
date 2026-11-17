@@ -54,10 +54,10 @@ Adotamos a **Opção 3: Transição Integral para 100% SUS Público com Suporte 
 ### 4.1 Transição 100% SUS e Universalidade
 A plataforma assume como princípio petre o Art. 196 da Constituição Federal e a Portaria GM/MS nº 3.232/2024. Fica vedada qualquer cobrança, taxa ou validação de elegibilidade financeira privada. O acesso à esteira de acolhimento e teleconsulta é universal, gratuito e irrestrito.
 
-### 4.2 Consórcios Públicos Intermunicipais e Isolamento via Postgres RLS
-A arquitetura multi-tenant lógica (ADR-003) passa a atender formalmente à estrutura dos Consórcios Públicos de Saúde (Lei Federal nº 11.107/2005):
-* Uma instância compartilhada atende ao consórcio regional;
-* Cada município consorciado opera como uma `organizacao_id` segregada sob **Row-Level Security (RLS)** ativo no PostgreSQL 17;
+### 4.2 Consórcios Públicos Intermunicipais, Single-Tenant Opcional e Isolamento via Postgres RLS
+A arquitetura multi-tenant lógica (ADR-003) passa a atender formalmente à estrutura dos Consórcios Públicos de Saúde (Lei Federal nº 11.107/2005), com flexibilidade para prefeituras isoladas:
+* Uma instância compartilhada (`MULTI_TENANCY_ENABLED=True`) atende ao consórcio regional; cada município consorciado opera como uma `organizacao_id` segregada sob **Row-Level Security (RLS)** ativo no PostgreSQL 17;
+* Implantações municipais dedicadas podem operar em modo single-tenant (`MULTI_TENANCY_ENABLED=False` e `DEFAULT_TENANT_ID` explícito), removendo a exigência de seleção manual de organização na interface do cidadão enquanto preservam o RLS ativo;
 * A escala médica de plantão é centralizada e compartilhada regionalmente, otimizando o gasto público e respeitando o teto de 54% da LRF de cada prefeitura consorciada.
 
 ### 4.3 Renomeação Arquitetural: de `billing` para `ambulatory`
@@ -75,15 +75,20 @@ Estabelece-se a segregação estrita em três pilares de acesso:
 ```mermaid
 flowchart TD
     subgraph Acesso["Autenticação Tripartida MediSync Express"]
-        P1["1. Cidadão / Paciente"] --> A1["Gov.br (Prata/Ouro) ou CADSUS / CPF<br/>com OTP SMS Passwordless (Urgência)"]
-        P2["2. Médico Plantonista"] --> A2["CRM Ativo + Senha Argon2id +<br/>MFA Obrigatório (TOTP) + ICP-Brasil PSC"]
-        P3["3. Gestor / Regulador"] --> A3["Email Institucional + Senha Argon2id +<br/>MFA Obrigatório (TOTP) + RBAC Municipal"]
+        P1["1. Cidadão / Paciente (/entrar & /cadastro)"] --> A1["IAM Híbrido: OTP SMS, Passkeys,<br/>CADSUS, Senha Opcional e Gov.br (flag)"]
+        P2["2. Médico Plantonista (/interno/login)"] --> A2["CRM Ativo + Senha Argon2id +<br/>MFA Obrigatório (TOTP) + ICP-Brasil PSC"]
+        P3["3. Gestor / Regulador (/interno/login)"] --> A3["Email Institucional + Senha Argon2id +<br/>MFA Obrigatório (TOTP) + RBAC Municipal"]
     end
 ```
 
-1. **Cidadão / Paciente**: Identificação via Gov.br (Prata ou Ouro) ou cruzamento CADSUS por CPF + Data de Nascimento + Telefone com verificação OTP SMS *passwordless* (zero fricção na dor aguda).
-2. **Médico Plantonista**: Credenciais de acesso com CRM + Estado + Senha criptografada via Argon2id + Segundo Fator de Autenticação Obrigatório (**MFA/TOTP**) + Assinatura Digital ICP-Brasil em Nuvem via Provedor de Serviços de Confiança (PSC - OAuth2 PAdES sob ADR-006).
-3. **Gestor / Regulador Municipal**: Email institucional autenticado + Senha Argon2id + **MFA/TOTP obrigatório**, com controle de acesso baseado em papéis hierárquicos (RBAC: `GESTOR_CONSORCIO`, `REGULADOR_MUNICIPAL`, `AUDITOR_PRODUCAO`).
+1. **Cidadão / Paciente (IAM Híbrido do Cidadão)**: Encerra-se a antiga tela tripartida única (`/login` / `TripartiteAuthCard`), segregando o acesso do cidadão em `/entrar` (`PatientHybridAuthCard`) e `/cadastro` (`PatientRegisterForm` com e-mail obrigatório, aceite LGPD, senha Argon2id opcional — ou marcador `!UNUSABLE:` quando omitida — e disparo inicial de OTP). Combina OTP SMS, Passkeys FIDO2/WebAuthn, desambiguação CADSUS e integração Gov.br condicionada à feature flag `GOVBR_OIDC_ENABLED` (default `false`), habilitando acesso contínuo ao portal fechado (`/home`), `/triagem` autenticada, `/historico`, `/receitas`, `/perfil` e `/agendar`.
+2. **Médico Plantonista (`/interno/login`)**: Credenciais isoladas no portal interno (`StaffAuthCard`, sem vínculo com `/` ou `/entrar`), com CRM + Estado + Senha criptografada via Argon2id + Segundo Fator de Autenticação Obrigatório (**MFA/TOTP**) + Assinatura Digital ICP-Brasil em Nuvem via PSC (OAuth2 PAdES sob ADR-006). O endpoint `/api/v1/auth/login` rejeita explicitamente credenciais `Role.PACIENTE`.
+3. **Gestor / Regulador Municipal (`/interno/login`)**: Email institucional autenticado + Senha Argon2id + **MFA/TOTP obrigatório** no mesmo portal corporativo isolado, com controle de acesso baseado em papéis hierárquicos (RBAC: `GESTOR_CONSORCIO`, `REGULADOR_MUNICIPAL`, `AUDITOR_PRODUCAO`).
+
+### 4.5 Atendimento eMulti Agendado (Portaria GM/MS nº 635/2023)
+Além da esteira de pronto-atendimento virtual sob demanda espontânea (PA Digital 24/7), a plataforma contempla o atendimento programado por equipes multiprofissionais **eMulti** (`/agendar`):
+* Permite agendamento estruturado de teleconsultas de acompanhamento na Atenção Primária à Saúde sem competir com a fila de urgência imediata;
+* Consolida os atendimentos agendados no mesmo fluxo ambulatorial SUS (`ambulatory` — BPA-I, SISAB/e-SUS, SIGTAP e CNES 160/006), viabilizando a comprovação de produção vinculada ao incentivo federal eMulti (Portaria GM/MS nº 635/2023).
 
 ---
 

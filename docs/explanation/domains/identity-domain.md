@@ -66,7 +66,8 @@ flowchart TD
 ## 4. Relações
 
 - Consumo por Triagem e Fila: `queue` e `triage` consomem dados do paciente e validam o token provisório de intake emitido por `identity`.
-- Leitura desacoplada via porta: `IdentityReaderPort` (em `src/modules/identity/infrastructure/identity_reader_sql.py`) expõe métodos de consulta para outros módulos sem acoplar entidades ORM internas.
+- Leitura e escrita desacopladas via porta: `IdentityReaderPort` (`src/modules/identity/infrastructure/identity_reader_sql.py`) expõe métodos de leitura de pacientes, diretório e passkeys; `IdentityWriterPort` (`src/modules/identity/application/ports/identity_writer_port.py`) é implementada por `SqlIdentityWriter` (`src/modules/identity/infrastructure/identity_writer_sql.py`) e exportada por `build_identity_writer_sql_for_session` em `src/modules/identity/composition.py` para auto-cadastro de cidadãos pelo módulo `auth`. `SqlIdentityWriter.criar_paciente` executa apenas `flush()` (preservando a posse da transação no service chamador conforme ADR-001 §6) e traduz `IntegrityError` (`23505` em `ConflictError` anti-enumeração, `23503` em `NotFoundError`).
+- Biometria FIDO2/WebAuthn: `PacientePasskey` (`src/modules/identity/domain/models/passkey.py`) armazena chaves públicas de Passkeys vinculadas ao paciente e organização com RLS ativo.
 - Gestão de Onboarding: `OnboardingService` orquestra as etapas de Fase 1 e Fase 2, gerando o token assinado HMAC via `src/core/security.py`.
 - Gestão de Dependentes: `DependenteService` gerencia vínculos de tutela e parentesco, garantindo integridade relacional.
 - Rotas REST finas: `onboarding_router.py` e `pacientes_router.py` delegam regras de negócio a `OnboardingServiceDep` e `DependenteServiceDep`.
@@ -84,14 +85,17 @@ flowchart TD
 - `src/modules/identity/domain/models/dependente.py`
 - `src/modules/identity/domain/models/profissional.py`
 - `src/modules/identity/domain/models/organizacao.py`
+- `src/modules/identity/domain/models/passkey.py`
 - `src/modules/identity/domain/models/_helpers.py`
 - `src/modules/identity/domain/exceptions.py`
 - `src/modules/identity/domain/validators.py`
 - `src/modules/identity/application/dtos.py`
 - `src/modules/identity/application/ports/identity_reader_port.py`
+- `src/modules/identity/application/ports/identity_writer_port.py`
 - `src/modules/identity/application/services/onboarding_service.py`
 - `src/modules/identity/application/services/dependente_service.py`
 - `src/modules/identity/infrastructure/identity_reader_sql.py`
+- `src/modules/identity/infrastructure/identity_writer_sql.py`
 - `src/modules/identity/presentation/schemas.py`
 - `src/modules/identity/presentation/dependencies.py`
 - `src/modules/identity/presentation/routers/onboarding_router.py`
@@ -100,6 +104,7 @@ flowchart TD
 - `src/core/security.py`
 - `migrations/versions/0001_initial_schema.py`
 - `migrations/versions/0005_paciente_nome_social.py`
+- `migrations/versions/0014_passkeys_and_liveness.py`
 
 Prova viva:
 
