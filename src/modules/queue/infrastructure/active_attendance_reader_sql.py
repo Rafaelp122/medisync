@@ -14,7 +14,8 @@ _TERMINAL_STATUS_VALUES = tuple(str(s) for s in TERMINAL_STATUSES)
 class SqlActiveAttendanceReader:
     """Leitor SQL de atendimento ativo do paciente para reidratação de sessão.
 
-    Regras: RF-01, ADR-001 e docs/user-stories/US-02-autenticacao-passwordless-otp.md.
+    Regras: RF-01, ADR-001, ADR-013.
+    História: docs/user-stories/US-02-autenticacao-passwordless-otp.md
     """
 
     def __init__(self, session: AsyncSession) -> None:
@@ -22,18 +23,16 @@ class SqlActiveAttendanceReader:
 
     async def buscar_atendimento_ativo_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> UUID | None:
-        """Retorna o ID do atendimento ativo mais recente do paciente na organização.
+        """Retorna o ID do atendimento ativo mais recente do paciente na plataforma.
 
-        Regras: RF-01, US-02 (§2 Cenário 5) e
+        Regras: RF-01, ADR-013, US-02 (§2 Cenário 5) e
         docs/user-stories/US-14-biometria-passkeys-webauthn.md.
         """
         stmt = (
             select(Atendimento.id)
             .where(
-                Atendimento.organizacao_id == organizacao_id,
                 Atendimento.paciente_id == paciente_id,
                 Atendimento.status.notin_(_TERMINAL_STATUS_VALUES),
             )

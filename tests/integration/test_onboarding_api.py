@@ -16,9 +16,8 @@ from src.core.authz.roles import Role
 from src.core.config import get_settings
 from src.core.security import create_intake_token, verify_intake_token
 from src.core.uuid7 import uuid7
-from src.modules.identity.domain.models import Organizacao
 
-from tests.factories.scenarios import seed_multi_tenant_orgs
+from tests.factories.identity import make_configuracao_unidade
 
 pytestmark = pytest.mark.usefixtures("clean_db")
 
@@ -26,25 +25,19 @@ SAMPLE_TCLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852
 
 
 @pytest.fixture
-async def test_orgs(
-    db_session: AsyncSession,
-) -> tuple[Organizacao, Organizacao]:
-    """Ensure two test organizations exist for multi-tenant verification."""
-    return await seed_multi_tenant_orgs(
-        db_session,
-        cnpj_a="55667788000199",
-        cnpj_b="66778899000111",
-    )
+async def seeded_unidade(db_session: AsyncSession) -> None:
+    """Seed singleton ConfiguracaoUnidade for onboarding tests."""
+    unidade = make_configuracao_unidade()
+    db_session.add(unidade)
+    await db_session.commit()
 
 
 @pytest.mark.asyncio
 async def test_onboarding_fase_1_happy_path_under_45s(
     async_client: AsyncClient,
-    test_orgs: tuple[Organizacao, Organizacao],
+    seeded_unidade: None,
 ) -> None:
     """Validate Phase 1 rapid intake executes in < 45 seconds (NEC-01)."""
-    org1, _ = test_orgs
-
     start_time = time.monotonic()
     payload = {
         "nome_completo": "Carlos Drumond de Andrade",
@@ -54,11 +47,7 @@ async def test_onboarding_fase_1_happy_path_under_45s(
         "tcle_hash": SAMPLE_TCLE_HASH,
         "cpf": "111.444.777-35",
     }
-    res = await async_client.post(
-        "/api/v1/onboarding/fase-1",
-        json=payload,
-        headers={"X-Tenant-ID": str(org1.id)},
-    )
+    res = await async_client.post("/api/v1/onboarding/fase-1", json=payload)
     elapsed = time.monotonic() - start_time
 
     assert res.status_code == 201
@@ -75,17 +64,15 @@ async def test_onboarding_fase_1_happy_path_under_45s(
     token = cast("str", data["token"])
     claims = verify_intake_token(token, settings.SECRET_KEY)
     assert claims["paciente_id"] == data["paciente_id"]
-    assert claims["organizacao_id"] == org1.id
     assert claims["tipo"] == "intake_provisional"
 
 
 @pytest.mark.asyncio
 async def test_onboarding_fase_1_deduplication_reuses_patient(
     async_client: AsyncClient,
-    test_orgs: tuple[Organizacao, Organizacao],
+    seeded_unidade: None,
 ) -> None:
     """Submitting Phase 1 intake for an existing patient returns the same record."""
-    org1, _ = test_orgs
     cpf = "529.982.247-25"
 
     # First submission
@@ -99,7 +86,6 @@ async def test_onboarding_fase_1_deduplication_reuses_patient(
             "tcle_hash": SAMPLE_TCLE_HASH,
             "cpf": cpf,
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     assert res1.status_code == 201
     data1 = cast("dict[str, object]", res1.json())
@@ -116,7 +102,6 @@ async def test_onboarding_fase_1_deduplication_reuses_patient(
             "tcle_hash": SAMPLE_TCLE_HASH,
             "cpf": cpf,
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     assert res2.status_code == 201
     data2 = cast("dict[str, object]", res2.json())
@@ -127,11 +112,9 @@ async def test_onboarding_fase_1_deduplication_reuses_patient(
 @pytest.mark.asyncio
 async def test_onboarding_fase_1_validation_errors(
     async_client: AsyncClient,
-    test_orgs: tuple[Organizacao, Organizacao],
+    seeded_unidade: None,
 ) -> None:
     """Validate RFC 7807 problem details on input errors."""
-    org1, _ = test_orgs
-
     # 1. Missing both CPF and CNS
     res_no_doc = await async_client.post(
         "/api/v1/onboarding/fase-1",
@@ -142,7 +125,6 @@ async def test_onboarding_fase_1_validation_errors(
             "queixa_principal": "Febre",
             "tcle_hash": SAMPLE_TCLE_HASH,
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     assert res_no_doc.status_code == 422
     problem = cast("dict[str, object]", res_no_doc.json())
@@ -159,30 +141,12 @@ async def test_onboarding_fase_1_validation_errors(
             "tcle_hash": SAMPLE_TCLE_HASH,
             "cpf": "111.444.777-99",
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     assert res_bad_cpf.status_code == 422
-
-    # 3. Missing X-Tenant-ID header
-    res_no_tenant = await async_client.post(
-        "/api/v1/onboarding/fase-1",
-        json={
-            "nome_completo": "Paciente Sem Tenant",
-            "data_nascimento": "1990-01-01",
-            "telefone": "11987654321",
-            "queixa_principal": "Febre",
-            "tcle_hash": SAMPLE_TCLE_HASH,
-            "cpf": "11144477735",
-        },
-    )
-    assert res_no_tenant.status_code == 400
-    problem_tenant = cast("dict[str, object]", res_no_tenant.json())
-    assert problem_tenant["code"] == "TENANT_INVALIDO"
 
 
 def make_test_jwt(
     usuario_id: UUID,
-    organizacao_id: int,
     papel: str,
     secret_key: str,
     expires_in_seconds: int = 900,
@@ -192,7 +156,6 @@ def make_test_jwt(
     exp = now + timedelta(seconds=expires_in_seconds)
     payload = {
         "sub": str(usuario_id),
-        "org_id": organizacao_id,
         "papel": papel,
         "iat": int(now.timestamp()),
         "exp": int(exp.timestamp()),
@@ -205,11 +168,9 @@ def make_test_jwt(
 @pytest.mark.asyncio
 async def test_onboarding_fase_2_enrichment_happy_path(
     async_client: AsyncClient,
-    test_orgs: tuple[Organizacao, Organizacao],
+    seeded_unidade: None,
 ) -> None:
     """Validate Phase 2 CFM mandatory enrichment with token in Authorization header."""
-    org1, _ = test_orgs
-
     # Step 1: Intake
     intake_res = await async_client.post(
         "/api/v1/onboarding/fase-1",
@@ -221,7 +182,6 @@ async def test_onboarding_fase_2_enrichment_happy_path(
             "tcle_hash": SAMPLE_TCLE_HASH,
             "cpf": "11144477735",
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     assert intake_res.status_code == 201
     intake_data = cast("dict[str, object]", intake_res.json())
@@ -244,10 +204,7 @@ async def test_onboarding_fase_2_enrichment_happy_path(
     res2 = await async_client.post(
         "/api/v1/onboarding/fase-2",
         json=fase2_payload,
-        headers={
-            "X-Tenant-ID": str(org1.id),
-            "Authorization": f"Bearer {token}",
-        },
+        headers={"Authorization": f"Bearer {token}"},
     )
     assert res2.status_code == 200
     data2 = cast("dict[str, object]", res2.json())
@@ -264,11 +221,9 @@ async def test_onboarding_fase_2_enrichment_happy_path(
 @pytest.mark.asyncio
 async def test_onboarding_fase_2_enrichment_via_body_token(
     async_client: AsyncClient,
-    test_orgs: tuple[Organizacao, Organizacao],
+    seeded_unidade: None,
 ) -> None:
     """Validate Phase 2 enrichment succeeds when token is sent inside the JSON body."""
-    org1, _ = test_orgs
-
     intake_res = await async_client.post(
         "/api/v1/onboarding/fase-1",
         json={
@@ -279,7 +234,6 @@ async def test_onboarding_fase_2_enrichment_via_body_token(
             "tcle_hash": SAMPLE_TCLE_HASH,
             "cpf": "11144477735",
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     assert intake_res.status_code == 201
     intake_data = cast("dict[str, object]", intake_res.json())
@@ -298,11 +252,7 @@ async def test_onboarding_fase_2_enrichment_via_body_token(
         "cidade": "Rio de Janeiro",
         "estado": "RJ",
     }
-    res2 = await async_client.post(
-        "/api/v1/onboarding/fase-2",
-        json=fase2_payload,
-        headers={"X-Tenant-ID": str(org1.id)},
-    )
+    res2 = await async_client.post("/api/v1/onboarding/fase-2", json=fase2_payload)
     assert res2.status_code == 200
     data2 = cast("dict[str, object]", res2.json())
     assert data2["paciente_id"] == paciente_id
@@ -312,13 +262,11 @@ async def test_onboarding_fase_2_enrichment_via_body_token(
 @pytest.mark.asyncio
 async def test_onboarding_fase_2_security_rejections(
     async_client: AsyncClient,
-    test_orgs: tuple[Organizacao, Organizacao],
+    seeded_unidade: None,
 ) -> None:
     """Validate RFC 7807 401 and 403 on invalid, missing, or mismatched tokens."""
-    org1, org2 = test_orgs
     settings = get_settings()
 
-    # Step 1: Create patient in Org 1
     intake_res = await async_client.post(
         "/api/v1/onboarding/fase-1",
         json={
@@ -329,7 +277,6 @@ async def test_onboarding_fase_2_security_rejections(
             "tcle_hash": SAMPLE_TCLE_HASH,
             "cpf": "11144477735",
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     assert intake_res.status_code == 201
     intake_data = cast("dict[str, object]", intake_res.json())
@@ -349,11 +296,7 @@ async def test_onboarding_fase_2_security_rejections(
     }
 
     # 1. Missing token -> 401 Unauthorized
-    res_no_tok = await async_client.post(
-        "/api/v1/onboarding/fase-2",
-        json=base_fase2,
-        headers={"X-Tenant-ID": str(org1.id)},
-    )
+    res_no_tok = await async_client.post("/api/v1/onboarding/fase-2", json=base_fase2)
     assert res_no_tok.status_code == 401
     assert cast("dict[str, object]", res_no_tok.json())["code"] == "UNAUTHORIZED"
 
@@ -362,27 +305,20 @@ async def test_onboarding_fase_2_security_rejections(
     res_tampered = await async_client.post(
         "/api/v1/onboarding/fase-2",
         json=base_fase2,
-        headers={
-            "X-Tenant-ID": str(org1.id),
-            "Authorization": f"Bearer {tampered_token}",
-        },
+        headers={"Authorization": f"Bearer {tampered_token}"},
     )
     assert res_tampered.status_code == 401
 
     # 3. Expired token -> 401 Unauthorized
     expired_token = create_intake_token(
         paciente_id=UUID(paciente_id),
-        organizacao_id=org1.id,
         secret_key=settings.SECRET_KEY,
         expires_in_seconds=-10,
     )
     res_expired = await async_client.post(
         "/api/v1/onboarding/fase-2",
         json=base_fase2,
-        headers={
-            "X-Tenant-ID": str(org1.id),
-            "Authorization": f"Bearer {expired_token}",
-        },
+        headers={"Authorization": f"Bearer {expired_token}"},
     )
     assert res_expired.status_code == 401
 
@@ -392,41 +328,23 @@ async def test_onboarding_fase_2_security_rejections(
     res_mismatch = await async_client.post(
         "/api/v1/onboarding/fase-2",
         json=mismatched_payload,
-        headers={
-            "X-Tenant-ID": str(org1.id),
-            "Authorization": f"Bearer {valid_token}",
-        },
+        headers={"Authorization": f"Bearer {valid_token}"},
     )
     assert res_mismatch.status_code == 403
     assert cast("dict[str, object]", res_mismatch.json())["code"] == "FORBIDDEN"
-
-    # 5. Token from Org 1 used with X-Tenant-ID of Org 2 -> 403 Forbidden
-    res_cross_org = await async_client.post(
-        "/api/v1/onboarding/fase-2",
-        json=base_fase2,
-        headers={
-            "X-Tenant-ID": str(org2.id),
-            "Authorization": f"Bearer {valid_token}",
-        },
-    )
-    assert res_cross_org.status_code == 403
-    assert cast("dict[str, object]", res_cross_org.json())["code"] == "FORBIDDEN"
 
 
 @pytest.mark.asyncio
 async def test_onboarding_fase_2_cfm_validation_failures(
     async_client: AsyncClient,
-    test_orgs: tuple[Organizacao, Organizacao],
+    seeded_unidade: None,
 ) -> None:
     """Validate CFM requirements reject incomplete data when authenticated."""
-    org1, _ = test_orgs
     settings = get_settings()
 
-    # Non-existent patient with validly signed token for that tenant
     fake_id = uuid7()
     fake_token = create_intake_token(
         paciente_id=fake_id,
-        organizacao_id=org1.id,
         secret_key=settings.SECRET_KEY,
     )
     res_404 = await async_client.post(
@@ -442,10 +360,7 @@ async def test_onboarding_fase_2_cfm_validation_failures(
             "cidade": "São Paulo",
             "estado": "SP",
         },
-        headers={
-            "X-Tenant-ID": str(org1.id),
-            "Authorization": f"Bearer {fake_token}",
-        },
+        headers={"Authorization": f"Bearer {fake_token}"},
     )
     assert res_404.status_code == 404
     res_404_data = cast("dict[str, object]", res_404.json())
@@ -462,7 +377,6 @@ async def test_onboarding_fase_2_cfm_validation_failures(
             "tcle_hash": SAMPLE_TCLE_HASH,
             "cns": "700000000000005",
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     intake_data = cast("dict[str, object]", intake_res.json())
     paciente_id = cast("str", intake_data["paciente_id"])
@@ -481,10 +395,7 @@ async def test_onboarding_fase_2_cfm_validation_failures(
             "cidade": "São Paulo",
             "estado": "SP",
         },
-        headers={
-            "X-Tenant-ID": str(org1.id),
-            "Authorization": f"Bearer {token}",
-        },
+        headers={"Authorization": f"Bearer {token}"},
     )
     assert res_single_name.status_code == 422
 
@@ -492,12 +403,9 @@ async def test_onboarding_fase_2_cfm_validation_failures(
 @pytest.mark.asyncio
 async def test_dependente_management_lifecycle(
     async_client: AsyncClient,
-    test_orgs: tuple[Organizacao, Organizacao],
+    seeded_unidade: None,
 ) -> None:
     """Validate dependent lifecycle and anti-reflexive checks with possession."""
-    org1, _ = test_orgs
-
-    # 1. Create titular
     intake_titular = await async_client.post(
         "/api/v1/onboarding/fase-1",
         json={
@@ -508,16 +416,12 @@ async def test_dependente_management_lifecycle(
             "tcle_hash": SAMPLE_TCLE_HASH,
             "cpf": "11144477735",
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     titular_data = cast("dict[str, object]", intake_titular.json())
     titular_id = cast("str", titular_data["paciente_id"])
     titular_token = cast("str", titular_data["token"])
 
-    auth_headers = {
-        "X-Tenant-ID": str(org1.id),
-        "Authorization": f"Bearer {titular_token}",
-    }
+    headers = {"Authorization": f"Bearer {titular_token}"}
 
     # 2. Anti-reflexive check: titular cannot be dependent of themselves
     res_self = await async_client.post(
@@ -526,7 +430,7 @@ async def test_dependente_management_lifecycle(
             "grau_parentesco": "FILHO",
             "dependente_id": titular_id,
         },
-        headers=auth_headers,
+        headers=headers,
     )
     assert res_self.status_code == 400
     res_self_data = cast("dict[str, object]", res_self.json())
@@ -541,7 +445,7 @@ async def test_dependente_management_lifecycle(
             "data_nascimento": "2020-06-15",
             "cns": "800000000000001",
         },
-        headers=auth_headers,
+        headers=headers,
     )
     assert res_dep1.status_code == 201
     data_dep1 = cast("dict[str, object]", res_dep1.json())
@@ -556,7 +460,7 @@ async def test_dependente_management_lifecycle(
             "grau_parentesco": "FILHO",
             "dependente_id": dep1_id,
         },
-        headers=auth_headers,
+        headers=headers,
     )
     assert res_dup.status_code == 409
     res_dup_data = cast("dict[str, object]", res_dup.json())
@@ -565,7 +469,7 @@ async def test_dependente_management_lifecycle(
     # 5. List dependents
     res_list = await async_client.get(
         f"/api/v1/pacientes/{titular_id}/dependentes",
-        headers=auth_headers,
+        headers=headers,
     )
     assert res_list.status_code == 200
     lista = cast("list[dict[str, object]]", res_list.json())
@@ -577,13 +481,11 @@ async def test_dependente_management_lifecycle(
 @pytest.mark.asyncio
 async def test_dependente_security_rejections(
     async_client: AsyncClient,
-    test_orgs: tuple[Organizacao, Organizacao],
+    seeded_unidade: None,
 ) -> None:
     """Validate dependent endpoints reject unauthorized requests (DoD Issue #40)."""
-    org1, org2 = test_orgs
     settings = get_settings()
 
-    # Create titular in Org 1
     intake_res = await async_client.post(
         "/api/v1/onboarding/fase-1",
         json={
@@ -594,7 +496,6 @@ async def test_dependente_security_rejections(
             "tcle_hash": SAMPLE_TCLE_HASH,
             "cpf": "11144477735",
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     intake_data = cast("dict[str, object]", intake_res.json())
     titular_id = cast("str", intake_data["paciente_id"])
@@ -609,15 +510,13 @@ async def test_dependente_security_rejections(
 
     # 1. Missing Authorization header -> 401
     res_get_no_tok = await async_client.get(
-        f"/api/v1/pacientes/{titular_id}/dependentes",
-        headers={"X-Tenant-ID": str(org1.id)},
+        f"/api/v1/pacientes/{titular_id}/dependentes"
     )
     assert res_get_no_tok.status_code == 401
 
     res_post_no_tok = await async_client.post(
         f"/api/v1/pacientes/{titular_id}/dependentes",
         json=dep_payload,
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     assert res_post_no_tok.status_code == 401
 
@@ -625,66 +524,43 @@ async def test_dependente_security_rejections(
     bad_token = valid_token[:-3] + "abc"
     res_tampered = await async_client.get(
         f"/api/v1/pacientes/{titular_id}/dependentes",
-        headers={
-            "X-Tenant-ID": str(org1.id),
-            "Authorization": f"Bearer {bad_token}",
-        },
+        headers={"Authorization": f"Bearer {bad_token}"},
     )
     assert res_tampered.status_code == 401
 
     # 3. Expired token -> 401
     exp_token = create_intake_token(
         paciente_id=UUID(titular_id),
-        organizacao_id=org1.id,
         secret_key=settings.SECRET_KEY,
         expires_in_seconds=-10,
     )
     res_expired = await async_client.get(
         f"/api/v1/pacientes/{titular_id}/dependentes",
-        headers={
-            "X-Tenant-ID": str(org1.id),
-            "Authorization": f"Bearer {exp_token}",
-        },
+        headers={"Authorization": f"Bearer {exp_token}"},
     )
     assert res_expired.status_code == 401
 
-    # 4. Token of another patient -> 403 Forbidden
+    # 4. Token of another patient -> 403 Forbidden (Anti-IDOR)
     other_patient_id = uuid7()
     other_token = create_intake_token(
         paciente_id=other_patient_id,
-        organizacao_id=org1.id,
         secret_key=settings.SECRET_KEY,
     )
     res_other = await async_client.get(
         f"/api/v1/pacientes/{titular_id}/dependentes",
-        headers={
-            "X-Tenant-ID": str(org1.id),
-            "Authorization": f"Bearer {other_token}",
-        },
+        headers={"Authorization": f"Bearer {other_token}"},
     )
     assert res_other.status_code == 403
 
-    # 5. Token belonging to another org -> 403 Forbidden
-    res_cross_org = await async_client.get(
-        f"/api/v1/pacientes/{titular_id}/dependentes",
-        headers={
-            "X-Tenant-ID": str(org2.id),
-            "Authorization": f"Bearer {valid_token}",
-        },
-    )
-    assert res_cross_org.status_code == 403
-
 
 @pytest.mark.asyncio
-async def test_dependente_allowed_with_corporate_jwt(
+async def test_dependente_allowed_with_gestor_unidade_jwt(
     async_client: AsyncClient,
-    test_orgs: tuple[Organizacao, Organizacao],
+    seeded_unidade: None,
 ) -> None:
-    """Validate corporate roles (ADMIN_GLOBAL, GESTOR_UNIDADE) can manage dependents."""
-    org1, _ = test_orgs
+    """Validate GESTOR_UNIDADE role can register and list patient dependents."""
     settings = get_settings()
 
-    # Create titular
     intake_res = await async_client.post(
         "/api/v1/onboarding/fase-1",
         json={
@@ -695,81 +571,73 @@ async def test_dependente_allowed_with_corporate_jwt(
             "tcle_hash": SAMPLE_TCLE_HASH,
             "cpf": "11144477735",
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     titular_id = cast("str", intake_res.json()["paciente_id"])
 
-    # Admin global JWT
-    admin_jwt = make_test_jwt(
-        usuario_id=uuid4(),
-        organizacao_id=org1.id,
-        papel=Role.ADMIN_GLOBAL,
-        secret_key=settings.JWT_SECRET_KEY,
-    )
-    res_admin_create = await async_client.post(
-        f"/api/v1/pacientes/{titular_id}/dependentes",
-        json={
-            "grau_parentesco": "FILHO",
-            "nome_completo": "Dependente Cadastrado Por Admin",
-            "data_nascimento": "2019-02-15",
-            "cns": "800000000000001",
-        },
-        headers={
-            "X-Tenant-ID": str(org1.id),
-            "Authorization": f"Bearer {admin_jwt}",
-        },
-    )
-    assert res_admin_create.status_code == 201
-
-    # Gestor unidade JWT lists dependents
     gestor_jwt = make_test_jwt(
         usuario_id=uuid4(),
-        organizacao_id=org1.id,
         papel=Role.GESTOR_UNIDADE,
         secret_key=settings.JWT_SECRET_KEY,
     )
+    res_gestor_create = await async_client.post(
+        f"/api/v1/pacientes/{titular_id}/dependentes",
+        json={
+            "grau_parentesco": "FILHO",
+            "nome_completo": "Dependente Cadastrado Por Gestor",
+            "data_nascimento": "2019-02-15",
+            "cns": "800000000000001",
+        },
+        headers={"Authorization": f"Bearer {gestor_jwt}"},
+    )
+    assert res_gestor_create.status_code == 201
+
     res_gestor_list = await async_client.get(
         f"/api/v1/pacientes/{titular_id}/dependentes",
-        headers={
-            "X-Tenant-ID": str(org1.id),
-            "Authorization": f"Bearer {gestor_jwt}",
-        },
+        headers={"Authorization": f"Bearer {gestor_jwt}"},
     )
     assert res_gestor_list.status_code == 200
     assert len(cast("list[dict[str, object]]", res_gestor_list.json())) == 1
 
 
 @pytest.mark.asyncio
-async def test_tenant_isolation_onboarding_and_dependents(
+async def test_anti_idor_cross_patient_onboarding_and_dependents(
     async_client: AsyncClient,
-    test_orgs: tuple[Organizacao, Organizacao],
+    seeded_unidade: None,
 ) -> None:
-    """Verify tenant isolation: Tenant 2 cannot access or mutate Tenant 1 patients."""
-    org1, org2 = test_orgs
-
-    # Create patient in Tenant 1
-    intake_res = await async_client.post(
+    """Verify Anti-IDOR ownership: Patient 2 cannot mutate Patient 1 records."""
+    intake_res_1 = await async_client.post(
         "/api/v1/onboarding/fase-1",
         json={
-            "nome_completo": "Paciente Tenant 1",
+            "nome_completo": "Paciente Um",
             "data_nascimento": "1992-08-20",
             "telefone": "11988884321",
             "queixa_principal": "Gripe",
             "tcle_hash": SAMPLE_TCLE_HASH,
             "cpf": "11144477735",
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
-    assert intake_res.status_code == 201
-    intake_data = cast("dict[str, object]", intake_res.json())
-    paciente_id = cast("str", intake_data["paciente_id"])
-    token_t1 = cast("str", intake_data["token"])
+    assert intake_res_1.status_code == 201
+    pac_1_id = cast("str", intake_res_1.json()["paciente_id"])
 
-    # Tenant 2 attempts Phase 2 on Tenant 1 patient with token -> 403
-    res_enrich_t2 = await async_client.post(
+    intake_res_2 = await async_client.post(
+        "/api/v1/onboarding/fase-1",
+        json={
+            "nome_completo": "Paciente Dois",
+            "data_nascimento": "1994-03-11",
+            "telefone": "11977774321",
+            "queixa_principal": "Tosse",
+            "tcle_hash": SAMPLE_TCLE_HASH,
+            "cpf": "52998224725",
+        },
+    )
+    assert intake_res_2.status_code == 201
+    token_p2 = cast("str", intake_res_2.json()["token"])
+
+    # Patient 2 attempts Phase 2 enrichment on Patient 1 -> 403
+    res_enrich_p2 = await async_client.post(
         "/api/v1/onboarding/fase-2",
         json={
-            "paciente_id": paciente_id,
+            "paciente_id": pac_1_id,
             "nome_mae": "Mae de Teste",
             "sexo_biologico": "F",
             "cep": "01310-100",
@@ -779,38 +647,30 @@ async def test_tenant_isolation_onboarding_and_dependents(
             "cidade": "SP",
             "estado": "SP",
         },
-        headers={
-            "X-Tenant-ID": str(org2.id),
-            "Authorization": f"Bearer {token_t1}",
-        },
+        headers={"Authorization": f"Bearer {token_p2}"},
     )
-    assert res_enrich_t2.status_code == 403
+    assert res_enrich_p2.status_code == 403
 
-    # Tenant 2 attempts to link dependent to Tenant 1 patient -> 403
-    res_dep_t2 = await async_client.post(
-        f"/api/v1/pacientes/{paciente_id}/dependentes",
+    # Patient 2 attempts to link dependent to Patient 1 -> 403
+    res_dep_p2 = await async_client.post(
+        f"/api/v1/pacientes/{pac_1_id}/dependentes",
         json={
             "grau_parentesco": "FILHO",
             "nome_completo": "Filho Ilegitimo",
             "data_nascimento": "2022-01-01",
             "cns": "700000000000005",
         },
-        headers={
-            "X-Tenant-ID": str(org2.id),
-            "Authorization": f"Bearer {token_t1}",
-        },
+        headers={"Authorization": f"Bearer {token_p2}"},
     )
-    assert res_dep_t2.status_code == 403
+    assert res_dep_p2.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_onboarding_fase_2_aceita_sexo_biologico_textual_normalizado(
     async_client: AsyncClient,
-    test_orgs: tuple[Organizacao, Organizacao],
+    seeded_unidade: None,
 ) -> None:
     """Validate Phase 2 accepts 'FEMININO'/'MASCULINO' and normalizes to 'F'/'M'."""
-    org1, _ = test_orgs
-
     intake_res = await async_client.post(
         "/api/v1/onboarding/fase-1",
         json={
@@ -821,7 +681,6 @@ async def test_onboarding_fase_2_aceita_sexo_biologico_textual_normalizado(
             "tcle_hash": SAMPLE_TCLE_HASH,
             "cpf": "11144477735",
         },
-        headers={"X-Tenant-ID": str(org1.id)},
     )
     assert intake_res.status_code == 201
     intake_data = cast("dict[str, object]", intake_res.json())
@@ -843,10 +702,7 @@ async def test_onboarding_fase_2_aceita_sexo_biologico_textual_normalizado(
     res2 = await async_client.post(
         "/api/v1/onboarding/fase-2",
         json=fase2_payload,
-        headers={
-            "X-Tenant-ID": str(org1.id),
-            "Authorization": f"Bearer {token}",
-        },
+        headers={"Authorization": f"Bearer {token}"},
     )
     assert res2.status_code == 200
     data2 = cast("dict[str, object]", res2.json())

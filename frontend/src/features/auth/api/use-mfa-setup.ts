@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
   mfaActivateApiV1AuthMfaActivatePost,
@@ -23,7 +23,6 @@ export function useMfaSetup(
       try {
         const response = await mfaSetupApiV1AuthMfaSetupPost({
           client,
-          headers: { ...getTenantHeaders() },
           throwOnError: true,
         });
         return response.data;
@@ -47,7 +46,6 @@ export function useMfaActivate(
       try {
         const response = await mfaActivateApiV1AuthMfaActivatePost({
           client,
-          headers: { ...getTenantHeaders() },
           body,
           throwOnError: true,
         });

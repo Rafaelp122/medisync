@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { validarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost } from "@/api/generated/sdk.gen";
 import type {
@@ -27,9 +27,7 @@ export function usePrescricaoValidator(
   return useMutation<ValidarPrescricaoResponse, ProblemDetailsError, PrescricaoValidatorParams>({
     mutationFn: async ({ token, ...body }: PrescricaoValidatorParams) => {
       try {
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

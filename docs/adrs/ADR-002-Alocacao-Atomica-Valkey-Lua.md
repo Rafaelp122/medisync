@@ -47,7 +47,7 @@ Em pronto-atendimento virtual com múltiplos médicos chamando pacientes simulta
 Adotamos a **Opção 3: Valkey 8.0 com ZSET e Script Lua Atômico (`alocar_chamada.lua`)**.
 
 ### Diretrizes de Execução:
-1. Fila indexada no ZSET com chave `fila:{organizacao_id}:aptos`, score ponderado de 64 bits e membros em string UUIDv7.
+1. Fila indexada no ZSET com chave `fila:aptos`, score ponderado de 64 bits e membros em string UUIDv7.
 2. Desempate FIFO nativo em nível de milissegundos via ordenação lexicográfica de UUIDv7 (RN01).
 3. Execução atômica via `EVALSHA` com códigos de retorno discriminados: `0` para médico ocupado (HTTP 409) e `-1` para atendimento capturado simultaneamente (aciona retry automático na aplicação).
 4. Locks duplos de 45 segundos para médico e paciente durante a fase de ring, promovidos a lock de consulta ativa (`EM_ATENDIMENTO`) quando o paciente atende.

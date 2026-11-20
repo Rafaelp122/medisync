@@ -12,28 +12,25 @@ class PatientCredentialRepositoryPort(Protocol):
 
     async def buscar_por_identificador(
         self,
-        organizacao_id: int,
         identificador: str,
         papel: str,
     ) -> UsuarioCredencial | None:
-        """Find a credential by organization, canonical identifier, and role."""
+        """Find a credential by canonical identifier and role."""
         ...
 
     async def buscar_por_usuario_id(
         self,
-        organizacao_id: int,
         usuario_id: UUID,
         papel: str,
     ) -> UsuarioCredencial | None:
-        """Find a credential by organization, user ID, and role."""
+        """Find a credential by user ID and role."""
         ...
 
     async def existe_identificador(
         self,
-        organizacao_id: int,
         identificador: str,
     ) -> bool:
-        """Check whether an identifier is already registered within the organization."""
+        """Check whether an identifier is already registered in the platform."""
         ...
 
     async def criar_credencial(

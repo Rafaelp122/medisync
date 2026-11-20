@@ -10,7 +10,6 @@ class AttendanceSnapshot:
     """Projeção imutável do atendimento clínico para vínculo seguro ao agendamento."""
 
     id: UUID
-    organizacao_id: int
     paciente_id: UUID
     medico_id: UUID | None
 

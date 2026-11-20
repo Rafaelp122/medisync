@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation, useQuery } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
   getAuthPatientMethods,
@@ -28,7 +28,6 @@ export function usePatientMethods() {
       try {
         const response = await getAuthPatientMethods({
           client,
-          headers: { ...getTenantHeaders() },
           throwOnError: true,
         });
         return response.data;
@@ -60,7 +59,6 @@ export function usePatientSolicitarOtp(
       try {
         const response = await requestOtpApiV1AuthPatientOtpRequestPost({
           client,
-          headers: { ...getTenantHeaders() },
           body,
           throwOnError: true,
         });
@@ -84,7 +82,6 @@ export function usePatientVerificarOtp(
       try {
         const response = await verifyOtpApiV1AuthPatientOtpVerifyPost({
           client,
-          headers: { ...getTenantHeaders() },
           body,
           throwOnError: true,
         });
@@ -125,10 +122,8 @@ export function usePatientPasskeyAuth(
           });
         }
 
-        const headers = { ...getTenantHeaders() };
         const optionsRes = await postAuthPatientWebauthnAuthenticateOptions({
           client,
-          headers,
           body: params?.pacienteId ? { paciente_id: params.pacienteId } : undefined,
           throwOnError: true,
         });
@@ -159,7 +154,6 @@ export function usePatientPasskeyAuth(
         const assertionResp = assertion.response as AuthenticatorAssertionResponse;
         const verifyRes = await postAuthPatientWebauthnAuthenticateVerify({
           client,
-          headers,
           body: {
             id: assertion.id,
             rawId: bufferToBase64Url(assertion.rawId),

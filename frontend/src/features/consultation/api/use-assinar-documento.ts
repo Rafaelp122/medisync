@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation, useQueryClient } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { assinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPost } from "@/api/generated/sdk.gen";
 import type { AssinarDocumentoRequest, AssinarDocumentoResponse } from "@/api/generated/types.gen";
@@ -30,9 +30,7 @@ export function useAssinarDocumento(
     mutationFn: async ({ documento_id, payload, token }: AssinarDocumentoParams) => {
       try {
         const validatedPayload = assinarDocumentoSchema.parse(payload);
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

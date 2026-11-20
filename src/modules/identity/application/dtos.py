@@ -106,7 +106,6 @@ class DependenteOutputDTO(BaseModel):
     model_config = ConfigDict(from_attributes=True, frozen=True)
 
     id: UUID
-    organizacao_id: int
     titular_id: UUID
     dependente_id: UUID
     grau_parentesco: str

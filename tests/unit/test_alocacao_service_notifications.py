@@ -64,7 +64,6 @@ async def test_alocacao_dispatches_notification_when_phone_provided(
 
     phone = "+5511999991111"
     cmd = AlocarChamadaCommand(
-        organizacao_id=1,
         medico_id=med_id,
         atendimento_id=atend_id,
         ttl_segundos=45,
@@ -125,7 +124,6 @@ async def test_message_failure_does_not_block_queue_progression(
     )
 
     cmd = AlocarChamadaCommand(
-        organizacao_id=1,
         medico_id=med_id,
         atendimento_id=atend_id,
         ttl_segundos=45,
@@ -174,7 +172,6 @@ async def test_rate_limited_notification_does_not_block_queue_progression(
     )
 
     cmd = AlocarChamadaCommand(
-        organizacao_id=1,
         medico_id=med_id,
         atendimento_id=atend_id,
         ttl_segundos=45,

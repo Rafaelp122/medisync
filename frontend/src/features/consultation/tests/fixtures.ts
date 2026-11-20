@@ -36,7 +36,7 @@ export function createLiveKitTokenResponse(
 ): LiveKitTokenResponse {
   return {
     token: "mock-jwt-livekit-room-token",
-    room_name: "org_1_atend_018f3a5b",
+    room_name: "atend_018f3a5b",
     participant_identity: `medico_${MOCK_MEDICO_ID}`,
     server_url: "wss://livekit.medisync.local",
     expires_in: 3600,
@@ -50,7 +50,6 @@ export function createEvolucaoSoapResponse(
   return {
     id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b30",
     atendimento_id: MOCK_ATENDIMENTO_ID,
-    organizacao_id: 1,
     medico_id: MOCK_MEDICO_ID,
     anamnese: "Paciente refere dor de garganta intensa há 3 dias com febre.",
     exame_fisico_virtual: "Orofaringe hiperemiada com exsudato purulento amigdaliano.",
@@ -68,7 +67,6 @@ export function createDocumentoClinicoResponse(
   return {
     id: MOCK_DOC_ID,
     atendimento_id: MOCK_ATENDIMENTO_ID,
-    organizacao_id: 1,
     medico_id: MOCK_MEDICO_ID,
     tipo_documento: "RECEITA_SIMPLES",
     chave_s3: `prescricoes/${MOCK_DOC_ID}.pdf`,
@@ -129,7 +127,6 @@ export function createPainelTelemetriaResponse(
   overrides?: Partial<PainelTelemetriaResponse>,
 ): PainelTelemetriaResponse {
   return {
-    organizacao_id: 1,
     gerado_em: "2026-11-01T12:00:00Z",
     tme_medio_segundos: 120,
     tme_nivel_1_segundos: 0,

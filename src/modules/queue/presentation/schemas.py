@@ -45,12 +45,10 @@ class AdmissaoRequest(BaseModel):
 
     def to_command(
         self,
-        organizacao_id: int,
         ip_origem: str | None = None,
     ) -> AdmissaoAtendimentoCommand:
         """Convert request into application command."""
         return AdmissaoAtendimentoCommand(
-            organizacao_id=organizacao_id,
             paciente_id=self.paciente_id,
             queixa_principal=self.queixa_principal,
             sintomas=self.sintomas,
@@ -71,7 +69,6 @@ class AdmissaoResponse(BaseModel):
 
     atendimento_id: UUID
     triagem_id: UUID
-    organizacao_id: int
     paciente_id: UUID
     status_atendimento: str
     prioridade_clinica: int
@@ -168,10 +165,9 @@ class PioraClinicaRequest(BaseModel):
         description="Descrição dos novos sintomas ou agravamento do quadro clínico",
     )
 
-    def to_command(self, organizacao_id: int) -> PioraClinicaCommand:
+    def to_command(self) -> PioraClinicaCommand:
         """Converte a requisição em comando da camada de aplicação."""
         return PioraClinicaCommand(
-            organizacao_id=organizacao_id,
             atendimento_id=self.atendimento_id,
             novos_sintomas=self.novos_sintomas,
             escala_dor=self.escala_dor,
@@ -239,12 +235,9 @@ class RegularizacaoFilaRequest(BaseModel):
         description="Tipo de contingência assistencial acionada",
     )
 
-    def to_command(
-        self, organizacao_id: int, atendimento_id: UUID
-    ) -> RegularizacaoFilaCommand:
+    def to_command(self, atendimento_id: UUID) -> RegularizacaoFilaCommand:
         """Converte a requisição em comando da camada de aplicação."""
         return RegularizacaoFilaCommand(
-            organizacao_id=organizacao_id,
             atendimento_id=atendimento_id,
             motivo=self.motivo,
             tipo_contingencia=self.tipo_contingencia,

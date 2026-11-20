@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from src.core.context import get_current_request_id
+from src.core.logging import get_current_request_id
 
 logger = logging.getLogger("medisync.errors")
 
@@ -135,18 +135,6 @@ class ValidationError(DomainError):
     status_code: int = 422
     title: str = "Unprocessable Entity"
     code: str = "VALIDATION_ERROR"
-
-
-class TenantInvalidoError(BadRequestError):
-    """Raised when tenant context is missing or non-positive."""
-
-    title = "Organização Inválida"
-    code = "TENANT_INVALIDO"
-
-    def __init__(
-        self, detail: str = "Header X-Tenant-ID obrigatório e positivo."
-    ) -> None:
-        super().__init__(detail, title=self.title, code=self.code)
 
 
 class IANaoRatificadaError(DomainError):

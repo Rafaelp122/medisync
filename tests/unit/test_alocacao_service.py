@@ -55,7 +55,6 @@ async def test_alocar_chamada_medico_ocupado_retorna_409(
     mock_lua_manager.alocar_chamada.return_value = AlocacaoCodigo.MEDICO_OCUPADO
 
     cmd = AlocarChamadaCommand(
-        organizacao_id=1,
         medico_id=uuid4(),
         atendimento_id=uuid7(),
     )
@@ -73,7 +72,6 @@ async def test_alocar_chamada_atendimento_indisponivel_retorna_409(
     mock_lua_manager.alocar_chamada.return_value = AlocacaoCodigo.INDISPONIVEL
 
     cmd = AlocarChamadaCommand(
-        organizacao_id=1,
         medico_id=uuid4(),
         atendimento_id=uuid7(),
     )
@@ -105,7 +103,6 @@ async def test_alocar_chamada_sucesso(
     mock_db_session.get.return_value = mock_atendimento
 
     cmd = AlocarChamadaCommand(
-        organizacao_id=1,
         medico_id=med_id,
         atendimento_id=atend_id,
         ttl_segundos=45,
@@ -140,7 +137,6 @@ async def test_alocar_chamada_rollback_quando_atendimento_inexistente_no_banco(
     med_id = uuid4()
 
     cmd = AlocarChamadaCommand(
-        organizacao_id=99,
         medico_id=med_id,
         atendimento_id=atend_id,
     )
@@ -150,8 +146,8 @@ async def test_alocar_chamada_rollback_quando_atendimento_inexistente_no_banco(
 
     # Asserts rollback released both locks in Valkey
     mock_valkey.delete.assert_called_once_with(
-        f"lock:99:medico:{med_id}",
-        f"lock:99:atendimento:{atend_id}",
+        f"lock:medico:{med_id}",
+        f"lock:atendimento:{atend_id}",
     )
 
 
@@ -174,7 +170,6 @@ async def test_alocar_chamada_rollback_quando_transicao_invalida(
     mock_db_session.get.return_value = mock_atendimento
 
     cmd = AlocarChamadaCommand(
-        organizacao_id=1,
         medico_id=med_id,
         atendimento_id=atend_id,
     )
@@ -183,8 +178,8 @@ async def test_alocar_chamada_rollback_quando_transicao_invalida(
         await service.alocar_chamada(cmd)
 
     mock_valkey.delete.assert_called_once_with(
-        f"lock:1:medico:{med_id}",
-        f"lock:1:atendimento:{atend_id}",
+        f"lock:medico:{med_id}",
+        f"lock:atendimento:{atend_id}",
     )
 
 
@@ -197,22 +192,22 @@ async def test_liberar_e_verificar_locks(
     med_id = uuid4()
     atend_id = uuid7()
 
-    await service.liberar_locks(1, med_id, atend_id)
+    await service.liberar_locks(med_id, atend_id)
     mock_valkey.delete.assert_called_once_with(
-        f"lock:1:medico:{med_id}",
-        f"lock:1:atendimento:{atend_id}",
+        f"lock:medico:{med_id}",
+        f"lock:atendimento:{atend_id}",
     )
 
     mock_valkey.exists.return_value = 1
-    assert await service.verificar_lock_medico(1, med_id) is True
-    mock_valkey.exists.assert_called_with(f"lock:1:medico:{med_id}")
+    assert await service.verificar_lock_medico(med_id) is True
+    mock_valkey.exists.assert_called_with(f"lock:medico:{med_id}")
 
     mock_valkey.exists.return_value = 0
-    assert await service.verificar_lock_atendimento(1, atend_id) is False
-    mock_valkey.exists.assert_called_with(f"lock:1:atendimento:{atend_id}")
+    assert await service.verificar_lock_atendimento(atend_id) is False
+    mock_valkey.exists.assert_called_with(f"lock:atendimento:{atend_id}")
 
     mock_valkey.get.return_value = str(atend_id)
-    retrieved = await service.obter_lock_medico_atendimento_id(1, med_id)
+    retrieved = await service.obter_lock_medico_atendimento_id(med_id)
     assert retrieved == str(atend_id)
 
 
@@ -244,7 +239,6 @@ async def test_alocar_chamada_dispatches_doctor_notifier(
     )
 
     cmd = AlocarChamadaCommand(
-        organizacao_id=1,
         medico_id=med_id,
         atendimento_id=atend_id,
         ttl_segundos=45,

@@ -36,6 +36,8 @@ from src.modules.queue.domain.models import Atendimento
 
 logger = logging.getLogger("medisync.queue.alocacao")
 
+FILA_APTOS_KEY = "fila:aptos"
+
 
 class AlocacaoChamadaService:
     """Coordena alocação atômica médico-paciente via Lua no Valkey e DB.
@@ -74,9 +76,9 @@ class AlocacaoChamadaService:
         Regras: docs/explanation/domains/queue-domain.md
         Auditoria: docs/reference/audit/event-catalog.md
         """
-        k_medico = f"lock:{command.organizacao_id}:medico:{command.medico_id}"
-        k_atend = f"lock:{command.organizacao_id}:atendimento:{command.atendimento_id}"
-        k_fila = f"fila:{command.organizacao_id}:aptos"
+        k_medico = f"lock:medico:{command.medico_id}"
+        k_atend = f"lock:atendimento:{command.atendimento_id}"
+        k_fila = FILA_APTOS_KEY
 
         # 1. Execute Lua script for sub-10ms atomic allocation in Valkey
         allocation_args: list[object] = [
@@ -92,9 +94,8 @@ class AlocacaoChamadaService:
 
         if codigo == AlocacaoCodigo.MEDICO_OCUPADO:
             logger.warning(
-                "Doctor %s is already locked with active call (org=%d)",
+                "Doctor %s is already locked with active call",
                 command.medico_id,
-                command.organizacao_id,
             )
             raise MedicoOcupadoError(
                 f"Médico '{command.medico_id}' já possui uma chamada ou consulta ativa."
@@ -102,9 +103,8 @@ class AlocacaoChamadaService:
 
         if codigo == AlocacaoCodigo.INDISPONIVEL:
             logger.info(
-                "Patient %s is no longer available in queue (org=%d)",
+                "Patient %s is no longer available in queue",
                 command.atendimento_id,
-                command.organizacao_id,
             )
             raise AtendimentoNaoDisponivelError(
                 f"Atendimento '{command.atendimento_id}' não está disponível na fila "
@@ -126,7 +126,6 @@ class AlocacaoChamadaService:
             atendimento.iniciar_chamada(command.medico_id)
             if self._audit_trail is not None:
                 await self._audit_trail.record_event(
-                    organizacao_id=command.organizacao_id,
                     atendimento_id=command.atendimento_id,
                     ator_tipo=AtorTipo.PROFISSIONAL,
                     ator_papel=AtorPapel.MEDICO,
@@ -144,18 +143,13 @@ class AlocacaoChamadaService:
 
         except Exception:
             # On any DB failure or state exception, rollback Valkey locks
-            await self.liberar_locks(
-                command.organizacao_id,
-                command.medico_id,
-                command.atendimento_id,
-            )
+            await self.liberar_locks(command.medico_id, command.atendimento_id)
             raise
 
         # 3. Schedule deterministic 45s ring timeout in background worker (RN02)
         if self._arq_pool is not None:
             await self._arq_pool.enqueue_job(
                 "resolver_ring_timeout_task",
-                organizacao_id=command.organizacao_id,
                 atendimento_id=str(command.atendimento_id),
                 medico_id=str(command.medico_id),
                 _defer_by=timedelta(seconds=command.ttl_segundos),
@@ -215,10 +209,9 @@ class AlocacaoChamadaService:
             )
 
         logger.info(
-            "Call allocated successfully: medico=%s, atendimento=%s (org=%d)",
+            "Call allocated successfully: medico=%s, atendimento=%s",
             command.medico_id,
             command.atendimento_id,
-            command.organizacao_id,
         )
 
         return AlocacaoChamadaResult(
@@ -233,41 +226,40 @@ class AlocacaoChamadaService:
 
     async def liberar_locks(
         self,
-        organizacao_id: int,
         medico_id: UUID,
         atendimento_id: UUID,
     ) -> None:
-        """Release both doctor and attendance ring locks from Valkey."""
-        k_medico = f"lock:{organizacao_id}:medico:{medico_id}"
-        k_atend = f"lock:{organizacao_id}:atendimento:{atendimento_id}"
+        """Libera locks do médico e atendimento no Valkey (RN02, ADR-002).
+
+        Decisões: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
+        """
+        k_medico = f"lock:medico:{medico_id}"
+        k_atend = f"lock:atendimento:{atendimento_id}"
         await self._valkey.delete(k_medico, k_atend)
 
-    async def verificar_lock_medico(
-        self,
-        organizacao_id: int,
-        medico_id: UUID,
-    ) -> bool:
-        """Check whether doctor currently holds an active lock."""
-        k_medico = f"lock:{organizacao_id}:medico:{medico_id}"
+    async def verificar_lock_medico(self, medico_id: UUID) -> bool:
+        """Verifica se o médico possui lock ativo de chamada no Valkey (RN02).
+
+        Decisões: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
+        """
+        k_medico = f"lock:medico:{medico_id}"
         exists = await self._valkey.exists(k_medico)  # pyright: ignore[reportUnknownMemberType]
         return bool(exists)
 
-    async def verificar_lock_atendimento(
-        self,
-        organizacao_id: int,
-        atendimento_id: UUID,
-    ) -> bool:
-        """Check whether attendance currently holds an active ring lock."""
-        k_atend = f"lock:{organizacao_id}:atendimento:{atendimento_id}"
+    async def verificar_lock_atendimento(self, atendimento_id: UUID) -> bool:
+        """Verifica se o atendimento possui lock ativo de chamada no Valkey (RN02).
+
+        Decisões: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
+        """
+        k_atend = f"lock:atendimento:{atendimento_id}"
         exists = await self._valkey.exists(k_atend)  # pyright: ignore[reportUnknownMemberType]
         return bool(exists)
 
-    async def obter_lock_medico_atendimento_id(
-        self,
-        organizacao_id: int,
-        medico_id: UUID,
-    ) -> str | None:
-        """Retrieve attendance ID associated with doctor's active lock, if any."""
-        k_medico = f"lock:{organizacao_id}:medico:{medico_id}"
+    async def obter_lock_medico_atendimento_id(self, medico_id: UUID) -> str | None:
+        """Retorna ID do atendimento associado ao lock ativo do médico (RN02).
+
+        Decisões: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
+        """
+        k_medico = f"lock:medico:{medico_id}"
         val = await self._valkey.get(k_medico)
         return str(val) if val else None

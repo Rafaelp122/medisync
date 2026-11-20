@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 def _make_resumo_nao_terminal(atendimento_id: UUID) -> AtendimentoResumoDTO:
     return AtendimentoResumoDTO(
         atendimento_id=atendimento_id,
-        organizacao_id=1,
         medico_id=uuid4(),
         status="EM_ATENDIMENTO",
         tcle_hash="a" * 64,
@@ -45,7 +44,6 @@ async def test_evolucao_rejeita_ia_nao_ratificada() -> None:
 
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=1,
         medico_id=medico_id,
         anamnese="Paciente com cefaleia há 2 dias",
         conduta="Prescrever dipirona 1g de 6/6h se dor",
@@ -86,7 +84,6 @@ async def test_evolucao_aceita_ia_ratificada_com_diff_automatico() -> None:
 
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=1,
         medico_id=medico_id,
         anamnese="Sintomas gripais leves",
         conduta=conduta_final,
@@ -111,7 +108,6 @@ async def test_evolucao_aceita_ia_ratificada_com_diff_automatico() -> None:
     events = fake_audit.get_events_by_type("IA_DECISAO_MEDICA_REGISTRADA")
     assert len(events) == 1
     evt = events[0]
-    assert evt["organizacao_id"] == 1
     assert evt["atendimento_id"] == atendimento_id
     assert evt["ator_tipo"] == AtorTipo.PROFISSIONAL.value
     assert evt["ator_papel"] == AtorPapel.MEDICO.value
@@ -129,7 +125,6 @@ async def test_evolucao_update_com_ia_registra_evento_auditoria() -> None:
     atendimento_id = uuid4()
     medico_id = uuid4()
     existing = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atendimento_id,
         medico_id=medico_id,
         anamnese="Anamnese inicial",
@@ -148,7 +143,6 @@ async def test_evolucao_update_com_ia_registra_evento_auditoria() -> None:
 
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=1,
         medico_id=medico_id,
         anamnese="Anamnese atualizada",
         conduta="Prescrição ajustada com IA",
@@ -190,7 +184,6 @@ async def test_evolucao_persiste_codigo_sigtap_customizado() -> None:
 
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=1,
         medico_id=medico_id,
         anamnese="Consulta especializada",
         conduta="Encaminhamento ambulatorial",

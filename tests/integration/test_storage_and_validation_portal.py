@@ -1,5 +1,6 @@
 """Integration tests for S3 storage adapter and public document validation portal."""
 
+from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -7,8 +8,11 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.authz.roles import Role
+from src.core.uuid7 import uuid7
+from src.modules.consultation.composition import get_signed_cache, get_storage
 from src.modules.consultation.domain.models import DocumentoClinico
 
+from tests.factories.consultation import make_documento_clinico, make_documento_item
 from tests.factories.scenarios import seed_clinical_scenario
 from tests.helpers import auth_headers
 
@@ -23,9 +27,9 @@ async def test_storage_presigned_url_and_validation_portal_full_flow(
     """Validate full flow: issue, sign, store in S3, validate via portal, download."""
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="99888777000199",
-        org_razao_social="Clinica Medisync Ltda",
-        org_nome_fantasia="MediSync Telemedicina",
+        unidade_cnpj="99888777000199",
+        unidade_razao_social="Clinica Medisync Ltda",
+        unidade_nome_fantasia="MediSync Telemedicina",
         paciente_nome="Maria Joana dos Santos",
         paciente_cpf="12345678900",
         medico_nome="Dr. Roberto Carlos de Souza",
@@ -34,10 +38,7 @@ async def test_storage_presigned_url_and_validation_portal_full_flow(
         medico_crm="12345",
         medico_crm_uf="SP",
     )
-    async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
-    async_client.headers.update(
-        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
-    )
+    async_client.headers.update(auth_headers(Role.MEDICO, cenario.medico.id))
     client = async_client
 
     soap_resp = await client.post(
@@ -81,13 +82,10 @@ async def test_storage_presigned_url_and_validation_portal_full_flow(
     )
     assert sign_resp.status_code == 200
 
-    # 3. Verificar persistência do documento no banco e chave S3
+    # 3. Verificar persistência do documento no banco e chave S3 sem org_id
     doc_db = await db_session.get(DocumentoClinico, UUID(doc_id))
     assert doc_db is not None
-    expected_key = (
-        f"orgs/{cenario.organizacao.id}/consultations/"
-        f"{cenario.atendimento.id}/documents/{doc_id}.pdf"
-    )
+    expected_key = f"consultations/{cenario.atendimento.id}/documents/{doc_id}.pdf"
     assert doc_db.chave_s3 == expected_key
 
     # 4. Validar documento publicamente via Portal de Validação (LGPD compliant)
@@ -134,6 +132,52 @@ async def test_storage_presigned_url_and_validation_portal_full_flow(
 
 
 @pytest.mark.asyncio
+async def test_validation_portal_legacy_orgs_chave_s3_public_download(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+) -> None:
+    """Validate legacy persisted `orgs/{id}/...` chave_s3 remains downloadable."""
+    cenario = await seed_clinical_scenario(
+        db_session,
+        unidade_cnpj="99888777000197",
+        unidade_razao_social="Clinica Medisync Ltda",
+        unidade_nome_fantasia="MediSync Telemedicina",
+        paciente_cpf="44455566677",
+        medico_cpf="88899900011",
+        medico_email="dr.legado@telemed.com.br",
+    )
+    legacy_doc_id = uuid7()
+    legacy_key = (
+        f"orgs/1/consultations/{cenario.atendimento.id}/documents/{legacy_doc_id}.pdf"
+    )
+    doc = make_documento_clinico(
+        cenario.atendimento.id,
+        cenario.medico.id,
+        chave_s3=legacy_key,
+        assinado_em=datetime.now(UTC),
+        id=legacy_doc_id,
+    )
+    item = make_documento_item(doc.id, medicamento="Dipirona 500mg")
+    db_session.add_all([doc, item])
+    await db_session.commit()
+
+    storage = get_storage()
+    await storage.salvar_documento(legacy_key, b"%PDF-1.4 legacy fixture")
+    await get_signed_cache().marcar_assinado(doc.id)
+
+    # Unauthenticated request on public portal must succeed cleanly
+    val_resp = await async_client.get(f"/api/v1/documents/validate/{legacy_doc_id}")
+    assert val_resp.status_code == 200
+    assert val_resp.json()["documento_id"] == str(legacy_doc_id)
+
+    url_resp = await async_client.get(
+        f"/api/v1/documents/download/{legacy_doc_id}?redirect=false"
+    )
+    assert url_resp.status_code == 200
+    assert url_resp.json()["chave_s3"] == legacy_key
+
+
+@pytest.mark.asyncio
 async def test_validation_portal_documento_nao_assinado(
     db_session: AsyncSession,
     async_client: AsyncClient,
@@ -141,17 +185,14 @@ async def test_validation_portal_documento_nao_assinado(
     """Validate that un-signed document shows status EMITIDO and false validity."""
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="99888777000198",
+        unidade_cnpj="99888777000198",
         paciente_cpf="33344455566",
         medico_cpf="22233344455",
         medico_email="dr.pedro@telemed.com.br",
         medico_crm="67890",
         medico_crm_uf="MG",
     )
-    async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
-    async_client.headers.update(
-        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
-    )
+    async_client.headers.update(auth_headers(Role.MEDICO, cenario.medico.id))
     client = async_client
 
     soap_resp = await client.post(

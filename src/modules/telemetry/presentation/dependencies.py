@@ -10,11 +10,9 @@ from src.core.authz.roles import Permission, Role
 from src.core.errors import ForbiddenError
 
 _ALLOWED_VIEW_ROLES: frozenset[str] = frozenset(
-    {Role.MEDICO.value, Role.GESTOR_UNIDADE.value, Role.ADMIN_GLOBAL.value}
+    {Role.MEDICO.value, Role.GESTOR_UNIDADE.value}
 )
-_ALLOWED_CONFIG_ROLES: frozenset[str] = frozenset(
-    {Role.GESTOR_UNIDADE.value, Role.ADMIN_GLOBAL.value}
-)
+_ALLOWED_CONFIG_ROLES: frozenset[str] = frozenset({Role.GESTOR_UNIDADE.value})
 
 
 async def require_telemetry_view_auth(

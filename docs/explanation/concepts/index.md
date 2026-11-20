@@ -22,11 +22,7 @@ Esta documentação serve como referência explicativa (quadrante *Explanation* 
 - **Papel:** Desacopla a comunicação síncrona entre módulos verticais independentes.
 - **Sinopse:** Define portas públicas através de `typing.Protocol` (PEP 544) e transferência de dados via DTOs imutáveis. Proíbe a importação cruzada de entidades, tabelas e repositórios entre módulos.
 
-### 4. [Multi-Tenancy e Isolamento PostgreSQL RLS](multi-tenancy-rls.md)
-- **Papel:** Aplica isolamento de tenant defensivo em nível de banco de dados relacional.
-- **Sinopse:** Impõe barreiras de segurança física com Row-Level Security (`FORCE ROW LEVEL SECURITY`) e papéis restritos. Garante que nenhum dado transacional vaze entre organizações, mesmo diante de falha acidental de filtros da aplicação.
-
-### 5. [Concorrência de Fila com Lua e Worker ARQ](queue-lua-arq.md)
+### 4. [Concorrência de Fila com Lua e Worker ARQ](queue-lua-arq.md)
 - **Papel:** Executa ordenação clínica em tempo real e convocação atômica de pacientes.
 - **Sinopse:** Combina ordenação por score com scripts Lua no Valkey para garantia de exclusão mútua e tempo de resposta submilisegundo. Workers ARQ processam tarefas pesadas e descarte de no-show em segundo plano.
 

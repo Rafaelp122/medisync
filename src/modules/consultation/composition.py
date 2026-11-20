@@ -122,7 +122,6 @@ class QueueStoreAtendimentoReaderAdapter:
             return None
         return AtendimentoResumoDTO(
             atendimento_id=snapshot.id,
-            organizacao_id=snapshot.organizacao_id,
             medico_id=snapshot.medico_id,
             status=snapshot.status,
             tcle_hash=snapshot.tcle_hash,
@@ -139,16 +138,12 @@ class QueueStoreAtendimentoReaderAdapter:
 
     async def listar_historico_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> list[AtendimentoHistoricoDTO]:
-        items = await self._queue_store.listar_historico_paciente(
-            organizacao_id, paciente_id
-        )
+        items = await self._queue_store.listar_historico_paciente(paciente_id)
         return [
             AtendimentoHistoricoDTO(
                 atendimento_id=item.atendimento_id,
-                organizacao_id=item.organizacao_id,
                 paciente_id=item.paciente_id,
                 status=item.status,
                 prioridade_clinica=item.prioridade_clinica,
@@ -177,7 +172,6 @@ class IdentityDocumentDirectoryAdapter:
 
     async def obter_dados_verificacao(
         self,
-        organizacao_id: int,
         medico_id: UUID,
         atendimento_id: UUID,
     ) -> DadosVerificacaoDirectory:
@@ -187,7 +181,6 @@ class IdentityDocumentDirectoryAdapter:
 
         try:
             dto = await self._identity_reader.obter_dados_diretorio(
-                organizacao_id=organizacao_id,
                 medico_id=medico_id,
                 paciente_id=snapshot.paciente_id,
             )
@@ -230,7 +223,6 @@ class AmbulatoryProducaoAdapter(ProducaoAmbulatorialPort):
     async def consolidar_teleconsulta(
         self,
         *,
-        organizacao_id: int,
         atendimento_id: UUID,
         profissional_id: UUID,
         paciente_id: UUID,
@@ -243,7 +235,6 @@ class AmbulatoryProducaoAdapter(ProducaoAmbulatorialPort):
             dados = None
             with contextlib.suppress(Exception):
                 dados = await self._directory.obter_dados_verificacao(
-                    organizacao_id=organizacao_id,
                     medico_id=profissional_id,
                     atendimento_id=atendimento_id,
                 )
@@ -259,10 +250,7 @@ class AmbulatoryProducaoAdapter(ProducaoAmbulatorialPort):
             codigo_sigtap=codigo_sigtap,
             carater_atendimento=carater_atendimento,
         )
-        await self._producao_service.consolidar_teleconsulta(
-            cmd,
-            organizacao_id=organizacao_id,
-        )
+        await self._producao_service.consolidar_teleconsulta(cmd)
 
 
 @lru_cache(maxsize=1)

@@ -25,19 +25,18 @@ class CompetenciaInvalidaError(DomainError):
 
 
 class ProducaoNaoEncontradaError(NotFoundError):
-    """Lançada quando nenhum registro consolidado existe para a competência e tenant.
+    """Lançada quando nenhum registro consolidado existe para a competência.
 
-    Regras: docs/explanation/domains/ambulatory-domain.md, US-11 e ADR-012.
+    Regras: docs/explanation/domains/ambulatory-domain.md, US-11, ADR-012 e ADR-013.
     """
 
     title: str = "Produção Ambulatorial Não Encontrada"
     code: str = "PRODUCAO_NAO_ENCONTRADA"
 
-    def __init__(self, competencia: str, organizacao_id: int) -> None:
+    def __init__(self, competencia: str) -> None:
         self.competencia = competencia
-        self.organizacao_id = organizacao_id
         detail = (
-            f"Nenhum registro de produção ambulatorial consolidado encontrado "
-            f"para a competência '{competencia}' na organização {organizacao_id}."
+            "Nenhum registro de produção ambulatorial consolidado encontrado "
+            f"para a competência '{competencia}'."
         )
         super().__init__(detail, title=self.title, code=self.code)

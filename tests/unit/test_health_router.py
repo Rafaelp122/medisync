@@ -9,12 +9,8 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis
 from src.core.config import get_settings
-from src.core.context import (
-    reset_current_request_id,
-    set_current_request_id,
-    tenant_context,
-)
 from src.core.health_router import health_router
+from src.core.logging import reset_current_request_id, set_current_request_id
 from src.core.valkey import get_valkey_client
 
 
@@ -56,6 +52,7 @@ async def test_healthz_endpoint_success() -> None:
     data = resp.json()
     assert data["status"] == "ok"
     assert data["version"] == get_settings().APP_VERSION
+    assert "tenant_id" not in data
     assert data["valkey"]["status"] == "healthy"
     assert data["valkey"]["ping"] is True
     assert data["valkey"]["connected_clients"] == 4
@@ -88,7 +85,7 @@ async def test_healthz_endpoint_valkey_degraded() -> None:
 
 @pytest.mark.asyncio
 async def test_healthz_endpoint_with_context() -> None:
-    """Verify tenant_id and request_id propagation in /healthz."""
+    """Verify request_id propagation in /healthz without tenant_id."""
     app = _create_test_app()
 
     async def _mock_valkey() -> AsyncGenerator[Redis, None]:
@@ -101,16 +98,13 @@ async def test_healthz_endpoint_with_context() -> None:
 
     req_token = set_current_request_id("req-test-1234")
     try:
-        with tenant_context(tenant_id=42):
-            transport = ASGITransport(app=app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
-                resp = await client.get("/healthz")
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/healthz")
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["tenant_id"] == 42
+        assert "tenant_id" not in data
         assert data["request_id"] == "req-test-1234"
     finally:
         reset_current_request_id(req_token)

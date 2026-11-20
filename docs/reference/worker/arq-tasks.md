@@ -28,16 +28,12 @@ O worker disponibiliza quatro tarefas principais registradas no `WorkerSettings`
 Cada tarefa recebe o contexto assíncrono `ctx` com pools compartilhados e parâmetros estruturados:
 
 1. **`validar_elegibilidade_task` (`src/worker/tasks/eligibility.py:validar_elegibilidade_task`)**:
-   - `organizacao_id: int`: Tenant do atendimento.
    - `atendimento_id: str`: UUID do atendimento a validar e promover.
    - `paciente_id: str`: UUID do paciente para cruzamento cadastral.
    - `cpf: str | None`, `cns: str | None`: Identificadores sanitários e civis.
-   - `operadora_id: str | None`, `numero_carteirinha: str | None`: Dados do plano de saúde.
-   - `modo_publico_sus: bool | None`: Sobrescrita explícita de modo público (opcional).
    - Deduplicação no enfileiramento via `_job_id=f"elegibilidade:{atendimento_id}"`.
 
 2. **`ring_timeout_task` (`src/worker/tasks/ring_timeout.py:resolver_ring_timeout_task`)**:
-   - `organizacao_id: int`: Tenant do atendimento.
    - `atendimento_id: str`: UUID do atendimento cujo tempo de ring expirou.
    - `medico_id: str`: UUID do médico que efetuou a chamada.
    - Enfileirada com adiamento de 45s via `_defer_by=timedelta(seconds=45)`.
@@ -45,8 +41,7 @@ Cada tarefa recebe o contexto assíncrono `ctx` com pools compartilhados e parâ
    - Ação: se o paciente não conectou, marca abandono, libera o médico e cancela locks.
 
 3. **`sweeper_reconciliation_task` (`src/worker/tasks/sweeper.py:reconciliar_fila_orphans_task`)**:
-   - `organizacao_id: int | None`: Tenant específico ou `None` para varrer todas as organizações ativas.
-   - `threshold_segundos: int = 60`: Janela temporal de corte para detecção de atendimentos órfãos.
+   - `threshold_segundos: int = 60`: Janela temporal de corte para detecção de atendimentos órfãos na fila única `fila:aptos`.
 
 ### Cron Schedules e Parâmetros de Execução
 

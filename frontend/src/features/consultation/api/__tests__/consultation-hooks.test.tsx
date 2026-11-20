@@ -63,7 +63,7 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
       http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/livekit/token`, () => {
         return HttpResponse.json({
           token: "fake-jwt-livekit-token",
-          room_name: "org_1_atend_123",
+          room_name: "atend_123",
           participant_identity: `medico_${MOCK_MEDICO_ID}`,
           server_url: "wss://livekit.medisync.local",
           expires_in: 3600,
@@ -75,7 +75,6 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
       wrapper: TestWrapper,
     });
     result.current.mutate({
-      organizacao_id: 1,
       participant_id: MOCK_MEDICO_ID,
       role: "medico",
       participant_name: "Dr. Eduardo Rocha",
@@ -115,7 +114,6 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
         return HttpResponse.json({
           id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b30",
           atendimento_id: MOCK_ATENDIMENTO_ID,
-          organizacao_id: 1,
           medico_id: MOCK_MEDICO_ID,
           anamnese: "Paciente com dor de garganta.",
           exame_fisico_virtual: "Orofaringe hiperemiada.",
@@ -190,7 +188,6 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
           {
             id: MOCK_DOC_ID,
             atendimento_id: MOCK_ATENDIMENTO_ID,
-            organizacao_id: 1,
             medico_id: MOCK_MEDICO_ID,
             tipo_documento: "RECEITA_SIMPLES",
             chave_s3: "prescricoes/doc.pdf",

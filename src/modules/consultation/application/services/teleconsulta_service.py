@@ -48,7 +48,6 @@ class TeleconsultaService:
             await self._atendimento_reader.atender_chamada(command.atendimento_id)
 
         room_name = build_room_name(
-            organizacao_id=command.organizacao_id,
             atendimento_id=command.atendimento_id,
         )
         participant_identity = build_participant_identity(

@@ -1,5 +1,5 @@
 import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { obterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet } from "@/api/generated/sdk.gen";
 import type { PosicaoFilaResponse } from "@/api/generated/types.gen";
@@ -32,9 +32,7 @@ export function usePosicaoFila(
         throw new Error("atendimentoId é obrigatório para consulta de fila.");
       }
       try {
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

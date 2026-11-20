@@ -11,11 +11,9 @@ SECRET = "super-secret-key-for-testing-purposes-only-32-chars"
 
 def test_create_and_verify_intake_token_happy_path() -> None:
     paciente_id = uuid7()
-    org_id = 42
 
     token = create_intake_token(
         paciente_id=paciente_id,
-        organizacao_id=org_id,
         secret_key=SECRET,
         expires_in_seconds=3600,
     )
@@ -25,7 +23,7 @@ def test_create_and_verify_intake_token_happy_path() -> None:
 
     payload = verify_intake_token(token=token, secret_key=SECRET)
     assert payload["paciente_id"] == str(paciente_id)
-    assert payload["organizacao_id"] == org_id
+    assert "organizacao_id" not in payload
     assert payload["tipo"] == "intake_provisional"
     assert payload["exp"] > time.time()
 
@@ -34,7 +32,6 @@ def test_verify_intake_token_tampered_payload_fails() -> None:
     paciente_id = uuid7()
     token = create_intake_token(
         paciente_id=paciente_id,
-        organizacao_id=1,
         secret_key=SECRET,
     )
 
@@ -49,7 +46,6 @@ def test_verify_intake_token_wrong_secret_fails() -> None:
     paciente_id = uuid7()
     token = create_intake_token(
         paciente_id=paciente_id,
-        organizacao_id=1,
         secret_key=SECRET,
     )
 
@@ -63,7 +59,6 @@ def test_verify_intake_token_expired_fails() -> None:
     paciente_id = uuid7()
     token = create_intake_token(
         paciente_id=paciente_id,
-        organizacao_id=1,
         secret_key=SECRET,
         expires_in_seconds=-10,  # Already expired
     )

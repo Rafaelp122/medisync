@@ -15,7 +15,7 @@ from src.modules.identity.application.ports.identity_reader_port import (
     PacientePasskeyDTO,
 )
 from src.modules.identity.domain.models import (
-    Organizacao,
+    ConfiguracaoUnidade,
     Paciente,
     PacientePasskey,
     Profissional,
@@ -30,18 +30,20 @@ class SqlIdentityReader(IdentityReaderPort):
 
     async def obter_dados_diretorio(
         self,
-        organizacao_id: int,
         medico_id: UUID,
         paciente_id: UUID,
     ) -> IdentityDirectoryDTO:
-        # 1. Fetch organization
-        stmt_org = select(Organizacao).where(Organizacao.id == organizacao_id)
-        org = (await self._session.execute(stmt_org)).scalar_one_or_none()
+        """Fetch singleton clinical unit configuration, doctor, and patient details."""
+        # 1. Fetch singleton clinical unit configuration
+        stmt_unidade = select(ConfiguracaoUnidade).limit(1)
+        unidade = (await self._session.execute(stmt_unidade)).scalar_one_or_none()
         org_nome = "MediSync Pronto-Atendimento Virtual"
         org_cnpj: str | None = None
-        if org is not None:
-            org_nome = org.nome_fantasia or org.razao_social or org_nome
-            org_cnpj = org.cnpj
+        cnes: str | None = None
+        if unidade is not None:
+            org_nome = unidade.nome_fantasia or unidade.razao_social or org_nome
+            org_cnpj = unidade.cnpj
+            cnes = unidade.cnes
 
         # 2. Fetch professional
         stmt_prof = select(Profissional).where(Profissional.id == medico_id)
@@ -50,15 +52,11 @@ class SqlIdentityReader(IdentityReaderPort):
             raise NotFoundError(f"Profissional médico '{medico_id}' não encontrado.")
 
         # 3. Fetch patient
-        stmt_pac = select(Paciente).where(
-            Paciente.id == paciente_id,
-            Paciente.organizacao_id == organizacao_id,
-        )
+        stmt_pac = select(Paciente).where(Paciente.id == paciente_id)
         pac = (await self._session.execute(stmt_pac)).scalar_one_or_none()
         if pac is None:
             raise NotFoundError(
-                f"Paciente '{paciente_id}' não encontrado na "
-                f"organização {organizacao_id}."
+                f"Paciente '{paciente_id}' não encontrado na plataforma."
             )
 
         # Format address parts
@@ -73,7 +71,6 @@ class SqlIdentityReader(IdentityReaderPort):
         endereco_fmt = ", ".join(valid_parts) if valid_parts else None
 
         return IdentityDirectoryDTO(
-            organizacao_id=organizacao_id,
             organizacao_nome=org_nome,
             organizacao_cnpj=org_cnpj,
             medico_id=prof.id,
@@ -86,35 +83,21 @@ class SqlIdentityReader(IdentityReaderPort):
             paciente_data_nascimento=pac.data_nascimento,
             paciente_endereco=endereco_fmt,
             paciente_nome_social=pac.nome_social,
-            cnes=org.cnes if org is not None else None,
+            cnes=cnes,
         )
 
-    async def obter_modo_sus(self, organizacao_id: int) -> bool:
-        stmt = select(Organizacao.modo_publico_sus).where(
-            Organizacao.id == organizacao_id
-        )
+    async def obter_modo_sus(self) -> bool:
+        """Read public SUS mode flag from singleton ConfiguracaoUnidade."""
+        stmt = select(ConfiguracaoUnidade.modo_publico_sus).limit(1)
         modo = (await self._session.execute(stmt)).scalar_one_or_none()
         return bool(modo) if modo is not None else False
 
-    async def listar_organizacoes_ativas(self) -> list[int]:
-        stmt = (
-            select(Organizacao.id)
-            .where(Organizacao.ativo.is_(True))
-            .order_by(Organizacao.id.asc())
-        )
-        rows = (await self._session.execute(stmt)).scalars().all()
-        return [int(r) for r in rows]
-
     async def buscar_paciente_por_telefone(
         self,
-        organizacao_id: int,
         telefone: str,
         cpf: str | None = None,
     ) -> PacienteAuthLookupDTO | None:
-        stmt = select(Paciente).where(
-            Paciente.organizacao_id == organizacao_id,
-            Paciente.telefone == telefone,
-        )
+        stmt = select(Paciente).where(Paciente.telefone == telefone)
         if cpf is not None:
             stmt = stmt.where(Paciente.cpf == cpf)
 
@@ -124,7 +107,6 @@ class SqlIdentityReader(IdentityReaderPort):
 
         return PacienteAuthLookupData(
             id=pac.id,
-            organizacao_id=pac.organizacao_id,
             telefone=pac.telefone,
             cpf=pac.cpf,
             nome_completo=pac.nome_completo or "",
@@ -133,13 +115,12 @@ class SqlIdentityReader(IdentityReaderPort):
 
     async def buscar_paciente_cadsus(
         self,
-        organizacao_id: int,
         cpf: str | None = None,
         data_nascimento: date | None = None,
         cns: str | None = None,
         nome_mae: str | None = None,
     ) -> PacienteAuthLookupDTO | None:
-        stmt = select(Paciente).where(Paciente.organizacao_id == organizacao_id)
+        stmt = select(Paciente)
         if cpf is not None:
             stmt = stmt.where(Paciente.cpf == cpf)
         if data_nascimento is not None:
@@ -155,7 +136,6 @@ class SqlIdentityReader(IdentityReaderPort):
 
         return PacienteAuthLookupData(
             id=pac.id,
-            organizacao_id=pac.organizacao_id,
             telefone=pac.telefone,
             cpf=pac.cpf,
             nome_completo=pac.nome_completo or "",
@@ -164,23 +144,19 @@ class SqlIdentityReader(IdentityReaderPort):
 
     async def buscar_paciente_por_id(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> PacienteAuthLookupDTO | None:
-        """Recupera dados civis do paciente por ID e organização para descritor FIDO2.
+        """Recupera dados civis do paciente por ID para descritor FIDO2.
 
-        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        Regras: RF-01, ADR-005, ADR-013 e
+        docs/user-stories/US-14-biometria-passkeys-webauthn.md.
         """
-        stmt = select(Paciente).where(
-            Paciente.organizacao_id == organizacao_id,
-            Paciente.id == paciente_id,
-        )
+        stmt = select(Paciente).where(Paciente.id == paciente_id)
         pac = (await self._session.execute(stmt)).scalar_one_or_none()
         if pac is None:
             return None
         return PacienteAuthLookupData(
             id=pac.id,
-            organizacao_id=pac.organizacao_id,
             telefone=pac.telefone,
             cpf=pac.cpf,
             nome_completo=pac.nome_completo or "",
@@ -189,7 +165,6 @@ class SqlIdentityReader(IdentityReaderPort):
 
     async def registrar_passkey_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
         credential_id: str,
         public_key: str,
@@ -199,21 +174,20 @@ class SqlIdentityReader(IdentityReaderPort):
         """Persiste ou atualiza credencial Passkey WebAuthn do paciente sem commit.
 
         O commit pertence ao caso de uso no Application Service (ADR-001 §6).
-        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        Regras: RF-01, ADR-005, ADR-013 e
+        docs/user-stories/US-14-biometria-passkeys-webauthn.md.
         """
         stmt = select(PacientePasskey).where(
-            PacientePasskey.organizacao_id == organizacao_id,
-            PacientePasskey.credential_id == credential_id,
+            PacientePasskey.credential_id == credential_id
         )
         existing = (await self._session.execute(stmt)).scalar_one_or_none()
         if existing is not None:
             raise ConflictError(
                 f"Credencial WebAuthn '{credential_id}' já registrada na "
-                f"organização '{organizacao_id}' (paciente '{existing.paciente_id}')."
+                f"plataforma (paciente '{existing.paciente_id}')."
             )
 
         passkey = PacientePasskey(
-            organizacao_id=organizacao_id,
             paciente_id=paciente_id,
             credential_id=credential_id,
             public_key=public_key,
@@ -226,16 +200,15 @@ class SqlIdentityReader(IdentityReaderPort):
 
     async def buscar_passkey_por_credencial(
         self,
-        organizacao_id: int,
         credential_id: str,
     ) -> PacientePasskeyDTO | None:
-        """Localiza credencial Passkey ativa por organização e credential_id.
+        """Localiza credencial Passkey ativa por credential_id.
 
-        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        Regras: RF-01, ADR-005, ADR-013 e
+        docs/user-stories/US-14-biometria-passkeys-webauthn.md.
         """
         stmt = select(PacientePasskey).where(
-            PacientePasskey.organizacao_id == organizacao_id,
-            PacientePasskey.credential_id == credential_id,
+            PacientePasskey.credential_id == credential_id
         )
         passkey = (await self._session.execute(stmt)).scalar_one_or_none()
         if passkey is None:
@@ -244,19 +217,16 @@ class SqlIdentityReader(IdentityReaderPort):
 
     async def listar_passkeys_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> Sequence[PacientePasskeyDTO]:
-        """Lista todas as Passkeys registradas pelo paciente no tenant.
+        """Lista todas as Passkeys registradas pelo paciente na plataforma.
 
-        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        Regras: RF-01, ADR-005, ADR-013 e
+        docs/user-stories/US-14-biometria-passkeys-webauthn.md.
         """
         stmt = (
             select(PacientePasskey)
-            .where(
-                PacientePasskey.organizacao_id == organizacao_id,
-                PacientePasskey.paciente_id == paciente_id,
-            )
+            .where(PacientePasskey.paciente_id == paciente_id)
             .order_by(PacientePasskey.created_at.desc())
         )
         rows = (await self._session.execute(stmt)).scalars().all()
@@ -264,23 +234,22 @@ class SqlIdentityReader(IdentityReaderPort):
 
     async def atualizar_sign_count_passkey(
         self,
-        organizacao_id: int,
         credential_id: str,
         novo_sign_count: int,
     ) -> PacientePasskeyDTO:
         """Atualiza o contador monotônico de assinatura FIDO2 após autenticação válida.
 
-        Regras: RF-01, ADR-005 e docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+        Regras: RF-01, ADR-005, ADR-013 e
+        docs/user-stories/US-14-biometria-passkeys-webauthn.md.
         """
         stmt = select(PacientePasskey).where(
-            PacientePasskey.organizacao_id == organizacao_id,
-            PacientePasskey.credential_id == credential_id,
+            PacientePasskey.credential_id == credential_id
         )
         passkey = (await self._session.execute(stmt)).scalar_one_or_none()
         if passkey is None:
             raise NotFoundError(
                 f"Credencial Passkey '{credential_id}' não encontrada na "
-                f"organização '{organizacao_id}'; esperado credential_id registrado."
+                "plataforma; esperado credential_id registrado."
             )
         passkey.atualizar_contador(novo_sign_count)
         await self._session.flush()
@@ -291,7 +260,6 @@ def _to_passkey_data(passkey: PacientePasskey) -> PacientePasskeyData:
     """Convert ORM PacientePasskey model to immutable DTO across boundaries."""
     return PacientePasskeyData(
         id=passkey.id,
-        organizacao_id=passkey.organizacao_id,
         paciente_id=passkey.paciente_id,
         credential_id=passkey.credential_id,
         public_key=passkey.public_key,

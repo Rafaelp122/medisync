@@ -71,17 +71,15 @@ async def test_admitir_atendimento_apto_success(
     fila_service: FilaService, mock_session: AsyncMock, mock_valkey: MagicMock
 ) -> None:
     atend_id = uuid4()
-    org_id = 1
     mock_atend = MagicMock(spec=Atendimento)
     mock_atend.id = atend_id
-    mock_atend.organizacao_id = org_id
     mock_atend.status = StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
     mock_atend.prioridade_clinica = PrioridadeClinica.URGENTE
     mock_atend.data_entrada_fila = datetime.now(UTC)
     mock_atend.criado_em = datetime.now(UTC)
     mock_session.get.return_value = mock_atend
 
-    res = await fila_service.admitir_atendimento_apto(org_id, atend_id)
+    res = await fila_service.admitir_atendimento_apto(atend_id)
     assert isinstance(res, AdmissaoAptoResult)
     assert res.promovido is True
     assert res.status == "aprovado"
@@ -96,7 +94,7 @@ async def test_admitir_atendimento_apto_not_found(
 ) -> None:
     mock_session.get.return_value = None
     with pytest.raises(NotFoundError):
-        await fila_service.admitir_atendimento_apto(1, uuid4())
+        await fila_service.admitir_atendimento_apto(uuid4())
 
 
 @pytest.mark.asyncio
@@ -105,15 +103,13 @@ async def test_resolver_ring_timeout_no_show(
 ) -> None:
     atend_id = uuid4()
     med_id = uuid4()
-    org_id = 1
     mock_atend = MagicMock(spec=Atendimento)
     mock_atend.id = atend_id
-    mock_atend.organizacao_id = org_id
     mock_atend.paciente_id = uuid4()
     mock_atend.status = StatusAtendimento.CHAMANDO_PACIENTE.value
     mock_session.get.return_value = mock_atend
 
-    action = await fila_service.resolver_ring_timeout(org_id, atend_id, med_id)
+    action = await fila_service.resolver_ring_timeout(atend_id, med_id)
     assert action == "no_show_recorded"
     mock_atend.registrar_ausencia_paciente.assert_called_once()
     mock_session.commit.assert_awaited_once()
@@ -139,13 +135,11 @@ async def test_buscar_atendimento(
     fila_service: FilaService, mock_session: AsyncMock
 ) -> None:
     atend_id = uuid4()
-    org_id = 1
     pac_id = uuid4()
     now = datetime.now(UTC)
 
     mock_atend = MagicMock(spec=Atendimento)
     mock_atend.id = atend_id
-    mock_atend.organizacao_id = org_id
     mock_atend.paciente_id = pac_id
     mock_atend.medico_id = None
     mock_atend.status = StatusAtendimento.CONCLUIDO.value

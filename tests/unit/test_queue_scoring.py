@@ -38,7 +38,6 @@ def test_fila_service_e_modelo_usam_mesma_formula() -> None:
     ts = datetime(2026, 5, 1, 10, 0, 0, tzinfo=UTC)
 
     atend = Atendimento(
-        organizacao_id=1,
         paciente_id=uuid4(),
         data_entrada_fila=ts,
         prioridade_clinica=2,

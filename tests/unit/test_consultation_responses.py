@@ -96,7 +96,7 @@ def test_download_url_response_via_dto() -> None:
         documento_id=doc_id,
         download_url="https://s3.local/presigned",
         expires_in_seconds=300,
-        chave_s3="orgs/1/consultations/x/documents/y.pdf",
+        chave_s3="consultations/x/documents/y.pdf",
     )
     resp = DownloadUrlResponse.model_validate(dto)
     assert resp.documento_id == doc_id
@@ -142,7 +142,6 @@ def test_documento_clinico_response_draft_serialization() -> None:
     )
 
     doc = DocumentoClinico(
-        organizacao_id=1,
         atendimento_id=uuid4(),
         medico_id=uuid4(),
         tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
@@ -163,7 +162,6 @@ def test_evolucao_soap_response_com_finalizado_em() -> None:
 
     now = datetime.now(UTC)
     evolucao = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=uuid4(),
         medico_id=uuid4(),
         anamnese="Paciente com cefaleia",

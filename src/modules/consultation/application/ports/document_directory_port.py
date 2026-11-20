@@ -26,11 +26,10 @@ class DadosVerificacaoDirectory:
 
 @runtime_checkable
 class DocumentDirectoryPort(Protocol):
-    """Abstract directory for org/physician/patient verification data."""
+    """Abstract directory for unit/physician/patient verification data."""
 
     async def obter_dados_verificacao(
         self,
-        organizacao_id: int,
         medico_id: UUID,
         atendimento_id: UUID,
     ) -> DadosVerificacaoDirectory:

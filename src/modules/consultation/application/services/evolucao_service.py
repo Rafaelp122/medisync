@@ -78,7 +78,6 @@ class EvolucaoService:
         """
         if self._audit_trail is not None and command.ia_utilizada:
             await self._audit_trail.record_event(
-                organizacao_id=command.organizacao_id,
                 tipo_evento="IA_DECISAO_MEDICA_REGISTRADA",
                 ator_tipo=AtorTipo.PROFISSIONAL.value,
                 ator_papel=AtorPapel.MEDICO.value,
@@ -138,7 +137,6 @@ class EvolucaoService:
             await self._session.flush()
             if self._audit_trail is not None:
                 await self._audit_trail.record_event(
-                    organizacao_id=command.organizacao_id,
                     tipo_evento="EVOLUCAO_SOAP_REGISTRADA",
                     ator_tipo=AtorTipo.PROFISSIONAL.value,
                     ator_papel=AtorPapel.MEDICO.value,
@@ -166,7 +164,6 @@ class EvolucaoService:
             )
 
         evolucao = EvolucaoClinica(
-            organizacao_id=command.organizacao_id,
             atendimento_id=command.atendimento_id,
             medico_id=command.medico_id,
             anamnese=command.anamnese,
@@ -220,7 +217,6 @@ class EvolucaoService:
             await self._session.flush()
             if self._audit_trail is not None:
                 await self._audit_trail.record_event(
-                    organizacao_id=command.organizacao_id,
                     tipo_evento="EVOLUCAO_SOAP_REGISTRADA",
                     ator_tipo=AtorTipo.PROFISSIONAL.value,
                     ator_papel=AtorPapel.MEDICO.value,
@@ -243,7 +239,6 @@ class EvolucaoService:
 
         if self._audit_trail is not None:
             await self._audit_trail.record_event(
-                organizacao_id=command.organizacao_id,
                 tipo_evento="EVOLUCAO_SOAP_REGISTRADA",
                 ator_tipo=AtorTipo.PROFISSIONAL.value,
                 ator_papel=AtorPapel.MEDICO.value,

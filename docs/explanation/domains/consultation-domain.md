@@ -20,9 +20,9 @@ Escopo termina no registro. Fila decide ordem, triagem decide prioridade, ambula
 - **RN09 — Trava Temporal Anti-Fraude em Atestados (CFM nº 2.314/2022 e RDC Anvisa nº 1.000/2025).** A emissão de atestado exige tempo decorrido $\ge 180\text{ s}$ (3 minutos) de teleconsulta. Tentativa anterior a 180s exige justificativa clínica circunstanciada com no mínimo 15 caracteres ($\ge 15$), disparando obrigatoriamente o evento forense `TRAVA_TEMPORAL_ATESTADO_VIOLADA` com `duracao_segundos`, `justificativa` e `justificativa_aceita = True`. Justificativas ausentes ou com menos de 15 caracteres são bloqueadas com erro HTTP 422 `TRAVA_TEMPORAL_ATESTADO_VIOLADA` e evento forense gravado com `justificativa_aceita = False`. Prova viva: `tests/unit/test_trava_antifraude_atestado.py`. [Fonte](../product-specification.md) (RN09)
 - **Procedimento SIGTAP 03.01.01.025-0 no Plano SOAP.** O registro do Plano terapêutico inclui a codificação SIGTAP da teleconsulta na Atenção Primária para integração com o BPA-I e SISAB (Nota Técnica nº 11/2024-MS). [Fonte](../product-specification.md) (RF-07)
 
-Guardiões: `__init__` rejeita `organizacao_id <= 0`, anamnese/conduta vazias, CID-10 fora do padrão, `chave_s3` vazia, hash fora de 64 hex (`ConsultaInvalidaError`).
+Guardiões: `__init__` rejeita anamnese/conduta vazias, CID-10 fora do padrão, `chave_s3` vazia, hash fora de 64 hex (`ConsultaInvalidaError`).
 
-`adicionar_item` exige mesmo `organizacao_id` (multi-tenant), valida substância via Portaria 344/98 Listas A e B, força `controle_especial = True` quando tipo é C1.
+`adicionar_item` valida substância via Portaria 344/98 Listas A e B, força `controle_especial = True` quando tipo é C1 e vincula o item diretamente ao `documento_id`.
 
 `validar_pode_excluir` recusa quando `is_finalizado` ou status do atendimento é terminal (CONCLUIDO, PACIENTE_AUSENTE, CANCELADO_PACIENTE); `before_delete` repete a trava no nível ORM.
 
@@ -43,7 +43,7 @@ stateDiagram-v2
 
 `marcar_finalizado` grava `finalizado_em = datetime.now(UTC)` e liga `_is_finalizado = True` em `src/modules/consultation/domain/models/evolucao_clinica.py` e `src/modules/consultation/domain/models/documento_clinico.py`. Serviço chama quando consulta é concluída e delega a transição do atendimento para `QueueStorePort.concluir_atendimento`.
 
-`adicionar_item` só antes de finalizar: serviço bloqueia emissão e mutação quando `is_finalizado` ou atendimento terminal; direto no agregado, itens vinculam `documento_id` após checar tenant e Portaria 344/98.
+`adicionar_item` só antes de finalizar: serviço bloqueia emissão e mutação quando `is_finalizado` ou atendimento terminal; direto no agregado, itens vinculam `documento_id` após checar Portaria 344/98.
 
 `validar_pode_excluir` + `before_delete` fecham a porta de saída: finalizado nunca deleta, terminal nunca deleta. Exclusão exige rascunho + atendimento ativo.
 
@@ -56,7 +56,7 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - Emite PDF via porta abstrata. `src/modules/consultation/application/ports/pdf_generator_port.py` recebe `DocumentoPDFPayload` e devolve bytes PDF/A com QR de verificação ITI.
 - Assina via porta abstrata. `src/modules/consultation/application/ports/icp_brasil_signer_port.py` aplica PAdES com `DoctorCertificateCredentials` (PSC OAuth2); infra PyHanko pluga sem tocar serviço.
 - Guarda bytes via porta abstrata. `src/modules/consultation/application/ports/storage_port.py` persiste em `chave_s3` canônica e gera URL pré-assinada de 300s para download.
-- Persiste em três tabelas (`evolucoes_clinicas`, `documentos_clinicos`, `documento_itens` com RLS por `organizacao_id`, `RESTRICT` nas FKs clínicas, `CASCADE` de documento para itens). [Modelo](../architecture/data-model.md)
+- Persiste em três tabelas (`evolucoes_clinicas`, `documentos_clinicos`, `documento_itens`, com `RESTRICT` nas FKs clínicas e `CASCADE` de documento para itens). [Modelo](../architecture/data-model.md)
 - Orquestra mídia sem transportar mídia. `TeleconsultaService` orquestra geração de JWT e ciclo de sala sobre `LiveKitMediaPort`; SFU LiveKit carrega áudio/vídeo, Python só sinaliza.
 - Valida acesso à mídia com distinção clínica de No-Show. `src/modules/consultation/presentation/dependencies.py` (`validar_acesso_livekit`) rejeita atendimento finalizado por no-show (`PACIENTE_AUSENTE`) com HTTP 409 Conflict (`ATENDIMENTO_EXPIRADO_NO_SHOW`), e outros status terminais com HTTP 403 Forbidden.
 - Finalização centralizada e resiliente no PEP. `src/modules/consultation/application/services/pep_service.py` marca evolução + documentos de forma atômica e conclui o atendimento via `QueueStorePort`. Falhas periféricas no leitor ou na consolidação ambulatorial SUS são capturadas e registradas com structured logging (`logger.warning` com contexto forense e valores ofensivos), preservando a integridade primária do ato médico.
@@ -67,7 +67,7 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - Mídia nunca passa pelo Python. Backend gera JWT e gerencia sala via Twirp RPC; pacotes WebRTC fluem paciente ↔ SFU, nunca por FastAPI.
 - `finalizado_em` é coluna persistida com timezone. Presente tanto em `evolucoes_clinicas` quanto em `documentos_clinicos`; a imutabilidade jurídica é garantida no banco e refletida na property `is_finalizado`.
 - Documentos clínicos nascem em rascunho com `sha256_hash` e `assinado_em` nulos, sendo preenchidos atomicamente pelo método rico `registrar_assinatura` apenas após assinatura ICP-Brasil válida.
-- Chave S3 canônica única. `build_signed_document_key` monta `orgs/{org}/consultations/{atendimento}/documents/{documento}.pdf`; prefixo não indica assinatura, fonte da verdade é `SignedCachePort`.
+- Chave S3 canônica única. `build_signed_document_key` monta `consultations/{atendimento}/documents/{documento}.pdf` (preservando leitura compatível de `doc.chave_s3` para prefixos históricos); fonte da verdade de assinatura é `SignedCachePort`.
 - Portaria 344/98 no domínio. `validar_substancia_permitida_telemedicina` barra Listas A e B em `DocumentoItem.__init__` e em `adicionar_item`; entorpecente via teleconsulta nem chega ao PDF.
 - UTC sempre, relógio do cliente nunca. `registrado_em`, `assinado_em` e `finalizado_em` usam `datetime.now(UTC)` como default; auditoria RN07 depende desse carimbo.
 - Erros de domínio tipados. `ConsultaFinalizadaError` para mutação/exclusão pós-trava, `ConsultaInvalidaError` para dado inválido; borda converte em 4xx sem vazar stack.
@@ -137,7 +137,7 @@ Sem corrigir código. Divergência entre doc e guardião real exige atualizar do
 ## 8. Ver também
 
 - [Product Specification](../product-specification.md) — RN06, RN07, RN08, RN09 contratuais
-- [Data Model](../architecture/data-model.md) — tabelas `evolucoes_clinicas`, `documentos_clinicos`, `documento_itens`, RLS por `organizacao_id`
+- [Data Model](../architecture/data-model.md) — tabelas `evolucoes_clinicas`, `documentos_clinicos`, `documento_itens` e imutabilidade CFM
 - [Compliance and Telemedicine](../architecture/compliance-and-telemedicine.md) — RN06, CFM 2.314/2022, PAdES ICP-Brasil
 - [ambulatory domain](./ambulatory-domain.md) — produção ambulatorial SUS e qualificação cadastral
 - [ADR-012: Transição 100% SUS](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md)

@@ -27,7 +27,6 @@ class SqlAuditTrailAdapter(AuditTrailPort):
     async def record_event(
         self,
         *,
-        organizacao_id: int,
         ator_tipo: AtorTipo | str,
         ator_papel: AtorPapel | str,
         tipo_evento: str,
@@ -46,7 +45,6 @@ class SqlAuditTrailAdapter(AuditTrailPort):
         """
         event = await AuditService.record_event(
             self._session,
-            organizacao_id=organizacao_id,
             atendimento_id=atendimento_id,
             ator_tipo=ator_tipo,
             ator_papel=ator_papel,

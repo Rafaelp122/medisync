@@ -1,6 +1,6 @@
 """Unit tests for onboarding and dependent presentation schemas."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 import pytest
@@ -8,6 +8,7 @@ from pydantic import ValidationError as PydanticValidationError
 from src.core.uuid7 import uuid7
 from src.modules.identity.presentation.schemas import (
     CriarDependenteRequest,
+    DependenteResponse,
     Fase1Request,
     Fase1Response,
     Fase2Request,
@@ -230,3 +231,15 @@ def test_fase_2_request_e_response_com_nome_social() -> None:
         status="DADOS_COMPLETOS",
     )
     assert resp.nome_social == "Carla Silva"
+
+
+def test_dependente_response_sem_organizacao_id() -> None:
+    resp = DependenteResponse(
+        id=uuid7(),
+        titular_id=uuid7(),
+        dependente_id=uuid7(),
+        grau_parentesco="FILHO",
+        vinculado_em=datetime.now(UTC),
+    )
+    assert "organizacao_id" not in resp.model_dump()
+    assert resp.grau_parentesco == "FILHO"

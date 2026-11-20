@@ -23,6 +23,9 @@ from src.modules.consultation.domain.exceptions import (
     DocumentoIntegridadeError,
     DocumentoNaoEncontradoNoStorageError,
 )
+from src.modules.consultation.infrastructure.document_directory_sql import (
+    SqlDocumentDirectory,
+)
 from src.modules.consultation.infrastructure.memory_signed_cache import (
     MemorySignedCache,
 )
@@ -46,7 +49,6 @@ class FakeDocItem:
 @dataclass
 class FakeDoc:
     id: UUID
-    organizacao_id: int
     atendimento_id: UUID
     medico_id: UUID
     tipo_documento: str = "RECEITA_SIMPLES"
@@ -73,7 +75,6 @@ class FakeDirectory(DocumentDirectoryPort):
 
     async def obter_dados_verificacao(
         self,
-        organizacao_id: int,
         medico_id: UUID,
         atendimento_id: UUID,
     ) -> DadosVerificacaoDirectory:
@@ -136,10 +137,9 @@ async def test_validar_assinado_vs_emitido() -> None:
     med_id = uuid4()
     doc_assinado = FakeDoc(
         id=doc_id,
-        organizacao_id=7,
         atendimento_id=atend_id,
         medico_id=med_id,
-        chave_s3=f"orgs/7/consultations/{atend_id}/documents/{doc_id}.pdf",
+        chave_s3=f"consultations/{atend_id}/documents/{doc_id}.pdf",
         assinado_em=datetime.now(UTC),
     )
     cache_assinado = MemorySignedCache()
@@ -155,7 +155,6 @@ async def test_validar_assinado_vs_emitido() -> None:
 
     doc_emitido = FakeDoc(
         id=doc_id,
-        organizacao_id=7,
         atendimento_id=atend_id,
         medico_id=med_id,
         chave_s3="s3://medisync-docs/7/atendimentos/x/receita.pdf",
@@ -175,10 +174,9 @@ async def test_validar_chave_canonica_sem_cache_e_emitido() -> None:
     atend_id = uuid4()
     doc = FakeDoc(
         id=doc_id,
-        organizacao_id=7,
         atendimento_id=atend_id,
         medico_id=uuid4(),
-        chave_s3=f"orgs/7/consultations/{atend_id}/documents/{doc_id}.pdf",
+        chave_s3=f"consultations/{atend_id}/documents/{doc_id}.pdf",
         assinado_em=datetime.now(UTC),
     )
     svc = _service(doc, cache=MemorySignedCache())
@@ -192,7 +190,6 @@ async def test_validar_chave_canonica_sem_cache_e_emitido() -> None:
 async def test_medico_ausente_erro_integridade() -> None:
     doc = FakeDoc(
         id=uuid4(),
-        organizacao_id=1,
         atendimento_id=uuid4(),
         medico_id=uuid4(),
     )
@@ -205,7 +202,6 @@ async def test_medico_ausente_erro_integridade() -> None:
 async def test_paciente_ausente_erro_integridade() -> None:
     doc = FakeDoc(
         id=uuid4(),
-        organizacao_id=1,
         atendimento_id=uuid4(),
         medico_id=uuid4(),
     )
@@ -243,7 +239,6 @@ async def test_download_storage_ausente_gera_sob_demanda() -> None:
     atend_id = uuid4()
     doc = FakeDoc(
         id=doc_id,
-        organizacao_id=9,
         atendimento_id=atend_id,
         medico_id=uuid4(),
         chave_s3="",
@@ -261,18 +256,17 @@ async def test_download_storage_ausente_gera_sob_demanda() -> None:
     assert res.documento_id == doc_id
     assert str(doc_id) in res.download_url
     assert res.expires_in_seconds == 300
-    expected_key = f"orgs/9/consultations/{atend_id}/documents/{doc_id}.pdf"
+    expected_key = f"consultations/{atend_id}/documents/{doc_id}.pdf"
     assert res.chave_s3 == expected_key
 
 
 @pytest.mark.asyncio
 async def test_download_storage_presente_nao_recompila() -> None:
+    """Documentos legados (orgs/{id}/...) com chave_s3 continuam baixáveis."""
     doc_id = uuid4()
     atend_id = uuid4()
     key = f"orgs/9/consultations/{atend_id}/documents/{doc_id}.pdf"
-    doc = FakeDoc(
-        id=doc_id, organizacao_id=9, atendimento_id=atend_id, medico_id=uuid4()
-    )
+    doc = FakeDoc(id=doc_id, atendimento_id=atend_id, medico_id=uuid4())
     doc.chave_s3 = key
     storage = FakeStorageAdapter()
     await storage.salvar_documento(key, b"%PDF-existente")
@@ -291,7 +285,6 @@ async def test_download_storage_falha_tipada_nao_suprime_generico() -> None:
     doc_id = uuid4()
     doc = FakeDoc(
         id=doc_id,
-        organizacao_id=9,
         atendimento_id=uuid4(),
         medico_id=uuid4(),
         chave_s3="",
@@ -312,3 +305,67 @@ async def test_download_storage_falha_tipada_nao_suprime_generico() -> None:
     svc = _service(doc, storage=ExplodingStorage(), compiler=_compiler)  # type: ignore[arg-type]
     with pytest.raises(DocumentoNaoEncontradoNoStorageError):
         await svc.gerar_url_download(str(doc_id))
+
+
+@pytest.mark.asyncio
+async def test_sql_document_directory_consulta_configuracoes_unidade_cnpj_cnes() -> (
+    None
+):
+    """Q4 Fix #1: SqlDocumentDirectory lê cnpj e cnes de configuracoes_unidade."""
+
+    class _DirRowResult:
+        def __init__(self, row: dict[str, Any] | None) -> None:
+            self._row = row
+
+        def mappings(self) -> "_DirRowResult":
+            return self
+
+        def first(self) -> dict[str, Any] | None:
+            return self._row
+
+    class _DirFakeSession:
+        def __init__(self, rows: list[dict[str, Any] | None]) -> None:
+            self._rows = list(rows)
+            self.statements: list[str] = []
+            self.params: list[Any] = []
+
+        async def execute(self, stmt: Any, params: Any = None) -> _DirRowResult:
+            self.statements.append(str(stmt))
+            self.params.append(params)
+            return _DirRowResult(self._rows.pop(0))
+
+    session = _DirFakeSession(
+        [
+            {
+                "cnpj": "12.345.678/0001-99",
+                "razao_social": "Consórcio Regional",
+                "nome_fantasia": "UPA Virtual Central",
+                "cnes": "2077558",
+            },
+            {"nome_completo": "Dra. Ana", "crm": "12345", "crm_uf": "SP"},
+            {
+                "nome_completo": "João Pedro",
+                "cpf": "12345678900",
+                "data_nascimento": None,
+                "logradouro": None,
+                "numero": None,
+                "bairro": None,
+                "cidade": None,
+                "estado": None,
+            },
+        ]
+    )
+    directory = SqlDocumentDirectory(cast("AsyncSession", session))
+
+    dto = await directory.obter_dados_verificacao(
+        medico_id=uuid4(),
+        atendimento_id=uuid4(),
+    )
+
+    assert "SELECT cnpj, razao_social, nome_fantasia, cnes" in session.statements[0]
+    assert "FROM configuracoes_unidade LIMIT 1" in session.statements[0]
+    assert "organizacoes" not in session.statements[0]
+    assert session.params[0] is None
+    assert dto.organizacao_nome == "UPA Virtual Central"
+    assert dto.organizacao_cnpj == "12.345.678/0001-99"
+    assert dto.cnes == "2077558"

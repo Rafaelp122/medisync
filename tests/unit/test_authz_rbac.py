@@ -5,22 +5,26 @@ from uuid import UUID, uuid4
 
 import jwt
 import pytest
+from fastapi.security import HTTPAuthorizationCredentials
 from src.core.authz.dependencies import (
     get_current_user,
     require_permission,
     require_role,
 )
 from src.core.authz.models import AuthenticatedUser
-from src.core.authz.roles import ROLE_PERMISSIONS, Permission, Role
-from src.core.authz.token import decode_access_token
+from src.core.authz.roles import (
+    ROLE_PERMISSIONS,
+    ROLES_REQUIRING_MFA,
+    Permission,
+    Role,
+)
+from src.core.authz.token import create_access_token, decode_access_token
 from src.core.config import get_settings
-from src.core.context import set_current_tenant_id
-from src.core.errors import ForbiddenError, UnauthorizedError
+from src.core.errors import ForbiddenError, TokenRevogadoError, UnauthorizedError
 
 
 def create_test_token(
     usuario_id: UUID,
-    organizacao_id: int,
     papel: str,
     secret_key: str,
     expires_in_seconds: int = 900,
@@ -32,7 +36,6 @@ def create_test_token(
     exp = now + timedelta(seconds=expires_in_seconds)
     payload = {
         "sub": str(usuario_id),
-        "org_id": organizacao_id,
         "papel": papel,
         "iat": int(now.timestamp()),
         "exp": int(exp.timestamp()),
@@ -46,7 +49,16 @@ _create_token = create_test_token
 
 
 def test_role_and_permission_matrix() -> None:
-    """Validate OWASP least privilege and CFM compliance in role-permission matrix."""
+    """Validate simplified 4-role OWASP least privilege and CFM compliance."""
+    assert set(Role) == {
+        Role.GESTOR_UNIDADE,
+        Role.MEDICO,
+        Role.FATURAMENTO,
+        Role.PACIENTE,
+    }
+    assert "ADMIN_GLOBAL" not in ROLE_PERMISSIONS
+    assert frozenset({"MEDICO", "GESTOR_UNIDADE"}) == ROLES_REQUIRING_MFA
+
     # 1. Medico has clinical and queue permissions
     medico_perms = ROLE_PERMISSIONS[Role.MEDICO]
     assert Permission.PRONTUARIO_VIEW in medico_perms
@@ -56,17 +68,13 @@ def test_role_and_permission_matrix() -> None:
     assert Permission.QUEUE_VIEW in medico_perms
     assert Permission.AMBULATORY_CONSOLIDATE not in medico_perms
 
-    # 2. Gestor and Admin CANNOT view medical records (CFM 1.821/2007 rule)
-    admin_perms = ROLE_PERMISSIONS[Role.ADMIN_GLOBAL]
-    assert Permission.PRONTUARIO_VIEW not in admin_perms
-    assert Permission.PRONTUARIO_EDIT not in admin_perms
-    assert Permission.DOC_SIGN not in admin_perms
-    assert Permission.TMA_CONFIG in admin_perms
-    assert Permission.PROFISSIONAL_MANAGE in admin_perms
-
+    # 2. Gestor CANNOT view medical records (CFM 1.821/2007 rule)
     gestor_perms = ROLE_PERMISSIONS[Role.GESTOR_UNIDADE]
     assert Permission.PRONTUARIO_VIEW not in gestor_perms
+    assert Permission.PRONTUARIO_EDIT not in gestor_perms
+    assert Permission.DOC_SIGN not in gestor_perms
     assert Permission.TMA_CONFIG in gestor_perms
+    assert Permission.PROFISSIONAL_MANAGE in gestor_perms
 
     # 3. Faturamento only consolidates ambulatory production
     fat_perms = ROLE_PERMISSIONS[Role.FATURAMENTO]
@@ -83,32 +91,34 @@ def test_authenticated_user_methods() -> None:
     """Validate has_role and has_permission helper methods on AuthenticatedUser."""
     user = AuthenticatedUser(
         usuario_id=uuid4(),
-        organizacao_id=1,
         papel=Role.MEDICO,
         token_id=uuid4(),
         raw_token="fake-token",
     )
+    assert not hasattr(user, "organizacao_id")
     assert user.has_role(Role.MEDICO) is True
-    assert user.has_role(Role.MEDICO, Role.ADMIN_GLOBAL) is True
+    assert user.has_role(Role.MEDICO, Role.GESTOR_UNIDADE) is True
     assert user.has_role(Role.FATURAMENTO) is False
     assert user.has_permission(Permission.PRONTUARIO_VIEW) is True
     assert user.has_permission(Permission.AMBULATORY_CONSOLIDATE) is False
 
 
-def test_decode_valid_access_token() -> None:
-    """Verify successful decoding of standard valid JWT access token."""
+def test_create_and_decode_valid_access_token_without_org_claim() -> None:
+    """Verify JWT creation and decoding operate without org_id claim."""
     settings = get_settings()
     user_id = uuid4()
-    token = _create_token(
+    token = create_access_token(
         usuario_id=user_id,
-        organizacao_id=42,
         papel=Role.MEDICO,
         secret_key=settings.JWT_SECRET_KEY,
     )
+    raw_claims = jwt.decode(
+        token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+    )
+    assert "org_id" not in raw_claims
 
     user = decode_access_token(token)
     assert user.usuario_id == user_id
-    assert user.organizacao_id == 42
     assert user.papel == Role.MEDICO
     assert user.raw_token == token
 
@@ -118,7 +128,6 @@ def test_decode_rejects_expired_token() -> None:
     settings = get_settings()
     token = _create_token(
         usuario_id=uuid4(),
-        organizacao_id=42,
         papel=Role.MEDICO,
         secret_key=settings.JWT_SECRET_KEY,
         expires_in_seconds=-60,
@@ -138,7 +147,6 @@ def test_decode_rejects_refresh_token_for_api_access() -> None:
     settings = get_settings()
     token = _create_token(
         usuario_id=uuid4(),
-        organizacao_id=42,
         papel=Role.MEDICO,
         secret_key=settings.JWT_SECRET_KEY,
         token_type="refresh",
@@ -151,24 +159,20 @@ def test_require_role_guard() -> None:
     """Verify require_role allows authorized roles and denies unauthorized ones."""
     medico_user = AuthenticatedUser(
         usuario_id=uuid4(),
-        organizacao_id=1,
         papel=Role.MEDICO,
         token_id=uuid4(),
         raw_token="fake",
     )
     gestor_user = AuthenticatedUser(
         usuario_id=uuid4(),
-        organizacao_id=1,
         papel=Role.GESTOR_UNIDADE,
         token_id=uuid4(),
         raw_token="fake",
     )
 
     medico_guard = require_role(Role.MEDICO)
-    # Medico passes
     assert medico_guard(medico_user) == medico_user
 
-    # Gestor is rejected with 403 Forbidden
     with pytest.raises(ForbiddenError) as exc_info:
         medico_guard(gestor_user)
     assert exc_info.value.status_code == 403
@@ -179,7 +183,6 @@ def test_require_permission_guard() -> None:
     """Verify require_permission dependency checks fine-grained permissions."""
     medico_user = AuthenticatedUser(
         usuario_id=uuid4(),
-        organizacao_id=1,
         papel=Role.MEDICO,
         token_id=uuid4(),
         raw_token="fake",
@@ -196,27 +199,29 @@ def test_require_permission_guard() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_tenant_mismatch() -> None:
-    """Verify get_current_user enforces tenant isolation against active tenant."""
-    from fastapi.security import HTTPAuthorizationCredentials
+async def test_get_current_user_valid_token_without_tenant_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify get_current_user authenticates cleanly without tenant resolution."""
+
+    async def _not_revoked(_token_id: UUID) -> bool:
+        return False
+
+    monkeypatch.setattr("src.core.authz.dependencies.is_token_revoked", _not_revoked)
 
     settings = get_settings()
+    user_id = uuid4()
     token = _create_token(
-        usuario_id=uuid4(),
-        organizacao_id=10,
+        usuario_id=user_id,
         papel=Role.MEDICO,
         secret_key=settings.JWT_SECRET_KEY,
     )
 
-    # When context tenant is 20, non-admin user from tenant 10 is blocked with 403
-    set_current_tenant_id(20)
-    try:
-        with pytest.raises(ForbiddenError, match="organização 10"):
-            await get_current_user(
-                HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-            )
-    finally:
-        set_current_tenant_id(None)
+    user = await get_current_user(
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+    )
+    assert user.usuario_id == user_id
+    assert user.papel == Role.MEDICO
 
 
 @pytest.mark.asyncio
@@ -227,27 +232,26 @@ async def test_get_current_user_missing_header() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_revoked_token_raises_401() -> None:
-    """Verify get_current_user raises TokenRevogadoError (401)
-    when token is revoked in Valkey.
-    """
-    from unittest.mock import patch
+async def test_get_current_user_revoked_token_raises_401(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify get_current_user raises TokenRevogadoError (401) when revoked."""
 
-    from fastapi.security import HTTPAuthorizationCredentials
-    from src.core.errors import TokenRevogadoError
+    async def _revoked(_token_id: UUID) -> bool:
+        return True
+
+    monkeypatch.setattr("src.core.authz.dependencies.is_token_revoked", _revoked)
 
     settings = get_settings()
     token = _create_token(
         usuario_id=uuid4(),
-        organizacao_id=10,
         papel=Role.MEDICO,
         secret_key=settings.JWT_SECRET_KEY,
     )
 
-    with patch("src.core.authz.dependencies.is_token_revoked", return_value=True):
-        with pytest.raises(TokenRevogadoError) as exc_info:
-            await get_current_user(
-                HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-            )
-        assert exc_info.value.status_code == 401
-        assert exc_info.value.code == "TOKEN_REVOGADO"
+    with pytest.raises(TokenRevogadoError) as exc_info:
+        await get_current_user(
+            HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        )
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.code == "TOKEN_REVOGADO"

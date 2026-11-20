@@ -41,10 +41,7 @@ from tests.doubles import (
     FakePDFGenerator,
     FakeValkey,
 )
-from tests.factories.identity import (
-    make_organizacao,
-    make_paciente,
-)
+from tests.factories.identity import make_paciente
 from tests.factories.queue import make_atendimento
 from tests.factories.scenarios import seed_clinical_scenario
 from tests.helpers import clean_database_tables, make_pep_service
@@ -73,12 +70,7 @@ async def setup_clean_db() -> AsyncGenerator[None, None]:
 async def test_admissao_paciente_records_audit_event_in_postgres() -> None:
     """Validate persistence of Atendimento and ADMISSAO_PACIENTE in PostgreSQL."""
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="10101010000199")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="10101010199")
+        paciente = make_paciente(cpf="10101010199")
         session.add(paciente)
         await session.commit()
         await session.refresh(paciente)
@@ -104,7 +96,6 @@ async def test_admissao_paciente_records_audit_event_in_postgres() -> None:
         )
 
         cmd = AdmissaoAtendimentoCommand(
-            organizacao_id=org.id,
             paciente_id=paciente.id,
             queixa_principal="Cefaleia leve",
             sintomas=["cefaleia"],
@@ -124,7 +115,6 @@ async def test_admissao_paciente_records_audit_event_in_postgres() -> None:
         )
         assert len(events) == 1
         evt = events[0]
-        assert evt.organizacao_id == org.id
         assert evt.atendimento_id == atend_id
         assert evt.tipo_evento == "ADMISSAO_PACIENTE"
         assert evt.ator_tipo == AtorTipo.PACIENTE
@@ -139,23 +129,17 @@ async def test_admissao_paciente_records_audit_event_in_postgres() -> None:
 async def test_rollback_reverts_audit_event_atomically() -> None:
     """Rollback reverts clinical entities and audit events (zero orphans)."""
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="20202020000199")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="20202020299")
+        paciente = make_paciente(cpf="20202020299")
         session.add(paciente)
         await session.commit()
         await session.refresh(paciente)
 
-        atend = make_atendimento(org.id, paciente.id, tcle_hash=_SAMPLE_TCLE_HASH)
+        atend = make_atendimento(paciente.id, tcle_hash=_SAMPLE_TCLE_HASH)
         session.add(atend)
         await session.flush()
 
         adapter = SqlAuditTrailAdapter(session)
         await adapter.record_event(
-            organizacao_id=org.id,
             tipo_evento="ADMISSAO_PACIENTE",
             ator_tipo=AtorTipo.PACIENTE.value,
             ator_papel=AtorPapel.PACIENTE.value,
@@ -185,14 +169,13 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
     async with async_session_factory() as session:
         cenario = await seed_clinical_scenario(
             session,
-            org_cnpj="30303030000199",
+            unidade_cnpj="30303030000199",
             paciente_cpf="30303030399",
             medico_cpf="40404040499",
             medico_email="dr.audit.int@medisync.local",
             tcle_hash=_SAMPLE_TCLE_HASH,
         )
         atend_id = cenario.atendimento.id
-        org_id = cenario.organizacao.id
         medico_id = cenario.medico.id
 
         pep_svc = make_pep_service(
@@ -206,7 +189,6 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
         # 1. Salvar Evolução SOAP
         cmd_soap = RegistrarEvolucaoSOAPCommand(
             atendimento_id=atend_id,
-            organizacao_id=org_id,
             medico_id=medico_id,
             anamnese="Paciente com febre e cefaleia há 24h.",
             conduta="Prescrito sintomáticos e repouso.",
@@ -219,7 +201,6 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
         # 2. Emitir Documento Clínico (Receita)
         cmd_doc = EmitirDocumentoClinicoCommand(
             atendimento_id=atend_id,
-            organizacao_id=org_id,
             medico_id=medico_id,
             tipo_documento="RECEITA_SIMPLES",
             itens=[
@@ -246,7 +227,6 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
         # 4. Finalizar Consulta
         cmd_fim = FinalizarConsultaCommand(
             atendimento_id=atend_id,
-            organizacao_id=org_id,
             medico_id=medico_id,
         )
         finalizada = await pep_svc.finalizar_consulta(cmd_fim)
@@ -314,7 +294,7 @@ async def test_clinical_audit_event_immutability_trigger() -> None:
     async with async_session_factory() as session:
         cenario = await seed_clinical_scenario(
             session,
-            org_cnpj="50505050000199",
+            unidade_cnpj="50505050000199",
             paciente_cpf="50505050599",
             medico_cpf="60606060699",
             medico_email="dr.immutability@medisync.local",
@@ -326,7 +306,6 @@ async def test_clinical_audit_event_immutability_trigger() -> None:
         )
         cmd_soap = RegistrarEvolucaoSOAPCommand(
             atendimento_id=cenario.atendimento.id,
-            organizacao_id=cenario.organizacao.id,
             medico_id=cenario.medico.id,
             anamnese="Queixa de dor de garganta.",
             conduta="Orientações gerais.",

@@ -4,10 +4,8 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     DateTime,
     ForeignKey,
-    Index,
     String,
     UniqueConstraint,
 )
@@ -29,14 +27,10 @@ class Dependente(Base):
     __tablename__ = "dependentes"
     __table_args__ = (
         UniqueConstraint("titular_id", "dependente_id", name="uq_dependente_vinculo"),
-        Index("idx_dependentes_org", "organizacao_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
     )
     titular_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -57,7 +51,6 @@ class Dependente(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         titular_id: UUID,
         dependente_id: UUID,
         grau_parentesco: str,
@@ -71,7 +64,6 @@ class Dependente(Base):
 
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             titular_id=titular_id,
             dependente_id=dependente_id,
             grau_parentesco=grau_parentesco.strip().upper(),

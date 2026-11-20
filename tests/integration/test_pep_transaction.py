@@ -32,20 +32,18 @@ async def test_salvar_evolucao_soap_service_commit_visivel_outra_sessao(
     """Service commit persists SOAP without router commit (separate session)."""
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="11111111000111",
+        unidade_cnpj="11111111000111",
         paciente_cpf="11111111111",
         medico_cpf="22222222211",
         medico_email="tx-soap@medisync.local",
     )
     atend_id = cenario.atendimento.id
-    org_id = cenario.organizacao.id
     medico_id = cenario.medico.id
 
     async with async_session_factory() as s1:
         svc = make_pep_service(s1)
         cmd = RegistrarEvolucaoSOAPCommand(
             atendimento_id=atend_id,
-            organizacao_id=org_id,
             medico_id=medico_id,
             anamnese="Queixa de tosse há 2 dias.",
             conduta="Hidratação e sintomáticos.",
@@ -72,13 +70,12 @@ async def test_emitir_documento_service_commit_visivel_outra_sessao(
     """Service commit persists document+items without router commit."""
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="22222222000111",
+        unidade_cnpj="22222222000111",
         paciente_cpf="33333333311",
         medico_cpf="44444444411",
         medico_email="tx-doc@medisync.local",
     )
     atend_id = cenario.atendimento.id
-    org_id = cenario.organizacao.id
     medico_id = cenario.medico.id
 
     async with async_session_factory() as s1:
@@ -86,7 +83,6 @@ async def test_emitir_documento_service_commit_visivel_outra_sessao(
         await svc.salvar_evolucao_soap(
             RegistrarEvolucaoSOAPCommand(
                 atendimento_id=atend_id,
-                organizacao_id=org_id,
                 medico_id=medico_id,
                 anamnese="Dor aguda.",
                 conduta="Analgesia.",
@@ -95,7 +91,6 @@ async def test_emitir_documento_service_commit_visivel_outra_sessao(
         )
         cmd = EmitirDocumentoClinicoCommand(
             atendimento_id=atend_id,
-            organizacao_id=org_id,
             medico_id=medico_id,
             tipo_documento="RECEITA_SIMPLES",
             itens=[
@@ -128,13 +123,12 @@ async def test_finalizar_consulta_service_commit_visivel_outra_sessao(
     """Service commit persists finalization (atendimento CONCLUIDO)."""
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="33333333000111",
+        unidade_cnpj="33333333000111",
         paciente_cpf="55555555511",
         medico_cpf="66666666611",
         medico_email="tx-fin@medisync.local",
     )
     atend_id = cenario.atendimento.id
-    org_id = cenario.organizacao.id
     medico_id = cenario.medico.id
 
     async with async_session_factory() as s1:
@@ -142,7 +136,6 @@ async def test_finalizar_consulta_service_commit_visivel_outra_sessao(
         await svc.salvar_evolucao_soap(
             RegistrarEvolucaoSOAPCommand(
                 atendimento_id=atend_id,
-                organizacao_id=org_id,
                 medico_id=medico_id,
                 anamnese="Cefaleia leve.",
                 conduta="Sintomático e repouso.",
@@ -155,7 +148,6 @@ async def test_finalizar_consulta_service_commit_visivel_outra_sessao(
         await svc.finalizar_consulta(
             FinalizarConsultaCommand(
                 atendimento_id=atend_id,
-                organizacao_id=org_id,
                 medico_id=medico_id,
             )
         )
@@ -177,13 +169,12 @@ async def test_assinar_documento_service_commit_visivel_outra_sessao(
     """Service commit persists signature without router commit."""
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="44444444000111",
+        unidade_cnpj="44444444000111",
         paciente_cpf="77777777711",
         medico_cpf="88888888811",
         medico_email="tx-sign@medisync.local",
     )
     atend_id = cenario.atendimento.id
-    org_id = cenario.organizacao.id
     medico_id = cenario.medico.id
 
     signer = AsyncMock()
@@ -197,7 +188,6 @@ async def test_assinar_documento_service_commit_visivel_outra_sessao(
         await svc.salvar_evolucao_soap(
             RegistrarEvolucaoSOAPCommand(
                 atendimento_id=atend_id,
-                organizacao_id=org_id,
                 medico_id=medico_id,
                 anamnese="Odinofagia.",
                 conduta="Dipirona.",
@@ -207,7 +197,6 @@ async def test_assinar_documento_service_commit_visivel_outra_sessao(
         doc = await svc.emitir_documento(
             EmitirDocumentoClinicoCommand(
                 atendimento_id=atend_id,
-                organizacao_id=org_id,
                 medico_id=medico_id,
                 tipo_documento="RECEITA_SIMPLES",
                 itens=[
@@ -236,7 +225,7 @@ async def test_assinar_documento_service_commit_visivel_outra_sessao(
         )
         persisted = res.scalar_one_or_none()
         assert persisted is not None
-        assert persisted.chave_s3.startswith(f"orgs/{org_id}/consultations/")
+        assert persisted.chave_s3.startswith(f"consultations/{atend_id}/documents/")
         assert persisted.assinado_em is not None
         assert persisted.sha256_hash is not None
         assert len(persisted.sha256_hash) == 64
@@ -249,17 +238,15 @@ async def test_assinar_documento_outro_atendimento_404_signer_nao_chamado(
     """Ownership before PSC: wrong atendimento -> 404 and signer spy not called."""
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="55555555000111",
+        unidade_cnpj="55555555000111",
         paciente_cpf="99999999911",
         medico_cpf="00011122211",
         medico_email="tx-own@medisync.local",
     )
     atend_a = cenario.atendimento.id
-    org_id = cenario.organizacao.id
     medico_id = cenario.medico.id
 
     atendimento_b = make_atendimento(
-        organizacao_id=org_id,
         paciente_id=cenario.paciente.id,
         status="EM_ATENDIMENTO",
     )
@@ -279,7 +266,6 @@ async def test_assinar_documento_outro_atendimento_404_signer_nao_chamado(
         await svc.salvar_evolucao_soap(
             RegistrarEvolucaoSOAPCommand(
                 atendimento_id=atend_a,
-                organizacao_id=org_id,
                 medico_id=medico_id,
                 anamnese="Cefaleia.",
                 conduta="Paracetamol.",
@@ -289,7 +275,6 @@ async def test_assinar_documento_outro_atendimento_404_signer_nao_chamado(
         doc = await svc.emitir_documento(
             EmitirDocumentoClinicoCommand(
                 atendimento_id=atend_a,
-                organizacao_id=org_id,
                 medico_id=medico_id,
                 tipo_documento="RECEITA_SIMPLES",
                 itens=[

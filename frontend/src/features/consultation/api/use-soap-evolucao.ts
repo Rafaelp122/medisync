@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
   obterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGet,
@@ -34,9 +34,7 @@ export function useSoapEvolucao(
     queryKey: ["soap", atendimentoId],
     queryFn: async () => {
       try {
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }
@@ -88,9 +86,7 @@ export function useSalvarSoap(
     mutationFn: async ({ token, ...body }: SalvarSoapParams) => {
       try {
         const validatedBody = soapSchema.parse(body);
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

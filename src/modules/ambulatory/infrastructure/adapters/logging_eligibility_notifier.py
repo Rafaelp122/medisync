@@ -16,15 +16,13 @@ class LoggingElegibilidadeNotifier(ElegibilidadeNotifierPort):
     async def notificar_falha(self, evento: ElegibilidadeFalhaEvent) -> None:
         """Logs structured warning for eligibility failure."""
         logger.warning(
-            "Event ELEGIBILIDADE_FALHA: org=%d, atendimento=%s, paciente=%s, "
+            "Event ELEGIBILIDADE_FALHA: atendimento=%s, paciente=%s, "
             "status=%s, motivo=%s",
-            evento.organizacao_id,
             evento.atendimento_id,
             evento.paciente_id,
             evento.status.value,
             evento.motivo,
             extra={
-                "organizacao_id": evento.organizacao_id,
                 "atendimento_id": str(evento.atendimento_id),
                 "paciente_id": str(evento.paciente_id),
                 "status": evento.status.value,

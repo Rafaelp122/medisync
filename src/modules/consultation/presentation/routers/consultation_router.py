@@ -5,8 +5,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, Response, status
 
-from src.core.dependencies import TenantDep
-from src.core.errors import ForbiddenError
 from src.modules.consultation.application.dtos import (
     EmitirDocumentoClinicoCommand,
     FinalizarConsultaCommand,
@@ -49,16 +47,6 @@ from src.modules.consultation.presentation.schemas import (
 consultation_router = APIRouter(prefix="/consultations", tags=["teleconsulta-pep"])
 
 
-def _require_matching_tenant(provided: int | None, tenant_id: int) -> int:
-    """Obsolete body organizacao_id: diverge -> 403, coincide/ausente -> ignora."""
-    if provided is not None and provided != tenant_id:
-        raise ForbiddenError(
-            f"Organização do corpo ('{provided}') diverge do tenant autenticado "
-            f"no cabeçalho X-Tenant-ID (esperado: '{tenant_id}')."
-        )
-    return tenant_id
-
-
 @consultation_router.get(
     "/me/historico",
     status_code=status.HTTP_200_OK,
@@ -70,7 +58,6 @@ async def listar_historico_paciente(
 ) -> list[HistoricoAtendimentoItemResponse]:
     """Retorna histórico de consultas do paciente com isolamento Anti-IDOR."""
     items = await service.listar_historico_paciente(
-        organizacao_id=current_user.organizacao_id,
         paciente_id=current_user.usuario_id,
     )
     return [HistoricoAtendimentoItemResponse.model_validate(item) for item in items]
@@ -87,7 +74,6 @@ async def listar_documentos_paciente(
 ) -> list[PacienteDocumentoItemResponse]:
     """Retorna documentos clínicos do paciente sem expor chaves internas S3."""
     items = await service.listar_documentos_paciente(
-        organizacao_id=current_user.organizacao_id,
         paciente_id=current_user.usuario_id,
     )
     return [PacienteDocumentoItemResponse.model_validate(item) for item in items]
@@ -103,7 +89,7 @@ async def listar_documentos_paciente(
             "content": {"application/pdf": {}},
             "description": "Arquivo PDF/A válido do paciente autenticado",
         },
-        403: {"description": "Documento pertence a outro paciente ou organização"},
+        403: {"description": "Documento pertence a outro paciente"},
         404: {"description": "Documento não encontrado"},
     },
 )
@@ -115,7 +101,6 @@ async def obter_documento_pdf_paciente(
     """Retorna PDF/A compilado após validar titularidade do paciente autenticado."""
     pdf_bytes = await service.compilar_pdf_para_paciente(
         documento_id=documento_id,
-        organizacao_id=current_user.organizacao_id,
         paciente_id=current_user.usuario_id,
     )
     return Response(
@@ -138,13 +123,10 @@ async def salvar_evolucao_soap(
     request: Annotated[RegistrarSOAPRequest, Body()],
     current_user: ClinicalAccessMutationDep,
     service: PEPServiceDep,
-    tenant_id: TenantDep,
 ) -> EvolucaoSOAPResponse:
     """Registra ou atualiza Subjetivo, Objetivo, Avaliação e Plano no PEP."""
-    org_id = _require_matching_tenant(request.organizacao_id, tenant_id)
     command = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=org_id,
         medico_id=current_user.usuario_id,
         anamnese=request.anamnese,
         conduta=request.conduta,
@@ -190,10 +172,9 @@ async def obter_prontuario_protegido(
     _user: ClinicalAccessReadDep,
     service: PEPServiceDep,
 ) -> ProntuarioResponse:
-    """Retorna o prontuário eletrônico mediante verificação em 3 camadas:
+    """Retorna o prontuário eletrônico mediante verificação em 2 camadas:
     1. Camada 1 (Macro RBAC): papel MEDICO.
-    2. Camada 2 (RLS): isolamento de tenant.
-    3. Camada 3 (ABAC Clínico): médico assistente + TCLE assinado + status ativo.
+    2. Camada 2 (ABAC Clínico): médico assistente + TCLE assinado + status ativo.
     """
     resumo = await service.obter_prontuario(atendimento_id)
     return ProntuarioResponse.model_validate(resumo)
@@ -229,14 +210,10 @@ async def emitir_documento_clinico(
     request: Annotated[EmitirDocumentoRequest, Body()],
     current_user: ClinicalAccessMutationDep,
     service: PEPServiceDep,
-    tenant_id: TenantDep,
 ) -> DocumentoClinicoResponse:
     """Emite receita ou atestado aplicando salvaguardas da Portaria 344/98."""
-    org_id = _require_matching_tenant(request.organizacao_id, tenant_id)
-
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=org_id,
         medico_id=current_user.usuario_id,
         tipo_documento=request.tipo_documento,
         itens=request.itens,
@@ -261,14 +238,8 @@ async def solicitar_desafio_liveness_prescricao(
     atendimento_id: AtendimentoIdPath,
     current_actor: LivenessChallengeMedicoDep,
     service: PEPServiceDep,
-    tenant_id: TenantDep,
 ) -> LivenessChallengeResponse:
     """Emite instruções ativas de prova de vida facial para receita especial."""
-    if not current_actor.is_admin and current_actor.organizacao_id != tenant_id:
-        raise ForbiddenError(
-            f"Organização do ator ('{current_actor.organizacao_id}') diverge do "
-            f"tenant autenticado no cabeçalho X-Tenant-ID (esperado: '{tenant_id}')."
-        )
     challenge = await service.solicitar_desafio_liveness(atendimento_id)
     return LivenessChallengeResponse.model_validate(challenge)
 
@@ -283,17 +254,10 @@ async def verificar_liveness_prescricao(
     request: Annotated[LivenessVerifyRequest, Body()],
     current_actor: LivenessVerifyPacienteDep,
     service: PEPServiceDep,
-    tenant_id: TenantDep,
 ) -> LivenessVerifyResponse:
     """Avalia vivacidade facial e devolve hash SHA-256 auditável para Lista C1."""
-    if not current_actor.is_admin and current_actor.organizacao_id != tenant_id:
-        raise ForbiddenError(
-            f"Organização do ator ('{current_actor.organizacao_id}') diverge do "
-            f"tenant autenticado no cabeçalho X-Tenant-ID (esperado: '{tenant_id}')."
-        )
     cmd = VerificarLivenessCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=current_actor.organizacao_id,
         ator_id=current_actor.actor_id,
         ator_papel=current_actor.actor_papel,
         challenge_id=request.challenge_id,
@@ -312,16 +276,13 @@ async def verificar_liveness_prescricao(
 )
 async def finalizar_consulta(
     atendimento_id: AtendimentoIdPath,
-    request: Annotated[FinalizarConsultaRequest, Body()],
     current_user: ClinicalAccessMutationDep,
     service: PEPServiceDep,
-    tenant_id: TenantDep,
+    _request: Annotated[FinalizarConsultaRequest | None, Body()] = None,
 ) -> FinalizarConsultaResponse:
     """Finaliza teleconsulta travando edição e exclusão de evolução e documentos."""
-    org_id = _require_matching_tenant(request.organizacao_id, tenant_id)
     cmd = FinalizarConsultaCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=org_id,
         medico_id=current_user.usuario_id,
     )
     resultado = await service.finalizar_consulta(cmd)

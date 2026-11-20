@@ -20,7 +20,7 @@ flowchart LR
     subgraph Identity ["1. Identidade (Quem você é)"]
         Prof["Profissional<br/>(CRM, UF, Nome, CPF, Papel)"]
         Pac["Paciente<br/>(CNS, Nome Mãe, Alergias)"]
-        Org["Organização<br/>(Tenant SUS/Privado)"]
+        Uni["Unidade SUS<br/>(CNES, CNPJ, IBGE)"]
     end
 
     subgraph AuthN ["2. Autenticação (Como você prova quem é)"]
@@ -31,8 +31,8 @@ flowchart LR
 
     subgraph AuthZ ["3. Autorização (O que você pode fazer)"]
         RBAC["Camada 1: Macro RBAC<br/>(Guards de API / FastAPI)"]
-        RLS["Camada 2: Tenant RLS<br/>(PostgreSQL 17 Policies)"]
-        ABAC["Camada 3: Contexto Clínico<br/>(ABAC: TCLE + Relação Ativa)"]
+        IDOR["Camada 2: Anti-IDOR Horizontal<br/>(Titularidade por Usuário)"]
+        ABAC["Camada 3: Contexto Clínico<br/>(ABAC: TCLE + Médico Alocado)"]
     end
 
     Identity -->|Fornece Claims| AuthN
@@ -40,7 +40,7 @@ flowchart LR
 ```
 
 ### Regras Fundamentais de Domínio:
-1. **Modelos de Identidade são Puros:** As entidades clínicas em `src/modules/identity/domain/models/` (`Profissional`, `Paciente`, `Organizacao`, `Dependente`) representam cadastros civis e corporativos. **Nenhuma entidade clínica armazena colunas de senha (`senha_hash`) nem executa rotinas criptográficas**.
+1. **Modelos de Identidade são Puros:** As entidades em `src/modules/identity/domain/models/` (`Profissional`, `Paciente`, `ConfiguracaoUnidade`, `Dependente`) representam cadastros civis, corporativos e da unidade. **Nenhuma entidade clínica armazena colunas de senha (`senha_hash`) nem executa rotinas criptográficas**.
 2. **Autenticação é Desacoplada:** Gerenciamento de credenciais locais, validação de hashes Argon2id, tokens de acesso efêmeros e bloqueios por taxa de requisição residem exclusivamente no módulo de segurança/autenticação (`src/modules/auth/`).
 3. **Autorização não é Centralizada na Identidade:** A autorização é distribuída em 3 camadas complementares orientadas ao Princípio do Menor Privilégio (*Least Privilege*) e à Negação por Padrão (*Deny by Default*).
 
@@ -60,9 +60,9 @@ O sistema opera sob uma **jornada de acesso bimodal**, respeitando a natureza de
 * **Zero Fricção na Urgência (Acolhimento < 45s):** Em pronto-atendimento virtual, exigir criação de senhas alfanuméricas complexas antes da triagem causaria risco clínico e abandono.
 * **Tokens Efêmeros de Ingestão:** Durante a Fase 1 do acolhimento, o paciente recebe imediatamente um token provisório assinado via HMAC-SHA256 (`create_intake_token`), viabilizando a entrada em fila antes da latência de entrega de mensagens de telecomunicação.
 * **Autenticação Passwordless via OTP (Issue #44):** Para reconexão, retorno à fila, acompanhamento de teleconsulta e gestão de dependentes, o paciente autentica-se comprovando posse de seu número telefônico via código OTP de 6 dígitos:
-  * `POST /api/v1/auth/patient/otp/request`: Envia código OTP de 6 dígitos via `SmsSenderPort`. Protegido por limitação de taxa em janela deslizante no Valkey (máximo 3 solicitações por 15 minutos). Retorna 429 RFC 7807 em caso de excesso e 404 caso o telefone não esteja registrado no tenant.
+  * `POST /api/v1/auth/patient/otp/request`: Envia código OTP de 6 dígitos via `SmsSenderPort`. Protegido por limitação de taxa em janela deslizante no Valkey (máximo 3 solicitações por 15 minutos). Retorna 429 RFC 7807 em caso de excesso (ou resposta anti-enumeração).
   * `POST /api/v1/auth/patient/otp/verify`: Confere o código OTP comparando o hash SHA-256 em tempo constante (`hmac.compare_digest`). Protegido contra adivinhação por força bruta com invalidação automática da chave após 3 tentativas incorretas.
-  * **Emissão de JWT com Papel PACIENTE:** A validação bem-sucedida emite um token Bearer JWT assinado com claims `sub: paciente_id`, `org_id: tenant_id` e `papel: "PACIENTE"`, concedendo acesso às permissões `patient:queue_track` e `patient:doc_view`.
+  * **Emissão de JWT com Papel PACIENTE:** A validação bem-sucedida emite um token Bearer JWT assinado com claims `sub: paciente_id` e `papel: "PACIENTE"`, concedendo acesso às permissões `patient:queue_track` e `patient:doc_view`.
 * **Acesso Pós-Consulta:** Documentos assinados digitalmente (receitas e atestados) são entregues via links assinados com tempo de expiração curto e validados pelo código de autenticidade do documento ICP-Brasil.
 
 ---
@@ -76,7 +76,7 @@ sequenceDiagram
     autonumber
     actor Med as Médico Plantonista
     participant API as Camada 1: API Gateway (RBAC)
-    participant DB as Camada 2: PostgreSQL (Tenant RLS)
+    participant IDOR as Camada 2: Anti-IDOR (Titularidade)
     participant Mod as Camada 3: Módulo Consulta (ABAC)
 
     Med->>API: GET /api/v1/consultations/{id}/prontuario (Bearer JWT)
@@ -85,10 +85,10 @@ sequenceDiagram
         API-->>Med: 403 Forbidden (RBAC)
     end
 
-    API->>DB: Inicia transação e define app.current_tenant_id = 42
-    Note over DB: Políticas de RLS filtram automaticamente pelo tenant
+    API->>IDOR: Verifica posse horizontal (medico_id == current_user.usuario_id)
+    Note over IDOR: Bloqueia acesso cruzado entre usuários/médicos sem bypass
 
-    API->>Mod: Solicita abertura de prontuário
+    IDOR->>Mod: Solicita abertura de prontuário
     Note over Mod: Valida TCLE assinado + se Médico é o responsável ativo
     alt Sem relação ativa ou sem TCLE
         Mod-->>Med: 403 Forbidden (Violação Deontológica CFM)
@@ -102,14 +102,9 @@ sequenceDiagram
 * **Implementação:** Injeção de dependências nativa do FastAPI (`Depends(require_role("MEDICO"))` ou `Depends(require_permission("atendimentos:chamar"))`).
 * **Regra OWASP:** *Deny by Default*. Rotas protegidas rejeitam requisições sem claims explícitas válidas.
 
-### Camada 2: Isolamento de Dados Multitenant (PostgreSQL Row-Level Security - RLS)
-* **Objetivo:** Impedir o vazamento de dados entre prefeituras e operadoras distintas (*cross-tenant leakage*), eliminando a vulnerabilidade de *IDOR (Insecure Direct Object Reference)*.
-* **Implementação:** O `TenantResolutionMiddleware` intercepta a requisição, valida o tenant ativo e injeta a variável de sessão `set_config('app.current_tenant_id', :tenant_id, true)`.
-* **Políticas no Banco:** As tabelas mestres e transacionais possuem `FORCE ROW LEVEL SECURITY`:
-  ```sql
-  CREATE POLICY tenant_isolation_pacientes ON pacientes
-      USING (organizacao_id = NULLIF(current_setting('app.current_tenant_id', true), '')::BIGINT);
-  ```
+### Camada 2: Segurança Horizontal Anti-IDOR por Titularidade (ADR-013)
+* **Objetivo:** Impedir acesso horizontal indevido (*Insecure Direct Object Reference*) entre pacientes ou profissionais autenticados na plataforma única, sem atalhos de bypass global (`ADMIN_GLOBAL` removido).
+* **Implementação:** Checkers dedicados validam titularidade explícita (`paciente_id == current_user.usuario_id` ou `medico_id == current_user.usuario_id`) antes de expor posições de fila, prontuários, documentos PDF, dependentes ou agendamentos.
 
 ### Camada 3: Micro-Autorização de Contexto Clínico (ABAC / ReBAC)
 * **Objetivo:** Garantir a conformidade legal e deontológica do sigilo médico (CFM nº 1.821/2007 e LGPD).
@@ -175,26 +170,25 @@ sequenceDiagram
 No endpoint `POST /consultations/{atendimento_id}/livekit/token`:
 * **Anti-Enumeração:** A validação de token (401 RFC 7807) é executada **antes** de qualquer consulta ao banco de dados, impedindo que atacantes sem credenciais válidas descubram IDs de atendimentos ou pacientes.
 * **Micro-Autorização ReBAC:** O token LiveKit só é emitido se o médico autenticado for o médico alocado no atendimento ativo (ou paciente titular), se o `participant_id` coincidir com a identidade do chamador e se o atendimento não estiver em status terminal.
-* **Isolamento Multitenant:** Validação estrita da correspondência entre a `organizacao_id` (inteiro) do token, da URL e do atendimento.
 
 ---
 
 ## 5. Matriz de Acesso e Papéis Corporativos (RBAC)
 
-| Recurso / Ação | ADMIN_GLOBAL | GESTOR_UNIDADE | MEDICO | FATURAMENTO | PACIENTE (Token) |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Configurar TMA / Parâmetros da Unidade** | Sim | Sim | Não | Não | Não |
-| **Cadastrar / Desativar Profissionais** | Sim | Sim (sua org) | Não | Não | Não |
-| **Visualizar Fila Geral da Unidade** | Sim | Sim | Sim | Não | Não |
-| **Chamar Próximo Paciente da Fila** | Não | Não | Sim | Não | Não |
-| **Visualizar / Editar Prontuário Ativo** | Não | Não | Sim (se alocado) | Não | Não |
-| **Assinar Receitas e Atestados (ICP)** | Não | Não | Sim (se alocado) | Não | Não |
-| **Consolidar Lotes de Faturamento** | Sim | Sim | Não | Sim | Não |
-| **Acompanhar Posição na Fila / TME (WS)** | Não | Não | Não | Não | Sim (seu id) |
-| **Notificações de Chamada Médica (WS)** | Não | Não | Sim (seu id) | Não | Não |
-| **Visualizar Documentos Próprios** | Não | Não | Não | Não | Sim (seu id) |
+| Recurso / Ação | GESTOR_UNIDADE | MEDICO | FATURAMENTO | PACIENTE (Token) |
+| :--- | :---: | :---: | :---: | :---: |
+| **Configurar TMA / Parâmetros da Unidade** | Sim | Não | Não | Não |
+| **Cadastrar / Desativar Profissionais** | Sim | Não | Não | Não |
+| **Visualizar Fila Geral da Unidade** | Sim | Sim | Não | Não |
+| **Chamar Próximo Paciente da Fila** | Não | Sim | Não | Não |
+| **Visualizar / Editar Prontuário Ativo** | Não | Sim (se alocado) | Não | Não |
+| **Assinar Receitas e Atestados (ICP)** | Não | Sim (se alocado) | Não | Não |
+| **Consolidar Lotes de Faturamento** | Sim | Não | Sim | Não |
+| **Acompanhar Posição na Fila / TME (WS)** | Não | Não | Não | Sim (seu id) |
+| **Notificações de Chamada Médica (WS)** | Não | Sim (seu id) | Não | Não |
+| **Visualizar Documentos Próprios** | Não | Não | Não | Sim (seu id) |
 
-> **Nota de Auditoria (ADR-007 / Issue #108):** Operações administrativas e de configuração executadas por `ADMIN_GLOBAL` são integralmente auditadas na tabela append-only `audit_events` com `ator_papel = 'ADMIN_GLOBAL'`. Para eventos de segurança e alterações de sistema desvinculadas de uma consulta médica específica, a coluna `atendimento_id` é registrada como `null`, mantendo a rastreabilidade sob o índice composto multitenant `(organizacao_id, atendimento_id, registrado_em)`.
+> **Nota de Auditoria (ADR-007 / ADR-013):** Operações de configuração e consolidação executadas por `GESTOR_UNIDADE` e `FATURAMENTO` são auditadas em `audit_events`. Nenhum papel possui acesso transversal irrestrito ao PEP médico ou aos endpoints exclusivos de outro perfil (`ADMIN_GLOBAL` foi removido na ADR-013).
 
 
 ---
@@ -228,7 +222,7 @@ Para eliminar por completo a superfície de ataque por XSS contra credenciais em
 
 A arquitetura descrita é implementada e auditada através das seguintes issues do repositório:
 
-* **[Issue #11](https://github.com/Rafaelp122/medisync/issues/11)**: `feat(security): implement PostgreSQL Row-Level Security (RLS) policies` (Camada 2 - Tenant Isolation).
+* **[ADR-013](../../adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md)**: Simplificação para Plataforma Única e Remoção de Multi-Tenancy & RLS (RBAC de 4 papéis e Anti-IDOR sem bypass global).
 * **[Issue #35](https://github.com/Rafaelp122/medisync/issues/35)**: `feat(auth): implement OWASP authentication service, Argon2id verification, rate limiting and JWT session management` (Autenticação Desacoplada).
 * **[Issue #36](https://github.com/Rafaelp122/medisync/issues/36)**: `feat(authz): implement OWASP multi-tier authorization guards (RBAC, API policies and clinical ABAC/ReBAC context)` (Camadas 1 e 3 - RBAC e ABAC Clínico).
 * **[Issue #39](https://github.com/Rafaelp122/medisync/issues/39)**: `fix(security): blindar mutações clínicas do PEP e leitura na ClinicalAccessPolicy` (Blindagem de Mutações e Acesso Histórico ao PEP).

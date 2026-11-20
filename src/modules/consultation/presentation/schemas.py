@@ -70,10 +70,6 @@ class RegistrarSOAPRequest(BaseModel):
             "Justificativa clínica caso o paciente não possua documento no ato."
         ),
     )
-    organizacao_id: int | None = Field(
-        default=None,
-        description="Identificador da organização de saúde",
-    )
 
 
 class EvolucaoSOAPResponse(BaseModel):
@@ -83,7 +79,6 @@ class EvolucaoSOAPResponse(BaseModel):
 
     id: UUID
     atendimento_id: UUID
-    organizacao_id: int
     medico_id: UUID
     anamnese: str
     exame_fisico_virtual: str | None
@@ -167,9 +162,6 @@ class EmitirDocumentoRequest(BaseModel):
             "Justificativa médica para dispensa excepcional de prova de vida (US-15)"
         ),
     )
-    organizacao_id: int | None = Field(
-        default=None, description="Identificador da organização"
-    )
 
 
 class DocumentoClinicoResponse(BaseModel):
@@ -179,7 +171,6 @@ class DocumentoClinicoResponse(BaseModel):
 
     id: UUID
     atendimento_id: UUID
-    organizacao_id: int
     medico_id: UUID
     tipo_documento: str
     chave_s3: str
@@ -237,10 +228,6 @@ class FinalizarConsultaRequest(BaseModel):
     """Payload to conclude attendance and lock PEP records."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-    organizacao_id: int | None = Field(
-        default=None, description="Identificador da organização"
-    )
 
 
 class TMAStatusResponse(BaseModel):
@@ -303,13 +290,6 @@ class LiveKitTokenRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    organizacao_id: int | None = Field(
-        default=None,
-        description=(
-            "Identificador opcional da organização "
-            "(resolvido via contexto HTTP quando omitido)"
-        ),
-    )
     participant_id: UUID = Field(
         description="Identificador único do usuário (médico ou paciente)"
     )
@@ -338,7 +318,7 @@ class LiveKitTokenResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
     token: str = Field(description="JWT assinado com Video Grants do LiveKit")
-    room_name: str = Field(description="Nome canônico da sala org_{org}_atend_{atend}")
+    room_name: str = Field(description="Nome canônico da sala atend_{atend}")
     participant_identity: str = Field(
         description="Identidade particionada (medico_{id} ou paciente_{id})"
     )

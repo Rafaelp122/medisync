@@ -60,7 +60,7 @@
 ## 3. Contrato de API
 
 * **Endpoint:** `POST /api/v1/fila/admissao`
-* **Headers:** `X-Tenant-ID: <organizacao_id>`
+* **Content-Type:** `application/json` (sem header de tenant; plataforma única)
 * **Payload de Entrada (`AdmissaoRequest`):**
   ```json
   {

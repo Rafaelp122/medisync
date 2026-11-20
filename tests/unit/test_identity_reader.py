@@ -1,119 +1,188 @@
-"""Unit tests for SqlIdentityReader."""
+"""Unit tests for SqlIdentityReader (Single Platform / ADR-013)."""
 
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 import pytest
 from src.core.errors import NotFoundError
+from src.modules.identity.domain.models import (
+    ConfiguracaoUnidade,
+    Paciente,
+    Profissional,
+)
 from src.modules.identity.infrastructure.identity_reader_sql import SqlIdentityReader
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
-async def test_identity_reader_sucesso() -> None:
-    session = AsyncMock()
-    org_id = 1
+
+class _StubScalarList:
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def first(self) -> Any:
+        return self._value
+
+    def all(self) -> list[Any]:
+        if isinstance(self._value, list):
+            return list(cast("list[Any]", self._value))
+        return [self._value] if self._value is not None else []
+
+
+class _StubResult:
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> Any:
+        return self._value
+
+    def scalars(self) -> _StubScalarList:
+        return _StubScalarList(self._value)
+
+
+class _StubAsyncSession:
+    def __init__(self, results: list[Any]) -> None:
+        self._results = list(results)
+
+    async def execute(self, *args: Any, **kwargs: Any) -> _StubResult:
+        val = self._results.pop(0) if self._results else None
+        return _StubResult(val)
+
+
+@pytest.mark.asyncio
+async def test_identity_reader_sucesso_com_configuracao_unidade() -> None:
     med_id = uuid4()
     pac_id = uuid4()
 
-    mock_org = MagicMock()
-    mock_org.nome_fantasia = "Clinica Central"
-    mock_org.razao_social = "Clinica Central Ltda"
-    mock_org.cnpj = "12345678000199"
+    unidade = ConfiguracaoUnidade(
+        cnpj="12345678000199",
+        razao_social="Clinica Central Ltda",
+        nome_fantasia="Clinica Central",
+        modo_publico_sus=True,
+        cnes="2000001",
+    )
+    prof = Profissional(
+        id=med_id,
+        cpf="12345678901",
+        nome_completo="Dra. Maria Clara",
+        email="maria@medisync.com",
+        papel="MEDICO",
+        crm="12345",
+        crm_uf="SP",
+    )
+    pac = Paciente(
+        id=pac_id,
+        cpf="111.222.333-44",
+        data_nascimento=date(1990, 5, 15),
+        telefone="11987654321",
+        nome_completo="Carlos Silva",
+        logradouro="Rua das Flores",
+        numero="123",
+        bairro="Centro",
+        cidade="Sao Paulo",
+        estado="SP",
+    )
 
-    mock_prof = MagicMock()
-    mock_prof.id = med_id
-    mock_prof.nome_completo = "Dra. Maria Clara"
-    mock_prof.crm = "12345"
-    mock_prof.crm_uf = "SP"
+    session = _StubAsyncSession([unidade, prof, pac])
+    reader = SqlIdentityReader(cast("AsyncSession", session))
+    dto = await reader.obter_dados_diretorio(med_id, pac_id)
 
-    mock_pac = MagicMock()
-    mock_pac.id = pac_id
-    mock_pac.nome_completo = "Carlos Silva"
-    mock_pac.cpf = "111.222.333-44"
-    mock_pac.data_nascimento = date(1990, 5, 15)
-    mock_pac.logradouro = "Rua das Flores"
-    mock_pac.numero = "123"
-    mock_pac.bairro = "Centro"
-    mock_pac.cidade = "Sao Paulo"
-    mock_pac.estado = "SP"
-
-    # session.execute returns mock results
-    mock_res_org = MagicMock()
-    mock_res_org.scalar_one_or_none.return_value = mock_org
-    mock_res_prof = MagicMock()
-    mock_res_prof.scalar_one_or_none.return_value = mock_prof
-    mock_res_pac = MagicMock()
-    mock_res_pac.scalar_one_or_none.return_value = mock_pac
-
-    session.execute.side_effect = [mock_res_org, mock_res_prof, mock_res_pac]
-
-    reader = SqlIdentityReader(session)
-    dto = await reader.obter_dados_diretorio(org_id, med_id, pac_id)
-
+    assert not hasattr(dto, "organizacao_id")
     assert dto.organizacao_nome == "Clinica Central"
     assert dto.organizacao_cnpj == "12345678000199"
+    assert dto.cnes == "2000001"
     assert dto.medico_nome == "Dra. Maria Clara"
     assert dto.medico_crm == "12345"
     assert dto.medico_crm_uf == "SP"
     assert dto.paciente_nome == "Carlos Silva"
-    assert dto.paciente_cpf == "111.222.333-44"
+    assert dto.paciente_cpf == "11122233344"
     assert "Rua das Flores, 123" in (dto.paciente_endereco or "")
 
 
-async def test_identity_reader_medico_nao_encontrado_raises() -> None:
-    session = AsyncMock()
-    mock_org = MagicMock()
-    mock_res_org = MagicMock()
-    mock_res_org.scalar_one_or_none.return_value = mock_org
-    mock_res_prof = MagicMock()
-    mock_res_prof.scalar_one_or_none.return_value = None
+@pytest.mark.asyncio
+async def test_identity_reader_fallback_sem_configuracao_unidade() -> None:
+    med_id = uuid4()
+    pac_id = uuid4()
 
-    session.execute.side_effect = [mock_res_org, mock_res_prof]
-    reader = SqlIdentityReader(session)
+    prof = Profissional(
+        id=med_id,
+        cpf="12345678901",
+        nome_completo="Dr. Joao",
+        email="joao@medisync.com",
+        papel="MEDICO",
+        crm="99999",
+        crm_uf="RJ",
+    )
+    pac = Paciente(
+        id=pac_id,
+        cpf="11122233344",
+        data_nascimento=date(1985, 1, 10),
+        telefone="21987654321",
+        nome_completo="Ana Souza",
+    )
+
+    session = _StubAsyncSession([None, prof, pac])
+    reader = SqlIdentityReader(cast("AsyncSession", session))
+    dto = await reader.obter_dados_diretorio(med_id, pac_id)
+
+    assert dto.organizacao_nome == "MediSync Pronto-Atendimento Virtual"
+    assert dto.organizacao_cnpj is None
+    assert dto.cnes is None
+
+
+@pytest.mark.asyncio
+async def test_identity_reader_medico_nao_encontrado_raises() -> None:
+    unidade = ConfiguracaoUnidade(
+        cnpj="12345678000199",
+        razao_social="Unidade Teste",
+        nome_fantasia="Unidade Teste",
+    )
+    session = _StubAsyncSession([unidade, None])
+    reader = SqlIdentityReader(cast("AsyncSession", session))
 
     with pytest.raises(NotFoundError, match="Profissional médico"):
-        await reader.obter_dados_diretorio(1, uuid4(), uuid4())
+        await reader.obter_dados_diretorio(uuid4(), uuid4())
 
 
+@pytest.mark.asyncio
+async def test_identity_reader_obter_modo_sus() -> None:
+    reader_sus = SqlIdentityReader(cast("AsyncSession", _StubAsyncSession([True])))
+    assert await reader_sus.obter_modo_sus() is True
+
+    reader_empty = SqlIdentityReader(cast("AsyncSession", _StubAsyncSession([None])))
+    assert await reader_empty.obter_modo_sus() is False
+
+
+@pytest.mark.asyncio
 async def test_identity_reader_buscar_paciente_por_telefone_encontrado() -> None:
-    session = AsyncMock()
     pac_id = uuid4()
-    mock_pac = MagicMock()
-    mock_pac.id = pac_id
-    mock_pac.organizacao_id = 1
-    mock_pac.telefone = "11987654321"
-    mock_pac.cpf = "11144477735"
-    mock_pac.nome_completo = "Carlos Teste"
-
-    mock_res = MagicMock()
-    mock_res.scalars.return_value.first.return_value = mock_pac
-    session.execute.return_value = mock_res
-
-    reader = SqlIdentityReader(session)
+    pac = Paciente(
+        id=pac_id,
+        cpf="11144477735",
+        data_nascimento=date(1992, 3, 20),
+        telefone="11987654321",
+        nome_completo="Carlos Teste",
+    )
+    session = _StubAsyncSession([pac])
+    reader = SqlIdentityReader(cast("AsyncSession", session))
     dto = await reader.buscar_paciente_por_telefone(
-        organizacao_id=1,
         telefone="11987654321",
         cpf="11144477735",
     )
 
     assert dto is not None
+    assert not hasattr(dto, "organizacao_id")
     assert dto.id == pac_id
-    assert dto.organizacao_id == 1
     assert dto.telefone == "11987654321"
     assert dto.cpf == "11144477735"
     assert dto.nome_completo == "Carlos Teste"
 
 
+@pytest.mark.asyncio
 async def test_identity_reader_buscar_paciente_por_telefone_nao_encontrado() -> None:
-    session = AsyncMock()
-    mock_res = MagicMock()
-    mock_res.scalars.return_value.first.return_value = None
-    session.execute.return_value = mock_res
-
-    reader = SqlIdentityReader(session)
-    dto = await reader.buscar_paciente_por_telefone(
-        organizacao_id=1,
-        telefone="11999999999",
-    )
+    session = _StubAsyncSession([None])
+    reader = SqlIdentityReader(cast("AsyncSession", session))
+    dto = await reader.buscar_paciente_por_telefone(telefone="11999999999")
 
     assert dto is None

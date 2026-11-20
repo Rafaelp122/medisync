@@ -6,7 +6,6 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -40,15 +39,11 @@ class EvolucaoClinica(Base):
     __tablename__ = "evolucoes_clinicas"
     __table_args__ = (
         Index("idx_evolucoes_atendimento", "atendimento_id"),
-        Index("idx_evolucoes_org", "organizacao_id"),
         UniqueConstraint("atendimento_id", name="uq_evolucoes_clinicas_atendimento_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
     )
     atendimento_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -95,7 +90,6 @@ class EvolucaoClinica(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         atendimento_id: UUID,
         medico_id: UUID,
         anamnese: str,
@@ -116,12 +110,6 @@ class EvolucaoClinica(Base):
         finalizado_em: datetime | None = None,
         id: UUID | None = None,
     ) -> None:
-        if organizacao_id <= 0:
-            raise ConsultaInvalidaError(
-                f"organizacao_id inválido: {organizacao_id}; "
-                "deve ser um identificador positivo (> 0)."
-            )
-
         if not anamnese or not anamnese.strip():
             raise ConsultaInvalidaError(
                 f"Anamnese clínica é obrigatória e não pode ser vazia: {anamnese!r}."
@@ -163,7 +151,6 @@ class EvolucaoClinica(Base):
 
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             atendimento_id=atendimento_id,
             medico_id=medico_id,
             anamnese=anamnese.strip(),

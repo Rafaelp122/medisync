@@ -15,7 +15,6 @@ class IdentityWriterPort(Protocol):
     async def criar_paciente(
         self,
         *,
-        organizacao_id: int,
         cpf: str,
         nome_completo: str,
         data_nascimento: date,

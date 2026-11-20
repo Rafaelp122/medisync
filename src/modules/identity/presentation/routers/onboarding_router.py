@@ -4,7 +4,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, status
 
-from src.core.dependencies import TenantDep
 from src.modules.identity.composition import OnboardingServiceDep
 from src.modules.identity.presentation.dependencies import ValidarIntakeFase2Dep
 from src.modules.identity.presentation.schemas import (
@@ -31,11 +30,10 @@ onboarding_router = APIRouter(
 )
 async def intake_fase_1(
     body: Annotated[Fase1Request, Body()],
-    tenant_id: TenantDep,
     service: OnboardingServiceDep,
 ) -> Fase1Response:
     """Execute Phase 1 rapid intake."""
-    result = await service.realizar_fase_1(tenant_id, body)
+    result = await service.realizar_fase_1(body)
     return Fase1Response.model_validate(result)
 
 
@@ -50,10 +48,9 @@ async def intake_fase_1(
 )
 async def enrichment_fase_2(
     body: Annotated[Fase2Request, Body()],
-    tenant_id: TenantDep,
     service: OnboardingServiceDep,
     _auth: ValidarIntakeFase2Dep,
 ) -> Fase2Response:
     """Execute Phase 2 regulatory enrichment."""
-    result = await service.realizar_fase_2(tenant_id, body)
+    result = await service.realizar_fase_2(body)
     return Fase2Response.model_validate(result)

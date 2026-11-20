@@ -101,7 +101,7 @@ class _FakeHistoricoAtendimentoReader(AtendimentoReaderPort):
     ) -> None:
         self._historico = historico or []
         self._resumos = resumos or {}
-        self.chamadas_historico: list[tuple[int, UUID]] = []
+        self.chamadas_historico: list[UUID] = []
 
     async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
         return self._resumos.get(atendimento_id)
@@ -114,15 +114,10 @@ class _FakeHistoricoAtendimentoReader(AtendimentoReaderPort):
 
     async def listar_historico_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> list[AtendimentoHistoricoDTO]:
-        self.chamadas_historico.append((organizacao_id, paciente_id))
-        return [
-            item
-            for item in self._historico
-            if item.organizacao_id == organizacao_id and item.paciente_id == paciente_id
-        ]
+        self.chamadas_historico.append(paciente_id)
+        return [item for item in self._historico if item.paciente_id == paciente_id]
 
 
 def _build_pep_service(
@@ -150,10 +145,9 @@ def _build_pep_service(
     )
 
 
-def _issue_jwt(usuario_id: UUID, organizacao_id: int, papel: Role) -> str:
+def _issue_jwt(usuario_id: UUID, papel: Role) -> str:
     return create_access_token(
         usuario_id=usuario_id,
-        organizacao_id=organizacao_id,
         papel=papel.value,
     )
 
@@ -176,19 +170,14 @@ class _FakeQueueStoreHistorico:
 
     def __init__(self, historico: list[AtendimentoHistoricoQueueDTO]) -> None:
         self._historico = historico
-        self.chamadas: list[tuple[int, UUID]] = []
+        self.chamadas: list[UUID] = []
 
     async def listar_historico_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> list[AtendimentoHistoricoQueueDTO]:
-        self.chamadas.append((organizacao_id, paciente_id))
-        return [
-            item
-            for item in self._historico
-            if item.organizacao_id == organizacao_id and item.paciente_id == paciente_id
-        ]
+        self.chamadas.append(paciente_id)
+        return [item for item in self._historico if item.paciente_id == paciente_id]
 
 
 @pytest.mark.asyncio
@@ -207,7 +196,6 @@ async def test_sql_atendimento_reader_listar_historico_paciente_maps_rows() -> N
                 [
                     {
                         "atendimento_id": atend_2,
-                        "organizacao_id": 1,
                         "paciente_id": paciente_id,
                         "status": "em_atendimento",
                         "prioridade_clinica": 2,
@@ -217,7 +205,6 @@ async def test_sql_atendimento_reader_listar_historico_paciente_maps_rows() -> N
                     },
                     {
                         "atendimento_id": str(atend_1),
-                        "organizacao_id": 1,
                         "paciente_id": str(paciente_id),
                         "status": "CONCLUIDO",
                         "prioridade_clinica": 4,
@@ -232,7 +219,7 @@ async def test_sql_atendimento_reader_listar_historico_paciente_maps_rows() -> N
     reader = SqlAtendimentoReader(cast("AsyncSession", fake_session))
     assert isinstance(reader, HistoricoAtendimentoReaderPort)
 
-    items = await reader.listar_historico_paciente(1, paciente_id)
+    items = await reader.listar_historico_paciente(paciente_id)
 
     assert len(fake_session.executed_statements) == 1
     sql_text = str(fake_session.executed_statements[0]).lower()
@@ -263,7 +250,6 @@ async def test_pep_service_listar_historico_omits_unfinalized_soap_notes() -> No
     historico = [
         AtendimentoHistoricoDTO(
             atendimento_id=atend_finalizado,
-            organizacao_id=1,
             paciente_id=paciente_id,
             status="CONCLUIDO",
             prioridade_clinica=3,
@@ -274,7 +260,6 @@ async def test_pep_service_listar_historico_omits_unfinalized_soap_notes() -> No
         ),
         AtendimentoHistoricoDTO(
             atendimento_id=atend_rascunho,
-            organizacao_id=1,
             paciente_id=paciente_id,
             status="EM_ATENDIMENTO",
             prioridade_clinica=4,
@@ -285,7 +270,6 @@ async def test_pep_service_listar_historico_omits_unfinalized_soap_notes() -> No
         ),
     ]
     ev_finalizada = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atend_finalizado,
         medico_id=medico_id,
         anamnese="Anotação privada sigilosa do médico",
@@ -295,7 +279,6 @@ async def test_pep_service_listar_historico_omits_unfinalized_soap_notes() -> No
         finalizado_em=now - timedelta(days=1, minutes=-15),
     )
     ev_rascunho = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atend_rascunho,
         medico_id=medico_id,
         anamnese="Rascunho privado",
@@ -309,9 +292,9 @@ async def test_pep_service_listar_historico_omits_unfinalized_soap_notes() -> No
     reader = _FakeHistoricoAtendimentoReader(historico=historico)
     svc = _build_pep_service(fake_session, reader=reader)
 
-    resultado = await svc.listar_historico_paciente(1, paciente_id)
+    resultado = await svc.listar_historico_paciente(paciente_id)
 
-    assert reader.chamadas_historico == [(1, paciente_id)]
+    assert reader.chamadas_historico == [paciente_id]
     assert len(resultado) == 2
 
     item_fin = resultado[0]
@@ -338,24 +321,23 @@ async def test_pep_service_requires_historico_and_reader_ports_no_raw_sql() -> N
     fake_session = FakeAsyncSession()
     svc_no_hist = _build_pep_service(fake_session, reader=FakeAtendimentoReader())
     with pytest.raises(RuntimeError, match="HistoricoAtendimentoReaderPort"):
-        await svc_no_hist.listar_historico_paciente(1, paciente_id)
+        await svc_no_hist.listar_historico_paciente(paciente_id)
     with pytest.raises(RuntimeError, match="HistoricoAtendimentoReaderPort"):
-        await svc_no_hist.listar_documentos_paciente(1, paciente_id)
+        await svc_no_hist.listar_documentos_paciente(paciente_id)
     assert fake_session.executes == 0
 
     # reader=None in compilar_pdf_para_paciente must fail explicitly without raw SQL
     doc = DocumentoClinico(
         id=doc_id,
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
-        chave_s3="orgs/1/consultations/doc.pdf",
+        chave_s3="consultations/doc.pdf",
     )
     session_doc = FakeAsyncSession(results=[FakeResult(doc)])
     svc_no_reader = _build_pep_service(session_doc, reader=None)
     with pytest.raises(RuntimeError, match="AtendimentoReaderPort"):
-        await svc_no_reader.compilar_pdf_para_paciente(doc_id, 1, paciente_id)
+        await svc_no_reader.compilar_pdf_para_paciente(doc_id, paciente_id)
     assert session_doc.executes == 1
 
 
@@ -371,7 +353,6 @@ async def test_queue_store_adapter_implements_historico_port_and_maps_dtos() -> 
         historico=[
             AtendimentoHistoricoQueueDTO(
                 atendimento_id=atend_id,
-                organizacao_id=1,
                 paciente_id=paciente_id,
                 status="CONCLUIDO",
                 prioridade_clinica=3,
@@ -386,8 +367,8 @@ async def test_queue_store_adapter_implements_historico_port_and_maps_dtos() -> 
     assert isinstance(adapter, AtendimentoReaderPort)
     assert isinstance(adapter, HistoricoAtendimentoReaderPort)
 
-    items = await adapter.listar_historico_paciente(1, paciente_id)
-    assert queue_store.chamadas == [(1, paciente_id)]
+    items = await adapter.listar_historico_paciente(paciente_id)
+    assert queue_store.chamadas == [paciente_id]
     assert len(items) == 1
     assert isinstance(items[0], AtendimentoHistoricoDTO)
     assert items[0].atendimento_id == atend_id
@@ -397,37 +378,28 @@ async def test_queue_store_adapter_implements_historico_port_and_maps_dtos() -> 
 
 @pytest.mark.asyncio
 async def test_triage_service_obter_queixas_por_atendimentos() -> None:
-    """TriageService fetches primary complaints via ORM with tenant isolation."""
+    """TriageService fetches primary complaints via ORM cleanly."""
     atend_1 = uuid7()
     atend_2 = uuid7()
-    atend_outro_tenant = uuid7()
 
     # Empty input returns empty mapping without touching DB
     svc_no_session = TriageService()
-    assert await svc_no_session.obter_queixas_por_atendimentos(1, []) == {}
+    assert await svc_no_session.obter_queixas_por_atendimentos([]) == {}
 
     with pytest.raises(RuntimeError, match="AsyncSession"):
-        await svc_no_session.obter_queixas_por_atendimentos(1, [atend_1])
+        await svc_no_session.obter_queixas_por_atendimentos([atend_1])
 
     triagem_1 = Triagem(
-        organizacao_id=1,
         atendimento_id=atend_1,
         queixa_principal="Dor de garganta leve",
         prioridade_calculada=5,
         escala_dor=0,
     )
-    triagem_outro = Triagem(
-        organizacao_id=2,
-        atendimento_id=atend_outro_tenant,
-        queixa_principal="Queixa outro tenant",
-        prioridade_calculada=5,
-        escala_dor=0,
-    )
-    triage_session = FakeAsyncSession(results=[FakeResult([triagem_1, triagem_outro])])
+    triage_session = FakeAsyncSession(results=[FakeResult([triagem_1])])
     svc = TriageService(session=cast("AsyncSession", triage_session))
     assert isinstance(svc, TriageQueixaReaderPort)
 
-    queixas = await svc.obter_queixas_por_atendimentos(1, [atend_1, atend_2])
+    queixas = await svc.obter_queixas_por_atendimentos([atend_1, atend_2])
     assert queixas == {atend_1: "Dor de garganta leve"}
 
 
@@ -441,7 +413,6 @@ async def test_hexagonal_chain_pep_queue_triage_without_raw_sql() -> None:
 
     atendimento = Atendimento(
         id=atend_id,
-        organizacao_id=1,
         paciente_id=paciente_id,
         medico_id=medico_id,
         status=StatusAtendimento.CONCLUIDO,
@@ -451,14 +422,12 @@ async def test_hexagonal_chain_pep_queue_triage_without_raw_sql() -> None:
         chamada_finalizada_em=now - timedelta(hours=1),
     )
     triagem = Triagem(
-        organizacao_id=1,
         atendimento_id=atend_id,
         queixa_principal="Tosse seca há 3 dias",
         prioridade_calculada=4,
         escala_dor=2,
     )
     evolucao = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         anamnese="Sigilo médico",
@@ -487,7 +456,7 @@ async def test_hexagonal_chain_pep_queue_triage_without_raw_sql() -> None:
         FakeAsyncSession(results=[FakeResult([evolucao])]),
         reader=adapter,
     )
-    historico = await pep_svc.listar_historico_paciente(1, paciente_id)
+    historico = await pep_svc.listar_historico_paciente(paciente_id)
 
     assert len(historico) == 1
     assert historico[0].atendimento_id == atend_id
@@ -505,7 +474,6 @@ async def test_fila_service_listar_historico_tolerates_plain_triage_port() -> No
 
     atendimento = Atendimento(
         id=atend_id,
-        organizacao_id=1,
         paciente_id=paciente_id,
         status=StatusAtendimento.APTO_PARA_CHAMADA,
         prioridade_clinica=3,
@@ -527,7 +495,7 @@ async def test_fila_service_listar_historico_tolerates_plain_triage_port() -> No
         ),
         triage_port=fake_triage,
     )
-    items = await fila_svc.listar_historico_paciente(1, paciente_id)
+    items = await fila_svc.listar_historico_paciente(paciente_id)
     assert len(items) == 1
     assert items[0].atendimento_id == atend_id
     assert items[0].queixa_principal is None
@@ -535,7 +503,7 @@ async def test_fila_service_listar_historico_tolerates_plain_triage_port() -> No
 
 @pytest.mark.asyncio
 async def test_pep_service_listar_docs_paciente_orders_desc_and_omits_s3() -> None:
-    """Documents are sorted newest first, filtered by tenant/patient, without s3_key."""
+    """Documents are sorted newest first, filtered by patient, without s3_key."""
     paciente_id = uuid7()
     medico_id = uuid7()
     atend_id = uuid7()
@@ -544,38 +512,34 @@ async def test_pep_service_listar_docs_paciente_orders_desc_and_omits_s3() -> No
 
     doc_old = DocumentoClinico(
         id=uuid4(),
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.ATESTADO_MEDICO,
-        chave_s3="orgs/1/consultations/old.pdf",
+        chave_s3="consultations/old.pdf",
         sha256_hash="a" * 64,
         assinado_em=now - timedelta(hours=3),
     )
     doc_new = DocumentoClinico(
         id=uuid4(),
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
-        chave_s3="orgs/1/consultations/new.pdf",
+        chave_s3="consultations/new.pdf",
         sha256_hash="b" * 64,
         assinado_em=now - timedelta(minutes=10),
     )
     doc_outro_paciente = DocumentoClinico(
         id=uuid4(),
-        organizacao_id=1,
         atendimento_id=atend_outro,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
-        chave_s3="orgs/1/consultations/other.pdf",
+        chave_s3="consultations/other.pdf",
         assinado_em=now,
     )
 
     historico = [
         AtendimentoHistoricoDTO(
             atendimento_id=atend_id,
-            organizacao_id=1,
             paciente_id=paciente_id,
             status="CONCLUIDO",
             prioridade_clinica=3,
@@ -588,7 +552,7 @@ async def test_pep_service_listar_docs_paciente_orders_desc_and_omits_s3() -> No
     reader = _FakeHistoricoAtendimentoReader(historico=historico)
     svc = _build_pep_service(fake_session, reader=reader)
 
-    docs = await svc.listar_documentos_paciente(1, paciente_id)
+    docs = await svc.listar_documentos_paciente(paciente_id)
 
     assert len(docs) == 2
     assert docs[0].documento_id == doc_new.id
@@ -601,7 +565,7 @@ async def test_pep_service_listar_docs_paciente_orders_desc_and_omits_s3() -> No
 
 @pytest.mark.asyncio
 async def test_pep_service_compilar_pdf_para_paciente_enforces_ownership() -> None:
-    """PDF compilation succeeds for owner patient and rejects IDOR / cross-tenant."""
+    """PDF compilation succeeds for owner patient and rejects IDOR."""
     paciente_dono = uuid7()
     paciente_invasor = uuid7()
     medico_id = uuid7()
@@ -610,16 +574,14 @@ async def test_pep_service_compilar_pdf_para_paciente_enforces_ownership() -> No
 
     doc = DocumentoClinico(
         id=doc_id,
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
-        chave_s3="orgs/1/consultations/doc.pdf",
+        chave_s3="consultations/doc.pdf",
     )
     # Force non-empty chave_s3 on model instance for storage miss -> generator
     resumo = AtendimentoResumoDTO(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=medico_id,
         paciente_id=paciente_dono,
         status="CONCLUIDO",
@@ -634,7 +596,7 @@ async def test_pep_service_compilar_pdf_para_paciente_enforces_ownership() -> No
         reader=reader,
         pdf_bytes=b"%PDF-owner-ok%",
     )
-    pdf = await svc_ok.compilar_pdf_para_paciente(doc_id, 1, paciente_dono)
+    pdf = await svc_ok.compilar_pdf_para_paciente(doc_id, paciente_dono)
     assert pdf == b"%PDF-owner-ok%"
 
     # 2. Wrong patient -> ForbiddenError (Anti-IDOR)
@@ -643,31 +605,23 @@ async def test_pep_service_compilar_pdf_para_paciente_enforces_ownership() -> No
         reader=reader,
     )
     with pytest.raises(ForbiddenError, match=str(paciente_invasor)):
-        await svc_idor.compilar_pdf_para_paciente(doc_id, 1, paciente_invasor)
+        await svc_idor.compilar_pdf_para_paciente(doc_id, paciente_invasor)
 
-    # 3. Wrong organization -> ForbiddenError
-    svc_org = _build_pep_service(
-        FakeAsyncSession(results=[FakeResult(doc)]),
-        reader=reader,
-    )
-    with pytest.raises(ForbiddenError, match="organização"):
-        await svc_org.compilar_pdf_para_paciente(doc_id, 99, paciente_dono)
-
-    # 4. Missing document -> DocumentoClinicoNaoEncontradoError (NotFoundError)
+    # 3. Missing document -> DocumentoClinicoNaoEncontradoError (NotFoundError)
     svc_missing = _build_pep_service(
         FakeAsyncSession(results=[FakeResult(None)]),
         reader=reader,
     )
     with pytest.raises(DocumentoClinicoNaoEncontradoError, match=str(doc_id)):
-        await svc_missing.compilar_pdf_para_paciente(doc_id, 1, paciente_dono)
+        await svc_missing.compilar_pdf_para_paciente(doc_id, paciente_dono)
 
-    # 5. Missing attendance -> NotFoundError
+    # 4. Missing attendance -> NotFoundError
     svc_no_atend = _build_pep_service(
         FakeAsyncSession(results=[FakeResult(doc)]),
         reader=_FakeHistoricoAtendimentoReader(resumos={}),
     )
     with pytest.raises(NotFoundError, match=str(atend_id)):
-        await svc_no_atend.compilar_pdf_para_paciente(doc_id, 1, paciente_dono)
+        await svc_no_atend.compilar_pdf_para_paciente(doc_id, paciente_dono)
 
 
 @pytest.mark.asyncio
@@ -683,7 +637,6 @@ async def test_patient_portal_routes_enforce_rbac_anti_idor_and_contracts() -> N
     historico = [
         AtendimentoHistoricoDTO(
             atendimento_id=atend_id,
-            organizacao_id=1,
             paciente_id=paciente_id,
             status="CONCLUIDO",
             prioridade_clinica=3,
@@ -694,7 +647,6 @@ async def test_patient_portal_routes_enforce_rbac_anti_idor_and_contracts() -> N
         )
     ]
     ev = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         anamnese="Sigilo médico",
@@ -705,17 +657,15 @@ async def test_patient_portal_routes_enforce_rbac_anti_idor_and_contracts() -> N
     )
     doc = DocumentoClinico(
         id=doc_id,
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.ATESTADO_MEDICO,
-        chave_s3="orgs/1/consultations/secret.pdf",
+        chave_s3="consultations/secret.pdf",
         sha256_hash="c" * 64,
         assinado_em=now,
     )
     resumo = AtendimentoResumoDTO(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=medico_id,
         paciente_id=paciente_id,
         status="CONCLUIDO",
@@ -734,8 +684,8 @@ async def test_patient_portal_routes_enforce_rbac_anti_idor_and_contracts() -> N
             reader=reader,
         )
 
-    patient_jwt = _issue_jwt(paciente_id, 1, Role.PACIENTE)
-    doctor_jwt = _issue_jwt(medico_id, 1, Role.MEDICO)
+    patient_jwt = _issue_jwt(paciente_id, Role.PACIENTE)
+    doctor_jwt = _issue_jwt(medico_id, Role.MEDICO)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -749,16 +699,6 @@ async def test_patient_portal_routes_enforce_rbac_anti_idor_and_contracts() -> N
             headers={"Authorization": f"Bearer {doctor_jwt}"},
         )
         assert r_doc_role.status_code == 403
-
-        # Tenant mismatch -> 403
-        r_tenant = await client.get(
-            "/api/v1/consultations/me/documentos",
-            headers={
-                "Authorization": f"Bearer {patient_jwt}",
-                "X-Tenant-ID": "99",
-            },
-        )
-        assert r_tenant.status_code == 403
 
         # Valid patient -> GET /me/historico (ignores spoofed query param)
         app.dependency_overrides[get_pep_service] = _service_factory
@@ -810,7 +750,7 @@ async def test_patient_portal_routes_enforce_rbac_anti_idor_and_contracts() -> N
         assert r_pdf.headers["content-type"] == "application/pdf"
 
         # Another patient -> 403 IDOR block
-        other_patient_jwt = _issue_jwt(uuid7(), 1, Role.PACIENTE)
+        other_patient_jwt = _issue_jwt(uuid7(), Role.PACIENTE)
         app.dependency_overrides[get_pep_service] = lambda: _build_pep_service(
             FakeAsyncSession(results=[FakeResult(doc)]),
             reader=reader,

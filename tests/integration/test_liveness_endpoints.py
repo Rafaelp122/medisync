@@ -26,31 +26,20 @@ async def test_liveness_role_segregation_spoofing_valkey_and_c1_document_gate(
     """Validate Medico /challenge, Paciente /verify, Valkey state, audit and C1 gate."""
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="77665544000122",
+        unidade_cnpj="77665544000122",
         paciente_cpf="44433322211",
         medico_cpf="55544433322",
         medico_email="dr.liveness@medisync.local",
     )
     atend_id = cenario.atendimento.id
-    org_id = cenario.organizacao.id
 
-    medico_headers = {
-        "X-Tenant-ID": str(org_id),
-        **auth_headers(Role.MEDICO, org_id, cenario.medico.id),
-    }
-    paciente_headers = {
-        "X-Tenant-ID": str(org_id),
-        **auth_headers(Role.PACIENTE, org_id, cenario.paciente.id),
-    }
+    medico_headers = auth_headers(Role.MEDICO, cenario.medico.id)
+    paciente_headers = auth_headers(Role.PACIENTE, cenario.paciente.id)
     intake_token = create_intake_token(
         paciente_id=cenario.paciente.id,
-        organizacao_id=org_id,
         secret_key=get_settings().SECRET_KEY,
     )
-    paciente_intake_headers = {
-        "X-Tenant-ID": str(org_id),
-        "Authorization": f"Bearer {intake_token}",
-    }
+    paciente_intake_headers = {"Authorization": f"Bearer {intake_token}"}
 
     # 0. Precondition (CFM 2.314/2022): physician verifies identity in SOAP
     soap_resp = await async_client.post(

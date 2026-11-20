@@ -132,7 +132,7 @@ describe("PortfolioLandingPage (Landing Page Editorial / Portfólio em /)", () =
       screen.getByRole("heading", { level: 3, name: /valkey 8\.0 zset \+ scripts lua/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 3, name: /postgresql 17 row-level security \(rls\)/i }),
+      screen.getByRole("heading", { level: 3, name: /rbac estrito & anti-idor por titularidade/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 3, name: /livekit sfu webrtc/i }),

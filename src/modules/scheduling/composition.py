@@ -39,7 +39,6 @@ class QueueStoreAttendanceLookupAdapter(AttendanceLookupPort):
             return None
         return AttendanceSnapshot(
             id=snapshot.id,
-            organizacao_id=snapshot.organizacao_id,
             paciente_id=snapshot.paciente_id,
             medico_id=snapshot.medico_id,
         )

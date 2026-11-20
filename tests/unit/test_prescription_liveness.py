@@ -50,8 +50,6 @@ from tests.doubles import (
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-_ORG_ID = 5
-
 
 def _make_service(
     session: FakeAsyncSession,
@@ -81,7 +79,6 @@ def _c1_command(
 ) -> EmitirDocumentoClinicoCommand:
     return EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=_ORG_ID,
         medico_id=medico_id,
         tipo_documento=tipo_documento,
         itens=[
@@ -141,7 +138,6 @@ async def test_liveness_spoofing_detectado_bloqueia_e_audita() -> None:
 
     verify_cmd = VerificarLivenessCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=_ORG_ID,
         ator_id=paciente_id,
         ator_papel=AtorPapel.PACIENTE.value,
         challenge_id=challenge.challenge_id,
@@ -163,7 +159,6 @@ async def test_liveness_spoofing_detectado_bloqueia_e_audita() -> None:
 
 def _evolucao_verificada(atendimento_id: UUID, medico_id: UUID) -> EvolucaoClinica:
     return EvolucaoClinica(
-        organizacao_id=_ORG_ID,
         atendimento_id=atendimento_id,
         medico_id=medico_id,
         anamnese="Evaluacao clinica inicial",
@@ -194,7 +189,6 @@ async def test_fluxo_completo_desafio_liveness_aprovado_permite_emissao_c1() -> 
     verification = await svc.verificar_liveness_prescricao(
         VerificarLivenessCommand(
             atendimento_id=atendimento_id,
-            organizacao_id=_ORG_ID,
             ator_id=paciente_id,
             ator_papel=AtorPapel.PACIENTE.value,
             challenge_id=challenge.challenge_id,
@@ -291,7 +285,6 @@ async def test_verificar_liveness_rejeita_challenge_inexistente_ou_cruzado() -> 
         await svc.verificar_liveness_prescricao(
             VerificarLivenessCommand(
                 atendimento_id=atendimento_a,
-                organizacao_id=_ORG_ID,
                 ator_id=paciente_id,
                 ator_papel=AtorPapel.PACIENTE.value,
                 challenge_id="ch_forged_unknown",
@@ -305,7 +298,6 @@ async def test_verificar_liveness_rejeita_challenge_inexistente_ou_cruzado() -> 
         await svc.verificar_liveness_prescricao(
             VerificarLivenessCommand(
                 atendimento_id=atendimento_b,
-                organizacao_id=_ORG_ID,
                 ator_id=paciente_id,
                 ator_papel=AtorPapel.PACIENTE.value,
                 challenge_id=ch_a.challenge_id,
@@ -375,7 +367,6 @@ async def test_challenge_ausente_nao_registra_spoofing_na_auditoria() -> None:
         await svc.verificar_liveness_prescricao(
             VerificarLivenessCommand(
                 atendimento_id=atendimento_id,
-                organizacao_id=_ORG_ID,
                 ator_id=paciente_id,
                 ator_papel=AtorPapel.PACIENTE.value,
                 challenge_id="ch_inexistente",
@@ -393,7 +384,6 @@ async def test_excecao_liveness_audita_justificativa_no_documento_emitido() -> N
     medico_id = uuid7()
     added: list[Any] = []
     evolucao = EvolucaoClinica(
-        organizacao_id=_ORG_ID,
         atendimento_id=atendimento_id,
         medico_id=medico_id,
         anamnese="Paciente em atendimento domiciliar",
@@ -426,7 +416,6 @@ async def test_lista_c5_exige_liveness_quando_politica_org_ativa() -> None:
     medico_id = uuid7()
     cmd_c5 = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=_ORG_ID,
         medico_id=medico_id,
         tipo_documento="RECEITA_SIMPLES",
         itens=[
@@ -442,7 +431,6 @@ async def test_lista_c5_exige_liveness_quando_politica_org_ativa() -> None:
 
     resumo_ativa = AtendimentoResumoDTO(
         atendimento_id=atendimento_id,
-        organizacao_id=_ORG_ID,
         medico_id=medico_id,
         status="EM_ATENDIMENTO",
         tcle_hash="a" * 64,
@@ -463,7 +451,6 @@ async def test_lista_c5_exige_liveness_quando_politica_org_ativa() -> None:
 
     added: list[Any] = []
     evolucao = EvolucaoClinica(
-        organizacao_id=_ORG_ID,
         atendimento_id=atendimento_id,
         medico_id=medico_id,
         anamnese="Reposicao controlada",
@@ -472,7 +459,6 @@ async def test_lista_c5_exige_liveness_quando_politica_org_ativa() -> None:
     )
     resumo_desativada = AtendimentoResumoDTO(
         atendimento_id=atendimento_id,
-        organizacao_id=_ORG_ID,
         medico_id=medico_id,
         status="EM_ATENDIMENTO",
         tcle_hash="a" * 64,
@@ -514,7 +500,6 @@ async def test_liveness_dependencies_separam_medico_challenge_de_paciente_verify
     reader = FakeAtendimentoReader(
         resumo=AtendimentoResumoDTO(
             atendimento_id=atendimento_id,
-            organizacao_id=_ORG_ID,
             medico_id=medico_id,
             paciente_id=paciente_id,
             status="EM_ATENDIMENTO",
@@ -524,15 +509,15 @@ async def test_liveness_dependencies_separam_medico_challenge_de_paciente_verify
     )
     pac_cred = HTTPAuthorizationCredentials(
         scheme="Bearer",
-        credentials=auth_headers("PACIENTE", _ORG_ID, paciente_id)[
-            "Authorization"
-        ].removeprefix("Bearer "),
+        credentials=auth_headers("PACIENTE", paciente_id)["Authorization"].removeprefix(
+            "Bearer "
+        ),
     )
     med_cred = HTTPAuthorizationCredentials(
         scheme="Bearer",
-        credentials=auth_headers("MEDICO", _ORG_ID, medico_id)[
-            "Authorization"
-        ].removeprefix("Bearer "),
+        credentials=auth_headers("MEDICO", medico_id)["Authorization"].removeprefix(
+            "Bearer "
+        ),
     )
 
     with pytest.raises(ForbiddenError):

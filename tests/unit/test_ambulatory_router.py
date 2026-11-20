@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from src.core.config import get_settings
+from src.core.authz.token import create_access_token
 from src.main import create_app
 from src.modules.ambulatory.application.dtos import (
     BpaArquivoExportadoDTO,
@@ -17,7 +17,6 @@ from src.modules.ambulatory.domain.exceptions import (
     CompetenciaInvalidaError,
     ProducaoNaoEncontradaError,
 )
-from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
 
 
 class FakeProducaoAmbulatorialService:
@@ -35,7 +34,6 @@ class FakeProducaoAmbulatorialService:
     async def listar_producao_por_competencia(
         self,
         *,
-        organizacao_id: int,
         competencia: str,
         page: int = 1,
         size: int = 50,
@@ -48,7 +46,6 @@ class FakeProducaoAmbulatorialService:
             items=[],
             total=0,
             competencia=competencia,
-            organizacao_id=organizacao_id,
             page=page,
             size=size,
         )
@@ -56,23 +53,17 @@ class FakeProducaoAmbulatorialService:
     async def gerar_arquivo_bpa_i(
         self,
         *,
-        organizacao_id: int,
         competencia: str,
     ) -> BpaArquivoExportadoDTO:
         if isinstance(self.export_result, Exception):
             raise self.export_result
         if self.export_result is not None:
             return self.export_result
-        raise ProducaoNaoEncontradaError(
-            competencia=competencia, organizacao_id=organizacao_id
-        )
+        raise ProducaoNaoEncontradaError(competencia=competencia)
 
 
-def _make_jwt_token(org_id: int = 10, papel: str = "GESTOR_UNIDADE") -> str:
-    service = JWTTokenService(secret_key=get_settings().JWT_SECRET_KEY)
-    return service.gerar_tokens(
-        usuario_id=uuid4(), organizacao_id=org_id, papel=papel
-    ).access_token
+def _make_jwt_token(papel: str = "GESTOR_UNIDADE") -> str:
+    return create_access_token(usuario_id=uuid4(), papel=papel)
 
 
 @pytest.mark.asyncio
@@ -91,19 +82,18 @@ async def test_listar_producao_200_ok() -> None:
             items=[item_dto],
             total=1,
             competencia="202611",
-            organizacao_id=10,
             page=1,
             size=50,
         )
     )
     app.dependency_overrides[get_producao_ambulatorial_service] = lambda: fake_service
 
-    token = _make_jwt_token(org_id=10, papel="GESTOR_UNIDADE")
+    token = _make_jwt_token(papel="GESTOR_UNIDADE")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(
             "/api/v1/ambulatory/producao?competencia=202611",
-            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": "10"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
     assert resp.status_code == 200
@@ -123,12 +113,12 @@ async def test_listar_producao_competencia_invalida_retorna_400() -> None:
     )
     app.dependency_overrides[get_producao_ambulatorial_service] = lambda: fake_service
 
-    token = _make_jwt_token(org_id=10, papel="GESTOR_UNIDADE")
+    token = _make_jwt_token(papel="GESTOR_UNIDADE")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(
             "/api/v1/ambulatory/producao?competencia=202699",
-            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": "10"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
     assert resp.status_code == 400
@@ -151,12 +141,12 @@ async def test_exportar_bpa_200_download() -> None:
     )
     app.dependency_overrides[get_producao_ambulatorial_service] = lambda: fake_service
 
-    token = _make_jwt_token(org_id=10, papel="FATURAMENTO")
+    token = _make_jwt_token(papel="FATURAMENTO")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(
             "/api/v1/ambulatory/producao/exportar?competencia=202611",
-            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": "10"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
     assert resp.status_code == 200
@@ -172,18 +162,16 @@ async def test_exportar_bpa_200_download() -> None:
 async def test_exportar_bpa_sem_registros_retorna_404() -> None:
     app = create_app()
     fake_service = FakeProducaoAmbulatorialService(
-        export_result=ProducaoNaoEncontradaError(
-            competencia="202611", organizacao_id=10
-        )
+        export_result=ProducaoNaoEncontradaError(competencia="202611")
     )
     app.dependency_overrides[get_producao_ambulatorial_service] = lambda: fake_service
 
-    token = _make_jwt_token(org_id=10, papel="ADMIN_GLOBAL")
+    token = _make_jwt_token(papel="GESTOR_UNIDADE")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(
             "/api/v1/ambulatory/producao/exportar?competencia=202611",
-            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": "10"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
     assert resp.status_code == 404
@@ -197,22 +185,19 @@ async def test_ambulatory_sem_token_retorna_401() -> None:
     app = create_app()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get(
-            "/api/v1/ambulatory/producao?competencia=202611",
-            headers={"X-Tenant-ID": "10"},
-        )
+        resp = await client.get("/api/v1/ambulatory/producao?competencia=202611")
     assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_ambulatory_papel_paciente_retorna_403() -> None:
     app = create_app()
-    token = _make_jwt_token(org_id=10, papel="PACIENTE")
+    token = _make_jwt_token(papel="PACIENTE")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(
             "/api/v1/ambulatory/producao?competencia=202611",
-            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": "10"},
+            headers={"Authorization": f"Bearer {token}"},
         )
     assert resp.status_code == 403
     data = resp.json()

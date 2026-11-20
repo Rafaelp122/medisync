@@ -1,8 +1,6 @@
-"""HTTP Middlewares: Request ID, Tenant Resolution and Structured Access Logging."""
+"""HTTP Middlewares: Request ID, Security Headers and Structured Access Logging."""
 
-import ipaddress
 import logging
-import re
 import time
 from typing import Any
 
@@ -13,70 +11,13 @@ from starlette.middleware.base import (
 )
 from starlette.types import ASGIApp
 
-from src.core.context import (
-    reset_current_request_id,
-    reset_current_tenant_id,
-    set_current_request_id,
-    set_current_tenant_id,
-)
+from src.core.logging import reset_current_request_id, set_current_request_id
 from src.core.telemetry import get_current_trace_context
 from src.core.uuid7 import is_valid_uuid, uuid7_str
 
 logger = logging.getLogger("medisync.access")
 
 REQUEST_ID_HEADER = "X-Request-ID"
-TENANT_ID_HEADER = "X-Tenant-ID"
-
-_SUBDOMAIN_TENANT_REGEX = re.compile(r"^(?:tenant-)?(\d+)(?:\.|$)", re.IGNORECASE)
-
-
-def extract_tenant_from_header(header_val: str | None) -> int | None:
-    """Extract integer tenant ID from X-Tenant-ID header if present and positive."""
-    if not header_val:
-        return None
-    val_clean = header_val.strip()
-    if val_clean.isdigit():
-        t = int(val_clean)
-        return t if t > 0 else None
-    return None
-
-
-def extract_tenant_from_host(host_val: str | None) -> int | None:
-    """Extract integer tenant ID from host subdomain (e.g. 101.domain.com)."""
-    if not host_val:
-        return None
-    # Strip port if present
-    host_only = host_val.split(":")[0].strip()
-    if host_only == "localhost":
-        return None
-    try:
-        ipaddress.ip_address(host_only)
-        return None
-    except ValueError:
-        pass
-
-    match = _SUBDOMAIN_TENANT_REGEX.match(host_only)
-    if match:
-        t = int(match.group(1))
-        return t if t > 0 else None
-    return None
-
-
-def extract_tenant_from_auth_header(header_val: str | None) -> int | None:
-    """Extract integer tenant ID from JWT Bearer token claims if present and valid."""
-    if not header_val:
-        return None
-    parts = header_val.strip().split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        return None
-    raw_token = parts[1]
-    try:
-        from src.core.authz.token import decode_access_token
-
-        user = decode_access_token(raw_token)
-        return user.organizacao_id
-    except Exception:
-        return None
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -106,56 +47,6 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             return response
         finally:
             reset_current_request_id(token)
-
-
-class TenantResolutionMiddleware(BaseHTTPMiddleware):
-    """Resolves active tenant ID from header or subdomain and binds to ContextVar."""
-
-    def __init__(
-        self,
-        app: ASGIApp,
-        multi_tenancy_enabled: bool = True,
-        default_tenant_id: int | None = None,
-    ) -> None:
-        super().__init__(app)
-        if not multi_tenancy_enabled and (
-            default_tenant_id is None or default_tenant_id <= 0
-        ):
-            raise ValueError(
-                f"default_tenant_id={default_tenant_id!r} inválido quando "
-                "multi_tenancy_enabled=False; esperado inteiro >= 1."
-            )
-        self._multi_tenancy_enabled = multi_tenancy_enabled
-        self._default_tenant_id = default_tenant_id
-
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
-        if not self._multi_tenancy_enabled:
-            tenant_id: int | None = self._default_tenant_id
-        else:
-            # 1. Prefer explicit X-Tenant-ID header
-            tenant_id = extract_tenant_from_header(
-                request.headers.get(TENANT_ID_HEADER)
-            )
-
-            # 2. Fallback to Authorization: Bearer <token> claims
-            if tenant_id is None:
-                tenant_id = extract_tenant_from_auth_header(
-                    request.headers.get("Authorization")
-                )
-
-            # 3. Fallback to subdomain extraction
-            if tenant_id is None:
-                tenant_id = extract_tenant_from_host(request.headers.get("host"))
-
-        token = set_current_tenant_id(tenant_id)
-        request.state.tenant_id = tenant_id
-
-        try:
-            return await call_next(request)
-        finally:
-            reset_current_tenant_id(token)
 
 
 class StructuredLoggingMiddleware(BaseHTTPMiddleware):
@@ -247,26 +138,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def setup_middlewares(
-    app: FastAPI,
-    debug: bool = False,
-    multi_tenancy_enabled: bool = True,
-    default_tenant_id: int | None = None,
-) -> None:
+def setup_middlewares(app: FastAPI, debug: bool = False) -> None:
     """Setup middlewares in correct execution order (outermost first).
 
     Execution order on incoming request:
     1. SecurityHeadersMiddleware (applies security headers to all responses)
     2. RequestIDMiddleware (generates / binds request_id)
-    3. TenantResolutionMiddleware (binds tenant_id)
-    4. StructuredLoggingMiddleware (tracks latency & logs)
+    3. StructuredLoggingMiddleware (tracks latency & logs)
     """
     # Note: In Starlette, add_middleware prepends, so we add in reverse order of entry
     app.add_middleware(StructuredLoggingMiddleware)
-    app.add_middleware(
-        TenantResolutionMiddleware,
-        multi_tenancy_enabled=multi_tenancy_enabled,
-        default_tenant_id=default_tenant_id,
-    )
     app.add_middleware(RequestIDMiddleware)
     app.add_middleware(SecurityHeadersMiddleware, debug=debug)

@@ -33,7 +33,6 @@ class JWTTokenService(TokenServicePort):
     def gerar_tokens(
         self,
         usuario_id: UUID,
-        organizacao_id: int,
         papel: str,
     ) -> TokenPairDTO:
         """Issue access and refresh token pair with distinct jti claims."""
@@ -43,7 +42,6 @@ class JWTTokenService(TokenServicePort):
 
         access_payload: dict[str, Any] = {
             "sub": str(usuario_id),
-            "org_id": organizacao_id,
             "papel": papel,
             "iat": int(now.timestamp()),
             "exp": int(access_exp.timestamp()),
@@ -52,7 +50,6 @@ class JWTTokenService(TokenServicePort):
         }
         refresh_payload: dict[str, Any] = {
             "sub": str(usuario_id),
-            "org_id": organizacao_id,
             "papel": papel,
             "iat": int(now.timestamp()),
             "exp": int(refresh_exp.timestamp()),
@@ -86,7 +83,6 @@ class JWTTokenService(TokenServicePort):
     def gerar_mfa_token(
         self,
         usuario_id: UUID,
-        organizacao_id: int,
         papel: str,
     ) -> str:
         """Issue short-lived token requiring second-factor verification."""
@@ -95,7 +91,6 @@ class JWTTokenService(TokenServicePort):
 
         payload: dict[str, Any] = {
             "sub": str(usuario_id),
-            "org_id": organizacao_id,
             "papel": papel,
             "iat": int(now.timestamp()),
             "exp": int(mfa_exp.timestamp()),
@@ -136,7 +131,6 @@ class JWTTokenService(TokenServicePort):
 
         try:
             sub = UUID(str(claims["sub"]))
-            org_id = int(claims["org_id"])
             papel = str(claims["papel"])
             exp_ts = int(claims["exp"])
             exp = datetime.fromtimestamp(exp_ts, tz=UTC)
@@ -144,12 +138,12 @@ class JWTTokenService(TokenServicePort):
             mfa_pending = bool(claims.get("mfa_pending", False))
         except (KeyError, ValueError) as err:
             raise TokenInvalidoError(
-                "Estrutura de claims do token incompleta ou corrompida."
+                f"Estrutura de claims do token '{expected_type}' incompleta ou "
+                f"corrompida ({type(err).__name__}: {err})."
             ) from err
 
         return TokenPayloadDTO(
             sub=sub,
-            org_id=org_id,
             papel=papel,
             exp=exp,
             jti=jti,

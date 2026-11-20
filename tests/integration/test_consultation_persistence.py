@@ -29,16 +29,14 @@ pytestmark = pytest.mark.usefixtures("clean_db")
 async def test_persist_evolucao_clinica_success(db_session: AsyncSession) -> None:
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="11111111000101",
+        unidade_cnpj="11111111000101",
         paciente_cpf="11111111101",
         medico_cpf="22222222201",
     )
-    org_id = cenario.organizacao.id
     atend_id = cenario.atendimento.id
     medico_id = cenario.medico.id
 
     evolucao = make_evolucao_clinica(
-        organizacao_id=org_id,
         atendimento_id=atend_id,
         medico_id=medico_id,
         anamnese="Paciente com coriza, febre baixa e mialgia há 36h.",
@@ -51,7 +49,6 @@ async def test_persist_evolucao_clinica_success(db_session: AsyncSession) -> Non
     await db_session.refresh(evolucao)
 
     assert evolucao.id is not None
-    assert evolucao.organizacao_id == org_id
     assert evolucao.atendimento_id == atend_id
     assert evolucao.medico_id == medico_id
     assert evolucao.cid10_principal == "J06.9"
@@ -59,29 +56,26 @@ async def test_persist_evolucao_clinica_success(db_session: AsyncSession) -> Non
 
 
 @pytest.mark.asyncio
-async def test_persist_documento_clinico_e_itens_rls_compliance(
+async def test_persist_documento_clinico_e_itens_persistence(
     db_session: AsyncSession,
 ) -> None:
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="22222222000102",
+        unidade_cnpj="22222222000102",
         paciente_cpf="33333333302",
         medico_cpf="44444444402",
     )
-    org_id = cenario.organizacao.id
     atend_id = cenario.atendimento.id
     medico_id = cenario.medico.id
 
     # 1. Documento simples com itens
     doc_simples = make_documento_clinico(
-        organizacao_id=org_id,
         atendimento_id=atend_id,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
-        chave_s3="s3://medisync-docs/2/atendimentos/doc1.pdf",
+        chave_s3=f"consultations/{atend_id}/documents/doc1.pdf",
     )
     item1 = make_documento_item(
-        organizacao_id=org_id,
         documento_id=doc_simples.id,
         medicamento="Dipirona Monoidratada 500mg",
         dosagem="1 comp",
@@ -89,7 +83,6 @@ async def test_persist_documento_clinico_e_itens_rls_compliance(
         duracao="3 dias",
     )
     item2 = make_documento_item(
-        organizacao_id=org_id,
         documento_id=doc_simples.id,
         medicamento="Paracetamol 750mg",
         dosagem="1 comp",
@@ -103,7 +96,7 @@ async def test_persist_documento_clinico_e_itens_rls_compliance(
 
     doc_simples_id = doc_simples.id
 
-    # 2. Query com selectinload e verificação de organizacao_id explícito (RLS)
+    # 2. Query com selectinload dos itens
     stmt = (
         select(DocumentoClinico)
         .where(DocumentoClinico.id == doc_simples_id)
@@ -114,7 +107,6 @@ async def test_persist_documento_clinico_e_itens_rls_compliance(
 
     assert len(doc_recuperado.itens) == 2
     for it in doc_recuperado.itens:
-        assert it.organizacao_id == org_id  # Essencial para PostgreSQL RLS
         assert it.documento_id == doc_simples_id
         assert it.controle_especial is False
 
@@ -125,23 +117,20 @@ async def test_cascade_delete_documento_itens_on_documento_delete(
 ) -> None:
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="33333333000103",
+        unidade_cnpj="33333333000103",
         paciente_cpf="55555555503",
         medico_cpf="66666666603",
     )
-    org_id = cenario.organizacao.id
     atend_id = cenario.atendimento.id
     medico_id = cenario.medico.id
 
     doc = make_documento_clinico(
-        organizacao_id=org_id,
         atendimento_id=atend_id,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.RECEITA_ANTIMICROBIANO,
-        chave_s3="s3://medisync-docs/3/atendimentos/doc_amox.pdf",
+        chave_s3=f"consultations/{atend_id}/documents/doc_amox.pdf",
     )
     item = make_documento_item(
-        organizacao_id=org_id,
         documento_id=doc.id,
         medicamento="Amoxicilina 500mg",
         dosagem="1 capsula",
@@ -171,16 +160,14 @@ async def test_on_delete_restrict_atendimento_with_evolucoes_and_documentos(
 ) -> None:
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="44444444000104",
+        unidade_cnpj="44444444000104",
         paciente_cpf="77777777704",
         medico_cpf="88888888804",
     )
-    org_id = cenario.organizacao.id
     atend_id = cenario.atendimento.id
     medico_id = cenario.medico.id
 
     evolucao = make_evolucao_clinica(
-        organizacao_id=org_id,
         atendimento_id=atend_id,
         medico_id=medico_id,
     )
@@ -204,7 +191,6 @@ async def test_on_delete_restrict_atendimento_with_evolucoes_and_documentos(
     await db_session.commit()
 
     doc = make_documento_clinico(
-        organizacao_id=org_id,
         atendimento_id=atend_id,
         medico_id=medico_id,
     )
@@ -226,21 +212,20 @@ async def test_database_check_constraints_documentos(
 ) -> None:
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="55555555000105",
+        unidade_cnpj="55555555000105",
         paciente_cpf="99999999905",
         medico_cpf="00011122205",
     )
-    org_id = cenario.organizacao.id
     atend_id = cenario.atendimento.id
     medico_id = cenario.medico.id
 
     # 1. Violação de CheckConstraint tipo_documento no PostgreSQL
     sql_invalid_tipo = text(
         "INSERT INTO documentos_clinicos ("
-        "id, organizacao_id, atendimento_id, medico_id, tipo_documento, "
+        "id, atendimento_id, medico_id, tipo_documento, "
         "chave_s3, sha256_hash, assinado_em"
         ") VALUES ("
-        ":id, :org_id, :atend_id, :med_id, 'TIPO_INEXISTENTE', "
+        ":id, :atend_id, :med_id, 'TIPO_INEXISTENTE', "
         "'s3://bucket/test.pdf', :hash, NOW()"
         ")"
     )
@@ -249,7 +234,6 @@ async def test_database_check_constraints_documentos(
             sql_invalid_tipo,
             {
                 "id": uuid4(),
-                "org_id": org_id,
                 "atend_id": atend_id,
                 "med_id": medico_id,
                 "hash": "a" * 64,
@@ -261,10 +245,10 @@ async def test_database_check_constraints_documentos(
     # 2. Violação de CheckConstraint sha256_hash length != 64
     sql_invalid_hash = text(
         "INSERT INTO documentos_clinicos ("
-        "id, organizacao_id, atendimento_id, medico_id, tipo_documento, "
+        "id, atendimento_id, medico_id, tipo_documento, "
         "chave_s3, sha256_hash, assinado_em"
         ") VALUES ("
-        ":id, :org_id, :atend_id, :med_id, 'RECEITA_SIMPLES', "
+        ":id, :atend_id, :med_id, 'RECEITA_SIMPLES', "
         "'s3://bucket/test.pdf', 'hash_curto', NOW()"
         ")"
     )
@@ -273,7 +257,6 @@ async def test_database_check_constraints_documentos(
             sql_invalid_hash,
             {
                 "id": uuid4(),
-                "org_id": org_id,
                 "atend_id": atend_id,
                 "med_id": medico_id,
             },

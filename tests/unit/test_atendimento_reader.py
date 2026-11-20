@@ -16,7 +16,6 @@ async def test_reader_mapeia_terminal() -> None:
     mock_res = MagicMock()
     mock_res.mappings.return_value.one_or_none.return_value = {
         "id": uuid4(),
-        "organizacao_id": 1,
         "medico_id": uuid4(),
         "status": "CONCLUIDO",
         "tcle_hash": "a" * 64,
@@ -36,7 +35,6 @@ async def test_reader_nao_terminal_e_none_quando_ausente() -> None:
     mock_res.mappings.return_value.one_or_none.side_effect = [
         {
             "id": atend_id,
-            "organizacao_id": 2,
             "medico_id": medico_id,
             "status": "EM_ATENDIMENTO",
             "tcle_hash": None,
@@ -51,7 +49,6 @@ async def test_reader_nao_terminal_e_none_quando_ausente() -> None:
     assert dto.is_terminal is False
     assert dto.status == "EM_ATENDIMENTO"
     assert dto.medico_id == medico_id
-    assert dto.organizacao_id == 2
 
     assert await reader.obter_resumo(uuid4()) is None
 

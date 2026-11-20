@@ -13,7 +13,7 @@
 > **O que este projeto É:**
 > * Um estudo de caso aprofundado de engenharia de software moderna, modelagem orientada a domínio (DDD) e padrões de alta concorrência;
 > * Um sistema projetado estritamente sobre **marcos regulatórios reais e oficiais da saúde brasileira** (Resoluções CFM nº 2.314/2022 e 1.821/2007, Art. 11 da LGPD, Portaria SVS/MS nº 344/98 e RDC ANVISA nº 20/2011);
-> * Uma demonstração prática de padrões arquiteturais sênior em Python: **Hexagonal Pragmático**, contratos via `typing.Protocol` (PEP 544), controle de concorrência atômica com scripts Lua no Valkey, Row-Level Security (RLS) no PostgreSQL, workers assíncronos em corrotinas nativas com ARQ e auditoria estrita de fronteiras modulares com **Tach**.
+> * Uma demonstração prática de padrões arquiteturais sênior em Python: **Hexagonal Pragmático**, contratos via `typing.Protocol` (PEP 544), controle de concorrência atômica com scripts Lua no Valkey, RBAC + proteção horizontal Anti-IDOR no PostgreSQL, workers assíncronos em corrotinas nativas com ARQ e auditoria estrita de fronteiras modulares com **Tach**.
 >
 > **O que este projeto NÃO É:**
 > * Não é fruto de pesquisa de campo empírica com usuários finais (*user research*), entrevistas com médicos/pacientes reais, validação de mercado em estágio inicial (*market discovery*), testes clínicos com humanos ou um MVP de startup em operação comercial;
@@ -35,9 +35,9 @@ flowchart LR
     D --> E["5. Emissão & Auditoria<br/>(PAdES ICP-Brasil + S3)"]
 ```
 
-### 🏛️ Arquitetura 100% SUS & Consórcios Intermunicipais (ADR-012)
+### 🏛️ Arquitetura 100% SUS em Plataforma Única (ADR-012 / ADR-013)
 * **Atenção Pública Universal (SUS)**: Entrada universal, gratuita e sem barreiras financeiras via Gov.br, CADSUS, CPF ou Cartão Nacional de Saúde (CNS). A admissão insere o cidadão diretamente na fila de atendimento apto (`APTO_PARA_CHAMADA`) com qualificação cadastral assíncrona em segundo plano; eventuais pendências podem ser regularizadas (`POST /api/v1/fila/atendimentos/{id}/regularizar`), preservando rigorosamente o tempo de espera original ($T_0$ / NC-QUE-04).
-* **Consórcios Intermunicipais & Produção Ambulatorial**: Suporte nativo a consórcios públicos intermunicipais (Lei nº 11.107/2005) com isolamento lógico via PostgreSQL RLS (ou implantação dedicada em modo single-tenant via `MULTI_TENANCY_ENABLED=false`) e consolidação ambulatorial SUS (`ambulatory` — BPA-I / SISAB / SIGTAP `03.01.01.025-0`, CNES 160/006).
+* **Plataforma Única & Produção Ambulatorial**: Operação unificada para a unidade de saúde (configuração singleton `configuracoes_unidade`) com controle de acesso RBAC + Anti-IDOR por titularidade e consolidação ambulatorial SUS (`ambulatory` — BPA-I / SISAB / SIGTAP `03.01.01.025-0`, CNES 160/006).
 
 ---
 
@@ -55,7 +55,7 @@ flowchart TD
         Auth["modules/auth<br/>(Argon2id, OTP & RBAC)"]
         Triage["modules/triage<br/>(Acolhimento & TCLE)"]
         Queue["modules/queue<br/>(Fila Dinâmica & Lua)"]
-        Identity["modules/identity<br/>(Multi-Tenancy & Organizações)"]
+        Identity["modules/identity<br/>(Pacientes, Profissionais & Unidade)"]
         Consultation["modules/consultation<br/>(PEP & LiveKit Tokens)"]
         Ambulatory["modules/ambulatory<br/>(Produção SUS BPA-I / SIGTAP)"]
         Scheduling["modules/scheduling<br/>(Agenda eMulti & Slots GiST)"]
@@ -65,7 +65,7 @@ flowchart TD
     end
 
     subgraph Infra["Infraestrutura Dedicada"]
-        Postgres[(PostgreSQL 17<br/>Modelos Ricos + RLS Nativo)]
+        DB[(PostgreSQL 17<br/>Modelos Ricos + Auditoria)]
         Valkey[(Valkey 8.0<br/>ZSET + Script Lua + Pub/Sub)]
         LiveKitSFU["LiveKit SFU (Go)<br/>(Streaming WebRTC SRTP)"]
         ARQWorker["ARQ Task Worker<br/>(Jobs Diferidos Ring Timeout)"]
@@ -103,9 +103,9 @@ flowchart TD
 * Eliminação de deadlocks operacionais quando o paciente não atende a chamada médica.
 * Agendamento de precisão via tarefas diferidas no ARQ (`_defer_by=timedelta(seconds=45)`), superando a fragilidade e imprecisão de eventos pub/sub de expiração de chaves (`notify-keyspace-events`) do Redis.
 
-### 5. Multi-Tenancy com Defesa em Profundidade no PostgreSQL (RLS)
-* Segregação lógica de dados entre municípios consorciados orientada por `organizacao_id` (com suporte opcional a modo single-tenant via `MULTI_TENANCY_ENABLED=false` e `DEFAULT_TENANT_ID`).
-* O tenant ativo é isolado via `ContextVar` assíncrona por requisição e forçado nativamente no motor do PostgreSQL 17 via **Row-Level Security (RLS)** (`SET LOCAL app.current_tenant_id`), impedindo vazamento de dados mesmo em caso de falha de filtro no código de aplicação.
+### 5. Segurança RBAC & Anti-IDOR sem Bypass Global (ADR-013)
+* Autorização em plataforma única baseada em 4 papéis canônicos (`GESTOR_UNIDADE`, `MEDICO`, `FATURAMENTO`, `PACIENTE`) sem privilégio transversal oculto (`ADMIN_GLOBAL` removido).
+* Proteção horizontal Anti-IDOR estrita em todas as rotas de paciente, fila, agendamento e prontuário/LiveKit, garantindo que cidadãos acessem apenas seus próprios vínculos e apenas o médico alocado acesse o PEP.
 
 ### 6. Isolamento e Governança Modular com Tach
 * Controle contínuo de dependências auditado pelo **[Tach](https://github.com/gauge-sh/tach)** (escrito em Rust).
@@ -128,7 +128,7 @@ src/
     ├── ambulatory/                    # Produção ambulatorial SUS (BPA-I/SISAB) e qualificação cadastral
     ├── auth/                          # Autenticação Argon2id, lockout, OTP passwordless e revogação
     ├── consultation/                  # PEP SOAP, LiveKit WebRTC e assinatura digital ICP-Brasil
-    ├── identity/                      # Cadastro bifásico, dependentes e isolamento de tenant
+    ├── identity/                      # Cadastro bifásico, dependentes, profissionais e unidade SUS
     ├── queue/                         # Fila dinâmica ZSET 64-bit, scripts Lua e ring timeout 45s
     ├── scheduling/                    # Agenda multiprofissional programada (eMulti: Psicologia e Nutrição)
     ├── telemetry/                     # Painel analítico CQRS, cache volátil 5s e governança estocástica
@@ -147,10 +147,10 @@ A governança do repositório é estritamente segregada em três pilares ortogon
 | **[Product Specification](docs/explanation/product-specification.md)** | *Solution Space* (O Quê) | Invariantes Formais de Domínio (**RN01 a RN09**), Requisitos Funcionais (**RF-01 a RF-10**) e Matriz de Rastreabilidade Vertical. |
 | **[User Stories & Living Specs](docs/user-stories/README.md)** | *Living Specifications* (Qualidade & BDD) | Linha de base comportamental em Gherkin puro, checklists técnicos de inspeção e rastreabilidade vertical ([US-01 a US-16](docs/user-stories/README.md)). |
 | **[Architecture Overview](docs/explanation/architecture/overview.md)** | *Engineering Foundations* (O Como) | Hexagonal Pragmático, protocolos, notificadores ponto a ponto, diagramas C4 (Contexto e Contêineres) e Matriz FURPS+ / ISO 25010. |
-| **[Data Model](docs/explanation/architecture/data-model.md)** | Blueprint Técnico | Diagrama Entidade-Relacionamento (DER), DDL das 15 tabelas multi-tenant com RLS (16 no catálogo total), regras de RLS e snapshots forenses do CFM. |
+| **[Data Model](docs/explanation/architecture/data-model.md)** | Blueprint Técnico | Diagrama Entidade-Relacionamento (DER), catálogo das 16 tabelas de plataforma única e snapshots forenses do CFM. |
 | **[Concurrency & Queues](docs/explanation/architecture/concurrency-and-queues.md)** | Blueprint Técnico | Script Lua atômico (`alocar_chamada.lua`), fórmula do score do ZSET e resolução determinística de No-Show via ARQ. |
 | **[Compliance & Telemedicine](docs/explanation/architecture/compliance-and-telemedicine.md)** | Blueprint Técnico | Topologia LiveKit SFU WebRTC, fluxo de assinatura digital PAdES-LTV com PyHanko e guarda em Object Storage S3/MinIO. |
-| **[Architecture Decision Records (ADRs)](docs/adrs/README.md)** | Governança & Trade-offs | Registro formal das 12 decisões estruturais fundamentais ([ADR-001 a ADR-012](docs/adrs/README.md)). |
+| **[Architecture Decision Records (ADRs)](docs/adrs/README.md)** | Governança & Trade-offs | Registro formal das decisões estruturais fundamentais ([ADR-001 a ADR-013](docs/adrs/README.md)). |
 
 ---
 
@@ -161,7 +161,7 @@ A governança do repositório é estritamente segregada em três pilares ortogon
 | **Linguagem & Runtime** | Python 3.12+ | Tipagem moderna (`typing.Protocol`, `TypeIs`), alta performance assíncrona. |
 | **Framework Web API** | FastAPI + Granian (Rust) | Runtime ASGI em Rust de altíssima vazão, WebSockets nativos, latência ultra-baixa e OpenAPI. |
 | **Persistência Relacional** | PostgreSQL 17 + SQLAlchemy 2.0 Async | Modelos de domínio ricos (`Mapped[...]`), queries assíncronas nativas com `psycopg 3` (`psycopg[binary]`). |
-| **Isolamento de Dados** | PostgreSQL Row-Level Security (RLS) | Blindagem multi-tenant no nível do kernel do banco de dados. |
+| **Autorização & Auditoria** | RBAC + Anti-IDOR + Trigger Append-Only | Controle horizontal por titularidade e trilha forense imutável `audit_events`. |
 | **Fila em Memória & Locks** | Valkey 8.0 (AOF ativo) | ZSET atômico com scripts Lua para alocação médico-paciente sem condições de corrida. |
 | **Task Worker Assíncrono** | ARQ (`arq` sobre `asyncio`) | Tarefas em background e resolução de Ring Timeout de 45 segundos via jobs diferidos. |
 | **Mídia em Tempo Real** | LiveKit SFU (Go) | Roteamento de áudio/vídeo WebRTC seguro (SRTP) com latência $\le 150\text{ ms}$. |

@@ -14,7 +14,6 @@ class SqlBpaDirectory(BpaDirectoryPort):
 
     async def buscar_detalhes_bpa_lote(
         self,
-        organizacao_id: int,
         competencia: str,
     ) -> list[BpaRegistroDetalheDTO]:
         """Fetch all individual production items with patient and doctor details."""
@@ -25,7 +24,7 @@ class SqlBpaDirectory(BpaDirectoryPort):
                 pa.atendimento_id,
                 pa.profissional_id,
                 pa.paciente_id,
-                COALESCE(NULLIF(pa.cnes, '0000000'), o.cnes, '0000000') AS cnes,
+                COALESCE(NULLIF(pa.cnes, '0000000'), u.cnes, '0000000') AS cnes,
                 pa.codigo_sigtap,
                 pa.carater_atendimento,
                 pa.competencia,
@@ -35,25 +34,22 @@ class SqlBpaDirectory(BpaDirectoryPort):
                 p.cpf AS paciente_cpf,
                 TO_CHAR(p.data_nascimento, 'YYYYMMDD') AS paciente_data_nascimento,
                 COALESCE(p.sexo_biologico, 'M') AS paciente_sexo,
-                COALESCE(o.ibge_municipio, '355030') AS paciente_ibge,
+                COALESCE(u.ibge_municipio, '355030') AS paciente_ibge,
                 COALESCE(pr.cpf, '000000000000000') AS medico_cns,
                 '225125' AS medico_cbo,
-                COALESCE(o.nome_fantasia, o.razao_social, 'UPA DIGITAL') AS org_nome,
+                COALESCE(u.nome_fantasia, u.razao_social, 'UPA DIGITAL') AS org_nome,
                 'MSYNC' AS org_sigla,
-                COALESCE(o.cnpj, '00000000000000') AS org_cnpj,
+                COALESCE(u.cnpj, '00000000000000') AS org_cnpj,
                 COALESCE(EXTRACT(YEAR FROM AGE(p.data_nascimento))::INT, 0) AS idade
             FROM producoes_ambulatoriais pa
             JOIN pacientes p ON pa.paciente_id = p.id
             JOIN profissionais pr ON pa.profissional_id = pr.id
-            JOIN organizacoes o ON pa.organizacao_id = o.id
-            WHERE pa.organizacao_id = :org_id
-              AND pa.competencia = :competencia
+            LEFT JOIN (SELECT * FROM configuracoes_unidade LIMIT 1) u ON true
+            WHERE pa.competencia = :competencia
             ORDER BY pa.consolidado_em ASC
             """
         )
-        result = await self._session.execute(
-            stmt, {"org_id": organizacao_id, "competencia": competencia}
-        )
+        result = await self._session.execute(stmt, {"competencia": competencia})
         rows = result.mappings().all()
 
         detalhes: list[BpaRegistroDetalheDTO] = []

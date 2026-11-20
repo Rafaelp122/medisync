@@ -55,7 +55,7 @@ flowchart TD
 
 ### 2.1 Emissão de Tokens de Sala
 O backend FastAPI apenas gera tokens JWT assinados com a chave secreta do LiveKit, contendo as permissões clínicas (*Video Grants*):
-* **Nome da Sala**: `org_{organizacao_id}_atend_{atendimento_id}`
+* **Nome da Sala**: `atend_{atendimento_id}`
 * **Identidade do Participante**: `medico_{id}` ou `paciente_{id}`
 * **Permissões**: `room_join: true`, `can_publish: true`, `can_subscribe: true`
 

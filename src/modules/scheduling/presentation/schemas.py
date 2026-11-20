@@ -64,12 +64,10 @@ class CriarDisponibilidadeRequest(BaseModel):
     def to_command(
         self,
         *,
-        organizacao_id: int,
         profissional_id: UUID,
     ) -> CriarDisponibilidadeCommand:
         """Converte payload HTTP em command de aplicação."""
         return CriarDisponibilidadeCommand(
-            organizacao_id=organizacao_id,
             profissional_id=profissional_id,
             especialidade=self.especialidade,
             dia_semana=self.dia_semana,
@@ -85,7 +83,6 @@ class DisponibilidadeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    organizacao_id: int
     profissional_id: UUID
     especialidade: str
     dia_semana: int
@@ -114,12 +111,10 @@ class CriarAgendamentoRequest(BaseModel):
     def to_command(
         self,
         *,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> AgendarConsultaCommand:
         """Converte payload HTTP vinculando estritamente ao paciente do JWT."""
         return AgendarConsultaCommand(
-            organizacao_id=organizacao_id,
             paciente_id=paciente_id,
             profissional_id=self.profissional_id,
             especialidade=self.especialidade,
@@ -145,7 +140,6 @@ class AgendamentoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    organizacao_id: int
     paciente_id: UUID
     profissional_id: UUID
     especialidade: str

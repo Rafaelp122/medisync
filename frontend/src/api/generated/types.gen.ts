@@ -81,10 +81,6 @@ export type AdmissaoResponse = {
      */
     triagem_id: string;
     /**
-     * Organizacao Id
-     */
-    organizacao_id: number;
-    /**
      * Paciente Id
      */
     paciente_id: string;
@@ -122,10 +118,6 @@ export type AgendamentoResponse = {
      * Id
      */
     id: string;
-    /**
-     * Organizacao Id
-     */
-    organizacao_id: number;
     /**
      * Paciente Id
      */
@@ -489,10 +481,6 @@ export type ConfigPlantaoResponse = {
      */
     id: string;
     /**
-     * Organizacao Id
-     */
-    organizacao_id: number;
-    /**
      * Medicos Ativos Planejados
      */
     medicos_ativos_planejados: number;
@@ -731,10 +719,6 @@ export type DependenteResponse = {
      */
     id: string;
     /**
-     * Organizacao Id
-     */
-    organizacao_id: number;
-    /**
      * Titular Id
      */
     titular_id: string;
@@ -762,10 +746,6 @@ export type DisponibilidadeResponse = {
      * Id
      */
     id: string;
-    /**
-     * Organizacao Id
-     */
-    organizacao_id: number;
     /**
      * Profissional Id
      */
@@ -810,10 +790,6 @@ export type DocumentoClinicoResponse = {
      * Atendimento Id
      */
     atendimento_id: string;
-    /**
-     * Organizacao Id
-     */
-    organizacao_id: number;
     /**
      * Medico Id
      */
@@ -908,12 +884,6 @@ export type EmitirDocumentoRequest = {
      * Justificativa médica para dispensa excepcional de prova de vida (US-15)
      */
     justificativa_excecao_liveness?: string | null;
-    /**
-     * Organizacao Id
-     *
-     * Identificador da organização
-     */
-    organizacao_id?: number | null;
 };
 
 /**
@@ -962,10 +932,6 @@ export type EvolucaoSoapResponse = {
      * Atendimento Id
      */
     atendimento_id: string;
-    /**
-     * Organizacao Id
-     */
-    organizacao_id: number;
     /**
      * Medico Id
      */
@@ -1266,12 +1232,7 @@ export type Fase2Response = {
  * Payload to conclude attendance and lock PEP records.
  */
 export type FinalizarConsultaRequest = {
-    /**
-     * Organizacao Id
-     *
-     * Identificador da organização
-     */
-    organizacao_id?: number | null;
+    [key: string]: never;
 };
 
 /**
@@ -1346,10 +1307,6 @@ export type HealthCheckResponse = {
      * Version
      */
     version: string;
-    /**
-     * Tenant Id
-     */
-    tenant_id: number | null;
     /**
      * Request Id
      */
@@ -1576,12 +1533,6 @@ export type ListaProducaoAmbulatorialResponse = {
      */
     competencia: string;
     /**
-     * Organizacao Id
-     *
-     * Identificador do tenant municipal
-     */
-    organizacao_id: number;
-    /**
      * Page
      *
      * Página atual
@@ -1601,12 +1552,6 @@ export type ListaProducaoAmbulatorialResponse = {
  * Payload to request an authenticated LiveKit room access token.
  */
 export type LiveKitTokenRequest = {
-    /**
-     * Organizacao Id
-     *
-     * Identificador opcional da organização (resolvido via contexto HTTP quando omitido)
-     */
-    organizacao_id?: number | null;
     /**
      * Participant Id
      *
@@ -1654,7 +1599,7 @@ export type LiveKitTokenResponse = {
     /**
      * Room Name
      *
-     * Nome canônico da sala org_{org}_atend_{atend}
+     * Nome canônico da sala atend_{atend}
      */
     room_name: string;
     /**
@@ -1776,12 +1721,6 @@ export type LoginRequest = {
      * Senha em texto puro
      */
     senha: string;
-    /**
-     * Organizacao Id
-     *
-     * ID da organização (se omitido, resolvido via cabeçalho X-Tenant-ID)
-     */
-    organizacao_id?: number | null;
 };
 
 /**
@@ -1948,10 +1887,6 @@ export type PacienteDocumentoItemResponse = {
  * Aggregated operational telemetry dashboard response (RF-10).
  */
 export type PainelTelemetriaResponse = {
-    /**
-     * Organizacao Id
-     */
-    organizacao_id: number;
     /**
      * Gerado Em
      */
@@ -2347,12 +2282,6 @@ export type RegistrarSoapRequest = {
      * Justificativa clínica caso o paciente não possua documento no ato.
      */
     justificativa_excecao_identidade?: string | null;
-    /**
-     * Organizacao Id
-     *
-     * Identificador da organização de saúde
-     */
-    organizacao_id?: number | null;
 };
 
 /**
@@ -2585,10 +2514,6 @@ export type UsuarioPerfilResponse = {
      * Usuario Id
      */
     usuario_id: string;
-    /**
-     * Organizacao Id
-     */
-    organizacao_id: number;
     /**
      * Identificador
      */
@@ -3856,7 +3781,7 @@ export type ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdf
 
 export type ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetErrors = {
     /**
-     * Documento pertence a outro paciente ou organização
+     * Documento pertence a outro paciente
      */
     403: unknown;
     /**
@@ -4105,7 +4030,10 @@ export type VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescripti
 export type VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponse = VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses[keyof VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses];
 
 export type FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostData = {
-    body: FinalizarConsultaRequest;
+    /**
+     *  Request
+     */
+    body?: FinalizarConsultaRequest | null;
     path: {
         /**
          * Atendimento Id

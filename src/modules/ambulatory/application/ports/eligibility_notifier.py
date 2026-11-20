@@ -15,7 +15,6 @@ class ElegibilidadeFalhaEvent:
     """
 
     atendimento_id: UUID
-    organizacao_id: int
     paciente_id: UUID
     motivo: str
     status: StatusElegibilidade

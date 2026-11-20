@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
   postAuthPatientWebauthnAuthenticateOptions,
@@ -37,13 +37,8 @@ export function usePasskeyAuth(
           });
         }
 
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
-
         const optionsRes = await postAuthPatientWebauthnAuthenticateOptions({
           client,
-          headers,
           body: params?.pacienteId ? { paciente_id: params.pacienteId } : undefined,
           throwOnError: true,
         });
@@ -74,7 +69,6 @@ export function usePasskeyAuth(
         const assertionResp = assertion.response as AuthenticatorAssertionResponse;
         const verifyRes = await postAuthPatientWebauthnAuthenticateVerify({
           client,
-          headers,
           body: {
             id: assertion.id,
             rawId: bufferToBase64Url(assertion.rawId),

@@ -33,7 +33,7 @@ export const AUTHOR_PROFILE: AuthorProfile = {
   highlights: [
     "Python 3.12+ & FastAPI",
     "Arquitetura Hexagonal & DDD",
-    "PostgreSQL & Row-Level Security",
+    "PostgreSQL 17 & Índices GiST",
     "Valkey / Redis & Concorrência Atômica",
     "React 19 & TypeScript Estrito",
   ],

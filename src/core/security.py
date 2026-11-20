@@ -44,7 +44,6 @@ def _b64url_decode(s: str) -> bytes:
 
 def create_intake_token(
     paciente_id: UUID,
-    organizacao_id: int,
     secret_key: str,
     expires_in_seconds: int = 7200,
 ) -> str:
@@ -55,7 +54,6 @@ def create_intake_token(
     now = int(time.time())
     payload = {
         "paciente_id": str(paciente_id),
-        "organizacao_id": organizacao_id,
         "tipo": "intake_provisional",
         "iat": now,
         "exp": now + expires_in_seconds,

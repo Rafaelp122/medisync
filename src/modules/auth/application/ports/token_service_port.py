@@ -13,7 +13,6 @@ class TokenServicePort(Protocol):
     def gerar_tokens(
         self,
         usuario_id: UUID,
-        organizacao_id: int,
         papel: str,
     ) -> TokenPairDTO:
         """Issue a pair of short-lived access token and rotatable refresh token."""
@@ -30,7 +29,6 @@ class TokenServicePort(Protocol):
     def gerar_mfa_token(
         self,
         usuario_id: UUID,
-        organizacao_id: int,
         papel: str,
     ) -> str:
         """Issue a short-lived temporary token with mfa_pending claim."""

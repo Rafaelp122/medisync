@@ -57,7 +57,6 @@ export function createAgendamentoFixture(
 ): AgendamentoResponse {
   return {
     id: MOCK_AGENDAMENTO_ID,
-    organizacao_id: 1,
     paciente_id: MOCK_PACIENTE_ID,
     profissional_id: MOCK_PROFISSIONAL_ID,
     especialidade: "PSICOLOGIA",
@@ -77,7 +76,6 @@ export function createDisponibilidadeFixture(
 ): DisponibilidadeResponse {
   return {
     id: MOCK_DISPONIBILIDADE_ID,
-    organizacao_id: 1,
     profissional_id: MOCK_PROFISSIONAL_ID,
     especialidade: "PSICOLOGIA",
     dia_semana: 0,

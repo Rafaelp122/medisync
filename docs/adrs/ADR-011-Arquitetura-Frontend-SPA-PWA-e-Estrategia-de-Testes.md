@@ -36,7 +36,7 @@ Historicamente, o desenvolvimento de frontends em sistemas de saúde sofre com t
 
 ### Opção 1: Next.js App Router (RSC + SSR)
 * *Prós*: Suporte integrado a Server Components e renderização no servidor.
-* *Contras*: Introduz um segundo servidor Node.js em produção, duplicando custos operacionais de infraestrutura onde o backend FastAPI já centraliza regras de negócio, autorização e RLS.
+* *Contras*: Introduz um segundo servidor Node.js em produção, duplicando custos operacionais de infraestrutura onde o backend FastAPI já centraliza regras de negócio e autorização (RBAC e Anti-IDOR).
 
 ### Opção 2: Vite SPA/PWA com Axios Manual e Tipos Redigitados
 * *Prós*: Configuração simples e tradicional.
@@ -104,7 +104,7 @@ Para eliminar monolitos de estado (*god components*) na raiz do frontend, a nave
    - `/perfil`: Dados cadastrais CFM do cidadão, dependentes legais e gerenciamento de Passkeys (`ProfilePage`).
    - `/validar` e `/validar/$token`: Portal público de verificação de autenticidade de prescrições e atestados ICP-Brasil (`DocumentValidationPage` por QR Code / hash SHA-256, com preenchimento automático de token na rota parametrizada).
    - `/medico`: Estação de trabalho clínica do médico plantonista (`DoctorWorkstationPage` + `ProfessionalSchedulePanel`) protegida por guarda de sessão médica e cookie de refresh (redireciona para `/interno/login` se ausente).
-   - `/gestor`: Painel operacional de telemetria da gestão e consórcios intermunicipais (`TelemetryDashboardPage`), redirecionando para `/interno/login` se não autenticado.
+   - `/gestor`: Painel operacional de telemetria e gestão da unidade (`TelemetryDashboardPage`), redirecionando para `/interno/login` se não autenticado.
 2. **Route Guards Síncronos (`beforeLoad`):**
    - Interceptação de transição antes da renderização de componentes com `throw redirect({ to: '...' })`.
    - Leitura de sessões isolada nos helpers puros de `frontend/src/lib/session-storage.ts`.

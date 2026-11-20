@@ -42,14 +42,12 @@ def _create_mock_context(
 @pytest.mark.asyncio
 async def test_resolver_ring_timeout_records_no_show_when_chamando_paciente() -> None:
     """If patient did not answer in 45s, mark absent, release locks and emit event."""
-    org_id = 1
     atend_id = uuid4()
     medico_id = uuid4()
     paciente_id = uuid4()
 
     mock_atendimento = MagicMock(spec=Atendimento)
     mock_atendimento.id = atend_id
-    mock_atendimento.organizacao_id = org_id
     mock_atendimento.paciente_id = paciente_id
     mock_atendimento.medico_id = medico_id
     mock_atendimento.status = StatusAtendimento.CHAMANDO_PACIENTE.value
@@ -67,7 +65,6 @@ async def test_resolver_ring_timeout_records_no_show_when_chamando_paciente() ->
 
     result: dict[str, Any] = await resolver_ring_timeout_task(
         ctx,
-        organizacao_id=org_id,
         atendimento_id=str(atend_id),
         medico_id=str(medico_id),
         notifier=mock_notifier,
@@ -79,8 +76,8 @@ async def test_resolver_ring_timeout_records_no_show_when_chamando_paciente() ->
     mock_session.commit.assert_awaited_once()
 
     # Valkey ring locks deleted atomically
-    mock_pipe.delete.assert_any_call(f"lock:{org_id}:medico:{medico_id}")
-    mock_pipe.delete.assert_any_call(f"lock:{org_id}:atendimento:{atend_id}")
+    mock_pipe.delete.assert_any_call(f"lock:medico:{medico_id}")
+    mock_pipe.delete.assert_any_call(f"lock:atendimento:{atend_id}")
     mock_pipe.execute.assert_awaited_once()
 
     # Domain event emitted
@@ -97,13 +94,11 @@ async def test_resolver_ring_timeout_records_no_show_when_chamando_paciente() ->
 @pytest.mark.asyncio
 async def test_resolver_ring_timeout_promotes_lock_when_em_atendimento() -> None:
     """If call is answered, preserve consultation and set active consultation lock."""
-    org_id = 1
     atend_id = uuid4()
     medico_id = uuid4()
 
     mock_atendimento = MagicMock(spec=Atendimento)
     mock_atendimento.id = atend_id
-    mock_atendimento.organizacao_id = org_id
     mock_atendimento.status = StatusAtendimento.EM_ATENDIMENTO.value
 
     mock_session = AsyncMock(spec=AsyncSession)
@@ -119,7 +114,6 @@ async def test_resolver_ring_timeout_promotes_lock_when_em_atendimento() -> None
 
     result: dict[str, Any] = await resolver_ring_timeout_task(
         ctx,
-        organizacao_id=org_id,
         atendimento_id=str(atend_id),
         medico_id=str(medico_id),
         notifier=mock_notifier,
@@ -131,10 +125,10 @@ async def test_resolver_ring_timeout_promotes_lock_when_em_atendimento() -> None
     mock_session.commit.assert_not_awaited()
 
     # Ring locks deleted and consulta_ativa lock set with 2h TTL
-    mock_pipe.delete.assert_any_call(f"lock:{org_id}:atendimento:{atend_id}")
-    mock_pipe.delete.assert_any_call(f"lock:{org_id}:medico:{medico_id}")
+    mock_pipe.delete.assert_any_call(f"lock:atendimento:{atend_id}")
+    mock_pipe.delete.assert_any_call(f"lock:medico:{medico_id}")
     mock_pipe.set.assert_called_once_with(
-        f"lock:{org_id}:consulta_ativa:medico:{medico_id}",
+        f"lock:consulta_ativa:medico:{medico_id}",
         str(atend_id),
         ex=7200,
     )
@@ -153,7 +147,6 @@ async def test_resolver_ring_timeout_attendance_not_found() -> None:
 
     result: dict[str, Any] = await resolver_ring_timeout_task(
         ctx,
-        organizacao_id=1,
         atendimento_id=str(uuid4()),
         medico_id=str(uuid4()),
     )
@@ -165,13 +158,11 @@ async def test_resolver_ring_timeout_attendance_not_found() -> None:
 @pytest.mark.asyncio
 async def test_resolver_ring_timeout_terminal_state_releases_locks() -> None:
     """If attendance is already cancelled/finished, cleanup lingering ring locks."""
-    org_id = 2
     atend_id = uuid4()
     medico_id = uuid4()
 
     mock_atendimento = MagicMock(spec=Atendimento)
     mock_atendimento.id = atend_id
-    mock_atendimento.organizacao_id = org_id
     mock_atendimento.status = StatusAtendimento.CANCELADO_PACIENTE.value
 
     mock_session = AsyncMock(spec=AsyncSession)
@@ -186,15 +177,14 @@ async def test_resolver_ring_timeout_terminal_state_releases_locks() -> None:
 
     result: dict[str, Any] = await resolver_ring_timeout_task(
         ctx,
-        organizacao_id=org_id,
         atendimento_id=str(atend_id),
         medico_id=str(medico_id),
     )
 
     assert result["status"] == "resolved"
     assert result["action"] == "already_finalized"
-    mock_pipe.delete.assert_any_call(f"lock:{org_id}:medico:{medico_id}")
-    mock_pipe.delete.assert_any_call(f"lock:{org_id}:atendimento:{atend_id}")
+    mock_pipe.delete.assert_any_call(f"lock:medico:{medico_id}")
+    mock_pipe.delete.assert_any_call(f"lock:atendimento:{atend_id}")
     mock_pipe.execute.assert_awaited_once()
 
 
@@ -204,7 +194,6 @@ async def test_logging_paciente_ausente_notifier() -> None:
     notifier = LoggingPacienteAusenteNotifier()
     event = PacienteAusenteEvent(
         atendimento_id=uuid4(),
-        organizacao_id=1,
         medico_id=uuid4(),
         paciente_id=uuid4(),
     )
@@ -246,7 +235,6 @@ async def test_alocacao_service_schedules_arq_job() -> None:
     )
 
     cmd = AlocarChamadaCommand(
-        organizacao_id=1,
         medico_id=medico_id,
         atendimento_id=atend_id,
         ttl_segundos=45,
@@ -257,7 +245,6 @@ async def test_alocacao_service_schedules_arq_job() -> None:
 
     mock_arq_pool.enqueue_job.assert_awaited_once_with(
         "resolver_ring_timeout_task",
-        organizacao_id=1,
         atendimento_id=str(atend_id),
         medico_id=str(medico_id),
         _defer_by=timedelta(seconds=45),

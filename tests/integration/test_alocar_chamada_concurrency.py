@@ -29,10 +29,9 @@ async def test_parallel_race_condition_50_doctors_single_winner() -> None:
     Expect exactly 1 winner (code 1) and 49 losers (code -1).
     """
     manager = get_lua_script_manager()
-    org_id = 999
     atendimento_id = str(uuid7())
-    k_fila = f"fila:{org_id}:aptos"
-    k_atend_lock = f"lock:{org_id}:atendimento:{atendimento_id}"
+    k_fila = "fila:aptos"
+    k_atend_lock = f"lock:atendimento:{atendimento_id}"
 
     async for client in get_valkey_client():
         # Clean and seed queue with single patient
@@ -44,7 +43,7 @@ async def test_parallel_race_condition_50_doctors_single_winner() -> None:
 
         async def attempt_call(doc_idx: int, cl: Redis = client) -> int:
             doc_id = f"doc-concurrency-{doc_idx}"
-            k_doc = f"lock:{org_id}:medico:{doc_id}"
+            k_doc = f"lock:medico:{doc_id}"
             await cl.delete(k_doc)
             res = await manager.execute_script(
                 client=cl,
@@ -78,7 +77,7 @@ async def test_parallel_race_condition_50_doctors_single_winner() -> None:
 
         # Winner doctor lock must exist and point to attendance
         winner_doc_id = str(atend_lock_val)
-        winner_doc_lock = await client.get(f"lock:{org_id}:medico:{winner_doc_id}")
+        winner_doc_lock = await client.get(f"lock:medico:{winner_doc_id}")
         assert winner_doc_lock == atendimento_id
 
         # TTL must be within expected ring range
@@ -89,12 +88,11 @@ async def test_parallel_race_condition_50_doctors_single_winner() -> None:
 @pytest.mark.asyncio
 async def test_doctor_active_lock_returns_0_conflict() -> None:
     """Verify doctor with active call lock receives 0 from Lua and 409 from service."""
-    org_id = 999
     medico_id = uuid4()
     atendimento_id = uuid7()
-    k_medico = f"lock:{org_id}:medico:{medico_id}"
-    k_atend = f"lock:{org_id}:atendimento:{atendimento_id}"
-    k_fila = f"fila:{org_id}:aptos"
+    k_medico = f"lock:medico:{medico_id}"
+    k_atend = f"lock:atendimento:{atendimento_id}"
+    k_fila = "fila:aptos"
 
     async for client in get_valkey_client():
         # Setup: doctor is already busy with another call
@@ -118,7 +116,6 @@ async def test_doctor_active_lock_returns_0_conflict() -> None:
                 lua_manager=manager,
             )
             cmd = AlocarChamadaCommand(
-                organizacao_id=org_id,
                 medico_id=medico_id,
                 atendimento_id=atendimento_id,
             )
@@ -130,8 +127,7 @@ async def test_doctor_active_lock_returns_0_conflict() -> None:
 async def test_alocar_chamada_sub_10ms_latency_benchmark() -> None:
     """Benchmark: assert script execution time on Valkey is < 10 ms (RNF-01)."""
     manager = get_lua_script_manager()
-    org_id = 888
-    k_fila = f"fila:{org_id}:aptos"
+    k_fila = "fila:aptos"
 
     async for client in get_valkey_client():
         await manager.preload_scripts(client)
@@ -142,8 +138,8 @@ async def test_alocar_chamada_sub_10ms_latency_benchmark() -> None:
         for i in range(50):
             atend_id = f"bench-atend-{i}"
             med_id = f"bench-med-{i}"
-            k_med = f"lock:{org_id}:medico:{med_id}"
-            k_atend = f"lock:{org_id}:atendimento:{atend_id}"
+            k_med = f"lock:medico:{med_id}"
+            k_atend = f"lock:atendimento:{atend_id}"
 
             await client.zadd(k_fila, {atend_id: 1000 + i})  # pyright: ignore[reportUnknownMemberType]
 
@@ -177,20 +173,19 @@ async def test_end_to_end_alocacao_service_with_postgres() -> None:
     """Verify end-to-end atomic allocation with PostgreSQL and Valkey consistency."""
     async with async_session_factory() as session:
         # 1. Setup DB records via seed_clinical_scenario
-        SAMPLE_TCLE_HASH = (
+        sample_tcle_hash = (
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         )
         cenario = await seed_clinical_scenario(
             session,
-            org_cnpj="88776655000144",
-            org_razao_social="UBS Concurrency",
+            unidade_cnpj="88776655000144",
+            unidade_razao_social="UBS Concurrency",
             paciente_cpf="33344455566",
             medico_cpf="77788899900",
             medico_email="dra.alocacao@ubs.gov.br",
             status_atendimento=StatusAtendimento.APTO_PARA_CHAMADA,
-            tcle_hash=SAMPLE_TCLE_HASH,
+            tcle_hash=sample_tcle_hash,
         )
-        org = cenario.organizacao
         medico = cenario.medico
         atendimento = cenario.atendimento
         atendimento.medico_id = None
@@ -203,7 +198,7 @@ async def test_end_to_end_alocacao_service_with_postgres() -> None:
 
         # 2. Add to Valkey queue
         async for client in get_valkey_client():
-            k_fila = f"fila:{org.id}:aptos"
+            k_fila = "fila:aptos"
             await client.zadd(k_fila, {str(atend_id): 1000})  # pyright: ignore[reportUnknownMemberType]
 
             # 3. Execute allocation via service
@@ -213,7 +208,6 @@ async def test_end_to_end_alocacao_service_with_postgres() -> None:
                 lua_manager=get_lua_script_manager(),
             )
             cmd = AlocarChamadaCommand(
-                organizacao_id=org.id,
                 medico_id=med_id,
                 atendimento_id=atend_id,
                 ttl_segundos=45,
@@ -234,8 +228,8 @@ async def test_end_to_end_alocacao_service_with_postgres() -> None:
             assert reloaded.chamada_iniciada_em is not None
 
             # 5. Verify Valkey dual locks and queue removal
-            k_med = f"lock:{org.id}:medico:{med_id}"
-            k_atend = f"lock:{org.id}:atendimento:{atend_id}"
+            k_med = f"lock:medico:{med_id}"
+            k_atend = f"lock:atendimento:{atend_id}"
             assert await client.get(k_med) == str(atend_id)
             assert await client.get(k_atend) == str(med_id)
             assert (
@@ -244,13 +238,13 @@ async def test_end_to_end_alocacao_service_with_postgres() -> None:
             )
 
             # 6. Verify lock checking helpers on service
-            assert await service.verificar_lock_medico(org.id, med_id) is True
-            assert await service.verificar_lock_atendimento(org.id, atend_id) is True
-            assert await service.obter_lock_medico_atendimento_id(
-                org.id, med_id
-            ) == str(atend_id)
+            assert await service.verificar_lock_medico(med_id) is True
+            assert await service.verificar_lock_atendimento(atend_id) is True
+            assert await service.obter_lock_medico_atendimento_id(med_id) == str(
+                atend_id
+            )
 
             # 7. Release locks
-            await service.liberar_locks(org.id, med_id, atend_id)
-            assert await service.verificar_lock_medico(org.id, med_id) is False
-            assert await service.verificar_lock_atendimento(org.id, atend_id) is False
+            await service.liberar_locks(med_id, atend_id)
+            assert await service.verificar_lock_medico(med_id) is False
+            assert await service.verificar_lock_atendimento(atend_id) is False

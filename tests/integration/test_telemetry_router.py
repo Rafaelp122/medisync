@@ -7,11 +7,9 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.authz.roles import Role
 from src.core.valkey import get_valkey_pool
 
-from tests.factories.identity import make_organizacao
 from tests.helpers import auth_headers
 
 pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
@@ -19,27 +17,18 @@ pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 
 @pytest.mark.asyncio
 async def test_obter_painel_telemetria_gestor_sucesso(
-    db_session: AsyncSession,
     async_client: AsyncClient,
 ) -> None:
     """Validate GET /painel returns operational metrics for GESTOR_UNIDADE."""
-    org = make_organizacao(cnpj="11223344000199")
-    db_session.add(org)
-    await db_session.commit()
-    await db_session.refresh(org)
-
     gestor_id = uuid4()
-    headers = {
-        **auth_headers(papel=Role.GESTOR_UNIDADE, org_id=org.id, usuario_id=gestor_id),
-        "X-Tenant-ID": str(org.id),
-    }
+    headers = auth_headers(papel=Role.GESTOR_UNIDADE, usuario_id=gestor_id)
 
     # 1. Primeira consulta: cache miss, computa métricas e armazena em cache
     resp = await async_client.get("/api/v1/telemetria/painel", headers=headers)
     assert resp.status_code == 200
     data = cast("dict[str, object]", resp.json())
 
-    assert data["organizacao_id"] == org.id
+    assert "organizacao_id" not in data
     assert "gerado_em" in data
     assert "tme_medio_segundos" in data
     assert "tme_nivel_1_segundos" in data
@@ -57,9 +46,9 @@ async def test_obter_painel_telemetria_gestor_sucesso(
     assert "total_pacientes_fila" in data
     assert "total_atendimentos" in data
 
-    # 2. Validar que o painel foi armazenado no cache Valkey com TTL
+    # 2. Validar que o painel foi armazenado no cache Valkey singleton com TTL
     valkey = Redis(connection_pool=get_valkey_pool())
-    ttl = await valkey.ttl(f"telemetry:painel:{org.id}")
+    ttl = await valkey.ttl("telemetry:painel")
     assert ttl > 0
     assert ttl <= 5
 
@@ -78,29 +67,20 @@ async def test_obter_painel_telemetria_gestor_sucesso(
 
 @pytest.mark.asyncio
 async def test_configuracao_plantao_lifecycle_get_e_put(
-    db_session: AsyncSession,
     async_client: AsyncClient,
 ) -> None:
     """Validate GET /config-plantao default initialization and PUT updates."""
-    org = make_organizacao(cnpj="22334455000188")
-    db_session.add(org)
-    await db_session.commit()
-    await db_session.refresh(org)
-
     gestor_id = uuid4()
-    headers = {
-        **auth_headers(papel=Role.GESTOR_UNIDADE, org_id=org.id, usuario_id=gestor_id),
-        "X-Tenant-ID": str(org.id),
-    }
+    headers = auth_headers(papel=Role.GESTOR_UNIDADE, usuario_id=gestor_id)
 
-    # 1. GET inicial: cria e retorna default para o tenant
+    # 1. GET inicial: cria e retorna default singleton para a unidade
     resp_get = await async_client.get(
         "/api/v1/telemetria/config-plantao", headers=headers
     )
     assert resp_get.status_code == 200
     cfg_init = cast("dict[str, object]", resp_get.json())
 
-    assert cfg_init["organizacao_id"] == org.id
+    assert "organizacao_id" not in cfg_init
     assert cfg_init["medicos_ativos_planejados"] == 1
     assert Decimal(str(cfg_init["alpha_backpressure"])) == Decimal("1.25")
     assert cfg_init["modo_operacao"] == "SUS"
@@ -129,7 +109,7 @@ async def test_configuracao_plantao_lifecycle_get_e_put(
     assert resp_put.status_code == 200
     cfg_updated = cast("dict[str, object]", resp_put.json())
 
-    assert cfg_updated["organizacao_id"] == org.id
+    assert "organizacao_id" not in cfg_updated
     assert cfg_updated["medicos_ativos_planejados"] == 4
     assert Decimal(str(cfg_updated["alpha_backpressure"])) == Decimal("1.28")
     assert cfg_updated["cota_diaria_maxima"] == 500
@@ -153,38 +133,24 @@ async def test_configuracao_plantao_lifecycle_get_e_put(
 
 @pytest.mark.asyncio
 async def test_telemetria_permissoes_anonimo_e_paciente(
-    db_session: AsyncSession,
     async_client: AsyncClient,
 ) -> None:
     """Validate 401 for anonymous and 403 for PACIENTE role across all endpoints."""
-    org = make_organizacao(cnpj="33445566000177")
-    db_session.add(org)
-    await db_session.commit()
-    await db_session.refresh(org)
-
     # 1. Requisição anônima sem Authorization header -> 401
-    resp_anon_painel = await async_client.get(
-        "/api/v1/telemetria/painel", headers={"X-Tenant-ID": str(org.id)}
-    )
+    resp_anon_painel = await async_client.get("/api/v1/telemetria/painel")
     assert resp_anon_painel.status_code == 401
 
-    resp_anon_cfg = await async_client.get(
-        "/api/v1/telemetria/config-plantao", headers={"X-Tenant-ID": str(org.id)}
-    )
+    resp_anon_cfg = await async_client.get("/api/v1/telemetria/config-plantao")
     assert resp_anon_cfg.status_code == 401
 
     resp_anon_put = await async_client.put(
         "/api/v1/telemetria/config-plantao",
         json={"medicos_ativos_planejados": 2},
-        headers={"X-Tenant-ID": str(org.id)},
     )
     assert resp_anon_put.status_code == 401
 
     # 2. Requisição com usuário PACIENTE -> 403 Forbidden
-    paciente_headers = {
-        **auth_headers(papel=Role.PACIENTE, org_id=org.id, usuario_id=uuid4()),
-        "X-Tenant-ID": str(org.id),
-    }
+    paciente_headers = auth_headers(papel=Role.PACIENTE, usuario_id=uuid4())
 
     resp_pac_painel = await async_client.get(
         "/api/v1/telemetria/painel", headers=paciente_headers
@@ -206,20 +172,11 @@ async def test_telemetria_permissoes_anonimo_e_paciente(
 
 @pytest.mark.asyncio
 async def test_configuracao_plantao_validacao_limites_422(
-    db_session: AsyncSession,
     async_client: AsyncClient,
 ) -> None:
     """Validate 422 Unprocessable Entity for invalid parameters on PUT."""
-    org = make_organizacao(cnpj="44556677000166")
-    db_session.add(org)
-    await db_session.commit()
-    await db_session.refresh(org)
-
     gestor_id = uuid4()
-    headers = {
-        **auth_headers(papel=Role.GESTOR_UNIDADE, org_id=org.id, usuario_id=gestor_id),
-        "X-Tenant-ID": str(org.id),
-    }
+    headers = auth_headers(papel=Role.GESTOR_UNIDADE, usuario_id=gestor_id)
 
     # 1. alpha < 1.20
     resp_low_alpha = await async_client.put(
@@ -264,29 +221,20 @@ async def test_configuracao_plantao_validacao_limites_422(
 
 @pytest.mark.asyncio
 async def test_obter_painel_telemetria_medico_sucesso(
-    db_session: AsyncSession,
     async_client: AsyncClient,
 ) -> None:
     """Validate GET /painel returns operational metrics for Role.MEDICO.
 
     Conforms to US-13 and resolves NC-TEL-02.
     """
-    org = make_organizacao(cnpj="55667788000155")
-    db_session.add(org)
-    await db_session.commit()
-    await db_session.refresh(org)
-
     medico_id = uuid4()
-    headers = {
-        **auth_headers(papel=Role.MEDICO, org_id=org.id, usuario_id=medico_id),
-        "X-Tenant-ID": str(org.id),
-    }
+    headers = auth_headers(papel=Role.MEDICO, usuario_id=medico_id)
 
     resp = await async_client.get("/api/v1/telemetria/painel", headers=headers)
     assert resp.status_code == 200
     data = cast("dict[str, object]", resp.json())
 
-    assert data["organizacao_id"] == org.id
+    assert "organizacao_id" not in data
     assert "tme_medio_segundos" in data
     assert "tma_medio_segundos" in data
     assert "sla_compliance_percentual" in data
@@ -298,20 +246,11 @@ async def test_obter_painel_telemetria_medico_sucesso(
 
 @pytest.mark.asyncio
 async def test_configuracao_plantao_medico_proibido(
-    db_session: AsyncSession,
     async_client: AsyncClient,
 ) -> None:
     """Validate 403 Forbidden for Role.MEDICO on /config-plantao (GET and PUT)."""
-    org = make_organizacao(cnpj="66778899000144")
-    db_session.add(org)
-    await db_session.commit()
-    await db_session.refresh(org)
-
     medico_id = uuid4()
-    headers = {
-        **auth_headers(papel=Role.MEDICO, org_id=org.id, usuario_id=medico_id),
-        "X-Tenant-ID": str(org.id),
-    }
+    headers = auth_headers(papel=Role.MEDICO, usuario_id=medico_id)
 
     # 1. GET /config-plantao proibido para médico
     resp_get = await async_client.get(
@@ -337,24 +276,11 @@ async def test_configuracao_plantao_medico_proibido(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("papel_proibido", [Role.PACIENTE, Role.FATURAMENTO])
 async def test_obter_painel_telemetria_papeis_proibidos(
-    db_session: AsyncSession,
     async_client: AsyncClient,
     papel_proibido: Role,
 ) -> None:
     """Validate 403 Forbidden with offending value and expected shape."""
-    _cnpjs = {
-        Role.PACIENTE: "77889900000111",
-        Role.FATURAMENTO: "77889900000122",
-    }
-    org = make_organizacao(cnpj=_cnpjs[papel_proibido])
-    db_session.add(org)
-    await db_session.commit()
-    await db_session.refresh(org)
-
-    headers = {
-        **auth_headers(papel=papel_proibido, org_id=org.id, usuario_id=uuid4()),
-        "X-Tenant-ID": str(org.id),
-    }
+    headers = auth_headers(papel=papel_proibido, usuario_id=uuid4())
 
     resp = await async_client.get("/api/v1/telemetria/painel", headers=headers)
     assert resp.status_code == 403

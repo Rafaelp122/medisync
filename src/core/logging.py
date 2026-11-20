@@ -1,12 +1,44 @@
-"""Structured JSON logging configuration and formatter."""
+"""Structured JSON logging configuration, formatter, and request_id ContextVar."""
 
 import json
 import logging
+from collections.abc import Generator
+from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from src.core.context import get_current_request_id, get_current_tenant_id
 from src.core.telemetry import get_current_trace_context
+
+# Global ContextVar tracking active request / correlation ID per execution flow
+current_request_id: ContextVar[str | None] = ContextVar(
+    "current_request_id", default=None
+)
+
+
+def get_current_request_id() -> str | None:
+    """Retrieve the active request ID from the current asynchronous context."""
+    return current_request_id.get()
+
+
+def set_current_request_id(request_id: str | None) -> Token[str | None]:
+    """Explicitly set the active request ID in the current execution flow."""
+    return current_request_id.set(request_id)
+
+
+def reset_current_request_id(token: Token[str | None]) -> None:
+    """Restore previous request ID using the token."""
+    current_request_id.reset(token)
+
+
+@contextmanager
+def request_id_context(request_id: str | None) -> Generator[None, None, None]:
+    """Context manager to safely bind a request ID for a code block."""
+    token = set_current_request_id(request_id)
+    try:
+        yield
+    finally:
+        reset_current_request_id(token)
 
 
 class JSONFormatter(logging.Formatter):
@@ -20,14 +52,10 @@ class JSONFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
-        # Include active contextvars if bound
+        # Include active request correlation contextvar if bound
         req_id = get_current_request_id()
         if req_id is not None:
             log_entry["request_id"] = req_id
-
-        tenant_id = get_current_tenant_id()
-        if tenant_id is not None:
-            log_entry["tenant_id"] = tenant_id
 
         # Include OpenTelemetry trace context if active
         trace_id, span_id = get_current_trace_context()

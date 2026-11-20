@@ -11,7 +11,6 @@ class AuthenticatedUser:
     """Security principal extracted from validated JWT access token."""
 
     usuario_id: UUID
-    organizacao_id: int
     papel: str
     token_id: UUID
     raw_token: str

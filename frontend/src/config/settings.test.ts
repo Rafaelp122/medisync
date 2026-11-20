@@ -7,7 +7,6 @@ describe("Frontend Canonical Settings (Issue #126 / ADR-009)", () => {
     const config = createSettings({});
 
     // env
-    expect(config.env.defaultTenantId).toBeUndefined();
     expect(config.env.isDemoMode).toBe(false);
     expect(config.env.defaultPscProvider).toBe("birdid");
     expect(config.env.apiBaseUrl).toBeDefined();
@@ -27,7 +26,6 @@ describe("Frontend Canonical Settings (Issue #126 / ADR-009)", () => {
     // storage
     expect(config.storage.patientSession).toBe("medisync_session");
     expect(config.storage.doctorSession).toBe("medisync_doctor_session");
-    expect(config.storage.tenantId).toBe("tenant_id");
     expect(config.storage.passkeyDismissed).toBe("medisync_passkey_invite_dismissed");
 
     // demo
@@ -39,13 +37,11 @@ describe("Frontend Canonical Settings (Issue #126 / ADR-009)", () => {
   it("UT-SET-02: deve respeitar variáveis explícitas injetadas no ambiente", () => {
     const config = createSettings({
       VITE_API_BASE_URL: "https://api.medisync.com.br",
-      VITE_TENANT_ID: "00000000-0000-0000-0000-000000000001",
       VITE_ENABLE_DEMO_HELPERS: "true",
       VITE_DEFAULT_PSC_PROVIDER: "fake",
     });
 
     expect(config.env.apiBaseUrl).toBe("https://api.medisync.com.br");
-    expect(config.env.defaultTenantId).toBe("00000000-0000-0000-0000-000000000001");
     expect(config.env.isDemoMode).toBe(true);
     expect(config.env.defaultPscProvider).toBe("fake");
   });
@@ -99,11 +95,6 @@ describe("Frontend Canonical Settings (Issue #126 / ADR-009)", () => {
   });
 
   it("UT-SET-06: singleton settings em runtime deve estar íntegro e congelado", () => {
-    const expectedTenant =
-      typeof import.meta.env.VITE_TENANT_ID === "string" && import.meta.env.VITE_TENANT_ID.trim()
-        ? import.meta.env.VITE_TENANT_ID.trim()
-        : undefined;
-    expect(settings.env.defaultTenantId).toBe(expectedTenant);
     expect(settings.env.apiBaseUrl).toBeDefined();
     expect(PSC_PROVIDERS).toContain(settings.env.defaultPscProvider);
     expect(Object.isFrozen(settings)).toBe(true);

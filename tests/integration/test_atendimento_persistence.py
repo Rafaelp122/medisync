@@ -14,11 +14,7 @@ from src.modules.queue.domain.models import (
     StatusAtendimento,
 )
 
-from tests.factories.identity import (
-    make_organizacao,
-    make_paciente,
-    make_profissional,
-)
+from tests.factories.identity import make_paciente, make_profissional
 from tests.factories.queue import make_atendimento
 from tests.helpers import clean_database_tables
 
@@ -37,14 +33,8 @@ async def setup_atendimento_tables() -> AsyncGenerator[None, None]:
 async def test_persist_atendimento_lifecycle_happy_path() -> None:
     async with async_session_factory() as session:
         # 1. Setup base relational entities
-        org = make_organizacao(cnpj="12345678000199")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="11122233344")
+        paciente = make_paciente(cpf="11122233344")
         medico = make_profissional(
-            org.id,
             cpf="99988877766",
             email="dr.carlos@ubs.gov.br",
             papel="MEDICO",
@@ -58,7 +48,6 @@ async def test_persist_atendimento_lifecycle_happy_path() -> None:
 
         # 2. Insert Atendimento in initial triage state
         atendimento = make_atendimento(
-            organizacao_id=org.id,
             paciente_id=paciente.id,
             prioridade_clinica=PrioridadeClinica.URGENTE,
             tcle_hash=SAMPLE_TCLE_HASH,
@@ -103,15 +92,9 @@ async def test_persist_atendimento_lifecycle_happy_path() -> None:
 @pytest.mark.asyncio
 async def test_atendimento_foreign_key_violation_paciente() -> None:
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="22334455000188")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
         # Atendimento referencing nonexistent paciente_id
         non_existent_paciente_id = uuid4()
         atendimento = make_atendimento(
-            organizacao_id=org.id,
             paciente_id=non_existent_paciente_id,
             tcle_hash=SAMPLE_TCLE_HASH,
         )
@@ -123,11 +106,16 @@ async def test_atendimento_foreign_key_violation_paciente() -> None:
 
 
 @pytest.mark.asyncio
-async def test_atendimento_foreign_key_violation_organizacao() -> None:
+async def test_atendimento_foreign_key_violation_medico() -> None:
     async with async_session_factory() as session:
+        paciente = make_paciente(cpf="22233344455")
+        session.add(paciente)
+        await session.commit()
+        await session.refresh(paciente)
+
         atendimento = make_atendimento(
-            organizacao_id=999999,
-            paciente_id=uuid4(),
+            paciente_id=paciente.id,
+            medico_id=uuid4(),
             tcle_hash=SAMPLE_TCLE_HASH,
         )
         session.add(atendimento)
@@ -140,12 +128,7 @@ async def test_atendimento_foreign_key_violation_organizacao() -> None:
 @pytest.mark.asyncio
 async def test_atendimento_chk_status_violation_raw_db() -> None:
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="33445566000177")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="33344455566")
+        paciente = make_paciente(cpf="33344455566")
         session.add(paciente)
         await session.commit()
         await session.refresh(paciente)
@@ -153,19 +136,17 @@ async def test_atendimento_chk_status_violation_raw_db() -> None:
         insert_stmt = text(
             """
             INSERT INTO atendimentos (
-                id, organizacao_id, paciente_id, status, prioridade_clinica,
+                id, paciente_id, status, prioridade_clinica,
                 criado_em, atualizado_em
             ) VALUES (
-                gen_random_uuid(), :org_id, :paciente_id, 'STATUS_INVALIDO', 3,
+                gen_random_uuid(), :paciente_id, 'STATUS_INVALIDO', 3,
                 NOW(), NOW()
             )
             """
         )
 
         with pytest.raises(IntegrityError, match="chk_atendimento_status"):
-            await session.execute(
-                insert_stmt, {"org_id": org.id, "paciente_id": paciente.id}
-            )
+            await session.execute(insert_stmt, {"paciente_id": paciente.id})
             await session.commit()
         await session.rollback()
 
@@ -173,12 +154,7 @@ async def test_atendimento_chk_status_violation_raw_db() -> None:
 @pytest.mark.asyncio
 async def test_atendimento_chk_prioridade_violation_raw_db() -> None:
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="44556677000166")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="44455566677")
+        paciente = make_paciente(cpf="44455566677")
         session.add(paciente)
         await session.commit()
         await session.refresh(paciente)
@@ -186,19 +162,17 @@ async def test_atendimento_chk_prioridade_violation_raw_db() -> None:
         insert_stmt = text(
             """
             INSERT INTO atendimentos (
-                id, organizacao_id, paciente_id, status, prioridade_clinica,
+                id, paciente_id, status, prioridade_clinica,
                 criado_em, atualizado_em
             ) VALUES (
-                gen_random_uuid(), :org_id, :paciente_id,
+                gen_random_uuid(), :paciente_id,
                 'TRIADO_AGUARDANDO_ELEGIBILIDADE', 6, NOW(), NOW()
             )
             """
         )
 
         with pytest.raises(IntegrityError, match="chk_atendimento_prioridade"):
-            await session.execute(
-                insert_stmt, {"org_id": org.id, "paciente_id": paciente.id}
-            )
+            await session.execute(insert_stmt, {"paciente_id": paciente.id})
             await session.commit()
         await session.rollback()
 
@@ -206,14 +180,8 @@ async def test_atendimento_chk_prioridade_violation_raw_db() -> None:
 @pytest.mark.asyncio
 async def test_atendimento_no_show_persistence() -> None:
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="55667788000155")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="55566677788")
+        paciente = make_paciente(cpf="55566677788")
         medico = make_profissional(
-            org.id,
             cpf="88877766655",
             email="dr.plantao@ubs.gov.br",
             papel="MEDICO",
@@ -224,7 +192,6 @@ async def test_atendimento_no_show_persistence() -> None:
         await session.refresh(medico)
 
         atendimento = make_atendimento(
-            organizacao_id=org.id,
             paciente_id=paciente.id,
             tcle_hash=SAMPLE_TCLE_HASH,
         )
@@ -244,18 +211,12 @@ async def test_atendimento_no_show_persistence() -> None:
 @pytest.mark.asyncio
 async def test_atendimento_cancelamento_paciente_persistence() -> None:
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="66778899000144")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="66677788899")
+        paciente = make_paciente(cpf="66677788899")
         session.add(paciente)
         await session.commit()
         await session.refresh(paciente)
 
         atendimento = make_atendimento(
-            organizacao_id=org.id,
             paciente_id=paciente.id,
             tcle_hash=SAMPLE_TCLE_HASH,
         )
@@ -271,14 +232,9 @@ async def test_atendimento_cancelamento_paciente_persistence() -> None:
 @pytest.mark.asyncio
 async def test_atendimento_query_by_fila_composite_index() -> None:
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="77889900000133")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        p1 = make_paciente(org.id, cpf="77711122233")
-        p2 = make_paciente(org.id, cpf="77722233344")
-        p3 = make_paciente(org.id, cpf="77733344455")
+        p1 = make_paciente(cpf="77711122233", telefone="11987654301")
+        p2 = make_paciente(cpf="77722233344", telefone="11987654302")
+        p3 = make_paciente(cpf="77733344455", telefone="11987654303")
         session.add_all([p1, p2, p3])
         await session.commit()
         await session.refresh(p1)
@@ -288,7 +244,6 @@ async def test_atendimento_query_by_fila_composite_index() -> None:
         now = datetime.now(UTC)
 
         a1 = make_atendimento(
-            org.id,
             p1.id,
             prioridade_clinica=PrioridadeClinica.POUCO_URGENTE,
             tcle_hash=SAMPLE_TCLE_HASH,
@@ -296,7 +251,6 @@ async def test_atendimento_query_by_fila_composite_index() -> None:
             data_entrada_fila=now - timedelta(minutes=10),
         )
         a2 = make_atendimento(
-            org.id,
             p2.id,
             prioridade_clinica=PrioridadeClinica.MUITO_URGENTE,
             tcle_hash=SAMPLE_TCLE_HASH,
@@ -304,7 +258,6 @@ async def test_atendimento_query_by_fila_composite_index() -> None:
             data_entrada_fila=now - timedelta(minutes=2),
         )
         a3 = make_atendimento(
-            org.id,
             p3.id,
             prioridade_clinica=PrioridadeClinica.MUITO_URGENTE,
             tcle_hash=SAMPLE_TCLE_HASH,
@@ -318,10 +271,7 @@ async def test_atendimento_query_by_fila_composite_index() -> None:
         # Query ordering by priority ASC, then FIFO data_entrada_fila ASC (RN01)
         query = (
             select(Atendimento)
-            .where(
-                Atendimento.organizacao_id == org.id,
-                Atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA.value,
-            )
+            .where(Atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA.value)
             .order_by(
                 Atendimento.prioridade_clinica.asc(),
                 Atendimento.data_entrada_fila.asc(),

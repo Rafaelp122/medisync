@@ -27,7 +27,6 @@ def test_normalizar_utc_converte_naive_e_com_offset() -> None:
 def test_agenda_disponibilidade_criacao_valida() -> None:
     prof_id = uuid4()
     disp = AgendaDisponibilidade(
-        organizacao_id=1,
         profissional_id=prof_id,
         especialidade=EspecialidadeAgenda.PSICOLOGIA,
         dia_semana=0,
@@ -36,7 +35,7 @@ def test_agenda_disponibilidade_criacao_valida() -> None:
         duracao_minutos=50,
     )
     assert disp.id is not None
-    assert disp.organizacao_id == 1
+    assert not hasattr(disp, "organizacao_id")
     assert disp.profissional_id == prof_id
     assert disp.especialidade == EspecialidadeAgenda.PSICOLOGIA.value
     assert disp.dia_semana == 0
@@ -65,7 +64,6 @@ def test_agenda_disponibilidade_rejeita_invariantes_invalidas(
 ) -> None:
     with pytest.raises(ValidationError):
         AgendaDisponibilidade(
-            organizacao_id=1,
             profissional_id=uuid4(),
             especialidade=EspecialidadeAgenda.NUTRICAO,
             dia_semana=dia_semana,
@@ -78,7 +76,6 @@ def test_agenda_disponibilidade_rejeita_invariantes_invalidas(
 def test_agenda_disponibilidade_rejeita_especialidade_invalida() -> None:
     with pytest.raises(ValidationError, match="CARDIOLOGIA"):
         AgendaDisponibilidade(
-            organizacao_id=1,
             profissional_id=uuid4(),
             especialidade="CARDIOLOGIA",
             dia_semana=1,
@@ -91,7 +88,6 @@ def test_agenda_disponibilidade_rejeita_especialidade_invalida() -> None:
 def test_agenda_disponibilidade_sobrepoe() -> None:
     prof_id = uuid4()
     base = AgendaDisponibilidade(
-        organizacao_id=1,
         profissional_id=prof_id,
         especialidade=EspecialidadeAgenda.PSICOLOGIA,
         dia_semana=0,
@@ -100,7 +96,6 @@ def test_agenda_disponibilidade_sobrepoe() -> None:
         duracao_minutos=50,
     )
     sobreposta = AgendaDisponibilidade(
-        organizacao_id=1,
         profissional_id=prof_id,
         especialidade=EspecialidadeAgenda.NUTRICAO,
         dia_semana=0,
@@ -109,7 +104,6 @@ def test_agenda_disponibilidade_sobrepoe() -> None:
         duracao_minutos=30,
     )
     adjacente = AgendaDisponibilidade(
-        organizacao_id=1,
         profissional_id=prof_id,
         especialidade=EspecialidadeAgenda.PSICOLOGIA,
         dia_semana=0,
@@ -118,7 +112,6 @@ def test_agenda_disponibilidade_sobrepoe() -> None:
         duracao_minutos=50,
     )
     outro_dia = AgendaDisponibilidade(
-        organizacao_id=1,
         profissional_id=prof_id,
         especialidade=EspecialidadeAgenda.PSICOLOGIA,
         dia_semana=1,
@@ -127,7 +120,6 @@ def test_agenda_disponibilidade_sobrepoe() -> None:
         duracao_minutos=50,
     )
     inativa = AgendaDisponibilidade(
-        organizacao_id=1,
         profissional_id=prof_id,
         especialidade=EspecialidadeAgenda.PSICOLOGIA,
         dia_semana=0,
@@ -145,11 +137,9 @@ def test_agenda_disponibilidade_sobrepoe() -> None:
 
 
 def test_agenda_disponibilidade_gerar_intervalos_e_cobre_slot() -> None:
-    # 2026-11-16 é segunda-feira (weekday == 0)
     segunda = date(2026, 11, 16)
     terca = date(2026, 11, 17)
     disp = AgendaDisponibilidade(
-        organizacao_id=1,
         profissional_id=uuid4(),
         especialidade=EspecialidadeAgenda.PSICOLOGIA,
         dia_semana=0,
@@ -171,7 +161,6 @@ def test_agenda_disponibilidade_gerar_intervalos_e_cobre_slot() -> None:
     ]
     assert disp.gerar_intervalos(terca) == []
 
-    # Cobre intervalos válidos da grade (inclusive com offset de fuso equivalente)
     brt = timezone(timedelta(hours=-3))
     assert (
         disp.cobre_slot(
@@ -187,7 +176,6 @@ def test_agenda_disponibilidade_gerar_intervalos_e_cobre_slot() -> None:
         )
         is True
     )
-    # Rejeita desalinhado, duração divergente, estouro de janela e dia errado
     assert (
         disp.cobre_slot(
             datetime(2026, 11, 16, 8, 15, tzinfo=UTC),
@@ -233,7 +221,6 @@ def _novo_agendamento(
 ) -> Agendamento:
     inicio = datetime(2026, 11, 20, 9, 0, tzinfo=UTC)
     return Agendamento(
-        organizacao_id=1,
         paciente_id=uuid4(),
         profissional_id=uuid4(),
         especialidade=EspecialidadeAgenda.PSICOLOGIA,
@@ -246,6 +233,7 @@ def _novo_agendamento(
 
 def test_agendamento_iniciar_atendimento_e_cancelar_validos() -> None:
     ag = _novo_agendamento()
+    assert not hasattr(ag, "organizacao_id")
     assert ag.status == StatusAgendamento.AGENDADO.value
 
     atendimento_id = uuid4()
@@ -281,7 +269,6 @@ def test_agendamento_rejeita_slot_fim_menor_ou_igual_a_inicio() -> None:
     inicio = datetime(2026, 11, 20, 9, 0, tzinfo=UTC)
     with pytest.raises(ValidationError):
         Agendamento(
-            organizacao_id=1,
             paciente_id=uuid4(),
             profissional_id=uuid4(),
             especialidade=EspecialidadeAgenda.NUTRICAO,

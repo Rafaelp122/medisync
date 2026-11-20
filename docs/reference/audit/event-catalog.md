@@ -45,10 +45,9 @@ Este catálogo define a taxonomia canônica dos 20 eventos clínicos e operacion
 
 O schema da trilha de auditoria é normalizado conforme o modelo `AuditEvent`:
 
-- `organizacao_id`: Inteiro (tenant multitenant sob RLS).
 - `tipo_evento`: String maiúscula conforme tabela canônica acima.
 - `ator_tipo`: `PACIENTE`, `PROFISSIONAL` ou `SISTEMA`.
-- `ator_papel`: Papel funcional do ator (`ADMIN_GLOBAL`, `PACIENTE`, `MEDICO`, `GESTOR_UNIDADE`, `GESTOR_CONSORCIO`, `REGULADOR_MUNICIPAL`, `AUDITOR_PRODUCAO`, `FATURAMENTO`, `WORKER_ARQ`, `SISTEMA`).
+- `ator_papel`: Papel funcional do ator (`PACIENTE`, `MEDICO`, `GESTOR_UNIDADE`, `FATURAMENTO`, `WORKER_ARQ`, `SISTEMA`).
 - `ator_id`: UUIDv7 do usuário ou profissional responsável.
 - `atendimento_id`: UUIDv7 correlacionando eventos clínicos do atendimento (ou `null` para eventos transversais/administrativos).
 - `estado_anterior` / `novo_estado`: Transições de status da máquina de estados clínica.
@@ -115,4 +114,4 @@ Esperado: todos os testes unitários e de integração passam com código de sa�
 - [Explicação: Domínio de Fila](../../explanation/domains/queue-domain.md)
 - [Explicação: Domínio de Consulta](../../explanation/domains/consultation-domain.md)
 - [Explicação: Domínio Ambulatorial](../../explanation/domains/ambulatory-domain.md)
-- [Referência: Database Schema & RLS](../database/schema-and-rls.md)
+- [Referência: Database Schema](../database/schema.md)

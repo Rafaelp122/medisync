@@ -7,7 +7,6 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -68,14 +67,10 @@ class DocumentoClinico(Base):
             name="chk_documentos_sha256_len",
         ),
         Index("idx_documentos_atendimento", "atendimento_id"),
-        Index("idx_documentos_org", "organizacao_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
     )
     atendimento_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -120,7 +115,6 @@ class DocumentoClinico(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         atendimento_id: UUID,
         medico_id: UUID,
         tipo_documento: TipoDocumentoClinico | str,
@@ -134,12 +128,6 @@ class DocumentoClinico(Base):
         finalizado_em: datetime | None = None,
         id: UUID | None = None,
     ) -> None:
-        if organizacao_id <= 0:
-            raise ConsultaInvalidaError(
-                f"organizacao_id inválido: {organizacao_id}; "
-                "deve ser um identificador positivo (> 0)."
-            )
-
         if not chave_s3 or not chave_s3.strip():
             raise ConsultaInvalidaError(
                 f"chave_s3 inválida: {chave_s3!r}; esperado caminho não vazio."
@@ -185,7 +173,6 @@ class DocumentoClinico(Base):
 
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             atendimento_id=atendimento_id,
             medico_id=medico_id,
             tipo_documento=tipo_enum,
@@ -247,13 +234,6 @@ class DocumentoClinico(Base):
             raise ConsultaFinalizadaError(
                 f"Não é permitido adicionar itens ao documento clínico '{self.id}' "
                 "de consulta finalizada (is_finalizado=True)."
-            )
-
-        if item.organizacao_id != self.organizacao_id:
-            raise ConsultaInvalidaError(
-                "Violação de isolamento multi-tenant: organizacao_id do item "
-                f"({item.organizacao_id}) difere da organizacao_id do documento "
-                f"({self.organizacao_id})."
             )
 
         # Regra sanitária Portaria 344/98 Listas A e B

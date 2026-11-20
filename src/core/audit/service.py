@@ -22,7 +22,6 @@ class AuditService:
     async def record_event(
         session: AsyncSession,
         *,
-        organizacao_id: int,
         ator_tipo: AtorTipo | str,
         ator_papel: AtorPapel | str,
         tipo_evento: str,
@@ -41,7 +40,6 @@ class AuditService:
         Decisões: docs/adrs/ADR-007-Auditoria-Imutavel-Append-Only.md
         """
         event = AuditEvent(
-            organizacao_id=organizacao_id,
             atendimento_id=atendimento_id,
             ator_tipo=ator_tipo,
             ator_papel=ator_papel,

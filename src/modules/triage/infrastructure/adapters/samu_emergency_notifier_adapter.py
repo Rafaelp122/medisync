@@ -33,15 +33,13 @@ class SamuEmergencyNotifierAdapter(EmergencyNotifierPort):
         """Dispatches an emergency alert notification for SAMU 192 redirection."""
         logger.critical(
             "CRITICAL EMERGENCY ALERT (SAMU 192) DISPATCHED: "
-            "org=%d atendimento=%s queixa='%s' sintomas=%s instrucao='%s'",
-            alert.organizacao_id,
+            "atendimento=%s queixa='%s' sintomas=%s instrucao='%s'",
             alert.atendimento_id,
             alert.queixa_principal,
             alert.sintomas_alerta,
             alert.instrucao_redirecionamento,
             extra={
                 "event": "EMERGENCIA_SAMU_192_DISPARADA",
-                "organizacao_id": alert.organizacao_id,
                 "atendimento_id": str(alert.atendimento_id),
                 "queixa_principal": alert.queixa_principal,
                 "sintomas_alerta": alert.sintomas_alerta,
@@ -56,7 +54,6 @@ class SamuEmergencyNotifierAdapter(EmergencyNotifierPort):
 
         payload: dict[str, Any] = {
             "event": "EMERGENCIA_SAMU_192",
-            "organizacao_id": alert.organizacao_id,
             "atendimento_id": str(alert.atendimento_id),
             "queixa_principal": alert.queixa_principal,
             "sintomas_alerta": alert.sintomas_alerta,

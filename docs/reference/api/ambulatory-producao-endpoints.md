@@ -6,11 +6,11 @@
 
 Sob a [ADR-012](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md), a produção do pronto-atendimento virtual é consolidada para o Sistema Único de Saúde (SUS) vinculada ao ponto de telessaúde CNES 160/006 e ao procedimento SIGTAP `03.01.01.025-0`.
 
-Os endpoints ambulatoriais atendem aos coordenadores de faturamento e gestores dos consórcios intermunicipais (Lei nº 11.107/2005) para auditar os atendimentos fechados no período e extrair o arquivo magnético oficial no layout posicional de colunas fixas do DATASUS (BPA-I).
+Os endpoints ambulatoriais atendem aos coordenadores de faturamento e gestores da unidade para auditar os atendimentos fechados no período e extrair o arquivo magnético oficial no layout posicional de colunas fixas do DATASUS (BPA-I).
 
 ## Conceito
 
-Todos os endpoints operam sob o prefixo `/api/v1/ambulatory/producao`, exigem o header de tenant `X-Tenant-ID` e token JWT corporativo com papel `ADMIN_GLOBAL`, `GESTOR_UNIDADE` ou `FATURAMENTO`, ou a permissão `Permission.AMBULATORY_CONSOLIDATE`.
+Todos os endpoints operam sob o prefixo `/api/v1/ambulatory/producao` e exigem token JWT corporativo com papel `GESTOR_UNIDADE` ou `FATURAMENTO` (com a permissão `Permission.AMBULATORY_CONSOLIDATE`).
 
 ### Listagem Paginada da Produção
 
@@ -20,7 +20,7 @@ Todos os endpoints operam sob o prefixo `/api/v1/ambulatory/producao`, exigem o 
   - `page` (int, default `1`, ge=1).
   - `size` (int, default `50`, ge=1, le=100).
 - **Status Sucesso:** `200 OK`
-- **Envelope de Resposta:** `ListaProducaoAmbulatorialResponse` contendo `items`, `total`, `competencia`, `organizacao_id`, `page` e `size`.
+- **Envelope de Resposta:** `ListaProducaoAmbulatorialResponse` contendo `items`, `total`, `competencia`, `page` e `size`.
 
 **Exemplo de Resposta (JSON):**
 ```json
@@ -36,7 +36,6 @@ Todos os endpoints operam sob o prefixo `/api/v1/ambulatory/producao`, exigem o 
   ],
   "total": 1,
   "competencia": "202611",
-  "organizacao_id": 10,
   "page": 1,
   "size": 50
 }
@@ -68,7 +67,7 @@ Todos os endpoints operam sob o prefixo `/api/v1/ambulatory/producao`, exigem o 
 | 400 | `COMPETENCIA_INVALIDA` | Parâmetro `competencia` fora do formato `YYYYMM` ou mês inválido. |
 | 401 | `UNAUTHORIZED` | Token ausente, expirado ou inválido. |
 | 403 | `FORBIDDEN` | Papel não autorizado (ex.: `PACIENTE` ou médico sem permissão de consolidação). |
-| 404 | `PRODUCAO_NAO_ENCONTRADA` | Nenhum registro consolidado no tenant para a competência informada. |
+| 404 | `PRODUCAO_NAO_ENCONTRADA` | Nenhum registro consolidado na unidade para a competência informada. |
 
 ## Onde no código
 

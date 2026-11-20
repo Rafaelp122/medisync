@@ -132,16 +132,6 @@ export function getHumanizedErrorMessage(
     };
   }
 
-  // Organização inválida ou cabeçalho de tenant ausente (400, TENANT_INVALIDO)
-  if (code === "TENANT_INVALIDO") {
-    return {
-      title: "Identificação da unidade de saúde",
-      detail:
-        "Identificador da unidade de saúde inválido ou não informado. Por favor, recarregue a página.",
-      retryable: true,
-    };
-  }
-
   // Timeout / Tempo esgotado (504, TIMEOUT)
   if (status === 504 || code === "TIMEOUT" || rawDetail.toLowerCase().includes("timeout")) {
     return {

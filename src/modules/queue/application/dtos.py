@@ -11,7 +11,6 @@ from src.modules.queue.domain.models import PrioridadeClinica
 class AlocarChamadaCommand:
     """Command payload to allocate a patient call to a doctor."""
 
-    organizacao_id: int
     medico_id: UUID
     atendimento_id: UUID
     ttl_segundos: int = 45
@@ -37,7 +36,6 @@ class AlocacaoChamadaResult:
 class IngressarFilaCommand:
     """Command payload to ingest an apt attendance into the virtual queue."""
 
-    organizacao_id: int
     atendimento_id: UUID
     prioridade_clinica: int | PrioridadeClinica
     data_entrada_fila: datetime | None = None
@@ -48,7 +46,6 @@ class IngressarFilaResult:
     """Immutable result of queue ingestion."""
 
     atendimento_id: UUID
-    organizacao_id: int
     score: int
     posicao: int
 
@@ -57,7 +54,6 @@ class IngressarFilaResult:
 class AdquirirProximoPacienteCommand:
     """Command payload for a doctor to acquire the next patient in queue."""
 
-    organizacao_id: int
     medico_id: UUID
     max_retries: int = 3
     ttl_segundos: int = 45
@@ -67,7 +63,6 @@ class AdquirirProximoPacienteCommand:
 class AvaliarAdmissaoCommand:
     """Command payload to evaluate stochastic admission capacity (RN05)."""
 
-    organizacao_id: int
     medicos_ativos: int
     tempo_restante_segundos: float
     pacientes_aguardando: int | None = None
@@ -95,7 +90,6 @@ class AvaliacaoAdmissaoResult:
 class IngressarFilaComBackpressureCommand:
     """Command payload to ingest attendance with stochastic backpressure check."""
 
-    organizacao_id: int
     atendimento_id: UUID
     prioridade_clinica: int | PrioridadeClinica
     medicos_ativos: int
@@ -111,7 +105,6 @@ class IngressarFilaComBackpressureCommand:
 class AdmissaoAtendimentoCommand:
     """Command payload for unified clinical intake and triage admission."""
 
-    organizacao_id: int
     paciente_id: UUID
     queixa_principal: str
     sintomas: list[str]
@@ -134,7 +127,6 @@ class AdmissaoAtendimentoResult:
 
     atendimento_id: UUID
     triagem_id: UUID
-    organizacao_id: int
     paciente_id: UUID
     status_atendimento: str
     prioridade_clinica: int
@@ -168,7 +160,6 @@ class CancelarAtendimentoResult:
 class PioraClinicaCommand:
     """Command to reassess deteriorating clinical symptoms in queue (RF-06)."""
 
-    organizacao_id: int
     atendimento_id: UUID
     novos_sintomas: list[str]
     escala_dor: int = 0
@@ -200,7 +191,6 @@ class PioraClinicaResult:
 class RegularizacaoFilaCommand:
     """Comando para regularização de atendimento retido ou contingência assistencial."""
 
-    organizacao_id: int
     atendimento_id: UUID
     motivo: str
     tipo_contingencia: str = "CONTINGENCIA_ASSISTENCIAL"

@@ -26,7 +26,6 @@ class TriagePort(Protocol):
 
     async def avaliar_risco(
         self,
-        organizacao_id: int,
         queixa_principal: str,
         sintomas: list[str],
         escala_dor: int = 0,
@@ -41,7 +40,6 @@ class TriagePort(Protocol):
 
     async def registrar_triagem(
         self,
-        organizacao_id: int,
         atendimento_id: UUID,
         queixa_principal: str,
         sintomas: list[str],
@@ -59,8 +57,7 @@ class TriageQueixaReaderPort(Protocol):
 
     async def obter_queixas_por_atendimentos(
         self,
-        organizacao_id: int,
         atendimento_ids: Sequence[UUID],
     ) -> dict[UUID, str | None]:
-        """Fetch mapping atendimento_id -> queixa_principal for tenant."""
+        """Fetch mapping atendimento_id -> queixa_principal by attendance IDs."""
         ...

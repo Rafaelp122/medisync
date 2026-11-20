@@ -26,7 +26,6 @@ def _make_reader(
     reader = AsyncMock()
     reader.obter_resumo.return_value = AtendimentoResumoDTO(
         atendimento_id=aid,
-        organizacao_id=1,
         medico_id=mid,
         status=status,
         tcle_hash=tcle_hash,

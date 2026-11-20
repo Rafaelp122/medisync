@@ -31,16 +31,14 @@ class SqlDocumentDirectory(DocumentDirectoryPort):
 
     async def obter_dados_verificacao(
         self,
-        organizacao_id: int,
         medico_id: UUID,
         atendimento_id: UUID,
     ) -> DadosVerificacaoDirectory:
         org_res = await self._session.execute(
             text(
-                "SELECT razao_social, nome_fantasia, cnes FROM organizacoes "
-                "WHERE id = :org_id"
+                "SELECT cnpj, razao_social, nome_fantasia, cnes "
+                "FROM configuracoes_unidade LIMIT 1"
             ),
-            {"org_id": organizacao_id},
         )
         org_row = org_res.mappings().first()
         org_nome = _ORG_DEFAULT

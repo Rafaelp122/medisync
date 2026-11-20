@@ -220,8 +220,6 @@ class TestDomainExceptions:
         assert err.competencia == "202699"
 
     def test_producao_nao_encontrada_error_mensagem(self) -> None:
-        err = ProducaoNaoEncontradaError(competencia="202611", organizacao_id=12)
+        err = ProducaoNaoEncontradaError(competencia="202611")
         assert "202611" in str(err)
-        assert "12" in str(err)
         assert err.competencia == "202611"
-        assert err.organizacao_id == 12

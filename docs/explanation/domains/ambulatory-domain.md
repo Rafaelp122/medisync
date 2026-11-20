@@ -17,9 +17,9 @@ Escopo termina na conformidade e consolidação da produção pública. A fila d
 - **RN03 — Qualificação cadastral e gratuidade universal.** No SUS, o atendimento não depende de validação financeira; o acesso é imediato e a qualificação de CPF/CNS enriquece o prontuário sem bloquear a fila. [Fonte](../product-specification.md) (RN03)
 - **RN03 (SUS) — Gratuidade universal sem paywall.** Em conformidade com o Art. 196 da CF/88 e a Portaria MS nº 3.232/2024, é expressamente vedada qualquer cobrança ou validação de planos privados; o adaptador SUS opera como aprovação universal garantida (`SUS-ISENTO`). [Fonte](../product-specification.md) (RN03, RN-NEG-01)
 - **RN-NEG-01 — Universalidade e ponto de telessaúde regulamentado.** Toda teleconsulta concluída vincula-se ao CNES 160/006 e registra o procedimento SIGTAP `03.01.01.025-0` (Nota Técnica nº 11/2024-MS). [Fonte](../product-specification.md) (RN-NEG-01)
-- **Consolidação em lote BPA-I e SISAB.** Ao término da consulta com evolução e documentos assinados, o atendimento é fechado e incluído no lote do consórcio intermunicipal (Lei nº 11.107/2005) para prestação de contas aos municípios parceiros e repasses do incentivo eMulti. [Fonte](../product-specification.md) (RF-08)
+- **Consolidação em lote BPA-I e SISAB.** Ao término da consulta com evolução e documentos assinados, o atendimento é fechado e incluído no lote ambulatorial da unidade SUS (metadados CNES/CNPJ/IBGE lidos da tabela singleton `configuracoes_unidade` via `SqlBpaDirectory`) para prestação de contas e incentivo eMulti. [Fonte](../product-specification.md) (RF-08)
 
-Guardiões: O serviço ambulatorial valida a presença de CPF ou CNS válido, data de nascimento e identificador do município consorciado. A ausência de dados impede o fechamento do lote BPA-I sem bloquear o atendimento clínico de urgência.
+Guardiões: O serviço ambulatorial valida a presença de CPF ou CNS válido, data de nascimento e dados da unidade SUS. A ausência de dados impede o fechamento do lote BPA-I sem bloquear o atendimento clínico de urgência.
 
 ## 3. Máquina de estados
 
@@ -45,9 +45,9 @@ Ao finalizar a consulta, a rotina de consolidação ambulatorial gera o lote de 
 - Expõe aptidão via porta tipada. `EligibilityProviderPort.verificar_elegibilidade` devolve `ResultadoElegibilidade` com `SUS-ISENTO`; o módulo `queue` consome a porta sem acoplamento à infraestrutura concreta.
 - Pureza de portas e desacoplamento de telemetria. A camada de aplicação define contratos abstratos (`typing.Protocol`) em `src/modules/ambulatory/application/ports/eligibility_notifier.py` (`ElegibilidadeNotifierPort`) e DTO imutável (`ElegibilidadeFalhaEvent`). O adaptador concreto de notificação e telemetria estruturada reside estritamente em `src/modules/ambulatory/infrastructure/adapters/logging_eligibility_notifier.py` (`LoggingElegibilidadeNotifier`), preservando a pureza hexagonal contra o acoplamento de bibliotecas de infraestrutura dentro de portas de aplicação.
 - Sem paywall ou travas financeiras. A validação não realiza chamadas a operadoras privadas nem expõe o paciente a cancelamento por recusa de crédito.
-- Multi-tenancy federativo por Consórcio. Os lotes ambulatoriais são agregados e particionados por `organizacao_id` (município consorciado sob RLS PostgreSQL), garantindo que cada prefeitura receba o espelho exato de sua produção. [Modelo](../architecture/data-model.md)
-- Fábrica canônica de serviço ambulatorial (ADR-001 / ADR-012). O arquivo `src/modules/ambulatory/composition.py` exporta `build_producao_ambulatorial_service(session, audit_trail)` e `get_producao_ambulatorial_service(session)` para viabilizar a injeção desacoplada de `ProducaoAmbulatorialService` em workers assíncronos e na composition root de `consultation`, eliminando qualquer instanciação cruzada direta da camada `application/services/producao_service.py`.
-- Worker assíncrono executa fora do request. `src/worker/tasks/eligibility.py` promove o atendimento e orquestra a transição atômica no Valkey (`fila:{org}:aptos`).
+- Unidade SUS Única (`configuracoes_unidade`). Os lotes ambulatoriais consolida-se na tabela `producoes_ambulatoriais` vinculando CNES/CNPJ/IBGE diretamente da configuração singleton da unidade. [Modelo](../architecture/data-model.md)
+- Fábrica canônica de serviço ambulatorial (ADR-001 / ADR-012 / ADR-013). O arquivo `src/modules/ambulatory/composition.py` exporta `build_producao_ambulatorial_service(session, audit_trail)` e `get_producao_ambulatorial_service(session)` para viabilizar a injeção desacoplada de `ProducaoAmbulatorialService` em workers assíncronos e na composition root de `consultation`, eliminando qualquer instanciação cruzada direta da camada `application/services/producao_service.py`.
+- Worker assíncrono executa fora do request. `src/worker/tasks/eligibility.py` promove o atendimento e orquestra a transição atômica no Valkey (`fila:aptos`).
 - Evento de auditoria imutável. A consolidação da produção gera `PRODUCAO_AMBULATORIAL_CONSOLIDADA` registrado em `audit_events`. [Catálogo de Eventos](../../reference/audit/event-catalog.md)
 
 ## 5. Peculiaridades
@@ -55,8 +55,8 @@ Ao finalizar a consulta, a rotina de consolidação ambulatorial gera o lote de 
 - Poda completa de planos privados (ADR-012). Elimina esquemas XML de TISS/TUSS, gateways de pagamento com cartão e risco de glosas administrativas.
 - SUS é isenção e direito universal. O código `SUS-ISENTO` documenta a gratuidade constitucional do Art. 196 da CF/88.
 - Pureza estrita das portas de aplicação (ADR-001). A porta `ElegibilidadeNotifierPort` é um `Protocol` puro desacoplado de qualquer biblioteca de logging ou saída de infraestrutura; o adaptador padrão de telemetria estruturada (`LoggingElegibilidadeNotifier`) foi extraído para a infraestrutura concreta (`src/modules/ambulatory/infrastructure/adapters/logging_eligibility_notifier.py`) e injetado pelo composition root (`composition.py`).
-- Rateio em Consórcios Públicos (Lei nº 11.107/2005). Viabiliza escala médica compartilhada para pequenos municípios contornarem o teto fiscal de 54% de despesa com pessoal da LRF.
-- Incentivo Financeiro eMulti. Cada equipe multiprofissional homologada vinculada ao CNES de telessaúde qualifica o consórcio para o repasse federal de até R$ 2.500,00 mensais (Portaria GM/MS nº 635/2023).
+- Rateio e Custeio Público eMulti. Viabiliza atendimento virtual resolutivo para atenção primária e média complexidade dentro dos limites fiscais da rede pública SUS.
+- Incentivo Financeiro eMulti. Cada equipe multiprofissional homologada vinculada ao CNES de telessaúde qualifica a unidade pública para o repasse federal de até R$ 2.500,00 mensais (Portaria GM/MS nº 635/2023).
 - DTOs imutáveis ponta a ponta. Todas as estruturas de dados de entrada e resultado de produção ambulatorial são declaradas com imutabilidade estrita.
 - Layout Posicional BPA-I (SIA-SUS). O arquivo magnético segue estritamente a especificação do DATASUS: Header Tipo 01 com 130 caracteres iniciados por `01#BPA#`, Detalhe Tipo 03 com 152 caracteres iniciados por `03`, paginação de 20 registros por folha e checksum verificador `cbc-smt-vrf` calculado via `(soma % 1111) + 1111` no domínio `[1111..2221]`.
 
@@ -106,9 +106,9 @@ A integridade das regras ambulatoriais é assegurada pela garantia de gratuidade
 
 ## 8. Ver também
 
-- [ADR-012: Transição 100% SUS e Consórcios Intermunicipais](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md)
+- [ADR-013: Simplificação para Plataforma Única e Remoção de RLS](../../adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md) — `configuracoes_unidade` singleton e revisão de multi-tenancy
 - [Product Specification](../product-specification.md) — RN03, RN-NEG-01, RF-02, RF-08
-- [Business Vision](../business-vision.md) — Consórcios Intermunicipais (Lei nº 11.107/2005) e SUS Digital
-- [Data Model](../architecture/data-model.md) — multi-tenancy RLS por município consorciado
+- [Business Vision](../business-vision.md) — Visão SUS Digital e UPA Digital 24/7
+- [Data Model](../architecture/data-model.md) — tabela `producoes_ambulatoriais` e singleton `configuracoes_unidade`
 - [Catálogo de Eventos](../../reference/audit/event-catalog.md) — evento `PRODUCAO_AMBULATORIAL_CONSOLIDADA`
 - [Domains Index](./index.md) — visão conceitual por domínio

@@ -12,7 +12,6 @@ from src.modules.queue.domain.models import (
 
 
 def make_atendimento(
-    organizacao_id: int = 1,
     paciente_id: UUID | None = None,
     *,
     medico_id: UUID | None = None,
@@ -26,7 +25,6 @@ def make_atendimento(
 ) -> Atendimento:
     """Create a typed Atendimento instance for unit and integration testing."""
     return Atendimento(
-        organizacao_id=organizacao_id,
         paciente_id=paciente_id or uuid7(),
         medico_id=medico_id,
         status=status,

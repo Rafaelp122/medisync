@@ -59,7 +59,7 @@
 ## 3. Contrato de API
 
 * **Endpoint:** `POST /api/v1/consultations/{atendimento_id}/soap`
-* **Headers:** `Authorization: Bearer <jwt_medico>`, `X-Tenant-ID: <org_id>`
+* **Headers:** `Authorization: Bearer <jwt_medico>`
 * **Payload de Entrada (`SoapNotesRequest`):**
   ```json
   {

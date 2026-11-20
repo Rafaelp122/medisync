@@ -111,7 +111,6 @@ async def test_admitir_paciente_success(
 ) -> None:
     pac_id = uuid4()
     cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=1,
         paciente_id=pac_id,
         queixa_principal="Dor de garganta e febre baixa há 2 dias",
         sintomas=["febre"],
@@ -121,7 +120,6 @@ async def test_admitir_paciente_success(
 
     result = await fila_service.admitir_paciente(cmd)
     assert isinstance(result, AdmissaoAtendimentoResult)
-    assert result.organizacao_id == 1
     assert result.paciente_id == pac_id
     assert result.status_atendimento == "APTO_PARA_CHAMADA"
     assert result.prioridade_clinica in (3, 4)
@@ -140,7 +138,6 @@ async def test_admitir_paciente_emergencia_critica_raises(
     mock_emergency_notifier: SamuEmergencyNotifierAdapter,
 ) -> None:
     cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=1,
         paciente_id=uuid4(),
         queixa_principal="Paciente inconsciente sem respirar",
         sintomas=["inconsciencia"],
@@ -152,7 +149,6 @@ async def test_admitir_paciente_emergencia_critica_raises(
         await fila_service.admitir_paciente(cmd)
 
     assert len(mock_emergency_notifier.sent_alerts) == 1
-    assert mock_emergency_notifier.sent_alerts[0].organizacao_id == 1
     assert "inconsciencia" in mock_emergency_notifier.sent_alerts[0].sintomas_alerta
 
 
@@ -164,7 +160,6 @@ async def test_admitir_paciente_sus_direto_vai_para_apto_e_zset_sem_worker(
 ) -> None:
     pac_id = uuid4()
     cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=1,
         paciente_id=pac_id,
         queixa_principal="Febre e tosse",
         sintomas=["tosse"],
@@ -197,7 +192,6 @@ async def test_admitir_paciente_backpressure_suspensa(
     )
 
     cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=1,
         paciente_id=uuid4(),
         queixa_principal="Cefaleia leve",
         sintomas=[],
@@ -214,7 +208,6 @@ async def test_admitir_paciente_tcle_ausente_raises(
     fila_service: FilaService,
 ) -> None:
     cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=1,
         paciente_id=uuid4(),
         queixa_principal="Cefaleia leve",
         sintomas=[],
@@ -238,7 +231,6 @@ async def test_fila_service_admitir_paciente_direct_success(
     """Verifica admissão executada diretamente pelo FilaService (Fase 2)."""
     pac_id = uuid4()
     cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=1,
         paciente_id=pac_id,
         queixa_principal="Febre e tosse seca",
         sintomas=["febre", "tosse"],
@@ -248,32 +240,15 @@ async def test_fila_service_admitir_paciente_direct_success(
 
     result = await fila_service.admitir_paciente(cmd)
     assert isinstance(result, AdmissaoAtendimentoResult)
-    assert result.organizacao_id == 1
     assert result.paciente_id == pac_id
     assert result.status_atendimento == "APTO_PARA_CHAMADA"
     assert result.prioridade_clinica in (3, 4)
     assert result.alerta_samu_disparado is False
     assert mock_db_session.add.call_count == 2
     mock_db_session.commit.assert_awaited_once()
-    mock_controle_admissao.incrementar_admissoes_hoje.assert_awaited_once_with(1)
+    mock_controle_admissao.incrementar_admissoes_hoje.assert_awaited_once_with()
     mock_valkey.zadd.assert_awaited_once()
     mock_arq_pool.enqueue_job.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_fila_service_admitir_paciente_organizacao_invalida_raises(
-    fila_service: FilaService,
-) -> None:
-    """Valida rejeição de organizacao_id menor ou igual a zero."""
-    cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=0,
-        paciente_id=uuid4(),
-        queixa_principal="Cefaleia",
-        sintomas=[],
-        tcle_texto="TCLE",
-    )
-    with pytest.raises(ValidationError, match="organizacao_id deve ser positivo"):
-        await fila_service.admitir_paciente(cmd)
 
 
 @pytest.mark.asyncio
@@ -290,7 +265,6 @@ async def test_fila_service_admitir_paciente_sem_triage_port_raises(
         triage_port=None,
     )
     cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=1,
         paciente_id=uuid4(),
         queixa_principal="Cefaleia",
         sintomas=[],

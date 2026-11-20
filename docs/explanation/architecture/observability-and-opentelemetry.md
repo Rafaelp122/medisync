@@ -22,7 +22,6 @@ A arquitetura de observabilidade técnica divide-se em três pilares integrados:
      * `timestamp`: Carimbo UTC ISO-8601 de alta precisão.
      * `level`, `logger`, `message`: Identificação e severidade do evento.
      * `request_id`: Identificador canônico da requisição (UUIDv7 propagado via ContextVar).
-     * `tenant_id`: Identificador da organização de saúde ativa (resolvido por subdomain ou header).
      * `trace_id` e `span_id`: Identificadores hexadecimais de 128 e 64 bits extraídos do span OpenTelemetry ativo.
 
 2. **Tracing Distribuído Nativo (FastAPI 0.142+ & OpenTelemetry)**:
@@ -36,17 +35,16 @@ A arquitetura de observabilidade técnica divide-se em três pilares integrados:
 
 ---
 
-### 2. Correlação Unificada: Request ID, Tenant ID e Trace ID
+### 2. Correlação Unificada: Request ID e Trace ID
 
-A rastreabilidade de eventos opera com três níveis de correlação complementares:
+A rastreabilidade de eventos opera com níveis de correlação complementares:
 
 ```mermaid
 flowchart TD
     Req[Requisição HTTP Externa] --> MidReq[RequestIDMiddleware<br/>UUIDv7 X-Request-ID]
-    MidReq --> MidTen[TenantResolutionMiddleware<br/>Resolve Tenant ID ContextVar]
-    MidTen --> OTel[OpenTelemetry Span<br/>Gera trace_id e span_id]
+    MidReq --> OTel[OpenTelemetry Span<br/>Gera trace_id e span_id]
     OTel --> MidLog[StructuredLoggingMiddleware<br/>Registra acesso com duration_ms]
-    MidLog --> LogOut[JSON Log Output stdout<br/>request_id + tenant_id + trace_id + span_id]
+    MidLog --> LogOut[JSON Log Output stdout<br/>request_id + trace_id + span_id]
 ```
 
 Essa correlação unificada permite que um incidente reportado pelo cliente seja investigado tanto pelo `request_id` (suporte ao usuário) quanto pelo `trace_id` (APM / Grafana Tempo / Jaeger), localizando instantaneamente todos os logs de banco de dados, locks do Valkey e workers assíncronos relacionados.

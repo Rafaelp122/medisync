@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { postAuthPatientRegister } from "@/api/generated/sdk.gen";
 import type {
@@ -24,7 +24,6 @@ export function usePatientRegister(
       try {
         const response = await postAuthPatientRegister({
           client,
-          headers: { ...getTenantHeaders() },
           body,
           throwOnError: true,
         });

@@ -27,6 +27,5 @@ class HealthCheckResponse(BaseModel):
 
     status: str
     version: str
-    tenant_id: int | None
     request_id: str | None
     valkey: ValkeyHealth | None = None

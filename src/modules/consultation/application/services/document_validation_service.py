@@ -68,13 +68,13 @@ class DocumentValidationService:
         return await self._cache.is_assinado(doc.id)
 
     @staticmethod
-    def build_s3_key(organizacao_id: int, atendimento_id: UUID, doc_id: UUID) -> str:
+    def build_s3_key(atendimento_id: UUID, doc_id: UUID) -> str:
         """Constrói a chave canônica de storage S3 para o documento assinado.
 
-        Assegura isolamento multi-tenant sob o padrão de armazenamento da ADR-006.
+        Segue o padrão de armazenamento da ADR-006.
         Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
         """
-        return build_signed_document_key(organizacao_id, atendimento_id, doc_id)
+        return build_signed_document_key(atendimento_id, doc_id)
 
     async def _carregar_documento(self, doc_id: UUID) -> DocumentoClinico:
         stmt = (
@@ -94,7 +94,7 @@ class DocumentValidationService:
         doc = await self._carregar_documento(doc_id)
 
         dados = await self._directory.obter_dados_verificacao(
-            doc.organizacao_id, doc.medico_id, doc.atendimento_id
+            doc.medico_id, doc.atendimento_id
         )
 
         is_assinado = await self._is_assinado(doc)
@@ -176,16 +176,14 @@ class DocumentValidationService:
         if doc is None:
             raise NotFoundError(_MSG_DOC_AUSENTE)
 
-        s3_key = doc.chave_s3 or self.build_s3_key(
-            doc.organizacao_id, doc.atendimento_id, doc.id
-        )
-        await self._garantir_documento_no_storage(doc, s3_key)
+        caminho_s3 = doc.chave_s3 or self.build_s3_key(doc.atendimento_id, doc.id)
+        await self._garantir_documento_no_storage(doc, caminho_s3)
         url = await self._storage.gerar_url_pre_assinada(
-            chave=s3_key, expiracao_segundos=expiracao_segundos
+            chave=caminho_s3, expiracao_segundos=expiracao_segundos
         )
         return DownloadResult(
             documento_id=doc.id,
             download_url=url,
             expires_in_seconds=expiracao_segundos,
-            chave_s3=s3_key,
+            chave_s3=caminho_s3,
         )

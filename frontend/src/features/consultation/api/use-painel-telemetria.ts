@@ -1,5 +1,5 @@
 import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { obterPainelTelemetriaApiV1TelemetriaPainelGet } from "@/api/generated/sdk.gen";
 import type { PainelTelemetriaResponse } from "@/api/generated/types.gen";
@@ -20,9 +20,7 @@ export function usePainelTelemetria(
     queryKey: ["telemetria-painel"],
     queryFn: async () => {
       try {
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

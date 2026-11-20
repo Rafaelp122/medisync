@@ -1,8 +1,8 @@
 # US-11 — Conclusão de Atendimento e Consolidação Ambulatorial SUS (BPA-I)
 
 > **Requisito Base:** RF-08  
-> **Invariantes Relacionadas:** RN-NEG-01 (Universalidade e Ponto de Telessaúde Regulamentado), ADR-012  
-> **Persona:** Patrícia Mendes (Coordenadora de Produção Ambulatorial do Consórcio Intermunicipal)  
+> **Invariantes Relacionadas:** RN-NEG-01 (Universalidade e Ponto de Telessaúde Regulamentado), ADR-012, ADR-013  
+> **Persona:** Patrícia Mendes (Coordenadora de Produção Ambulatorial SUS da Unidade)  
 > **Módulos:** `ambulatory`, `consultation`, `queue`  
 > **Status de Qualidade:** 🟢 **Conforme**
 
@@ -10,9 +10,9 @@
 
 ## 1. Narrativa da História (User Voice)
 
-**Como** coordenadora de produção ambulatorial do consórcio intermunicipal (Patrícia Mendes),  
+**Como** coordenadora de produção ambulatorial da unidade SUS (Patrícia Mendes),  
 **Quero** que a finalização da teleconsulta médica no PEP acione automaticamente a consolidação do procedimento em lote de faturamento SUS (BPA-I / SISAB sob o código SIGTAP `03.01.01.025-0` e ponto de telessaúde CNES 160/006),  
-**Para que** o consórcio e os municípios consorciados comprovem a produção assistencial pública junto ao Ministério da Saúde, viabilizem o incentivo financeiro eMulti (Portaria GM/MS nº 635/2023) e mantenham o registro ambulatorial 100% auditável sem glosas ou duplicidades.
+**Para que** a unidade pública comprove a produção assistencial junto ao Ministério da Saúde, viabilize o incentivo financeiro eMulti (Portaria GM/MS nº 635/2023) e mantenha o registro ambulatorial 100% auditável sem glosas ou duplicidades.
 
 ---
 
@@ -40,7 +40,7 @@
 - **E** devolve a produção existente sem criar novo registro duplicado no banco nem emitir novo evento de auditoria.
 
 ### Cenário 4: Listagem paginada da produção ambulatorial consolidada por competência
-- **Dado que** o gestor municipal ou coordenador de faturamento do consórcio precisa auditar a produção,
+- **Dado que** o gestor ou coordenador de faturamento da unidade precisa auditar a produção,
 - **Quando** requisita `GET /api/v1/ambulatory/producao?competencia=YYYYMM` com token corporativo autorizado,
 - **Então** o sistema valida a competência no formato `YYYYMM`,
 - **E** devolve a listagem paginada de itens consolidados com contagem total e metadados de paginação.
@@ -74,13 +74,13 @@
   - `consolidado_em`: Carimbo de data/hora UTC de consolidação.
   - `conteudo`: Texto plano posicional formatado para o aplicativo BPA-Mag.
 * **Evento de Auditoria Forense:**
-  - Emissão compulsória do evento `PRODUCAO_AMBULATORIAL_CONSOLIDADA` (Módulo: `ambulatory`, Ator: `SISTEMA` / `WORKER_ARQ`), registrando `sigtap`, `cnes`, `atendimento_id` e tenant municipal (`organizacao_id`) sob RLS PostgreSQL.
+  - Emissão compulsória do evento `PRODUCAO_AMBULATORIAL_CONSOLIDADA` (Módulo: `ambulatory`, Ator: `SISTEMA` / `WORKER_ARQ`), registrando `sigtap`, `cnes` e `atendimento_id`.
 
 ---
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Modelo de Produção Ambulatorial:** Entidade rica `ProducaoAmbulatorial` com multi-tenant PostgreSQL RLS (`src/modules/ambulatory/domain/models/producao_ambulatorial.py`) e migração `migrations/versions/0012_producao_ambulatorial_bpa.py`.
+- [x] **Modelo de Produção Ambulatorial:** Entidade rica `ProducaoAmbulatorial` em plataforma única (`src/modules/ambulatory/domain/models/producao_ambulatorial.py`) e migração consolidada `migrations/versions/0001_initial_schema.py`.
 - [x] **Serviço de Consolidação e BPA-I:** `ProducaoAmbulatorialService` com suporte a SIGTAP `03.01.01.025-0` e verificação estrita de idempotência (`src/modules/ambulatory/application/services/producao_service.py`).
 - [x] **Formatador Posicional SIA-SUS:** `BpaPositionalFormatter` com header (130 chars), detalhes (152 chars) e checksum no intervalo `[1111..2221]` (`src/modules/ambulatory/domain/bpa_formatter.py`).
 - [x] **DTOs de Aplicação:** `ConsolidarTeleconsultaCommand`, `BpaProducaoDTO`, `BpaArquivoExportadoDTO` e `ListaProducaoAmbulatorialDTO` em `src/modules/ambulatory/application/dtos.py`.

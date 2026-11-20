@@ -15,7 +15,6 @@ _DEFAULT_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 
 
 def make_evolucao_clinica(
-    organizacao_id: int = 1,
     atendimento_id: UUID | None = None,
     medico_id: UUID | None = None,
     *,
@@ -29,7 +28,6 @@ def make_evolucao_clinica(
 ) -> EvolucaoClinica:
     """Create a typed EvolucaoClinica instance for testing."""
     return EvolucaoClinica(
-        organizacao_id=organizacao_id,
         atendimento_id=atendimento_id or uuid7(),
         medico_id=medico_id or uuid7(),
         anamnese=anamnese,
@@ -43,12 +41,11 @@ def make_evolucao_clinica(
 
 
 def make_documento_clinico(
-    organizacao_id: int = 1,
     atendimento_id: UUID | None = None,
     medico_id: UUID | None = None,
     *,
     tipo_documento: TipoDocumentoClinico | str = TipoDocumentoClinico.RECEITA_SIMPLES,
-    chave_s3: str = "s3://medisync-docs/1/atendimentos/default/receita.pdf",
+    chave_s3: str = "s3://medisync-docs/atendimentos/default/receita.pdf",
     sha256_hash: str | None = _DEFAULT_SHA256,
     assinado_em: datetime | None = None,
     finalizado_em: datetime | None = None,
@@ -56,7 +53,6 @@ def make_documento_clinico(
 ) -> DocumentoClinico:
     """Create a typed DocumentoClinico instance for testing."""
     return DocumentoClinico(
-        organizacao_id=organizacao_id,
         atendimento_id=atendimento_id or uuid7(),
         medico_id=medico_id or uuid7(),
         tipo_documento=tipo_documento,
@@ -69,7 +65,6 @@ def make_documento_clinico(
 
 
 def make_documento_item(
-    organizacao_id: int = 1,
     documento_id: UUID | None = None,
     *,
     medicamento: str = "Dipirona 500mg",
@@ -81,7 +76,6 @@ def make_documento_item(
 ) -> DocumentoItem:
     """Create a typed DocumentoItem instance for testing."""
     return DocumentoItem(
-        organizacao_id=organizacao_id,
         documento_id=documento_id or uuid7(),
         medicamento=medicamento,
         dosagem=dosagem,

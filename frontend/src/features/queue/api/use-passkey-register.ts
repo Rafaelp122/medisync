@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
   postAuthPatientWebauthnRegisterOptions,
@@ -38,7 +38,6 @@ export function usePasskeyRegister(
         }
 
         const headers: Record<string, string> = {
-          ...getTenantHeaders(),
           Authorization: `Bearer ${token}`,
         };
 

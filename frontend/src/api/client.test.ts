@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/auth-token";
 import { saveStoredDoctorSession, saveStoredSession } from "@/lib/session-storage";
-import { client, extractTenantIdFromJwt, getActiveTenantId, getTenantHeaders } from "./client";
+import { client, getSessionQueryScope } from "./client";
 
 function toRequest(input: RequestInfo | URL, init?: RequestInit): Request {
   return input instanceof Request ? input : new Request(input, init);
@@ -159,56 +159,18 @@ describe("client interceptor (Authorization Bearer & Token Handler)", () => {
     expect(localStorage.getItem("medisync_doctor_session")).toBeNull();
   });
 
-  it("UT-CLI-06: sem VITE_TENANT_ID e sem localStorage['tenant_id'], nenhuma requisição envia X-Tenant-ID estático", async () => {
-    expect(getActiveTenantId()).toBeNull();
-    expect(getTenantHeaders()).toEqual({});
+  it("UT-CLI-06: getSessionQueryScope isola chaves por sub JWT, sessão ou token sem prefixo de tenant", () => {
+    expect(getSessionQueryScope()).toBe("anon");
 
-    let interceptedRequest: Request | undefined;
-
-    await client.get({
-      url: "/api/v1/test-no-tenant",
-      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
-        const req = toRequest(input, init);
-        interceptedRequest = req;
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      },
-    });
-
-    expect(interceptedRequest).toBeDefined();
-    expect(interceptedRequest?.headers.get("X-Tenant-ID")).toBeNull();
-  });
-
-  it("UT-CLI-07: com localStorage['tenant_id'] = '42', injeta X-Tenant-ID: 42 normalmente", async () => {
-    localStorage.setItem("tenant_id", "42");
-    expect(getActiveTenantId()).toBe("42");
-    expect(getTenantHeaders()).toEqual({ "X-Tenant-ID": "42" });
-
-    let interceptedRequest: Request | undefined;
-
-    await client.get({
-      url: "/api/v1/test-with-tenant",
-      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
-        const req = toRequest(input, init);
-        interceptedRequest = req;
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      },
-    });
-
-    expect(interceptedRequest).toBeDefined();
-    expect(interceptedRequest?.headers.get("X-Tenant-ID")).toBe("42");
-  });
-
-  it("UT-CLI-08: extractTenantIdFromJwt extrai organizacao_id do payload JWT ou retorna undefined", () => {
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-    const payload = btoa(JSON.stringify({ sub: "user-1", organizacao_id: 77 }));
-    const fakeJwt = `${header}.${payload}.sig`;
-
-    expect(extractTenantIdFromJwt(fakeJwt)).toBe(77);
-    expect(extractTenantIdFromJwt("invalid-token")).toBeUndefined();
-    expect(extractTenantIdFromJwt(null)).toBeUndefined();
+    const payloadA = btoa(JSON.stringify({ sub: "pac-1" }));
+    const payloadB = btoa(JSON.stringify({ sub: "pac-2" }));
+    expect(getSessionQueryScope(`${header}.${payloadA}.sig`)).toBe("sub:pac-1");
+    expect(getSessionQueryScope(`${header}.${payloadB}.sig`)).toBe("sub:pac-2");
+    expect(getSessionQueryScope("opaque-token-a")).not.toBe(getSessionQueryScope("opaque-token-b"));
   });
 
-  it("UT-CLI-09: retry 401 em POST preserva o body JSON após silentRefreshToken sem erro de ReadableStream consumido", async () => {
+  it("UT-CLI-07: retry 401 em POST preserva o body JSON após silentRefreshToken sem erro de ReadableStream consumido", async () => {
     setAccessToken("expired-post-token");
 
     vi.stubGlobal(
@@ -266,42 +228,39 @@ describe("client interceptor (Authorization Bearer & Token Handler)", () => {
     expect(response.data).toEqual({ id: "ag-123", status: "AGENDADO" });
   });
 
-  it("UT-CLI-10: lê localStorage['tenant_id'] e tokens dinamicamente entre requisições sem congelar config estática", async () => {
-    const capturedTenants: Array<string | null> = [];
+  it("UT-CLI-08: lê tokens dinamicamente entre requisições sem congelar config estática", async () => {
     const capturedAuths: Array<string | null> = [];
 
     const captureFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const req = toRequest(input, init);
-      capturedTenants.push(req.headers.get("X-Tenant-ID"));
       capturedAuths.push(req.headers.get("Authorization"));
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     };
 
-    localStorage.setItem("tenant_id", "42");
     setAccessToken("token-alpha");
     await client.get({ url: "/api/v1/dynamic-1", fetch: captureFetch });
 
-    localStorage.setItem("tenant_id", "99");
     setAccessToken("token-beta");
     await client.get({ url: "/api/v1/dynamic-2", fetch: captureFetch });
 
-    localStorage.removeItem("tenant_id");
     clearAccessToken();
     await client.get({ url: "/api/v1/dynamic-3", fetch: captureFetch });
 
-    // Override explícito continua respeitado
-    localStorage.setItem("tenant_id", "99");
     await client.get({
       url: "/api/v1/dynamic-4",
-      headers: { "X-Tenant-ID": "777" },
+      headers: { Authorization: "Bearer explicit-override" },
       fetch: captureFetch,
     });
 
-    expect(capturedTenants).toEqual(["42", "99", null, "777"]);
-    expect(capturedAuths).toEqual(["Bearer token-alpha", "Bearer token-beta", null, null]);
+    expect(capturedAuths).toEqual([
+      "Bearer token-alpha",
+      "Bearer token-beta",
+      null,
+      "Bearer explicit-override",
+    ]);
   });
 
-  it("UT-CLI-11: expõe window.__medisyncClient em modo test", () => {
+  it("UT-CLI-09: expõe window.__medisyncClient em modo test", () => {
     const exposed = (window as unknown as { __medisyncClient?: typeof client }).__medisyncClient;
     expect(exposed).toBe(client);
   });

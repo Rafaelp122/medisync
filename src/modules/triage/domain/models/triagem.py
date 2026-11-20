@@ -4,12 +4,10 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
-    Index,
     Integer,
     Text,
 )
@@ -41,14 +39,10 @@ class Triagem(Base):
             "escala_dor BETWEEN 0 AND 10",
             name="chk_triagem_escala_dor",
         ),
-        Index("idx_triagens_org", "organizacao_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
     )
     atendimento_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -73,7 +67,6 @@ class Triagem(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         atendimento_id: UUID,
         queixa_principal: str,
         prioridade_calculada: int,
@@ -84,12 +77,6 @@ class Triagem(Base):
         avaliado_em: datetime | None = None,
         id: UUID | None = None,
     ) -> None:
-        if organizacao_id <= 0:
-            raise TriagemInvalidaError(
-                f"organizacao_id '{organizacao_id}' inválido; "
-                "deve ser um identificador positivo > 0."
-            )
-
         if not queixa_principal or not queixa_principal.strip():
             raise TriagemInvalidaError(
                 f"Queixa principal '{queixa_principal}' não pode ser vazia; "
@@ -125,7 +112,6 @@ class Triagem(Base):
 
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             atendimento_id=atendimento_id,
             queixa_principal=queixa_principal.strip(),
             sintomas_alerta=clean_sintomas,

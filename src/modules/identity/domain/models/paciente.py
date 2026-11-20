@@ -4,11 +4,9 @@ from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     CheckConstraint,
     Date,
     DateTime,
-    ForeignKey,
     Index,
     String,
     text,
@@ -37,27 +35,22 @@ class Paciente(Base):
             name="chk_documento_paciente_obrigatorio",
         ),
         Index(
-            "uq_paciente_org_cpf",
-            "organizacao_id",
+            "uq_paciente_cpf",
             "cpf",
             unique=True,
             postgresql_where=text("cpf IS NOT NULL"),
         ),
         Index(
-            "uq_paciente_org_cns",
-            "organizacao_id",
+            "uq_paciente_cns",
             "cns",
             unique=True,
             postgresql_where=text("cns IS NOT NULL"),
         ),
-        Index("idx_pacientes_org_telefone", "organizacao_id", "telefone"),
+        Index("idx_pacientes_telefone", "telefone"),
     )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
     )
     cpf: Mapped[str | None] = mapped_column(String(14), nullable=True)
     cns: Mapped[str | None] = mapped_column(String(15), nullable=True)
@@ -82,7 +75,6 @@ class Paciente(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         data_nascimento: date,
         telefone: str,
         cpf: str | None = None,
@@ -105,16 +97,19 @@ class Paciente(Base):
 
         if not clean_cpf and not clean_cns:
             raise ValidationError(
-                "Obrigatório informar CPF ou CNS para o cadastro do paciente (CFM/SUS)."
+                "Obrigatório informar CPF ou CNS para o cadastro do paciente "
+                f"(recebido cpf={cpf!r}, cns={cns!r}; CFM/SUS)."
             )
 
         if clean_cpf and len(clean_cpf) != 11:
             raise ValidationError(
-                "CPF do paciente inválido: deve conter 11 dígitos numéricos."
+                f"CPF do paciente '{cpf}' inválido: deve conter 11 dígitos numéricos."
             )
 
         if clean_cns and len(clean_cns) != 15:
-            raise ValidationError("CNS inválido: deve conter 15 dígitos numéricos.")
+            raise ValidationError(
+                f"CNS '{cns}' inválido: deve conter 15 dígitos numéricos."
+            )
 
         clean_sexo = sexo_biologico.strip().upper() if sexo_biologico else None
         if clean_sexo and clean_sexo not in ("M", "F"):
@@ -136,7 +131,6 @@ class Paciente(Base):
 
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             cpf=clean_cpf,
             cns=clean_cns,
             data_nascimento=data_nascimento,
@@ -234,6 +228,7 @@ class Paciente(Base):
             self.alergias = clean_alergias
 
     def is_pediatrico(self) -> bool:
+        """Indica se o paciente é menor de 18 anos (RN07)."""
         today = date.today()
         idade = (
             today.year
@@ -246,14 +241,17 @@ class Paciente(Base):
         return idade < 18
 
     def adicionar_alergia(self, medicamento: str) -> None:
+        """Registra alergia medicamentosa evitando duplicidades (CFM 1.821/2007)."""
         med_clean = medicamento.strip()
         if not self.tem_alergia(med_clean):
             self.alergias = [*self.alergias, med_clean]
 
     def remover_alergia(self, medicamento: str) -> None:
+        """Remove alergia medicamentosa da lista clínica (CFM 1.821/2007)."""
         target = medicamento.strip().lower()
         self.alergias = [a for a in self.alergias if a.strip().lower() != target]
 
     def tem_alergia(self, medicamento: str) -> bool:
+        """Verifica se há alergia registrada para o medicamento (CFM 1.821/2007)."""
         target = medicamento.strip().lower()
         return any(a.strip().lower() == target for a in self.alergias)

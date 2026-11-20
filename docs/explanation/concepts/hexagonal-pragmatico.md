@@ -60,7 +60,7 @@ pronto do JSON, o schema é a entrada. Sem camada extra.
 
 ## 4. Commands com enriquecimento
 
-Quando a entrada agrega várias origens (path params, tenant,
+Quando a entrada agrega várias origens (path params, usuário autenticado,
 IP, sessão), usa-se `@dataclass(frozen=True)` com sufixo
 `Command` em `application/dtos.py`. Quando não há
 enriquecimento, o schema Pydantic basta.
@@ -69,8 +69,8 @@ Exemplos reais:
 
 - `src/modules/queue/application/dtos.py` define comandos
   imutáveis de alocação, ingresso em fila e avaliação de
-  admissão, agregando organização, médico e parâmetros de
-  janela que nunca viriam só do corpo JSON.
+  admissão, agregando identificadores clínicos, médico e
+  parâmetros de janela que nunca viriam só do corpo JSON.
 - `src/modules/identity/application/dtos.py` usa modelos de
   entrada e saída congelados para onboarding e dependentes.
 

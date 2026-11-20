@@ -127,8 +127,7 @@ def _traduzir_integrity_error_agendamento(
     if sqlstate == "23503":
         return NotFoundError(
             f"Profissional '{cmd.profissional_id}' ou paciente '{cmd.paciente_id}' "
-            f"não localizado na organização {cmd.organizacao_id} "
-            f"(constraint='{constraint}')."
+            f"não localizado (constraint='{constraint}')."
         )
     return ValidationError(
         f"Dados inválidos ao persistir agendamento para "
@@ -164,7 +163,6 @@ class SchedulingService:
     async def listar_slots_disponiveis(
         self,
         *,
-        organizacao_id: int,
         especialidade: str,
         data_inicio: date,
         data_fim: date,
@@ -177,7 +175,6 @@ class SchedulingService:
         _validar_intervalo_datas(data_inicio, data_fim)
 
         disponibilidades = await self._repository.listar_disponibilidades_ativas(
-            organizacao_id=organizacao_id,
             especialidade=esp.value,
         )
         if not disponibilidades:
@@ -188,7 +185,6 @@ class SchedulingService:
             data_fim + timedelta(days=1), datetime.min.time(), tzinfo=UTC
         )
         ocupados = await self._repository.listar_agendamentos_ocupados(
-            organizacao_id=organizacao_id,
             inicio=inicio_dt,
             fim=fim_dt,
         )
@@ -210,7 +206,6 @@ class SchedulingService:
         Regras: docs/explanation/domains/scheduling-domain.md
         """
         disponibilidade = AgendaDisponibilidade(
-            organizacao_id=cmd.organizacao_id,
             profissional_id=cmd.profissional_id,
             especialidade=cmd.especialidade,
             dia_semana=cmd.dia_semana,
@@ -219,7 +214,6 @@ class SchedulingService:
             duracao_minutos=cmd.duracao_minutos,
         )
         existentes = await self._repository.buscar_disponibilidade_profissional(
-            organizacao_id=cmd.organizacao_id,
             profissional_id=cmd.profissional_id,
             especialidade=None,
             dia_semana=cmd.dia_semana,
@@ -247,7 +241,6 @@ class SchedulingService:
         slot_inicio_utc: datetime,
     ) -> datetime:
         disponibilidades = await self._repository.buscar_disponibilidade_profissional(
-            organizacao_id=cmd.organizacao_id,
             profissional_id=cmd.profissional_id,
             especialidade=esp.value,
             dia_semana=slot_inicio_utc.weekday(),
@@ -333,7 +326,6 @@ class SchedulingService:
         slot_fim_utc = await self._validar_e_resolver_slot(cmd, esp, slot_inicio_utc)
 
         conflito = await self._repository.buscar_agendamento_conflitante(
-            organizacao_id=cmd.organizacao_id,
             profissional_id=cmd.profissional_id,
             slot_inicio=slot_inicio_utc,
             slot_fim=slot_fim_utc,
@@ -345,7 +337,6 @@ class SchedulingService:
             )
 
         agendamento = Agendamento(
-            organizacao_id=cmd.organizacao_id,
             paciente_id=cmd.paciente_id,
             profissional_id=cmd.profissional_id,
             especialidade=esp,
@@ -368,7 +359,6 @@ class SchedulingService:
     async def listar_agendamentos_paciente(
         self,
         *,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> list[Agendamento]:
         """Lista agendamentos pertencentes exclusivamente ao paciente autenticado.
@@ -376,7 +366,6 @@ class SchedulingService:
         Regras: docs/explanation/domains/scheduling-domain.md
         """
         itens = await self._repository.listar_agendamentos_paciente(
-            organizacao_id=organizacao_id,
             paciente_id=paciente_id,
         )
         return list(itens)
@@ -384,7 +373,6 @@ class SchedulingService:
     async def cancelar_agendamento(
         self,
         *,
-        organizacao_id: int,
         agendamento_id: UUID,
         paciente_id: UUID,
     ) -> Agendamento:
@@ -393,14 +381,12 @@ class SchedulingService:
         Regras: docs/explanation/domains/scheduling-domain.md
         """
         agendamento = await self._repository.buscar_agendamento_por_id(
-            organizacao_id=organizacao_id,
             agendamento_id=agendamento_id,
             for_update=True,
         )
         if agendamento is None:
             raise AgendamentoNaoEncontradoError(
-                f"Agendamento '{agendamento_id}' não encontrado na organização "
-                f"{organizacao_id}."
+                f"Agendamento '{agendamento_id}' não encontrado."
             )
         if agendamento.paciente_id != paciente_id:
             raise ForbiddenError(
@@ -415,7 +401,6 @@ class SchedulingService:
     async def listar_agenda_profissional(
         self,
         *,
-        organizacao_id: int,
         profissional_id: UUID,
         data_inicio: date,
         data_fim: date,
@@ -430,7 +415,6 @@ class SchedulingService:
             data_fim + timedelta(days=1), datetime.min.time(), tzinfo=UTC
         )
         itens = await self._repository.listar_agendamentos_profissional(
-            organizacao_id=organizacao_id,
             profissional_id=profissional_id,
             inicio=inicio_dt,
             fim=fim_dt,
@@ -450,14 +434,8 @@ class SchedulingService:
                 f"validar o atendimento '{atendimento_id}'."
             )
         atendimento = await self._attendance_lookup.buscar_atendimento(atendimento_id)
-        if (
-            atendimento is None
-            or atendimento.organizacao_id != agendamento.organizacao_id
-        ):
-            raise NotFoundError(
-                f"Atendimento '{atendimento_id}' não encontrado na organização "
-                f"{agendamento.organizacao_id}."
-            )
+        if atendimento is None:
+            raise NotFoundError(f"Atendimento '{atendimento_id}' não encontrado.")
         if atendimento.paciente_id != agendamento.paciente_id:
             raise ValidationError(
                 f"Atendimento '{atendimento_id}' pertence ao paciente "
@@ -477,7 +455,6 @@ class SchedulingService:
     async def iniciar_atendimento_agendado(
         self,
         *,
-        organizacao_id: int,
         agendamento_id: UUID,
         profissional_id: UUID,
         atendimento_id: UUID | None = None,
@@ -487,14 +464,12 @@ class SchedulingService:
         Regras: docs/explanation/domains/scheduling-domain.md
         """
         agendamento = await self._repository.buscar_agendamento_por_id(
-            organizacao_id=organizacao_id,
             agendamento_id=agendamento_id,
             for_update=True,
         )
         if agendamento is None:
             raise AgendamentoNaoEncontradoError(
-                f"Agendamento '{agendamento_id}' não encontrado na organização "
-                f"{organizacao_id}."
+                f"Agendamento '{agendamento_id}' não encontrado."
             )
         if agendamento.profissional_id != profissional_id:
             raise ForbiddenError(

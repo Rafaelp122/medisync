@@ -43,7 +43,7 @@
 * A regularização promove o atendimento na fila de aptos preservando integralmente o timestamp original de entrada.
 * **Endpoint de Regularização:**
   - `POST /api/v1/fila/atendimentos/{atendimento_id}/regularizar`
-  - Headers: `X-Tenant-ID: <org_id>`, `Authorization: Bearer <token_intake_ou_jwt>`
+  - Headers: `Authorization: Bearer <token_intake_ou_jwt>`
   - Request: `src/modules/queue/presentation/schemas.py:RegularizacaoFilaRequest`
   - Response: `src/modules/queue/presentation/schemas.py:RegularizacaoFilaResponse`
   - **Prevalência Assistencial e Desacoplamento da Fase 2 (CFM 2.314/2022 / RN-NEG-01):** A contingência assistencial promove imediatamente o atendimento com base no TCLE forense (RN07), assegurando o acesso médico sem paywall burocrático. O preenchimento da Fase 2 (CFM 1.821/2007) corre em paralelo e é exigido para o fechamento do prontuário eletrônico e emissão de receitas médicas.

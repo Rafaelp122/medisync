@@ -4,7 +4,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, status
 
-from src.core.dependencies import TenantDep
 from src.modules.auth.application.dtos import (
     WebAuthnAuthVerifyCommand,
     WebAuthnRegisterVerifyCommand,
@@ -35,14 +34,10 @@ patient_webauthn_router = APIRouter(
 )
 async def register_options(
     paciente_id: PatientAuthDep,
-    tenant_id: TenantDep,
     service: PatientWebAuthnServiceDep,
 ) -> WebAuthnRegisterOptionsResponse:
     """Generate WebAuthn PublicKeyCredentialCreationOptions for patient."""
-    dto = await service.gerar_opcoes_registro(
-        organizacao_id=tenant_id,
-        paciente_id=paciente_id,
-    )
+    dto = await service.gerar_opcoes_registro(paciente_id=paciente_id)
     return WebAuthnRegisterOptionsResponse.model_validate(dto)
 
 
@@ -55,12 +50,10 @@ async def register_options(
 async def register_verify(
     body: Annotated[WebAuthnRegisterVerifyRequest, Body()],
     paciente_id: PatientAuthDep,
-    tenant_id: TenantDep,
     service: PatientWebAuthnServiceDep,
 ) -> WebAuthnRegisterVerifyResponse:
     """Verify WebAuthn registration response and bind public key to patient."""
     cmd = WebAuthnRegisterVerifyCommand(
-        organizacao_id=tenant_id,
         paciente_id=paciente_id,
         id=body.id,
         raw_id=body.rawId,
@@ -79,13 +72,11 @@ async def register_verify(
     operation_id="post_auth_patient_webauthn_authenticate_options",
 )
 async def authenticate_options(
-    tenant_id: TenantDep,
     service: PatientWebAuthnServiceDep,
     body: Annotated[WebAuthnAuthOptionsRequest | None, Body()] = None,
 ) -> WebAuthnAuthOptionsResponse:
     """Generate WebAuthn PublicKeyCredentialRequestOptions for patient login."""
     dto = await service.gerar_opcoes_autenticacao(
-        organizacao_id=tenant_id,
         paciente_id=body.paciente_id if body is not None else None,
     )
     return WebAuthnAuthOptionsResponse.model_validate(dto)
@@ -99,12 +90,10 @@ async def authenticate_options(
 )
 async def authenticate_verify(
     body: Annotated[WebAuthnAuthVerifyRequest, Body()],
-    tenant_id: TenantDep,
     service: PatientWebAuthnServiceDep,
 ) -> VerificarOtpResponse:
     """Verify WebAuthn assertion and issue patient JWT access token."""
     cmd = WebAuthnAuthVerifyCommand(
-        organizacao_id=tenant_id,
         id=body.id,
         raw_id=body.rawId,
         response=body.response,

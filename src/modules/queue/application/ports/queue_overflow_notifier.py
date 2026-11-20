@@ -12,7 +12,6 @@ logger = logging.getLogger("medisync.queue.overflow")
 class QueueOverflowEvent:
     """Immutable event payload emitted when admission threshold is breached (RN05)."""
 
-    organizacao_id: int
     motivo: str
     pacientes_aguardando: int
     medicos_ativos: int
@@ -38,10 +37,9 @@ class LoggingQueueOverflowNotifier:
     async def emitir_transbordo(self, event: QueueOverflowEvent) -> None:
         """Logs the QUEUE_OVERFLOW_TRANSIT event with structured context."""
         logger.warning(
-            "Event %s emitted for org=%d: reason=%s, waiting=%d, doctors=%d, "
+            "Event %s emitted: reason=%s, waiting=%d, doctors=%d, "
             "load=%.1fs, remaining=%.1fs, alpha=%.2f",
             event.evento,
-            event.organizacao_id,
             event.motivo,
             event.pacientes_aguardando,
             event.medicos_ativos,

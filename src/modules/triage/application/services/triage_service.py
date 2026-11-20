@@ -43,7 +43,6 @@ class TriageService:
 
     async def avaliar_risco(
         self,
-        organizacao_id: int,
         queixa_principal: str,
         sintomas: list[str],
         escala_dor: int = 0,
@@ -75,10 +74,10 @@ class TriageService:
         )
 
         if prioridade == 1:
+            resolved_atend_id = atendimento_id or uuid7()
             if self._notifier is not None:
                 alerta = EmergencyAlertDTO(
-                    atendimento_id=atendimento_id or uuid7(),
-                    organizacao_id=organizacao_id,
+                    atendimento_id=resolved_atend_id,
                     queixa_principal=queixa_principal,
                     sintomas_alerta=sintomas,
                 )
@@ -86,9 +85,9 @@ class TriageService:
 
             if raise_on_emergency:
                 raise EmergenciaCriticaSamuError(
-                    "Emergência médica crítica detectada (Nível 1) na organização "
-                    f"'{organizacao_id}'. Ingresso no PA Virtual bloqueado. "
-                    "Acione imediatamente o SAMU 192."
+                    f"Emergência médica crítica detectada (Nível 1) para atendimento "
+                    f"'{resolved_atend_id}' (queixa='{queixa_principal}'). "
+                    "Ingresso no PA Virtual bloqueado. Acione imediatamente o SAMU 192."
                 )
 
             return TriageRiskEvaluationDTO(
@@ -107,7 +106,6 @@ class TriageService:
 
     async def registrar_triagem(
         self,
-        organizacao_id: int,
         atendimento_id: UUID,
         queixa_principal: str,
         sintomas: list[str],
@@ -127,7 +125,6 @@ class TriageService:
             )
 
         triagem = Triagem(
-            organizacao_id=organizacao_id,
             atendimento_id=atendimento_id,
             queixa_principal=queixa_principal,
             prioridade_calculada=prioridade_calculada,
@@ -141,12 +138,11 @@ class TriageService:
 
     async def obter_queixas_por_atendimentos(
         self,
-        organizacao_id: int,
         atendimento_ids: Sequence[UUID],
     ) -> dict[UUID, str | None]:
         """Consulta queixas principais das triagens por atendimento via ORM (RF-01).
 
-        Retorna mapa atendimento_id -> queixa_principal isolado por organizacao_id.
+        Retorna mapa atendimento_id -> queixa_principal.
         Regras: docs/explanation/domains/triage-domain.md.
         """
         if not atendimento_ids:
@@ -154,19 +150,14 @@ class TriageService:
         if self._session is None:
             raise RuntimeError(
                 "AsyncSession é necessária para consultar queixas de Triagem "
-                f"na organização '{organizacao_id}'."
+                f"para {len(atendimento_ids)} atendimento(s)."
             )
 
         ids_unicos = list(dict.fromkeys(atendimento_ids))
-        stmt = select(Triagem).where(
-            Triagem.organizacao_id == organizacao_id,
-            Triagem.atendimento_id.in_(ids_unicos),
-        )
+        stmt = select(Triagem).where(Triagem.atendimento_id.in_(ids_unicos))
         res = await self._session.execute(stmt)
         triagens = res.scalars().all()
         queixas: dict[UUID, str | None] = {
-            triagem.atendimento_id: triagem.queixa_principal
-            for triagem in triagens
-            if triagem.organizacao_id == organizacao_id
+            triagem.atendimento_id: triagem.queixa_principal for triagem in triagens
         }
         return queixas

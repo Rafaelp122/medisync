@@ -16,6 +16,9 @@ from src.modules.consultation.application.ports.document_directory_port import (
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
 )
+from src.modules.consultation.application.ports.pdf_generator_port import (
+    DocumentoPDFPayload,
+)
 from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.application.services.document_validation_service import (
     DocumentValidationService,
@@ -48,7 +51,6 @@ from tests.doubles import (
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-_ORG_ID = 7
 _SHA_FIXO = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 
@@ -57,7 +59,6 @@ def _emitir_command(
 ) -> EmitirDocumentoClinicoCommand:
     return EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=_ORG_ID,
         medico_id=medico_id,
         tipo_documento="RECEITA_SIMPLES",
         itens=[
@@ -74,11 +75,10 @@ def _emitir_command(
 
 def _make_doc(atendimento_id: UUID, medico_id: UUID, doc_id: UUID) -> DocumentoClinico:
     return DocumentoClinico(
-        organizacao_id=_ORG_ID,
         atendimento_id=atendimento_id,
         medico_id=medico_id,
         tipo_documento="RECEITA_SIMPLES",
-        chave_s3=build_signed_document_key(_ORG_ID, atendimento_id, doc_id),
+        chave_s3=build_signed_document_key(atendimento_id, doc_id),
         sha256_hash=_SHA_FIXO,
         id=doc_id,
     )
@@ -100,7 +100,6 @@ def _service(
 
 def _make_evolucao_verificada(atendimento_id: UUID, medico_id: UUID) -> EvolucaoClinica:
     return EvolucaoClinica(
-        organizacao_id=_ORG_ID,
         atendimento_id=atendimento_id,
         medico_id=medico_id,
         anamnese="Anamnese registrada.",
@@ -111,7 +110,7 @@ def _make_evolucao_verificada(atendimento_id: UUID, medico_id: UUID) -> Evolucao
 
 @pytest.mark.asyncio
 async def test_emitir_gera_chave_canonica_sem_legado() -> None:
-    """Emitir without chave must generate orgs/{org}/consultations key, no s3://."""
+    """Emitir without chave must generate consultations key, no s3://."""
     atend_id = uuid7()
     med_id = uuid7()
     added: list[Any] = []
@@ -126,9 +125,9 @@ async def test_emitir_gera_chave_canonica_sem_legado() -> None:
 
     doc = await svc.emitir_documento(_emitir_command(atend_id, med_id))
 
-    expected = build_signed_document_key(_ORG_ID, atend_id, doc.id)
+    expected = build_signed_document_key(atend_id, doc.id)
     assert doc.chave_s3 == expected
-    assert doc.chave_s3.startswith(f"orgs/{_ORG_ID}/consultations/{atend_id}/")
+    assert doc.chave_s3.startswith(f"consultations/{atend_id}/")
     assert "s3://" not in doc.chave_s3
     assert len(doc.itens) == 1
     assert doc.itens[0].medicamento == "Dipirona 500mg"
@@ -149,7 +148,7 @@ async def test_emitir_preserva_chave_explicita() -> None:
         added,
     )
     svc = _service(session)
-    explicita = f"orgs/{_ORG_ID}/consultations/{atend_id}/documents/custom.pdf"
+    explicita = f"consultations/{atend_id}/documents/custom.pdf"
 
     doc = await svc.emitir_documento(_emitir_command(atend_id, med_id, explicita))
 
@@ -163,7 +162,6 @@ async def test_emitir_tipo_proibido_portaria_344() -> None:
     svc = _service(session)
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=uuid7(),
-        organizacao_id=_ORG_ID,
         medico_id=uuid7(),
         tipo_documento="NOTIFICACAO_RECEITA_B",
         itens=[],
@@ -265,7 +263,7 @@ async def test_assinar_persiste_chave_canonica_e_marca_cache() -> None:
     result = await svc.assinar(doc_id, atend_id, creds)
 
     assert result.tamanho_bytes == len(b"%PDF-signed-bytes%")
-    expected_key = build_signed_document_key(_ORG_ID, atend_id, doc_id)
+    expected_key = build_signed_document_key(atend_id, doc_id)
     assert doc.chave_s3 == expected_key
     assert await storage.obter_documento(expected_key) == b"%PDF-signed-bytes%"
     assert len(result.sha256_hash) == 64
@@ -283,7 +281,6 @@ async def test_is_assinado_chave_legada_sem_cache() -> None:
     atend_id = uuid7()
     med_id = uuid7()
     doc = DocumentoClinico(
-        organizacao_id=_ORG_ID,
         atendimento_id=atend_id,
         medico_id=med_id,
         tipo_documento="RECEITA_SIMPLES",
@@ -298,7 +295,6 @@ async def test_is_assinado_chave_legada_sem_cache() -> None:
 class _StubDirectory(DocumentDirectoryPort):
     async def obter_dados_verificacao(
         self,
-        organizacao_id: int,
         medico_id: UUID,
         atendimento_id: UUID,
     ) -> DadosVerificacaoDirectory:
@@ -318,7 +314,6 @@ async def test_validacao_usa_cache_port_para_status_assinado() -> None:
     atend_id = uuid7()
     med_id = uuid7()
     doc = DocumentoClinico(
-        organizacao_id=_ORG_ID,
         atendimento_id=atend_id,
         medico_id=med_id,
         tipo_documento="RECEITA_SIMPLES",
@@ -364,7 +359,6 @@ async def test_emitir_documento_bloqueia_sem_identidade_verificada_cfm() -> None
         await svc_sem_soap.emitir_documento(_emitir_command(atend_id, med_id))
 
     evolucao_nao_verificada = EvolucaoClinica(
-        organizacao_id=_ORG_ID,
         atendimento_id=atend_id,
         medico_id=med_id,
         anamnese="Queixa clinica",
@@ -376,3 +370,56 @@ async def test_emitir_documento_bloqueia_sem_identidade_verificada_cfm() -> None
     )
     with pytest.raises(ConsultaInvalidaError, match="identidade_verificada=False"):
         await svc_nao_verificada.emitir_documento(_emitir_command(atend_id, med_id))
+
+
+@pytest.mark.asyncio
+async def test_compilar_pdf_propaga_cnpj_e_cnes_do_diretorio() -> None:
+    """Q4 Fix #2: compilar_pdf deve copiar organizacao_cnpj e cnes para o PDF."""
+
+    class _SpyPDFGenerator:
+        def __init__(self) -> None:
+            self.last_payload: DocumentoPDFPayload | None = None
+
+        def gerar_pdf(self, payload: DocumentoPDFPayload) -> bytes:
+            self.last_payload = payload
+            return b"%PDF-q4-metadata"
+
+    class _MetadataDirectory(DocumentDirectoryPort):
+        async def obter_dados_verificacao(
+            self,
+            medico_id: UUID,
+            atendimento_id: UUID,
+        ) -> DadosVerificacaoDirectory:
+            return DadosVerificacaoDirectory(
+                organizacao_nome="UPA Virtual Central",
+                organizacao_cnpj="12.345.678/0001-99",
+                cnes="2077558",
+                medico_nome="Dra. Validação",
+                medico_crm="99999",
+                medico_crm_uf="SP",
+                paciente_nome="Paciente Teste",
+                paciente_cpf="12345678900",
+            )
+
+    atend_id = uuid7()
+    med_id = uuid7()
+    doc_id = uuid7()
+    doc = _make_doc(atend_id, med_id, doc_id)
+    spy_pdf = _SpyPDFGenerator()
+    session = FakeAsyncSession([FakeResult(doc), FakeResult(None)])
+    svc = DocumentoService(
+        session=cast("AsyncSession", session),
+        pdf_generator=spy_pdf,
+        signer=FakeICPBrasilSigner(),
+        storage=FakeMemoryStorage(),
+        cache=MemorySignedCache(),
+        directory=_MetadataDirectory(),
+    )
+
+    pdf_bytes = await svc.compilar_pdf(doc_id)
+
+    assert pdf_bytes == b"%PDF-q4-metadata"
+    assert spy_pdf.last_payload is not None
+    assert spy_pdf.last_payload.organizacao_nome == "UPA Virtual Central"
+    assert spy_pdf.last_payload.organizacao_cnpj == "12.345.678/0001-99"
+    assert spy_pdf.last_payload.organizacao_cnes == "2077558"

@@ -19,6 +19,9 @@ from src.modules.queue.application.ports.queue_overflow_notifier import (
 
 logger = logging.getLogger("medisync.queue.admissao")
 
+FILA_APTOS_KEY = "fila:aptos"
+PLANTAO_MEDICOS_KEY = "plantao:medicos_ativos"
+
 MENSAGEM_SEM_MEDICOS = (
     "O acolhimento virtual está temporariamente suspenso no momento pois não há "
     "médicos plantonistas ativos no turno. Por favor, procure atendimento presencial "
@@ -49,20 +52,23 @@ def avaliar_capacidade_admissao(
     total_admissoes_hoje: int = 0,
     cota_diaria_maxima: int | None = 300,
 ) -> AvaliacaoAdmissaoResult:
-    """Evaluates unit capacity using stochastic backpressure formula (RN05).
+    """Evaluates platform capacity using stochastic backpressure formula (RN05).
 
     Formula:
         (Pacientes Aguardando * TMA * alpha) / Médicos Ativos > Tempo Restante
 
-    Admission is suspended if:
-    1. Active doctors <= 0 (prevents division by zero and queue accumulation).
-    2. Daily completed admissions >= Daily max quota (Condition A).
-    3. Estimated workload exceeds remaining shift capacity (Condition B).
+    Regras: docs/explanation/domains/queue-domain.md
     """
     if alpha <= 0:
-        raise ValidationError("Fator de segurança alpha deve ser positivo.")
+        raise ValidationError(
+            f"Fator de segurança alpha '{alpha}' inválido; "
+            "esperado valor positivo (> 0)."
+        )
     if tma_estimado_segundos <= 0:
-        raise ValidationError("TMA estimado deve ser positivo.")
+        raise ValidationError(
+            f"TMA estimado '{tma_estimado_segundos}' inválido; "
+            "esperado valor positivo (> 0)."
+        )
 
     # 1. Active doctors check
     if medicos_ativos <= 0:
@@ -120,7 +126,10 @@ def avaliar_capacidade_admissao(
 
 
 class ControleAdmissaoService:
-    """Coordinates capacity evaluation, active doctor presence, and overflow events."""
+    """Coordinates capacity evaluation, active doctor presence, and overflow events.
+
+    Regras: RN05, docs/explanation/domains/queue-domain.md
+    """
 
     def __init__(
         self,
@@ -136,9 +145,12 @@ class ControleAdmissaoService:
         self,
         command: AvaliarAdmissaoCommand,
     ) -> AvaliacaoAdmissaoResult:
-        """Evaluates admission and emits QUEUE_OVERFLOW_TRANSIT if breached."""
+        """Avalia admissão estocástica e notifica transbordo se excedida (RN05).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         if command.pacientes_aguardando is None:
-            card = await self._valkey.zcard(f"fila:{command.organizacao_id}:aptos")  # pyright: ignore[reportUnknownMemberType]
+            card = await self._valkey.zcard(FILA_APTOS_KEY)  # pyright: ignore[reportUnknownMemberType]
             pacientes = int(card)
         else:
             pacientes = command.pacientes_aguardando
@@ -155,7 +167,6 @@ class ControleAdmissaoService:
 
         if not resultado.admissao_permitida and resultado.motivo_bloqueio is not None:
             event = QueueOverflowEvent(
-                organizacao_id=command.organizacao_id,
                 motivo=resultado.motivo_bloqueio,
                 pacientes_aguardando=pacientes,
                 medicos_ativos=command.medicos_ativos,
@@ -168,50 +179,45 @@ class ControleAdmissaoService:
 
         return resultado
 
-    async def registrar_medico_ativo(
-        self,
-        organizacao_id: int,
-        medico_id: UUID,
-    ) -> None:
-        """Adds doctor to the active shift roster in Valkey."""
-        k = f"plantao:{organizacao_id}:medicos_ativos"
-        await self._valkey.sadd(k, str(medico_id))  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType]
+    async def registrar_medico_ativo(self, medico_id: UUID) -> None:
+        """Adiciona médico ao plantão ativo no Valkey (RN05).
 
-    async def desregistrar_medico_ativo(
-        self,
-        organizacao_id: int,
-        medico_id: UUID,
-    ) -> None:
-        """Removes doctor from the active shift roster in Valkey."""
-        k = f"plantao:{organizacao_id}:medicos_ativos"
-        await self._valkey.srem(k, str(medico_id))  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType]
+        Regras: docs/explanation/domains/queue-domain.md
+        """
+        await self._valkey.sadd(PLANTAO_MEDICOS_KEY, str(medico_id))  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType]
 
-    async def obter_medicos_ativos_count(
-        self,
-        organizacao_id: int,
-    ) -> int:
-        """Returns the number of active doctors on shift for the organization."""
-        k = f"plantao:{organizacao_id}:medicos_ativos"
-        count = await self._valkey.scard(k)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
+    async def desregistrar_medico_ativo(self, medico_id: UUID) -> None:
+        """Remove médico do plantão ativo no Valkey (RN05).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
+        await self._valkey.srem(PLANTAO_MEDICOS_KEY, str(medico_id))  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType]
+
+    async def obter_medicos_ativos_count(self) -> int:
+        """Retorna total de médicos ativos no plantão na plataforma (RN05).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
+        count = await self._valkey.scard(PLANTAO_MEDICOS_KEY)  # pyright: ignore[reportGeneralTypeIssues, reportUnknownMemberType, reportUnknownVariableType]
         return int(count)  # pyright: ignore[reportUnknownArgumentType]
 
-    async def incrementar_admissoes_hoje(
-        self,
-        organizacao_id: int,
-    ) -> int:
-        """Increments and returns total admissions for today in Valkey."""
+    async def incrementar_admissoes_hoje(self) -> int:
+        """Incrementa e retorna o contador diário de admissões no Valkey (RN05).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         today = datetime.now(UTC).strftime("%Y-%m-%d")
-        k = f"queue:admissoes:{organizacao_id}:{today}"
+        k = f"queue:admissoes:{today}"
         val = await self._valkey.incr(k)  # pyright: ignore[reportUnknownMemberType]
         await self._valkey.expire(k, 86400 * 2)  # pyright: ignore[reportUnknownMemberType]
         return int(val)
 
-    async def obter_admissoes_hoje(
-        self,
-        organizacao_id: int,
-    ) -> int:
-        """Returns total admissions for today from Valkey."""
+    async def obter_admissoes_hoje(self) -> int:
+        """Retorna o total de admissões realizadas hoje no Valkey (RN05).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         today = datetime.now(UTC).strftime("%Y-%m-%d")
-        k = f"queue:admissoes:{organizacao_id}:{today}"
+        k = f"queue:admissoes:{today}"
         val = await self._valkey.get(k)  # pyright: ignore[reportUnknownMemberType]
         return int(val) if val is not None else 0

@@ -46,7 +46,7 @@
 ## 3. Contrato de API
 
 * **Endpoint:** `POST /api/v1/fila/chamar-proximo`
-* **Headers:** `Authorization: Bearer <jwt_medico>`, `X-Tenant-ID: <org_id>`
+* **Headers:** `Authorization: Bearer <jwt_medico>`
 * **Resposta de Sucesso com Alocação (`200 OK`):**
   ```json
   {

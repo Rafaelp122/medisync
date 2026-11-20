@@ -12,7 +12,7 @@
 
 ## Contexto
 
-O MediSync Express é uma plataforma de pronto-atendimento virtual (PA Digital 24/7) desenhada para operar com alta disponibilidade, latência de transporte em tempo real sub-150ms e isolamento multi-tenant estrito. 
+O MediSync Express é uma plataforma única de pronto-atendimento virtual (PA Digital 24/7) desenhada para operar com alta disponibilidade, latência de transporte em tempo real sub-150ms e controle estrito de titularidade (RBAC + Anti-IDOR). 
 
 Para evitar a complexidade prematura de microsserviços distribuídos sem abrir mão de alta coesão e baixo acoplamento, adota-se o padrão de **Monólito Modular** estruturado sob o **Hexagonal Pragmático**. Fronteiras modulares não são meras convenções: são asseguradas por análise estática contínua via `tach check` e testes de arquitetura AST.
 
@@ -23,7 +23,7 @@ Para evitar a complexidade prematura de microsserviços distribuídos sem abrir 
 O núcleo da aplicação reside em modelos de domínio ricos e serviços de aplicação, isolando tecnologias voláteis atrás de adaptadores:
 - **Driving Adapters (Entrada)**: FastAPI (HTTP / REST APIs), WebSockets (sinalização de fila e chamadas, veja [WebSocket Channels](../../reference/api/websocket-channels.md)) e ARQ Workers (tarefas em segundo plano, veja [ARQ Background Tasks](../../reference/worker/arq-tasks.md)).
 - **Core Modular**: Entidades persistidas com SQLAlchemy 2.0 (`Mapped[...]`) encapsulam validações e invariantes clínicas, sem duplicar DTOs espelho manuais (veja [Hexagonal Pragmático](../concepts/hexagonal-pragmatico.md)).
-- **Driven Adapters (Saída)**: PostgreSQL 17 (persistência relacional com RLS, veja [Database Schema & RLS](../../reference/database/schema-and-rls.md)), Valkey 8.0 (fila atômica via Lua e chaves operacionais, veja [Valkey Keys Dictionary](../../reference/valkey/keys-dictionary.md)), LiveKit SFU (WebRTC SRTP), PSC Nuvem (assinatura ICP-Brasil PAdES) e MinIO/S3 (armazenamento perene de PDFs).
+- **Driven Adapters (Saída)**: PostgreSQL 17 (persistência relacional e auditoria imutável, veja [Database Schema](../../reference/database/schema.md)), Valkey 8.0 (fila atômica via Lua e chaves operacionais, veja [Valkey Keys Dictionary](../../reference/valkey/keys-dictionary.md)), LiveKit SFU (WebRTC SRTP), PSC Nuvem (assinatura ICP-Brasil PAdES) e MinIO/S3 (armazenamento perene de PDFs).
 - **Comunicação entre Módulos**: Realizada exclusivamente por portas abstratas (`typing.Protocol`) com DTOs imutáveis ou notificadores ponto a ponto assíncronos via ports, conforme detalhado em [Inter-Module Protocols](../concepts/inter-module-protocols.md).
 
 ```mermaid
@@ -43,7 +43,7 @@ flowchart TD
     end
 
     subgraph DrivenAdapters["Adaptadores de Saída (Driven Adapters)"]
-        Postgres["PostgreSQL 17 (SQLAlchemy 2.0 Async + RLS)"]
+        Postgres["PostgreSQL 17 (SQLAlchemy 2.0 Async)"]
         Valkey["Valkey 8.0 (Fila Atômica & Cache via Lua)"]
         LiveKit["LiveKit SFU (Mídia WebRTC SRTP)"]
         S3["MinIO / S3 (Guarda Perene de PDFs)"]
@@ -96,7 +96,7 @@ flowchart TD
     end
 
     subgraph DataLayer["Camada de Persistência & Mensageria"]
-        DB[(PostgreSQL 17<br/>Dados Clínicos, RLS & Auditoria)]
+        DB[(PostgreSQL 17<br/>Dados Clínicos & Auditoria)]
         Cache[(Valkey 8.0<br/>Fila em Memória, Locks & Pub/Sub)]
         Storage[(MinIO / S3<br/>PDFs de Prontuários e Prescrições)]
     end
@@ -153,7 +153,7 @@ src/
     ├── auth/                          # Autenticação JWT, Argon2id, OTP/WebAuthn e RBAC
     ├── ambulatory/                    # Produção ambulatorial SUS, BPA-I, SISAB e qualificação cadastral
     ├── consultation/                  # Teleconsulta WebRTC, PEP, Portal Cidadão e prescrição ICP-Brasil
-    ├── identity/                      # Identidade, organizações, profissionais, dependentes e pacientes
+    ├── identity/                      # Identidade, configuração da unidade, profissionais, dependentes e pacientes
     ├── queue/                         # Fila dinâmica, controle de admissão e locks atômicos Lua
     ├── scheduling/                    # Agenda programada multiprofissional (eMulti) e slots GiST
     ├── telemetry/                     # Agregação de telemetria e métricas operacionais
@@ -188,7 +188,7 @@ A integridade arquitetural do monólito modular é fiscalizada pelo **Tach** via
 - Spec: `tach.toml`
 - Spec: `docs/adrs/ADR-011-Arquitetura-Frontend-SPA-PWA-e-Estrategia-de-Testes.md`
 - Spec: `docs/reference/architecture-standards/tach-boundaries-matrix.md`
-- Spec: `docs/reference/database/schema-and-rls.md`
+- Spec: `docs/reference/database/schema.md`
 - Spec: `docs/reference/valkey/keys-dictionary.md`
 - Spec: `docs/reference/worker/arq-tasks.md`
 - Spec: `docs/reference/api/websocket-channels.md`
@@ -215,7 +215,7 @@ uv run pytest tests/architecture/
 - [Modelo de Dados (Data Model)](data-model.md)
 - [Concorrência e Filas (Concurrency & Queues)](concurrency-and-queues.md)
 - [Conformidade Clínica e Telemedicina](compliance-and-telemedicine.md)
-- [Database Schema & RLS](../../reference/database/schema-and-rls.md)
+- [Database Schema](../../reference/database/schema.md)
 - [Valkey Keys Dictionary](../../reference/valkey/keys-dictionary.md)
 - [Matriz de Fronteiras Modulares Tach](../../reference/architecture-standards/tach-boundaries-matrix.md)
 - [WebSocket Channels](../../reference/api/websocket-channels.md)

@@ -20,20 +20,19 @@ def test_jwt_token_service_conformance() -> None:
 
 
 def test_jwt_issue_and_validate_tokens() -> None:
-    """Validate issuing and validating access and refresh tokens."""
+    """Validate issuing and validating access and refresh tokens without org_id."""
+    secret = "unit-test-secret-key-min-32-chars-long"
     service = JWTTokenService(
-        secret_key="unit-test-secret-key-min-32-chars-long",
+        secret_key=secret,
         algorithm="HS256",
         access_token_expire_minutes=15,
         refresh_token_expire_days=7,
     )
     user_id = uuid7()
-    org_id = 42
     papel = "MEDICO"
 
     tokens = service.gerar_tokens(
         usuario_id=user_id,
-        organizacao_id=org_id,
         papel=papel,
     )
 
@@ -43,18 +42,22 @@ def test_jwt_issue_and_validate_tokens() -> None:
     assert tokens.expires_in == 900
     assert tokens.refresh_expires_in == 604800
 
+    # Ensure raw JWT payload contains no org_id claim
+    raw_access = jwt.decode(tokens.access_token, secret, algorithms=["HS256"])  # pyright: ignore[reportUnknownMemberType]
+    assert "org_id" not in raw_access
+
     # Validate access token
     access_payload = service.validar_access_token(tokens.access_token)
+    assert not hasattr(access_payload, "org_id")
     assert access_payload.sub == user_id
-    assert access_payload.org_id == org_id
     assert access_payload.papel == papel
     assert access_payload.type == "access"
     assert access_payload.jti is not None
 
     # Validate refresh token
     refresh_payload = service.validar_refresh_token(tokens.refresh_token)
+    assert not hasattr(refresh_payload, "org_id")
     assert refresh_payload.sub == user_id
-    assert refresh_payload.org_id == org_id
     assert refresh_payload.papel == papel
     assert refresh_payload.type == "refresh"
     assert refresh_payload.jti is not None
@@ -66,8 +69,7 @@ def test_jwt_type_mismatch_rejected() -> None:
     service = JWTTokenService(secret_key="unit-test-secret-key-min-32-chars-long")
     tokens = service.gerar_tokens(
         usuario_id=uuid7(),
-        organizacao_id=1,
-        papel="ADMIN_GLOBAL",
+        papel="GESTOR_UNIDADE",
     )
 
     with pytest.raises(TokenInvalidoError) as exc_info1:
@@ -86,7 +88,6 @@ def test_jwt_expired_token_rejected() -> None:
     past = datetime.now(UTC) - timedelta(minutes=5)
     expired_payload = {
         "sub": str(uuid7()),
-        "org_id": 1,
         "papel": "MEDICO",
         "iat": int(past.timestamp()),
         "exp": int(past.timestamp()),
@@ -108,14 +109,11 @@ def test_jwt_tampered_or_invalid_signature_rejected() -> None:
 
     tokens = service1.gerar_tokens(
         usuario_id=uuid7(),
-        organizacao_id=1,
         papel="MEDICO",
     )
 
-    # Validating with different secret key
     with pytest.raises(TokenInvalidoError):
         service2.validar_access_token(tokens.access_token)
 
-    # Validating malformed token
     with pytest.raises(TokenInvalidoError):
         service1.validar_access_token("not-a-valid-jwt-token")

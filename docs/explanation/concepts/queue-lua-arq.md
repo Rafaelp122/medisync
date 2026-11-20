@@ -165,9 +165,8 @@ timestamp originais.
 
 Agendamento em `src/worker/settings.py`: função
 registrada no worker mais cron por minuto
-(`reconciliar_fila_orphans_cron`). Escopo por
-organização sob contexto de tenant, então
-reconciliação nunca cruza tenant.
+(`reconciliar_fila_orphans_cron`). Varre toda a fila
+única da plataforma (`fila:aptos`) e reconstrói órfãos reais.
 
 Busca de prova:
 

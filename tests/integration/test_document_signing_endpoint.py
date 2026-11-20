@@ -25,14 +25,11 @@ async def test_assinar_documento_clinico_pades_flow(
     """Validate full flow: issue document, sign with PAdES, download signed PDF."""
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="55555555000103",
+        unidade_cnpj="55555555000103",
         paciente_cpf="77777777701",
         medico_cpf="88888888801",
     )
-    async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
-    async_client.headers.update(
-        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
-    )
+    async_client.headers.update(auth_headers(Role.MEDICO, cenario.medico.id))
     client = async_client
 
     soap_resp_1 = await client.post(
@@ -114,14 +111,11 @@ async def test_assinar_documento_consultation_finalizada_bloqueado(
     """Validate signing is rejected with 403 Forbidden if consultation finalized."""
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="55555555000104",
+        unidade_cnpj="55555555000104",
         paciente_cpf="77777777702",
         medico_cpf="88888888802",
     )
-    async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
-    async_client.headers.update(
-        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
-    )
+    async_client.headers.update(auth_headers(Role.MEDICO, cenario.medico.id))
     client = async_client
 
     # Salvar evolução SOAP com conferência de identidade CFM antes de emitir
@@ -182,14 +176,11 @@ async def test_assinar_documento_erros_validacao_e_nao_encontrado(
     """Validate 404 for non-existent documents and 422 for invalid parameters."""
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="55555555000105",
+        unidade_cnpj="55555555000105",
         paciente_cpf="77777777703",
         medico_cpf="88888888803",
     )
-    async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
-    async_client.headers.update(
-        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
-    )
+    async_client.headers.update(auth_headers(Role.MEDICO, cenario.medico.id))
     client = async_client
 
     # 1. Documento não encontrado -> 404

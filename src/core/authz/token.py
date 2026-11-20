@@ -12,16 +12,15 @@ from src.core.uuid7 import uuid7
 
 def create_access_token(
     usuario_id: UUID,
-    organizacao_id: int,
     papel: str,
     secret_key: str | None = None,
     algorithm: str | None = None,
     expire_minutes: int | None = None,
 ) -> str:
-    """Gera token JWT com claims de autorização e tenant isolation (ADR-003).
+    """Gera token JWT com claims de identidade e papel RBAC (ADR-013).
 
-    Assegura vinculação criptográfica do usuário ao tenant (LGPD Art. 11).
-    Decisões: docs/adrs/ADR-003-Multi-Tenancy-Logico-Postgres-RLS.md
+    Assegura vinculação criptográfica da identidade do ator (LGPD Art. 11).
+    Decisões: docs/adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md
     Regras: docs/explanation/architecture/security-and-authorization.md
     """
     settings = get_settings()
@@ -37,7 +36,6 @@ def create_access_token(
 
     payload: dict[str, Any] = {
         "sub": str(usuario_id),
-        "org_id": organizacao_id,
         "papel": papel,
         "iat": int(now.timestamp()),
         "exp": int(access_exp.timestamp()),
@@ -54,10 +52,10 @@ def decode_access_token(
     secret_key: str | None = None,
     algorithm: str | None = None,
 ) -> AuthenticatedUser:
-    """Decodifica e valida token JWT com verificação estrita de claims (ADR-003).
+    """Decodifica e valida token JWT com verificação estrita de claims (ADR-013).
 
-    Garante integridade criptográfica e tenant principal (LGPD Art. 11).
-    Decisões: docs/adrs/ADR-003-Multi-Tenancy-Logico-Postgres-RLS.md
+    Garante integridade criptográfica e papel do usuário (LGPD Art. 11).
+    Decisões: docs/adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md
     Regras: docs/explanation/architecture/security-and-authorization.md
     """
     settings = get_settings()
@@ -70,7 +68,7 @@ def decode_access_token(
             key,
             algorithms=[algo],
             options={
-                "require": ["sub", "org_id", "papel", "exp", "jti", "type"],
+                "require": ["sub", "papel", "exp", "jti", "type"],
                 "verify_exp": True,
             },
         )
@@ -93,7 +91,6 @@ def decode_access_token(
 
     try:
         usuario_id = UUID(str(payload["sub"]))
-        organizacao_id = int(payload["org_id"])
         papel = str(payload["papel"])
         token_id = UUID(str(payload["jti"]))
     except (ValueError, KeyError, TypeError) as exc:
@@ -104,7 +101,6 @@ def decode_access_token(
 
     return AuthenticatedUser(
         usuario_id=usuario_id,
-        organizacao_id=organizacao_id,
         papel=papel,
         token_id=token_id,
         raw_token=token,

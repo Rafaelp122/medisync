@@ -1,5 +1,5 @@
 import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { obterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGet } from "@/api/generated/sdk.gen";
 import type { TmaStatusResponse } from "@/api/generated/types.gen";
@@ -25,9 +25,7 @@ export function useTmaStatus(
     queryKey: ["tma-status", atendimentoId, params?.iniciado_em, params?.tma_planejado_segundos],
     queryFn: async () => {
       try {
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

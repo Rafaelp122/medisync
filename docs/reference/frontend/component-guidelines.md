@@ -26,7 +26,7 @@ Em vez de concentrar múltiplos subprocessos em uma única função React, monó
   - `AtestadoForm`: Campos de afastamento, CID-10 e emissão de declarações.
   - `PrescriptionItemsList`: Tabela de itens acumulados com remoção e resumo.
 * **PainelGestor:** Decomposto em orquestrador de telemetria e cartões de visualização:
-  - `PainelHeader`: Cabeçalho institucional e seletor de consórcio/período.
+  - `PainelHeader`: Cabeçalho institucional e indicador de atualização em tempo real.
   - `AcrTriageDistributionGrid`: Grid de cartões de distribuição de gravidade SUS (Nível 1 a Nível 5).
   - `TaxasOperacionaisCard`: Métricas de TMA, No-Show e evasão.
   - `MedicosTmaCard`: Monitoramento individual de produtividade médica.

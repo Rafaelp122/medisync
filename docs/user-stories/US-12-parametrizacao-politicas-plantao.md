@@ -38,7 +38,7 @@
 
 * **Consulta:** `GET /api/v1/telemetria/config-plantao`
 * **Atualização:** `PUT /api/v1/telemetria/config-plantao`
-* **Headers:** `Authorization: Bearer <jwt_admin>`, `X-Tenant-ID: <org_id>`
+* **Headers:** `Authorization: Bearer <jwt_gestor>`
 * **Payload de Atualização (`ConfigPlantaoUpdate`):**
   ```json
   {
@@ -56,7 +56,7 @@
 ## 4. Checklist de Inspeção de Código
 
 - [x] **Modelo:** Entidade rica `ConfiguracaoPlantao` com validações de invariantes em `src/modules/telemetry/domain/models.py`.
-- [x] **Migration Alembic:** Tabela `configuracoes_plantao` criada com RLS multi-tenant (`migrations/versions/0006_telemetry_config_plantao.py`).
+- [x] **Migration Alembic:** Tabela singleton `configuracoes_plantao` criada em plataforma única (`migrations/versions/0001_initial_schema.py`).
 - [x] **Apresentação:** Router fino `telemetry_router.py` montado em `/api/v1/telemetria/config-plantao`.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_telemetry_model.py`

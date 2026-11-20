@@ -35,7 +35,6 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | Status | `code` | Quando / Origem |
 |---|---|---|
 | 400 | `DOMAIN_ERROR`, `BAD_REQUEST` | Erro genérico de domínio ou payload malformado (`DomainError`, `BadRequestError`) |
-| 400 | `TENANT_INVALIDO` | Header `X-Tenant-ID` ausente ou não-positivo (`TenantInvalidoError`) |
 | 400 | `COMPETENCIA_INVALIDA` | Competência informada fora do padrão YYYYMM (`CompetenciaInvalidaError`) |
 | 400 | `AUTH_ERROR` | Falha genérica de autenticação (`AuthError`) |
 | 400 | `DEPENDENTE_AUTO_REFERENCIA` | Paciente indicado como dependente de si mesmo (`DependenteAutoReferenciaError`) |
@@ -47,18 +46,18 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 401 | `OTP_INVALIDO` | Código OTP incorreto ou expirado (`OtpInvalidoOuExpiradoError`) |
 | 401 | `MFA_CODIGO_INVALIDO` | Código de segundo fator (TOTP) incorreto ou expirado (`MfaCodigoInvalidoError`) |
 | 401 | `WEBAUTHN_CHALLENGE_INVALIDO` | Desafio WebAuthn ausente, expirado ou divergente (`WebAuthnChallengeInvalidoError`) |
-| 401 | `PASSKEY_NAO_ENCONTRADA` | Credencial Passkey não localizada na organização (`PasskeyNaoEncontradaError`) |
+| 401 | `PASSKEY_NAO_ENCONTRADA` | Credencial Passkey não localizada (`PasskeyNaoEncontradaError`) |
 | 403 | `FORBIDDEN` | Acesso negado por falta de papel clínico ou escopo (`ForbiddenError`) |
 | 403 | `CONTA_DESATIVADA` | Usuário inativo tentando autenticar (`ContaDesativadaError`) |
 | 404 | `NOT_FOUND` | Recurso genérico não encontrado (`NotFoundError`) |
-| 404 | `PACIENTE_NAO_ENCONTRADO` | Paciente não cadastrado no tenant (`PacienteNaoEncontradoError`) |
+| 404 | `PACIENTE_NAO_ENCONTRADO` | Paciente não cadastrado (`PacienteNaoEncontradoError`) |
 | 404 | `ATENDIMENTO_NAO_ENCONTRADO` | Atendimento não localizado no banco (`AtendimentoNaoEncontradoError`) |
 | 404 | `FILA_VAZIA` | Sem pacientes elegíveis na fila de espera (`FilaVaziaError`) |
 | 404 | `EVOLUCAO_NAO_ENCONTRADA` | SOAP inexistente para o atendimento (`EvolucaoNaoEncontradaError`) |
 | 404 | `DOCUMENTO_CLINICO_NAO_ENCONTRADO` | Documento clínico inexistente (`DocumentoClinicoNaoEncontradoError`) |
 | 404 | `DOCUMENTO_STORAGE_NAO_ENCONTRADO` | Chave de arquivo ausente no MinIO/S3 (`DocumentoNaoEncontradoNoStorageError`) |
-| 404 | `PRODUCAO_NAO_ENCONTRADA` | Lote ou produção ambulatorial inexistente na competência/tenant (`ProducaoNaoEncontradaError`) |
-| 404 | `AGENDAMENTO_NAO_ENCONTRADO` | Agendamento multiprofissional não localizado ou pertencente a outro tenant (`AgendamentoNaoEncontradoError`) |
+| 404 | `PRODUCAO_NAO_ENCONTRADA` | Lote ou produção ambulatorial inexistente na competência (`ProducaoNaoEncontradaError`) |
+| 404 | `AGENDAMENTO_NAO_ENCONTRADO` | Agendamento multiprofissional não localizado (`AgendamentoNaoEncontradoError`) |
 | 409 | `CONFLICT` | Conflito de estado concorrente genérico (`ConflictError`) |
 | 409 | `VINCULO_DEPENDENTE_EXISTENTE` | Vínculo titular-dependente já existente (`VinculoDependenteExistenteError`) |
 | 409 | `TRANSICAO_ESTADO_INVALIDA` | Transição ilegal na máquina de estados de atendimento (`TransicaoEstadoInvalidaError`) |
@@ -93,7 +92,7 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 
 Notas de semântica:
 
-- 400 vs 422: payload malformado ou tenant ausente em rota autenticada é 400; falha de validação de corpo ou regra clínica é 422.
+- 400 vs 422: payload malformado ou falha estrutural básica de entrada é 400 (`BAD_REQUEST` / `COMPETENCIA_INVALIDA`); falha de validação de schema Pydantic ou regra clínica é 422.
 - 404 carrega `code` discriminado para o cliente diferenciar recursos clínicos sem inspecionar `detail`.
 - 409 protege concorrência de alocação médica e imutabilidade de prontuário e registros forenses.
 - 423 (Locked): formalmente mapeado para contas bloqueadas temporariamente por proteção contra força bruta.
@@ -105,7 +104,6 @@ Notas de semântica:
 
 - Impl: `src/core/errors.py:ProblemDetails`
 - Impl: `src/core/errors.py:DomainError`
-- Impl: `src/core/errors.py:TenantInvalidoError`
 - Impl: `src/core/errors.py:create_problem_response`
 - Impl: `src/core/errors.py:register_exception_handlers`
 - Impl: `src/core/audit/exceptions.py:AuditoriaImutavelError`

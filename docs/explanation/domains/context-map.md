@@ -92,8 +92,8 @@ Queue promove em background após qualificação SUS, sem qualquer trava ou cobr
 
 Downstream estrito e desacoplado, concebido como implementação de CQRS pragmático e read model operacional sem acoplamento reverso.
 
-- **Papel**: Telemetria operacional agregada em tempo real (RF-10) e parametrização dinâmica de plantão por tenant (RF-09).
-- **Consome**: `TelemetryReaderPort` (`src/modules/telemetry/application/ports/telemetry_reader_port.py`) executando queries SQL somente-leitura nas tabelas transacionais de atendimentos (isoladas por tenant com RLS ativo), além de Valkey para estado volátil de filas (`fila:{org}:aptos`) e médicos ativos (`plantao:{org}:medicos_ativos`).
+- **Papel**: Telemetria operacional agregada em tempo real (RF-10) e parametrização dinâmica do plantão da unidade (RF-09).
+- **Consome**: `TelemetryReaderPort` (`src/modules/telemetry/application/ports/telemetry_reader_port.py`) executando queries SQL somente-leitura nas tabelas transacionais de atendimentos, além de Valkey para estado volátil de filas (`fila:aptos`) e médicos ativos (`plantao:medicos_ativos`).
 - **Expõe**: Endpoints REST para gestores clínicos (`GET /api/v1/telemetria/painel`, `GET/PUT /api/v1/telemetria/config-plantao`).
 - **Relação com outros módulos**: Downstream estrito e desacoplado. Nenhum módulo do fluxo clínico depende de `telemetry`, preservando total independência operacional e isolamento de falhas.
 

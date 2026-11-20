@@ -17,7 +17,6 @@ from src.modules.consultation.domain.exceptions import ConsultaFinalizadaError
 def _make_resumo(is_terminal: bool) -> AtendimentoResumoDTO:
     return AtendimentoResumoDTO(
         atendimento_id=uuid4(),
-        organizacao_id=1,
         medico_id=uuid4(),
         status="CONCLUIDO" if is_terminal else "EM_ATENDIMENTO",
         tcle_hash="a" * 64,
@@ -33,7 +32,6 @@ async def test_salvar_bloqueia_quando_terminal() -> None:
     svc = EvolucaoService(session=session, reader=reader)
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=uuid4(),
-        organizacao_id=1,
         medico_id=uuid4(),
         anamnese="a",
         conduta="c",

@@ -15,7 +15,7 @@ class TransicaoAgendamentoInvalidaError(DomainError):
 
 
 class AgendamentoNaoEncontradoError(NotFoundError):
-    """Lançada quando o agendamento não existe ou não pertence ao tenant ativo.
+    """Lançada quando o agendamento não existe na base de dados.
 
     Regras: docs/explanation/domains/scheduling-domain.md
     """

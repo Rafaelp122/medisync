@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { admitirPacienteApiV1FilaAdmissaoPost } from "@/api/generated/sdk.gen";
 import type {
@@ -34,9 +34,7 @@ export function useAdmitirPaciente(
     mutationFn: async ({ body, token }: AdmitirPacienteParams) => {
       try {
         const validatedBody = admissaoSchema.parse(body);
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

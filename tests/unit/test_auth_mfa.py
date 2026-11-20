@@ -1,6 +1,6 @@
 """Unit tests for Tripartite Authentication and TOTP MFA (RFC 6238).
 
-Regras: ADR-007, RF-01, CFM nº 2.454/2026, CFM nº 2.314/2022.
+Regras: ADR-007, ADR-013, RF-01, CFM nº 2.454/2026, CFM nº 2.314/2022.
 """
 
 from datetime import date
@@ -80,7 +80,6 @@ TEST_JWT_SECRET = "super-secret-key-for-testing-purposes-123456"
 
 def _make_credencial(
     usuario_id: UUID | None = None,
-    organizacao_id: int = 1,
     identificador: str = "dr.silva@medisync.com",
     senha_pura: str = "senha123",
     papel: str = "MEDICO",
@@ -88,7 +87,6 @@ def _make_credencial(
     mfa_ativo: bool = False,
 ) -> UsuarioCredencial:
     return UsuarioCredencial(
-        organizacao_id=organizacao_id,
         usuario_id=usuario_id or uuid7(),
         identificador=identificador,
         senha_hash=f"$argon2id$fake${senha_pura}",
@@ -146,9 +144,7 @@ async def test_gerar_mfa_secret_sucesso() -> None:
     session = FakeAsyncSession(results=[FakeResult(cred)])
     service = _make_auth_service(session)
 
-    setup_dto = await service.gerar_mfa_secret(
-        usuario_id=cred.usuario_id, organizacao_id=cred.organizacao_id
-    )
+    setup_dto = await service.gerar_mfa_secret(usuario_id=cred.usuario_id)
 
     assert len(setup_dto.secret) == 32
     assert setup_dto.uri.startswith("otpauth://totp/MediSync:")
@@ -164,7 +160,7 @@ async def test_gerar_mfa_secret_usuario_nao_encontrado() -> None:
 
     uid = uuid4()
     with pytest.raises(NotFoundError) as exc_info:
-        await service.gerar_mfa_secret(usuario_id=uid, organizacao_id=1)
+        await service.gerar_mfa_secret(usuario_id=uid)
 
     assert str(uid) in str(exc_info.value)
 
@@ -180,7 +176,6 @@ async def test_ativar_mfa_codigo_invalido_rejeitado() -> None:
     with pytest.raises(MfaCodigoInvalidoError) as exc_info:
         await service.ativar_mfa(
             usuario_id=cred.usuario_id,
-            organizacao_id=cred.organizacao_id,
             codigo="000000",
         )
 
@@ -201,7 +196,6 @@ async def test_ativar_mfa_sucesso() -> None:
     valid_code = generate_totp_code(secret)
     sucesso = await service.ativar_mfa(
         usuario_id=cred.usuario_id,
-        organizacao_id=cred.organizacao_id,
         codigo=valid_code,
     )
 
@@ -227,7 +221,6 @@ async def test_autenticar_medico_mfa_ativo_exige_segundo_fator() -> None:
     cmd = LoginCommand(
         identificador=cred.identificador,
         senha="senha123",
-        organizacao_id=cred.organizacao_id,
         client_ip="127.0.0.1",
     )
     tokens = await service.autenticar(cmd)
@@ -239,16 +232,13 @@ async def test_autenticar_medico_mfa_ativo_exige_segundo_fator() -> None:
 
     payload = token_svc.validar_mfa_token(tokens.access_token)
     assert payload.sub == cred.usuario_id
-    assert payload.org_id == cred.organizacao_id
+    assert not hasattr(payload, "org_id")
     assert payload.mfa_pending is True
 
 
 @pytest.mark.asyncio
 async def test_autenticar_medico_mfa_inativo_exige_mfa_setup_requerido() -> None:
-    """Médico com MFA inativo recebe token temporário.
-
-    Valida mfa_requerido=True e mfa_setup_requerido=True.
-    """
+    """Médico com MFA inativo recebe token temporário."""
     cred = _make_credencial(
         papel="MEDICO",
         senha_pura="senha123",
@@ -262,7 +252,6 @@ async def test_autenticar_medico_mfa_inativo_exige_mfa_setup_requerido() -> None
     cmd = LoginCommand(
         identificador=cred.identificador,
         senha="senha123",
-        organizacao_id=cred.organizacao_id,
         client_ip="127.0.0.1",
     )
     tokens = await service.autenticar(cmd)
@@ -274,7 +263,7 @@ async def test_autenticar_medico_mfa_inativo_exige_mfa_setup_requerido() -> None
 
     payload = token_svc.validar_mfa_token(tokens.access_token)
     assert payload.sub == cred.usuario_id
-    assert payload.org_id == cred.organizacao_id
+    assert not hasattr(payload, "org_id")
     assert payload.mfa_pending is True
 
 
@@ -294,7 +283,6 @@ async def test_autenticar_gestor_mfa_inativo_exige_mfa_setup_requerido() -> None
     cmd = LoginCommand(
         identificador=cred.identificador,
         senha="senha123",
-        organizacao_id=cred.organizacao_id,
         client_ip="127.0.0.1",
     )
     tokens = await service.autenticar(cmd)
@@ -306,7 +294,7 @@ async def test_autenticar_gestor_mfa_inativo_exige_mfa_setup_requerido() -> None
 
     payload = token_svc.validar_mfa_token(tokens.access_token)
     assert payload.sub == cred.usuario_id
-    assert payload.org_id == cred.organizacao_id
+    assert not hasattr(payload, "org_id")
     assert payload.mfa_pending is True
 
 
@@ -316,10 +304,6 @@ async def test_autenticar_gestor_mfa_inativo_exige_mfa_setup_requerido() -> None
     [
         "MEDICO",
         "GESTOR_UNIDADE",
-        "GESTOR_CONSORCIO",
-        "REGULADOR_MUNICIPAL",
-        "AUDITOR_PRODUCAO",
-        "ADMIN_GLOBAL",
     ],
 )
 async def test_roles_requiring_mfa_bloqueiam_acesso_direto(papel: str) -> None:
@@ -336,7 +320,6 @@ async def test_roles_requiring_mfa_bloqueiam_acesso_direto(papel: str) -> None:
     cmd = LoginCommand(
         identificador=cred.identificador,
         senha="senha123",
-        organizacao_id=cred.organizacao_id,
         client_ip="127.0.0.1",
     )
     tokens = await service.autenticar(cmd)
@@ -357,7 +340,6 @@ async def test_verificar_mfa_login_sucesso() -> None:
     token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
     temp_token = token_svc.gerar_mfa_token(
         usuario_id=cred.usuario_id,
-        organizacao_id=cred.organizacao_id,
         papel=cred.papel,
     )
 
@@ -393,7 +375,6 @@ async def test_verificar_mfa_login_codigo_incorreto_rejeitado() -> None:
     token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
     temp_token = token_svc.gerar_mfa_token(
         usuario_id=cred.usuario_id,
-        organizacao_id=cred.organizacao_id,
         papel=cred.papel,
     )
 
@@ -416,7 +397,6 @@ async def test_autenticar_cadsus_govbr_sucesso() -> None:
     paciente_id = uuid7()
     lookup_paciente = PacienteAuthLookupData(
         id=paciente_id,
-        organizacao_id=1,
         telefone="11987654321",
         cpf="11144477735",
         nome_completo="Carlos Paciente",
@@ -428,7 +408,6 @@ async def test_autenticar_cadsus_govbr_sucesso() -> None:
     )
 
     resultado = await service.autenticar_cadsus_govbr(
-        organizacao_id=1,
         cpf="11144477735",
         data_nascimento=date(1990, 5, 15),
     )
@@ -450,7 +429,6 @@ async def test_autenticar_cadsus_govbr_paciente_nao_encontrado() -> None:
 
     with pytest.raises(PacienteNaoEncontradoError) as exc_info:
         await service.autenticar_cadsus_govbr(
-            organizacao_id=1,
             cpf="11144477735",
             data_nascimento=date(1990, 5, 15),
         )
@@ -474,7 +452,6 @@ async def test_autenticar_rejeita_papel_paciente_com_dummy_verify() -> None:
     cmd = LoginCommand(
         identificador="paciente@example.com",
         senha="SenhaPaciente123",
-        organizacao_id=1,
         client_ip="127.0.0.1",
     )
     with pytest.raises(CredenciaisInvalidasError):
@@ -495,7 +472,6 @@ async def test_rotacionar_refresh_token_rejeita_papel_paciente() -> None:
     token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
     pair = token_svc.gerar_tokens(
         usuario_id=cred.usuario_id,
-        organizacao_id=cred.organizacao_id,
         papel=Role.PACIENTE.value,
     )
     revocation = MemoryTokenRevocation()

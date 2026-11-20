@@ -2,10 +2,12 @@
 
 | Metadado | Detalhe |
 | :--- | :--- |
-| **Status** | Aprovado |
-| **Data** | 2026-09-30 |
+| **Status** | **Superseded** por [ADR-013](ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md) |
+| **Data** | 2026-09-30 (Substituída em 2026-11-20) |
 | **Decisores** | Time de Arquitetura & Engenharia |
-| **Referência** | [Overview](../explanation/architecture/overview.md), [Data Model](../explanation/architecture/data-model.md) (RN-REG-02, RNF-05) |
+| **Referência** | [ADR-013](ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md), [Overview](../explanation/architecture/overview.md), [Data Model](../explanation/architecture/data-model.md) (RN-REG-02, RNF-05) |
+
+> **Aviso Histórico:** Esta ADR foi substituída pela [ADR-013](ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md), que simplificou o MediSync Express para o modelo nativo de **Plataforma Única**, removendo `organizacoes`, `organizacao_id`, `X-Tenant-ID`, `TenantResolutionMiddleware`, `ContextVar` de tenant e políticas PostgreSQL RLS. O texto abaixo permanece apenas como registro histórico da decisão original.
 
 ---
 
@@ -49,7 +51,7 @@ Adotamos a **Opção 3: Multi-Tenancy Lógico com Defesa em Profundidade via Pos
 3. Listener do SQLAlchemy injeta o comando `SET LOCAL app.current_tenant_id` no início de cada transação assíncrona.
 4. **Modo Multi-Tenant vs. Single-Tenant Opcional (IoC via Settings)**:
    - Por padrão (`MULTI_TENANCY_ENABLED=True`), o `TenantResolutionMiddleware` resolve o tenant estritamente na ordem `X-Tenant-ID` $\to$ JWT Bearer $\to$ subdomínio, sem fallback silencioso (`DEFAULT_TENANT_ID` deve ser `None`).
-   - Em implantações dedicadas a uma única prefeitura/unidade (`MULTI_TENANCY_ENABLED=False`), `DEFAULT_TENANT_ID` ($\ge 1$) é validado em *fail-fast* no boot (`src/core/config.py:CommonSettings.validate_multi_tenancy_config`) e injetado no middleware (`src/core/middleware.py:TenantResolutionMiddleware`), que **ignora** cabeçalhos `X-Tenant-ID`, tokens ou subdomínios externos (prevenção anti-spoofing), mantendo intactas as políticas RLS no banco de dados.
+   - Em implantações dedicadas a uma única prefeitura/unidade (`MULTI_TENANCY_ENABLED=False`), `DEFAULT_TENANT_ID` ($\ge 1$) era validado em *fail-fast* no boot e injetado no antigo `TenantResolutionMiddleware` (posteriormente removido na [ADR-013](ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md)).
 
 ---
 

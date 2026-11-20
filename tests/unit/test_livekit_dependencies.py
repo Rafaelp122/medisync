@@ -4,9 +4,8 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.security import HTTPAuthorizationCredentials
-from src.core.config import get_settings
+from src.core.authz.token import create_access_token
 from src.core.errors import ConflictError, ForbiddenError
-from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoResumoDTO,
 )
@@ -16,13 +15,11 @@ from src.modules.consultation.presentation.schemas import LiveKitTokenRequest
 from tests.doubles import FakeAtendimentoReader
 
 
-def _make_doctor_token(doctor_id: UUID, org_id: int) -> HTTPAuthorizationCredentials:
-    service = JWTTokenService(secret_key=get_settings().JWT_SECRET_KEY)
-    token = service.gerar_tokens(
+def _make_doctor_token(doctor_id: UUID) -> HTTPAuthorizationCredentials:
+    token = create_access_token(
         usuario_id=doctor_id,
-        organizacao_id=org_id,
-        papel="MEDICO",  # type: ignore[arg-type]
-    ).access_token
+        papel="MEDICO",
+    )
     return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
 
@@ -33,11 +30,9 @@ async def test_validar_acesso_livekit_paciente_ausente_retorna_conflict_error() 
     """
     atend_id = uuid4()
     doc_id = uuid4()
-    org_id = 1
     reader = FakeAtendimentoReader(
         AtendimentoResumoDTO(
             atendimento_id=atend_id,
-            organizacao_id=org_id,
             medico_id=doc_id,
             paciente_id=uuid4(),
             status="PACIENTE_AUSENTE",
@@ -46,11 +41,10 @@ async def test_validar_acesso_livekit_paciente_ausente_retorna_conflict_error() 
         )
     )
     req = LiveKitTokenRequest(
-        organizacao_id=org_id,
         participant_id=doc_id,
         role="medico",
     )
-    creds = _make_doctor_token(doc_id, org_id)
+    creds = _make_doctor_token(doc_id)
 
     with pytest.raises(ConflictError) as exc_info:
         await validar_acesso_livekit(
@@ -72,11 +66,9 @@ async def test_validar_acesso_livekit_status_concluido_mantem_forbidden_error() 
     """
     atend_id = uuid4()
     doc_id = uuid4()
-    org_id = 1
     reader = FakeAtendimentoReader(
         AtendimentoResumoDTO(
             atendimento_id=atend_id,
-            organizacao_id=org_id,
             medico_id=doc_id,
             paciente_id=uuid4(),
             status="CONCLUIDO",
@@ -85,11 +77,10 @@ async def test_validar_acesso_livekit_status_concluido_mantem_forbidden_error() 
         )
     )
     req = LiveKitTokenRequest(
-        organizacao_id=org_id,
         participant_id=doc_id,
         role="medico",
     )
-    creds = _make_doctor_token(doc_id, org_id)
+    creds = _make_doctor_token(doc_id)
 
     with pytest.raises(ForbiddenError) as exc_info:
         await validar_acesso_livekit(

@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { intakeFase1ApiV1OnboardingFase1Post } from "@/api/generated/sdk.gen";
 import type {
@@ -29,7 +29,6 @@ export function useIntakeFase1(
         const response = await intakeFase1ApiV1OnboardingFase1Post({
           client,
           body: payload,
-          headers: getTenantHeaders(),
           throwOnError: true,
         });
         return response.data;

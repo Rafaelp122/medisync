@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation, useQueryClient } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { emitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost } from "@/api/generated/sdk.gen";
 import type { DocumentoClinicoResponse, EmitirDocumentoRequest } from "@/api/generated/types.gen";
@@ -29,9 +29,7 @@ export function useEmitirDocumento(
     mutationFn: async ({ token, ...body }: EmitirDocumentoParams) => {
       try {
         const validatedBody = emitirDocumentoSchema.parse(body);
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

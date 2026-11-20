@@ -21,15 +21,11 @@ async def test_consultation_soap_full_lifecycle_and_safeguards(
 ) -> None:
     """Test entire PEP workflow: SOAP notes, validation and immutability."""
     cenario = await seed_clinical_scenario(db_session)
-    async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
-    async_client.headers.update(
-        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
-    )
+    async_client.headers.update(auth_headers(Role.MEDICO, cenario.medico.id))
     client = async_client
 
     # 1. Register SOAP notes (Subjetivo, Objetivo, Avaliação, Plano)
     soap_payload = {
-        "organizacao_id": cenario.organizacao.id,
         "anamnese": "Paciente queixa-se de odinofagia e coriza há 3 dias.",
         "exame_fisico_virtual": (
             "Orofaringe com hiperemia leve, sem placas purulentas."
@@ -49,7 +45,6 @@ async def test_consultation_soap_full_lifecycle_and_safeguards(
 
     # 2. Update existing SOAP notes while consultation is open
     soap_update_payload = {
-        "organizacao_id": cenario.organizacao.id,
         "anamnese": "Paciente queixa-se de odinofagia, coriza e febre há 3 dias.",
         "exame_fisico_virtual": ("Orofaringe com hiperemia leve e congestão nasal."),
         "cid10_principal": "J00",
@@ -101,7 +96,6 @@ async def test_consultation_soap_full_lifecycle_and_safeguards(
     res_doc_tipo_proibido = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={
-            "organizacao_id": cenario.organizacao.id,
             "tipo_documento": "NOTIFICACAO_RECEITA_A",
             "itens": [
                 {
@@ -119,7 +113,6 @@ async def test_consultation_soap_full_lifecycle_and_safeguards(
     res_doc_item_proibido = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={
-            "organizacao_id": cenario.organizacao.id,
             "tipo_documento": "RECEITA_SIMPLES",
             "itens": [
                 {
@@ -136,7 +129,6 @@ async def test_consultation_soap_full_lifecycle_and_safeguards(
     res_doc_valido = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={
-            "organizacao_id": cenario.organizacao.id,
             "tipo_documento": "RECEITA_SIMPLES",
             "itens": [
                 {
@@ -173,9 +165,7 @@ async def test_consultation_soap_full_lifecycle_and_safeguards(
     # 11. Conclude and finalize consultation
     res_finalize = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/finalize",
-        json={
-            "organizacao_id": cenario.organizacao.id,
-        },
+        json={},
     )
     assert res_finalize.status_code == 200
     assert cast("dict[str, object]", res_finalize.json())["is_finalizado"] is True
@@ -201,7 +191,6 @@ async def test_consultation_soap_full_lifecycle_and_safeguards(
     res_doc_after = await client.post(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents",
         json={
-            "organizacao_id": cenario.organizacao.id,
             "tipo_documento": "RECEITA_SIMPLES",
             "itens": [
                 {
@@ -224,8 +213,6 @@ async def test_consultation_mutation_endpoints_unauthenticated_blocked(
 ) -> None:
     """Validate that mutation endpoints without Bearer token return 401 Unauthorized."""
     cenario = await seed_clinical_scenario(db_session)
-    async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
-    # Ensure Authorization header is absent
     async_client.headers.pop("Authorization", None)
     client = async_client
 
@@ -302,7 +289,6 @@ async def test_consultation_mutation_endpoints_unassigned_physician_blocked(
     """Validate that non-assigned physician receives 403 Forbidden Problem Details."""
     cenario = await seed_clinical_scenario(db_session)
     medico_intruso = make_profissional(
-        cenario.organizacao.id,
         cpf="99988877766",
         email="dr.intruso@hospital.local",
         papel=Role.MEDICO,
@@ -313,10 +299,7 @@ async def test_consultation_mutation_endpoints_unassigned_physician_blocked(
     await db_session.commit()
     await db_session.refresh(medico_intruso)
 
-    async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
-    async_client.headers.update(
-        auth_headers(Role.MEDICO, cenario.organizacao.id, medico_intruso.id)
-    )
+    async_client.headers.update(auth_headers(Role.MEDICO, medico_intruso.id))
     client = async_client
     atend_id = cenario.atendimento.id
 

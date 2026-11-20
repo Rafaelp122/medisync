@@ -23,14 +23,12 @@ from src.modules.queue.composition import get_patient_queue_ownership_checker
 
 def _make_doctor_token(medico_id: UUID) -> str:
     service = JWTTokenService(secret_key=get_settings().JWT_SECRET_KEY)
-    return service.gerar_tokens(
-        usuario_id=medico_id, organizacao_id=1, papel="MEDICO"
-    ).access_token
+    return service.gerar_tokens(usuario_id=medico_id, papel="MEDICO").access_token
 
 
 def _make_patient_token(paciente_id: UUID) -> str:
     settings = get_settings()
-    return create_intake_token(paciente_id, 1, settings.SECRET_KEY)
+    return create_intake_token(paciente_id, settings.SECRET_KEY)
 
 
 def test_ws_queue_patient_receives_updates_sub_500ms() -> None:

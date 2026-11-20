@@ -28,7 +28,7 @@ from tests.helpers import (
     clean_database_tables as _clean_db_tables,
 )
 
-AuthedClientFactory = Callable[[str, int, UUID | None], AsyncClient]
+AuthedClientFactory = Callable[[str, UUID | None], AsyncClient]
 
 
 @pytest.fixture
@@ -64,14 +64,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 def authed_client_factory() -> AuthedClientFactory:
     """Return a factory that builds an AsyncClient pre-authenticated with JWT."""
 
-    def _build_client(
-        papel: str, org_id: int, usuario_id: UUID | None = None
-    ) -> AsyncClient:
+    def _build_client(papel: str, usuario_id: UUID | None = None) -> AsyncClient:
         uid = usuario_id or uuid4()
-        headers = {
-            **auth_headers(papel=papel, org_id=org_id, usuario_id=uid),
-            "X-Tenant-ID": str(org_id),
-        }
+        headers = auth_headers(papel=papel, usuario_id=uid)
         transport = ASGITransport(app=app)
         return AsyncClient(transport=transport, base_url="http://test", headers=headers)
 

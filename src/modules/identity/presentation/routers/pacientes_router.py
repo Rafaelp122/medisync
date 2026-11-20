@@ -5,7 +5,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Path, status
 
-from src.core.dependencies import TenantDep
 from src.modules.identity.composition import DependenteServiceDep
 from src.modules.identity.presentation.dependencies import TitularPosseDep
 from src.modules.identity.presentation.schemas import (
@@ -34,13 +33,11 @@ pacientes_router = APIRouter(
 async def cadastrar_dependente(
     id: TitularIdPath,
     body: Annotated[CriarDependenteRequest, Body()],
-    tenant_id: TenantDep,
     service: DependenteServiceDep,
     _posse: TitularPosseDep,
 ) -> DependenteResponse:
     """Register or link a dependent to a titular patient."""
     result = await service.adicionar_dependente(
-        organizacao_id=tenant_id,
         titular_id=id,
         dados=body,
     )
@@ -53,18 +50,14 @@ async def cadastrar_dependente(
     summary="Listar dependentes do titular",
     description=(
         "Recupera a lista de todos os dependentes vinculados "
-        "ao paciente titular na organização."
+        "ao paciente titular autenticado."
     ),
 )
 async def listar_dependentes(
     id: TitularIdPath,
-    tenant_id: TenantDep,
     service: DependenteServiceDep,
     _posse: TitularPosseDep,
 ) -> list[DependenteDetalheResponse]:
     """List all dependents linked to the titular patient."""
-    results = await service.listar_dependentes(
-        organizacao_id=tenant_id,
-        titular_id=id,
-    )
+    results = await service.listar_dependentes(titular_id=id)
     return [DependenteDetalheResponse.model_validate(d) for d in results]

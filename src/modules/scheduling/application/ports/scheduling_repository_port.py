@@ -13,20 +13,17 @@ class SchedulingRepositoryPort(Protocol):
 
     async def listar_disponibilidades_ativas(
         self,
-        organizacao_id: int,
         especialidade: str,
     ) -> Sequence[AgendaDisponibilidade]: ...
 
     async def listar_agendamentos_ocupados(
         self,
-        organizacao_id: int,
         inicio: datetime,
         fim: datetime,
     ) -> Sequence[Agendamento]: ...
 
     async def buscar_agendamento_conflitante(
         self,
-        organizacao_id: int,
         profissional_id: UUID,
         slot_inicio: datetime,
         slot_fim: datetime,
@@ -34,7 +31,6 @@ class SchedulingRepositoryPort(Protocol):
 
     async def buscar_disponibilidade_profissional(
         self,
-        organizacao_id: int,
         profissional_id: UUID,
         especialidade: str | None,
         dia_semana: int,
@@ -42,20 +38,17 @@ class SchedulingRepositoryPort(Protocol):
 
     async def buscar_agendamento_por_id(
         self,
-        organizacao_id: int,
         agendamento_id: UUID,
         for_update: bool = False,
     ) -> Agendamento | None: ...
 
     async def listar_agendamentos_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> Sequence[Agendamento]: ...
 
     async def listar_agendamentos_profissional(
         self,
-        organizacao_id: int,
         profissional_id: UUID,
         inicio: datetime,
         fim: datetime,

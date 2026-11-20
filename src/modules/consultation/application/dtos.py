@@ -32,7 +32,6 @@ class ItemPrescricaoInput(Protocol):
 class EmitirLiveKitTokenCommand:
     """Command payload for room token generation."""
 
-    organizacao_id: int
     atendimento_id: UUID
     participant_id: UUID
     role: Literal["medico", "paciente"]
@@ -57,7 +56,6 @@ class LiveKitTokenRequestDTO:
     """Request DTO to generate a LiveKit room access token."""
 
     atendimento_id: UUID
-    organizacao_id: int
     participant_id: UUID
     role: Literal["medico", "paciente"]
     participant_name: str | None = None
@@ -81,7 +79,6 @@ class RegistrarEvolucaoSOAPCommand:
     """Command to record or update medical SOAP clinical notes."""
 
     atendimento_id: UUID
-    organizacao_id: int
     medico_id: UUID
     anamnese: str  # Subjetivo (S)
     conduta: str  # Plano (P)
@@ -114,7 +111,6 @@ class EmitirDocumentoClinicoCommand:
     """Command to issue an electronic clinical document with prescription items."""
 
     atendimento_id: UUID
-    organizacao_id: int
     medico_id: UUID
     tipo_documento: str
     itens: Sequence[ItemPrescricaoInput] = field(
@@ -132,7 +128,6 @@ class VerificarLivenessCommand:
     """Command to verify active facial liveness frames for a consultation."""
 
     atendimento_id: UUID
-    organizacao_id: int
     ator_id: UUID
     ator_papel: str
     challenge_id: str
@@ -146,7 +141,6 @@ class FinalizarConsultaCommand:
     """Command to lock attendance records, marking consultation concluded."""
 
     atendimento_id: UUID
-    organizacao_id: int
     medico_id: UUID
 
 

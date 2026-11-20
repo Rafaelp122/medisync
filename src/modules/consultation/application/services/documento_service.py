@@ -1,7 +1,7 @@
 """Clinical document lifecycle service with canonical storage keys.
 
 Owns emitir/compilar/assinar for DocumentoClinico using the canonical
-``orgs/{org}/consultations/...`` key builder plus SignedCachePort.
+``consultations/...`` key builder plus SignedCachePort.
 """
 
 import asyncio
@@ -78,8 +78,6 @@ def _resolve_liveness_actor(ator_papel: str) -> tuple[str, str]:
     normalized = ator_papel.strip().upper()
     if normalized == AtorPapel.PACIENTE.value:
         return AtorTipo.PACIENTE.value, AtorPapel.PACIENTE.value
-    if normalized == AtorPapel.ADMIN_GLOBAL.value:
-        return AtorTipo.PROFISSIONAL.value, AtorPapel.ADMIN_GLOBAL.value
     return AtorTipo.PROFISSIONAL.value, AtorPapel.MEDICO.value
 
 
@@ -182,7 +180,6 @@ class DocumentoService:
             return
         ator_tipo, ator_papel = _resolve_liveness_actor(command.ator_papel)
         await self._audit_trail.record_event(
-            organizacao_id=command.organizacao_id,
             tipo_evento=tipo_evento,
             ator_tipo=ator_tipo,
             ator_papel=ator_papel,
@@ -313,7 +310,6 @@ class DocumentoService:
         if len(justificativa) >= 15:
             if self._audit_trail is not None:
                 await self._audit_trail.record_event(
-                    organizacao_id=command.organizacao_id,
                     tipo_evento="TRAVA_TEMPORAL_ATESTADO_VIOLADA",
                     ator_tipo=AtorTipo.PROFISSIONAL.value,
                     ator_papel=AtorPapel.MEDICO.value,
@@ -329,7 +325,6 @@ class DocumentoService:
 
         if self._audit_trail is not None:
             await self._audit_trail.record_event(
-                organizacao_id=command.organizacao_id,
                 tipo_evento="TRAVA_TEMPORAL_ATESTADO_VIOLADA",
                 ator_tipo=AtorTipo.PROFISSIONAL.value,
                 ator_papel=AtorPapel.MEDICO.value,
@@ -414,9 +409,7 @@ class DocumentoService:
         chave_s3 = (
             command.chave_s3.strip()
             if command.chave_s3 and command.chave_s3.strip()
-            else build_signed_document_key(
-                command.organizacao_id, command.atendimento_id, new_doc_id
-            )
+            else build_signed_document_key(command.atendimento_id, new_doc_id)
         )
 
         sha256_hash = (
@@ -426,7 +419,6 @@ class DocumentoService:
         )
 
         doc = DocumentoClinico(
-            organizacao_id=command.organizacao_id,
             atendimento_id=command.atendimento_id,
             medico_id=command.medico_id,
             tipo_documento=tipo_str,
@@ -447,7 +439,6 @@ class DocumentoService:
                 == TipoDocumentoClinico.RECEITA_CONTROLE_ESPECIAL_C1
             )
             item_entity = DocumentoItem(
-                organizacao_id=command.organizacao_id,
                 documento_id=doc.id,
                 medicamento=item_dto.medicamento,
                 dosagem=item_dto.dosagem,
@@ -469,7 +460,6 @@ class DocumentoService:
                 audit_payload["excecao_liveness"] = True
                 audit_payload["justificativa_excecao_liveness"] = liveness_excecao
             await self._audit_trail.record_event(
-                organizacao_id=command.organizacao_id,
                 tipo_evento="DOCUMENTO_CLINICO_EMITIDO",
                 ator_tipo=AtorTipo.PROFISSIONAL.value,
                 ator_papel=AtorPapel.MEDICO.value,
@@ -530,12 +520,12 @@ class DocumentoService:
         if self._directory is not None:
             with contextlib.suppress(Exception):
                 dir_data = await self._directory.obter_dados_verificacao(
-                    organizacao_id=doc.organizacao_id,
                     medico_id=doc.medico_id,
                     atendimento_id=doc.atendimento_id,
                 )
                 org_nome = dir_data.organizacao_nome
                 org_cnpj = dir_data.organizacao_cnpj
+                org_cnes = dir_data.cnes
                 medico_nome = dir_data.medico_nome
                 medico_crm = dir_data.medico_crm
                 medico_crm_uf = dir_data.medico_crm_uf
@@ -630,16 +620,13 @@ class DocumentoService:
         new_hash = hashlib.sha256(signed_bytes).hexdigest()
         doc.registrar_assinatura(new_hash, datetime.now(UTC))
 
-        s3_key = build_signed_document_key(
-            doc.organizacao_id, doc.atendimento_id, doc.id
-        )
+        s3_key = build_signed_document_key(doc.atendimento_id, doc.id)
         await self._storage.salvar_documento(s3_key, signed_bytes)
         doc.chave_s3 = s3_key
         await self._cache.marcar_assinado(doc.id)
         await self._session.flush()
         if self._audit_trail is not None:
             await self._audit_trail.record_event(
-                organizacao_id=doc.organizacao_id,
                 tipo_evento="DOCUMENTO_CLINICO_ASSINADO",
                 ator_tipo=AtorTipo.PROFISSIONAL.value,
                 ator_papel=AtorPapel.MEDICO.value,

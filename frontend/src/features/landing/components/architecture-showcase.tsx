@@ -31,13 +31,13 @@ const ARCHITECTURE_PILLARS = [
       "Fila clínica indexada em Sorted Set de 64 bits com UUIDv7, locks duplos vinculados por script Lua e resolução determinística de No-Show via ring timeout de 45s no ARQ.",
   },
   {
-    id: "postgres-rls",
+    id: "rbac-anti-idor",
     icon: Lock,
     badge: "Defesa em Profundidade",
-    title: "PostgreSQL 17 Row-Level Security (RLS)",
-    summary: "Isolamento multi-tenant de consórcios diretamente no kernel do banco.",
+    title: "RBAC Estrito & Anti-IDOR por Titularidade",
+    summary: "Autorização multicamada com posse clínica explícita e tokens JWT/HMAC.",
     details:
-      "Cada requisição propaga o organizacao_id via ContextVar e aplica SET LOCAL app.current_tenant_id, bloqueando vazamento transversal de dados entre municípios.",
+      "Cada operação verifica papéis assistenciais (PACIENTE, MEDICO, GESTOR_UNIDADE, FATURAMENTO) e posse do atendimento ou prontuário no serviço antes de ler ou mutar registros no PostgreSQL 17.",
   },
   {
     id: "livekit-webrtc",
@@ -76,7 +76,8 @@ export function ArchitectureShowcase() {
         </h2>
         <p className="text-base text-muted-foreground leading-relaxed text-pretty">
           Cada camada do MediSync Express foi projetada para resolver tensões reais de concorrência,
-          isolamento multi-tenant, estabilidade de mídia em tempo real e conformidade médico-legal.
+          controle de acesso por titularidade, estabilidade de mídia em tempo real e conformidade
+          médico-legal.
         </p>
       </div>
 

@@ -64,7 +64,7 @@ export const healthcheckHealthzGetOptions = (options?: Options<HealthcheckHealth
  *
  * Autentica o usuário corporativo emitindo par de tokens de acesso e atualização.
  *
- * Regras: RN-AUT-01, RN-AUT-05, RN-AUT-08, OWASP ASVS v4.0 (V3.5.2).
+ * Regras: RN-AUT-01, RN-AUT-05, RN-AUT-08, ADR-013, OWASP ASVS v4.0 (V3.5.2).
  * Documentação: docs/explanation/domains/auth-domain.md
  */
 export const loginApiV1AuthLoginPostMutation = (options?: Partial<Options<LoginApiV1AuthLoginPostData>>): UseMutationOptions<LoginApiV1AuthLoginPostResponse, LoginApiV1AuthLoginPostError, Options<LoginApiV1AuthLoginPostData>> => {
@@ -265,7 +265,7 @@ export const postAuthPacienteCadsusMutation = (options?: Partial<Options<PostAut
 /**
  * Auto-cadastro do cidadão com disparo inicial de OTP
  *
- * Registra novo paciente na organização com aceite LGPD, credencial opcional (e-mail/senha Argon2id) e envio inicial de código OTP via SMS.
+ * Registra novo paciente na plataforma com aceite LGPD, credencial opcional (e-mail/senha Argon2id) e envio inicial de código OTP via SMS.
  */
 export const postAuthPatientRegisterMutation = (options?: Partial<Options<PostAuthPatientRegisterData>>): UseMutationOptions<PostAuthPatientRegisterResponse, PostAuthPatientRegisterError, Options<PostAuthPatientRegisterData>> => {
     const mutationOptions: UseMutationOptions<PostAuthPatientRegisterResponse, PostAuthPatientRegisterError, Options<PostAuthPatientRegisterData>> = {
@@ -458,7 +458,7 @@ export const listarDependentesApiV1PacientesIdDependentesGetQueryKey = (options:
 /**
  * Listar dependentes do titular
  *
- * Recupera a lista de todos os dependentes vinculados ao paciente titular na organização.
+ * Recupera a lista de todos os dependentes vinculados ao paciente titular autenticado.
  */
 export const listarDependentesApiV1PacientesIdDependentesGetOptions = (options: Options<ListarDependentesApiV1PacientesIdDependentesGetData>) => queryOptions<ListarDependentesApiV1PacientesIdDependentesGetResponse, ListarDependentesApiV1PacientesIdDependentesGetError, ListarDependentesApiV1PacientesIdDependentesGetResponse, ReturnType<typeof listarDependentesApiV1PacientesIdDependentesGetQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -495,7 +495,7 @@ export const cadastrarDependenteApiV1PacientesIdDependentesPostMutation = (optio
 /**
  * Admissão clínica e triagem no PA Virtual
  *
- * Classifica o risco clínico pelo Protocolo Manchester/ACR, valida TCLE e backpressure estocástico, e persiste atomicamente atendimento e triagem. Requer credencial de autenticação válida (token provisório de acolhimento ou token de acesso) com posse sobre o paciente_id e organização para prevenir injeção anônima (Anti-IDOR).
+ * Classifica o risco clínico pelo Protocolo Manchester/ACR, valida TCLE e backpressure estocástico, e persiste atomicamente atendimento e triagem. Requer credencial de autenticação válida (token provisório de acolhimento ou token de acesso) com posse sobre o paciente_id para prevenir injeção anônima (Anti-IDOR).
  */
 export const admitirPacienteApiV1FilaAdmissaoPostMutation = (options?: Partial<Options<AdmitirPacienteApiV1FilaAdmissaoPostData>>): UseMutationOptions<AdmitirPacienteApiV1FilaAdmissaoPostResponse, AdmitirPacienteApiV1FilaAdmissaoPostError, Options<AdmitirPacienteApiV1FilaAdmissaoPostData>> => {
     const mutationOptions: UseMutationOptions<AdmitirPacienteApiV1FilaAdmissaoPostResponse, AdmitirPacienteApiV1FilaAdmissaoPostError, Options<AdmitirPacienteApiV1FilaAdmissaoPostData>> = {
@@ -730,10 +730,9 @@ export const obterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGe
 /**
  * Acesso ao prontuário médico protegido por RBAC e ABAC clínico
  *
- * Retorna o prontuário eletrônico mediante verificação em 3 camadas:
+ * Retorna o prontuário eletrônico mediante verificação em 2 camadas:
  * 1. Camada 1 (Macro RBAC): papel MEDICO.
- * 2. Camada 2 (RLS): isolamento de tenant.
- * 3. Camada 3 (ABAC Clínico): médico assistente + TCLE assinado + status ativo.
+ * 2. Camada 2 (ABAC Clínico): médico assistente + TCLE assinado + status ativo.
  */
 export const obterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetOptions = (options: Options<ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetData>) => queryOptions<ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetResponse, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetError, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetResponse, ReturnType<typeof obterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -967,7 +966,7 @@ export const obterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetQueryKey = (
 /**
  * Consulta parametrização de políticas do plantão (RF-09)
  *
- * Consulta os parâmetros ativos do plantão para a organização (médicos planejados, fator alpha, cota diária, TMA padrão e metas de SLA). Se inexistente, inicializa e persiste a configuração default.
+ * Consulta os parâmetros ativos do plantão da plataforma (médicos planejados, fator alpha, cota diária, TMA padrão e metas de SLA). Se inexistente, inicializa e persiste a configuração default.
  */
 export const obterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetOptions = (options?: Options<ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetData>) => queryOptions<ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetResponse, DefaultError, ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetResponse, ReturnType<typeof obterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -985,7 +984,7 @@ export const obterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetOptions = (o
 /**
  * Atualiza parametrização de políticas do plantão (RF-09)
  *
- * Atualiza as políticas e metas de SLA do plantão para a organização, validando limites e invariantes de domínio, invalidando o cache do painel e persistindo as alterações atomicamente.
+ * Atualiza as políticas e metas de SLA do plantão da plataforma, validando limites e invariantes de domínio, invalidando o cache do painel e persistindo as alterações atomicamente.
  */
 export const atualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutMutation = (options?: Partial<Options<AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutData>>): UseMutationOptions<AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponse, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutError, Options<AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutData>> => {
     const mutationOptions: UseMutationOptions<AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponse, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutError, Options<AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutData>> = {

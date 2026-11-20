@@ -87,7 +87,6 @@ async def test_emitir_documento_tipo_proibido_falha(tipo_proibido: str) -> None:
 
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=uuid7(),
-        organizacao_id=1,
         medico_id=uuid7(),
         tipo_documento=tipo_proibido,
         itens=[
@@ -204,7 +203,6 @@ async def test_salvar_evolucao_soap_persiste_gate_identidade_cfm_2314() -> None:
     reader = FakeAtendimentoReader(
         resumo=AtendimentoResumoDTO(
             atendimento_id=atendimento_id,
-            organizacao_id=1,
             medico_id=medico_id,
             status="EM_ATENDIMENTO",
             tcle_hash="a" * 64,
@@ -215,7 +213,6 @@ async def test_salvar_evolucao_soap_persiste_gate_identidade_cfm_2314() -> None:
 
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=1,
         medico_id=medico_id,
         anamnese="Cefaleia frontal há 24h.",
         conduta="Hidratação e analgesia.",

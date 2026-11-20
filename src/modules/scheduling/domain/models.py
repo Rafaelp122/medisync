@@ -6,7 +6,6 @@ from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -111,14 +110,6 @@ def normalizar_utc(dt: datetime) -> datetime:
     return dt.astimezone(UTC)
 
 
-def _validar_organizacao_id(organizacao_id: int) -> None:
-    if organizacao_id <= 0:
-        raise ValidationError(
-            f"organizacao_id '{organizacao_id}' inválido; "
-            "esperado inteiro positivo > 0."
-        )
-
-
 class AgendaDisponibilidade(Base):
     """Janela recorrente de disponibilidade semanal de profissional multiprofissional.
 
@@ -140,21 +131,15 @@ class AgendaDisponibilidade(Base):
             name="chk_agenda_disp_duracao",
         ),
         Index(
-            "idx_agenda_disp_org_esp",
-            "organizacao_id",
+            "idx_agenda_disp_esp",
             "especialidade",
             "dia_semana",
         ),
-        Index("idx_agenda_disp_prof", "organizacao_id", "profissional_id"),
+        Index("idx_agenda_disp_prof", "profissional_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("organizacoes.id", ondelete="RESTRICT"),
-        nullable=False,
     )
     profissional_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -170,7 +155,6 @@ class AgendaDisponibilidade(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         profissional_id: UUID,
         especialidade: EspecialidadeAgenda | str,
         dia_semana: int,
@@ -185,7 +169,6 @@ class AgendaDisponibilidade(Base):
 
         Regras: docs/explanation/domains/scheduling-domain.md
         """
-        _validar_organizacao_id(organizacao_id)
         esp = validar_especialidade_agenda(especialidade)
 
         if dia_semana < 0 or dia_semana > 6:
@@ -220,7 +203,6 @@ class AgendaDisponibilidade(Base):
 
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             profissional_id=profissional_id,
             especialidade=esp.value,
             dia_semana=dia_semana,
@@ -238,8 +220,7 @@ class AgendaDisponibilidade(Base):
         if not self.ativo or not outra.ativo:
             return False
         if (
-            self.organizacao_id != outra.organizacao_id
-            or self.profissional_id != outra.profissional_id
+            self.profissional_id != outra.profissional_id
             or self.dia_semana != outra.dia_semana
         ):
             return False
@@ -304,7 +285,6 @@ class Agendamento(Base):
             name="chk_agendamento_status",
         ),
         ExcludeConstraint(
-            ("organizacao_id", "="),
             ("profissional_id", "="),
             (
                 func.tstzrange(
@@ -320,7 +300,6 @@ class Agendamento(Base):
         ),
         Index(
             "uq_agendamento_slot_ativo",
-            "organizacao_id",
             "profissional_id",
             "slot_inicio",
             unique=True,
@@ -333,14 +312,12 @@ class Agendamento(Base):
             postgresql_where=text("atendimento_id IS NOT NULL"),
         ),
         Index(
-            "idx_agendamentos_org_paciente",
-            "organizacao_id",
+            "idx_agendamentos_paciente",
             "paciente_id",
             "slot_inicio",
         ),
         Index(
-            "idx_agendamentos_org_profissional",
-            "organizacao_id",
+            "idx_agendamentos_profissional",
             "profissional_id",
             "slot_inicio",
         ),
@@ -348,11 +325,6 @@ class Agendamento(Base):
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("organizacoes.id", ondelete="RESTRICT"),
-        nullable=False,
     )
     paciente_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -392,7 +364,6 @@ class Agendamento(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
         profissional_id: UUID,
         especialidade: EspecialidadeAgenda | str,
@@ -406,11 +377,10 @@ class Agendamento(Base):
         atualizado_em: datetime | None = None,
         id: UUID | None = None,
     ) -> None:
-        """Inicializa agendamento validando tenant, especialidade, slot e status.
+        """Inicializa agendamento validando especialidade, slot e status.
 
         Regras: docs/explanation/domains/scheduling-domain.md
         """
-        _validar_organizacao_id(organizacao_id)
         esp = validar_especialidade_agenda(especialidade)
         inicio_utc = normalizar_utc(slot_inicio)
         fim_utc = normalizar_utc(slot_fim)
@@ -427,7 +397,6 @@ class Agendamento(Base):
 
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             paciente_id=paciente_id,
             profissional_id=profissional_id,
             especialidade=esp.value,

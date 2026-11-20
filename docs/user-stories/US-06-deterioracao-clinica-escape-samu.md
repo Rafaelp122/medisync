@@ -40,7 +40,7 @@
 ## 3. Contrato de API
 
 * **Endpoint:** `POST /api/v1/fila/piora`
-* **Headers:** `X-Tenant-ID: <org_id>`
+* **Headers:** `Authorization: Bearer <token_intake_ou_jwt>`
 * **Payload de Entrada (`PioraClinicaRequest`):**
   ```json
   {

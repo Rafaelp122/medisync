@@ -9,7 +9,6 @@ from src.core.uuid7 import uuid7
 
 
 def make_audit_event(
-    organizacao_id: int = 1,
     atendimento_id: UUID | None = None,
     *,
     ator_tipo: AtorTipo | str = AtorTipo.PROFISSIONAL,
@@ -33,7 +32,6 @@ def make_audit_event(
         final_ator_id = uuid7()
 
     return AuditEvent(
-        organizacao_id=organizacao_id,
         atendimento_id=atendimento_id or uuid7(),
         ator_tipo=ator_tipo,
         ator_papel=ator_papel,

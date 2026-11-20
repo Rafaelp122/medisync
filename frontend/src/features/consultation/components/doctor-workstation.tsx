@@ -1,14 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Lock, LogOut, PhoneCall, Users } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { extractTenantIdFromJwt, getActiveTenantId } from "@/api/client";
 import type { ChamarProximoResponse, DocumentoClinicoResponse } from "@/api/generated/types.gen";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
-import { getAccessToken } from "@/lib/auth-token";
-import { getStoredToken } from "@/lib/session-storage";
 import { useChamarProximo } from "../api/use-chamar-proximo";
 import { useLiveKitToken } from "../api/use-livekit-token";
 import { usePainelTelemetria } from "../api/use-painel-telemetria";
@@ -27,7 +24,6 @@ export interface DoctorWorkstationProps {
   medicoNome?: string;
   crmUf?: string;
   token?: string;
-  organizacaoId?: number;
   onLogout?: () => void;
   idleTimeoutMs?: number;
   renderSchedulePanel?: ReactNode;
@@ -46,7 +42,6 @@ export function DoctorWorkstation({
   medicoNome = "Dr. Eduardo Rocha",
   crmUf = "123456/SP",
   token,
-  organizacaoId,
   onLogout,
   idleTimeoutMs = 15 * 60 * 1000,
   renderSchedulePanel,
@@ -128,16 +123,9 @@ export function DoctorWorkstation({
             setIsFinalizado(false);
 
             // Emite token LiveKit WebRTC para a sala médica
-            const activeTenant = getActiveTenantId();
-            const parsedTenant = activeTenant ? Number.parseInt(activeTenant, 10) : Number.NaN;
-            const resolvedOrgId =
-              organizacaoId ??
-              extractTenantIdFromJwt(token ?? getAccessToken() ?? getStoredToken()) ??
-              (Number.isFinite(parsedTenant) && parsedTenant > 0 ? parsedTenant : undefined);
             emitirLivekitToken({
               token,
               atendimento_id: data.atendimento_id,
-              ...(resolvedOrgId !== undefined ? { organizacao_id: resolvedOrgId } : {}),
               participant_id: medicoId,
               role: "medico",
               participant_name: medicoNome,

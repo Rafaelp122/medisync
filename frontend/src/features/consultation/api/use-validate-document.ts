@@ -1,5 +1,5 @@
 import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { validarDocumentoApiV1DocumentsValidateTokenValidacaoGet } from "@/api/generated/sdk.gen";
 import type { ValidarDocumentoResponse } from "@/api/generated/types.gen";
@@ -25,9 +25,6 @@ export function useValidateDocument(
         const response = await validarDocumentoApiV1DocumentsValidateTokenValidacaoGet({
           client,
           path: { token_validacao: normalizedToken },
-          headers: {
-            ...getTenantHeaders(),
-          },
           throwOnError: true,
         });
         return response.data;

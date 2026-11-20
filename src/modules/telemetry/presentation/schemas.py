@@ -26,7 +26,6 @@ class PainelTelemetriaResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    organizacao_id: int
     gerado_em: datetime
     tme_medio_segundos: float
     tme_nivel_1_segundos: float
@@ -108,12 +107,10 @@ class ConfigPlantaoRequest(BaseModel):
 
     def to_command(
         self,
-        organizacao_id: int,
         atualizado_por_id: UUID | None = None,
     ) -> ConfigPlantaoCommand:
         """Convert presentation request payload into immutable application command."""
         return ConfigPlantaoCommand(
-            organizacao_id=organizacao_id,
             medicos_ativos_planejados=self.medicos_ativos_planejados,
             alpha_backpressure=self.alpha_backpressure,
             cota_diaria_maxima=self.cota_diaria_maxima,
@@ -135,7 +132,6 @@ class ConfigPlantaoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    organizacao_id: int
     medicos_ativos_planejados: int
     alpha_backpressure: Decimal
     cota_diaria_maxima: int | None

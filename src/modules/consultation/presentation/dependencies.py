@@ -60,14 +60,9 @@ async def require_paciente_autenticado(
 ) -> AuthenticatedUser:
     """Enforce Tier 1 PACIENTE RBAC and Anti-IDOR identity extraction.
 
-    Garante chamador PACIENTE autenticado com organizacao_id e usuario_id válidos
-    extraídos exclusivamente do JWT (nunca de query/path params).
+    Garante chamador PACIENTE autenticado com usuario_id válido
+    extraído exclusivamente do JWT (nunca de query/path params).
     """
-    if current_user.organizacao_id <= 0:
-        raise ForbiddenError(
-            f"Organização inválida no token do paciente '{current_user.usuario_id}': "
-            f"{current_user.organizacao_id} (esperado inteiro positivo > 0)."
-        )
     return current_user
 
 
@@ -164,8 +159,8 @@ async def exigir_rate_limit(
         )
 
 
-async def _autenticar_chamador_medico(raw_token: str) -> tuple[UUID, int, bool]:
-    """Valida token JWT de médico e retorna (usuario_id, org_id, is_admin)."""
+async def _autenticar_chamador_medico(raw_token: str) -> UUID:
+    """Valida token JWT de médico e retorna usuario_id."""
     try:
         user = decode_access_token(raw_token)
     except Exception as exc:
@@ -178,16 +173,16 @@ async def _autenticar_chamador_medico(raw_token: str) -> tuple[UUID, int, bool]:
             f"Token de acesso '{user.token_id}' revogado. Realize novo login."
         )
 
-    if user.papel not in (Role.MEDICO, Role.ADMIN_GLOBAL):
+    if user.papel != Role.MEDICO:
         raise ForbiddenError(
             f"Acesso negado: papel '{user.papel}' sem permissão para sala "
-            f"como médico (esperados: {[Role.MEDICO.value, Role.ADMIN_GLOBAL.value]})."
+            f"como médico (esperado: '{Role.MEDICO.value}')."
         )
 
-    return user.usuario_id, user.organizacao_id, user.papel == Role.ADMIN_GLOBAL
+    return user.usuario_id
 
 
-def _autenticar_chamador_paciente_intake(raw_token: str) -> tuple[UUID, int, bool]:
+def _autenticar_chamador_paciente_intake(raw_token: str) -> UUID:
     """Valida token HMAC de acolhimento do paciente (2 partes)."""
     settings = get_settings()
     try:
@@ -197,10 +192,10 @@ def _autenticar_chamador_paciente_intake(raw_token: str) -> tuple[UUID, int, boo
             f"Token de acolhimento em formato inválido: {exc}."
         ) from exc
 
-    return UUID(str(claims["paciente_id"])), int(claims["organizacao_id"]), False
+    return UUID(str(claims["paciente_id"]))
 
 
-async def _autenticar_chamador_paciente_jwt(raw_token: str) -> tuple[UUID, int, bool]:
+async def _autenticar_chamador_paciente_jwt(raw_token: str) -> UUID:
     """Valida token JWT do paciente (3 partes)."""
     try:
         user = decode_access_token(raw_token)
@@ -214,17 +209,16 @@ async def _autenticar_chamador_paciente_jwt(raw_token: str) -> tuple[UUID, int, 
             f"Token de acesso '{user.token_id}' revogado. Realize novo login."
         )
 
-    if user.papel not in (Role.PACIENTE, Role.ADMIN_GLOBAL):
+    if user.papel != Role.PACIENTE:
         raise ForbiddenError(
             f"Acesso negado: papel '{user.papel}' sem permissão para sala "
-            "como paciente "
-            f"(esperados: {[Role.PACIENTE.value, Role.ADMIN_GLOBAL.value]})."
+            f"como paciente (esperado: '{Role.PACIENTE.value}')."
         )
 
-    return user.usuario_id, user.organizacao_id, user.papel == Role.ADMIN_GLOBAL
+    return user.usuario_id
 
 
-async def _autenticar_chamador_paciente(raw_token: str) -> tuple[UUID, int, bool]:
+async def _autenticar_chamador_paciente(raw_token: str) -> UUID:
     """Autentica chamador paciente via token de acolhimento ou JWT completo."""
     token_parts = raw_token.split(".")
     if len(token_parts) == 2:
@@ -242,24 +236,22 @@ class LivenessActor:
 
     actor_id: UUID
     actor_papel: str
-    organizacao_id: int
-    is_admin: bool = False
 
 
 async def _autenticar_chamador_liveness(
     raw_token: str,
     allowed_roles: tuple[Role, ...],
-) -> tuple[UUID, int, str, bool]:
+) -> tuple[UUID, str]:
     """Extrai identidade clínica de JWT ou HMAC validando papéis permitidos."""
     parts = raw_token.split(".")
     if len(parts) == 2:
-        actor_id, org_id, is_admin = _autenticar_chamador_paciente_intake(raw_token)
+        actor_id = _autenticar_chamador_paciente_intake(raw_token)
         if Role.PACIENTE not in allowed_roles:
             raise ForbiddenError(
                 f"Papel '{Role.PACIENTE.value}' não autorizado para esta ação "
                 f"(esperados: {[r.value for r in allowed_roles]})."
             )
-        return actor_id, org_id, Role.PACIENTE.value, is_admin
+        return actor_id, Role.PACIENTE.value
     if len(parts) != 3:
         raise UnauthorizedError(
             f"Token em formato inválido ({len(parts)} partes; esperados: 2 ou 3)."
@@ -282,31 +274,16 @@ async def _autenticar_chamador_liveness(
             f"Papel '{user.papel}' não autorizado para prova de vida facial "
             f"(esperados: {[r.value for r in allowed_roles]})."
         )
-    return (
-        user.usuario_id,
-        user.organizacao_id,
-        str(user.papel),
-        user.papel == Role.ADMIN_GLOBAL,
-    )
+    return user.usuario_id, str(user.papel)
 
 
 def _validar_participacao_atendimento_liveness(
     *,
     actor_id: UUID,
-    actor_org_id: int,
     actor_papel: str,
-    is_admin: bool,
-    atendimento_org_id: int,
     atendimento_paciente_id: UUID | None,
     atendimento_medico_id: UUID | None,
 ) -> None:
-    if is_admin:
-        return
-    if actor_org_id != atendimento_org_id:
-        raise ForbiddenError(
-            f"Acesso negado: ator pertence à organização {actor_org_id}, "
-            f"mas atendimento pertence à organização {atendimento_org_id}."
-        )
     if actor_papel == Role.PACIENTE.value and atendimento_paciente_id != actor_id:
         raise ForbiddenError(
             f"Paciente '{actor_id}' não é o titular deste atendimento clínico "
@@ -334,7 +311,7 @@ async def _require_liveness_actor(
             "esperado cabeçalho 'Authorization: Bearer <token>')."
         )
 
-    actor_id, actor_org_id, actor_papel, is_admin = await _autenticar_chamador_liveness(
+    actor_id, actor_papel = await _autenticar_chamador_liveness(
         credentials.credentials,
         allowed_roles,
     )
@@ -351,18 +328,13 @@ async def _require_liveness_actor(
 
     _validar_participacao_atendimento_liveness(
         actor_id=actor_id,
-        actor_org_id=actor_org_id,
         actor_papel=actor_papel,
-        is_admin=is_admin,
-        atendimento_org_id=resumo.organizacao_id,
         atendimento_paciente_id=resumo.paciente_id,
         atendimento_medico_id=resumo.medico_id,
     )
     return LivenessActor(
         actor_id=actor_id,
         actor_papel=actor_papel,
-        organizacao_id=resumo.organizacao_id,
-        is_admin=is_admin,
     )
 
 
@@ -374,12 +346,12 @@ async def require_liveness_challenge_medico(
         Security(http_bearer_scheme),
     ] = None,
 ) -> LivenessActor:
-    """Restringe solicitação de desafio facial ao médico alocado (ou admin)."""
+    """Restringe solicitação de desafio facial ao médico alocado."""
     return await _require_liveness_actor(
         atendimento_id=atendimento_id,
         reader=reader,
         credentials=credentials,
-        allowed_roles=(Role.MEDICO, Role.ADMIN_GLOBAL),
+        allowed_roles=(Role.MEDICO,),
     )
 
 
@@ -391,12 +363,12 @@ async def require_liveness_verify_paciente(
         Security(http_bearer_scheme),
     ] = None,
 ) -> LivenessActor:
-    """Restringe submissão dos frames biométricos ao paciente titular (ou admin)."""
+    """Restringe submissão dos frames biométricos ao paciente titular."""
     return await _require_liveness_actor(
         atendimento_id=atendimento_id,
         reader=reader,
         credentials=credentials,
-        allowed_roles=(Role.PACIENTE, Role.ADMIN_GLOBAL),
+        allowed_roles=(Role.PACIENTE,),
     )
 
 
@@ -411,15 +383,10 @@ LivenessVerifyPacienteDep = Annotated[
 def _validar_permissao_sala_livekit(
     role: str,
     participant_id: UUID,
-    is_admin: bool,
     caller_id: UUID,
-    caller_org_id: int,
     atendimento: AtendimentoResumoDTO,
 ) -> None:
     """Verifica micro-autorização ReBAC/ABAC para entrada em sala virtual."""
-    if is_admin:
-        return
-
     if role == "medico":
         if atendimento.medico_id is None or str(atendimento.medico_id) != str(
             caller_id
@@ -441,12 +408,6 @@ def _validar_permissao_sala_livekit(
         raise ForbiddenError(
             f"Acesso negado: participant_id '{participant_id}' diverge "
             f"do usuário autenticado '{caller_id}'."
-        )
-
-    if atendimento.organizacao_id != caller_org_id:
-        raise ForbiddenError(
-            f"Acesso negado: o token pertence à organização {caller_org_id}, "
-            f"mas o atendimento é da organização {atendimento.organizacao_id}."
         )
 
 
@@ -483,13 +444,9 @@ async def validar_acesso_livekit(
         )
 
     if request.role == "medico":
-        caller_id, caller_org_id, is_admin = await _autenticar_chamador_medico(
-            raw_token
-        )
+        caller_id = await _autenticar_chamador_medico(raw_token)
     else:
-        caller_id, caller_org_id, is_admin = await _autenticar_chamador_paciente(
-            raw_token
-        )
+        caller_id = await _autenticar_chamador_paciente(raw_token)
 
     # 2. Busca do atendimento via reader (404 se não existir)
     atendimento = await reader.obter_resumo(atendimento_id)
@@ -513,20 +470,9 @@ async def validar_acesso_livekit(
     _validar_permissao_sala_livekit(
         role=request.role,
         participant_id=request.participant_id,
-        is_admin=is_admin,
         caller_id=caller_id,
-        caller_org_id=caller_org_id,
         atendimento=atendimento,
     )
-
-    if (
-        request.organizacao_id is not None
-        and request.organizacao_id != atendimento.organizacao_id
-    ):
-        raise ForbiddenError(
-            f"Acesso negado: organizacao_id informada ({request.organizacao_id}) "
-            f"diverge do atendimento ({atendimento.organizacao_id})."
-        )
 
 
 LiveKitAccessDep = Annotated[
@@ -564,7 +510,7 @@ async def validar_ws_doctor_token(
             reason=f"Token de autenticação '{user.token_id}' revogado.",
         )
 
-    if user.papel not in (Role.MEDICO, Role.ADMIN_GLOBAL):
+    if user.papel != Role.MEDICO:
         raise WebSocketException(
             code=4403,
             reason=(
@@ -573,7 +519,7 @@ async def validar_ws_doctor_token(
             ),
         )
 
-    if user.papel != Role.ADMIN_GLOBAL and user.usuario_id != medico_id:
+    if user.usuario_id != medico_id:
         raise WebSocketException(
             code=4403,
             reason=(

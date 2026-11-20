@@ -4,7 +4,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
 
-from src.core.dependencies import TenantDep
 from src.modules.ambulatory.composition import ProducaoServiceDep
 from src.modules.ambulatory.presentation.dependencies import AmbulatoryAuthDep
 from src.modules.ambulatory.presentation.schemas import (
@@ -28,7 +27,6 @@ producao_router = APIRouter(
     ),
 )
 async def listar_producao(
-    tenant_id: TenantDep,
     producao_service: ProducaoServiceDep,
     _auth: AmbulatoryAuthDep,
     competencia: Annotated[
@@ -40,7 +38,6 @@ async def listar_producao(
 ) -> ListaProducaoAmbulatorialResponse:
     """List consolidated SUS ambulatory production for the given competence."""
     dto = await producao_service.listar_producao_por_competencia(
-        organizacao_id=tenant_id,
         competencia=competencia,
         page=page,
         size=size,
@@ -58,7 +55,6 @@ async def listar_producao(
     ),
 )
 async def exportar_bpa(
-    tenant_id: TenantDep,
     producao_service: ProducaoServiceDep,
     _auth: AmbulatoryAuthDep,
     competencia: Annotated[
@@ -67,10 +63,7 @@ async def exportar_bpa(
     ],
 ) -> Response:
     """Generate and stream DATASUS positional BPA-I magnetic file."""
-    dto = await producao_service.gerar_arquivo_bpa_i(
-        organizacao_id=tenant_id,
-        competencia=competencia,
-    )
+    dto = await producao_service.gerar_arquivo_bpa_i(competencia=competencia)
     return Response(
         content=dto.conteudo,
         media_type="text/plain; charset=ascii",

@@ -95,7 +95,6 @@ async def test_ingressar_fila_unit() -> None:
     )
     atend_id = uuid4()
     cmd = IngressarFilaCommand(
-        organizacao_id=1,
         atendimento_id=atend_id,
         prioridade_clinica=PrioridadeClinica.URGENTE,
         data_entrada_fila=datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC),
@@ -104,10 +103,9 @@ async def test_ingressar_fila_unit() -> None:
     result = await service.ingressar_fila(cmd)
 
     assert result.atendimento_id == atend_id
-    assert result.organizacao_id == 1
     assert result.posicao == 1
     mock_valkey.zadd.assert_called_once()
-    mock_valkey.zrank.assert_called_once_with("fila:1:aptos", str(atend_id))
+    mock_valkey.zrank.assert_called_once_with("fila:aptos", str(atend_id))
 
 
 @pytest.mark.asyncio
@@ -122,7 +120,7 @@ async def test_adquirir_proximo_paciente_fila_vazia() -> None:
         db_session=mock_session,
         alocacao_service=AsyncMock(),
     )
-    cmd = AdquirirProximoPacienteCommand(organizacao_id=1, medico_id=uuid4())
+    cmd = AdquirirProximoPacienteCommand(medico_id=uuid4())
 
     result = await service.adquirir_proximo_paciente(cmd)
     assert result is None
@@ -153,7 +151,7 @@ async def test_adquirir_proximo_paciente_sucesso_primeira_tentativa() -> None:
         db_session=mock_session,
         alocacao_service=mock_alocacao,
     )
-    cmd = AdquirirProximoPacienteCommand(organizacao_id=1, medico_id=medico_id)
+    cmd = AdquirirProximoPacienteCommand(medico_id=medico_id)
 
     result = await service.adquirir_proximo_paciente(cmd)
     assert result == expected_result
@@ -180,7 +178,6 @@ async def test_adquirir_proximo_paciente_medico_ocupado_sem_retry() -> None:
         alocacao_service=mock_alocacao,
     )
     cmd = AdquirirProximoPacienteCommand(
-        organizacao_id=1,
         medico_id=medico_id,
         max_retries=3,
     )
@@ -226,7 +223,6 @@ async def test_adquirir_proximo_paciente_retry_em_memoria() -> None:
         alocacao_service=mock_alocacao,
     )
     cmd = AdquirirProximoPacienteCommand(
-        organizacao_id=1,
         medico_id=medico_id,
         max_retries=3,
     )
@@ -254,7 +250,6 @@ async def test_adquirir_proximo_paciente_retry_esgotado_levanta_excecao() -> Non
         alocacao_service=mock_alocacao,
     )
     cmd = AdquirirProximoPacienteCommand(
-        organizacao_id=1,
         medico_id=uuid4(),
         max_retries=3,
     )
@@ -283,15 +278,15 @@ async def test_remover_e_obter_posicao_e_tamanho() -> None:
     )
     atend_id = uuid4()
 
-    assert await service.remover_da_fila(1, atend_id) is True
-    assert await service.obter_posicao_fila(1, atend_id) == 5
-    assert await service.obter_tamanho_fila(1) == 12
+    assert await service.remover_da_fila(atend_id) is True
+    assert await service.obter_posicao_fila(atend_id) == 5
+    assert await service.obter_tamanho_fila() == 12
 
     # When attendance is not in queue, rank is None -> returns None
     mock_valkey.zrank.return_value = None
-    assert await service.obter_posicao_fila(1, atend_id) is None
+    assert await service.obter_posicao_fila(atend_id) is None
 
-    lista = await service.listar_fila(1, offset=0, limit=2)
+    lista = await service.listar_fila(offset=0, limit=2)
     assert lista == ["id-1", "id-2"]
 
 
@@ -307,7 +302,6 @@ async def test_atender_chamada_success_transitions_state_and_locks() -> None:
     paciente_id = uuid7()
     medico_id = uuid7()
     atendimento = Atendimento(
-        organizacao_id=1,
         paciente_id=paciente_id,
         tcle_hash="a" * 64,
     )
@@ -331,9 +325,9 @@ async def test_atender_chamada_success_transitions_state_and_locks() -> None:
     assert atendimento.status == StatusAtendimento.EM_ATENDIMENTO.value
     mock_session.commit.assert_awaited_once()
 
-    k_medico_ring = f"lock:1:medico:{medico_id}"
-    k_atend_ring = f"lock:1:atendimento:{atendimento.id}"
-    k_medico_consulta = f"lock:1:consulta_ativa:medico:{medico_id}"
+    k_medico_ring = f"lock:medico:{medico_id}"
+    k_atend_ring = f"lock:atendimento:{atendimento.id}"
+    k_medico_consulta = f"lock:consulta_ativa:medico:{medico_id}"
 
     mock_pipe.delete.assert_any_call(k_medico_ring)
     mock_pipe.delete.assert_any_call(k_atend_ring)
@@ -352,7 +346,6 @@ async def test_atender_chamada_idempotent_when_already_em_atendimento() -> None:
     paciente_id = uuid7()
     medico_id = uuid7()
     atendimento = Atendimento(
-        organizacao_id=1,
         paciente_id=paciente_id,
         tcle_hash="a" * 64,
     )
@@ -376,7 +369,7 @@ async def test_atender_chamada_idempotent_when_already_em_atendimento() -> None:
         Atendimento, atendimento.id, with_for_update=True
     )
     mock_session.commit.assert_not_called()
-    k_medico_consulta = f"lock:1:consulta_ativa:medico:{medico_id}"
+    k_medico_consulta = f"lock:consulta_ativa:medico:{medico_id}"
     mock_valkey.set.assert_awaited_once_with(
         k_medico_consulta, str(atendimento.id), ex=7200
     )
@@ -389,7 +382,6 @@ async def test_atender_chamada_invalid_status_raises_conflict() -> None:
     mock_session = AsyncMock()
 
     atendimento = Atendimento(
-        organizacao_id=1,
         paciente_id=uuid7(),
         tcle_hash="a" * 64,
     )
@@ -446,7 +438,6 @@ async def test_resolver_ring_timeout_with_for_update_no_show() -> None:
     paciente_id = uuid7()
     medico_id = uuid7()
     atendimento = Atendimento(
-        organizacao_id=1,
         paciente_id=paciente_id,
         tcle_hash="a" * 64,
     )
@@ -463,7 +454,6 @@ async def test_resolver_ring_timeout_with_for_update_no_show() -> None:
     )
 
     res = await service.resolver_ring_timeout(
-        organizacao_id=1,
         atendimento_id=atendimento.id,
         medico_id=medico_id,
     )
@@ -488,7 +478,6 @@ async def test_resolver_ring_timeout_with_for_update_active_consultation() -> No
     paciente_id = uuid7()
     medico_id = uuid7()
     atendimento = Atendimento(
-        organizacao_id=1,
         paciente_id=paciente_id,
         tcle_hash="a" * 64,
     )
@@ -506,7 +495,6 @@ async def test_resolver_ring_timeout_with_for_update_active_consultation() -> No
     )
 
     res = await service.resolver_ring_timeout(
-        organizacao_id=1,
         atendimento_id=atendimento.id,
         medico_id=medico_id,
     )
@@ -532,7 +520,6 @@ async def test_resolver_ring_timeout_with_for_update_not_found() -> None:
 
     target_id = uuid4()
     res = await service.resolver_ring_timeout(
-        organizacao_id=1,
         atendimento_id=target_id,
         medico_id=uuid4(),
     )

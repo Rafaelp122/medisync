@@ -12,7 +12,7 @@ Entrada via RF-03 (alocação e chamada) e RF-04 (backpressure). Saída alimenta
 
 Escopo termina na entrega do par médico-paciente. Elegibilidade decide quem fica apto, consulta decide o que acontece dentro do ato médico.
 
-Chaves Valkey seguem convenção fixa: `fila:{org}:aptos` (ZSET de aptos), `lock:{org}:medico:{id}`, `lock:{org}:atendimento:{id}`, `plantao:{org}:medicos_ativos` (SET de plantão), `cota:{org}:{data}` (contador diário com expiração de 2 dias).
+Chaves Valkey seguem convenção fixa: `fila:aptos` (ZSET de aptos), `lock:medico:{id}`, `lock:atendimento:{id}`, `plantao:medicos_ativos` (SET de plantão), `queue:admissoes:{data}` (contador diário com expiração de 2 dias).
 
 Defaults operacionais: TMA estimado 600s, alpha 1,25, cota diária 300. Deploy SUS aperta alpha e cota, privado relaxa; código não muda, só parâmetro.
 
@@ -76,15 +76,15 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 
 ## 4. Relações
 
-- Admissão SUS direta e imediata (ADR-012). O acolhimento via `POST /api/v1/fila/admissao` valida TCLE e risco ACR, persistindo `Atendimento` em `APTO_PARA_CHAMADA` com score de 64 bits calculado e inserção atômica no ZSET `fila:{org}:aptos`, sem latência assíncrona ou dependência de workers externos.
+- Admissão SUS direta e imediata (ADR-012 / ADR-013). O acolhimento via `POST /api/v1/fila/admissao` valida TCLE e risco ACR, persistindo `Atendimento` em `APTO_PARA_CHAMADA` com score de 64 bits calculado e inserção atômica no ZSET `fila:aptos`, sem latência assíncrona ou dependência de workers externos.
 - Expõe alocação via porta tipada. `AllocationPort.alocar_chamada` esconde códigos Lua (`AlocacaoCodigo` 0/1/-1) atrás de enum; infra Valkey pluga sem tocar serviço.
-- Persiste em tabela `atendimentos` (FKs `organizacoes`, `pacientes`, `profissionais` com `RESTRICT`, RLS por `organizacao_id`, índices por status e fila). [Modelo](../architecture/data-model.md)
+- Persiste em tabela `atendimentos` (FKs `pacientes` e `profissionais` com `RESTRICT`, índices `idx_atendimentos_status`, `idx_atendimentos_paciente`, `idx_atendimentos_medico` e `idx_atendimentos_fila`). [Modelo](../architecture/data-model.md)
 - Notifica transbordo via porta abstrata. `QueueOverflowNotifierPort.emitir_transbordo` recebe `QueueOverflowEvent` imutável com motivo, carga e alpha; default loga, regulação externa pluga.
 - Publica ausência via `paciente_ausente_notifier`. Timeout vira evento de domínio, não só mudança de coluna; painel e métricas reagem sem polling.
 - Orquestra concorrência conforme desenho de filas e locks. [Concorrência](../architecture/concurrency-and-queues.md)
 - Notifica convocação médica protegida por taxa. Alocação despacha convocação ao paciente via porta `NotificationPort`, decorada na raiz de composição por `RateLimitedNotificationAdapter` sobre o cliente Valkey ativo (ou fallback em memória).
 - Auto-cura e reconciliação via sweeper. A tarefa periódica `reconciliar_fila_orphans_task` (`src/worker/tasks/sweeper.py`) varre o banco relacional a cada 60s e reinsere no ZSET qualquer atendimento em `APTO_PARA_CHAMADA` ausente no Valkey.
-- `FilaService` compõe admissão + alocação. `ingressar_fila` calcula score e insere no ZSET; `adquirir_proximo` puxa cabeça e delega lock ao `AlocacaoChamadaService`; backpressure avaliado antes de inserir com leitura e incremento da cota diária atômica no Valkey (`queue:admissoes:{org}:{today}`, TTL 48h).
+- `FilaService` compõe admissão + alocação. `ingressar_fila` calcula score e insere no ZSET; `adquirir_proximo` puxa cabeça e delega lock ao `AlocacaoChamadaService`; backpressure avaliado antes de inserir com leitura e incremento da cota diária atômica no Valkey (`queue:admissoes:{today}`, TTL 48h).
 - Routers REST finos expõem as operações centrais da fila clínica em conformidade com ADR-001/ADR-008:
   - `POST /api/v1/fila/chamar-proximo`: Médico adquire atomicamente o próximo paciente via script Lua com retry automático e double-lock (RF-03).
   - `GET /api/v1/fila/posicao/{atendimento_id}`: Consulta posição 1-based no ZSET e tempo estimado via TMA com guarda Anti-IDOR.
@@ -199,6 +199,6 @@ Sem corrigir código. Divergência entre doc e guardião real exige atualizar do
 ## 8. Ver também
 
 - [Product Specification](../product-specification.md) — RN01, RN02, RN05, RN06 contratuais
-- [Data Model](../architecture/data-model.md) — tabela `atendimentos`, RLS por `organizacao_id`
+- [Data Model](../architecture/data-model.md) — tabela `atendimentos` e índices clínicos de fila
 - [Concurrency and Queues](../architecture/concurrency-and-queues.md) — ZSET, double-lock Lua, TTL 45s
 - [Domains Index](./index.md) — visão conceitual por domínio

@@ -5,10 +5,8 @@ from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     DateTime,
-    ForeignKey,
     Index,
     String,
     UniqueConstraint,
@@ -21,7 +19,7 @@ from src.core.errors import ValidationError
 from src.core.uuid7 import uuid7
 from src.modules.identity.domain.models._helpers import clean_digits
 
-PapelProfissional = Literal["ADMIN_GLOBAL", "GESTOR_UNIDADE", "MEDICO", "FATURAMENTO"]
+PapelProfissional = Literal["GESTOR_UNIDADE", "MEDICO", "FATURAMENTO"]
 
 
 class Profissional(Base):
@@ -29,16 +27,13 @@ class Profissional(Base):
 
     __tablename__ = "profissionais"
     __table_args__ = (
-        UniqueConstraint("organizacao_id", "email", name="uq_profissional_org_email"),
-        UniqueConstraint("organizacao_id", "cpf", name="uq_profissional_org_cpf"),
-        Index("idx_profissionais_org_papel", "organizacao_id", "papel"),
+        UniqueConstraint("email", name="uq_profissional_email"),
+        UniqueConstraint("cpf", name="uq_profissional_cpf"),
+        Index("idx_profissionais_papel", "papel"),
     )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
     )
     cpf: Mapped[str] = mapped_column(String(14), nullable=False)
     nome_completo: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -55,7 +50,6 @@ class Profissional(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         cpf: str,
         nome_completo: str,
         email: str,
@@ -68,11 +62,12 @@ class Profissional(Base):
         digits = clean_digits(cpf)
         if len(digits) != 11:
             raise ValidationError(
-                "CPF do profissional inválido: deve conter 11 dígitos numéricos."
+                f"CPF do profissional '{cpf}' inválido: deve conter 11 dígitos "
+                "numéricos."
             )
 
         papel_clean = papel.strip().upper()
-        papeis_validos = ("ADMIN_GLOBAL", "GESTOR_UNIDADE", "MEDICO", "FATURAMENTO")
+        papeis_validos = ("GESTOR_UNIDADE", "MEDICO", "FATURAMENTO")
         if papel_clean not in papeis_validos:
             raise ValidationError(
                 f"Papel do profissional '{papel}' inválido; "
@@ -86,7 +81,8 @@ class Profissional(Base):
             if not clean_crm or not clean_crm_uf:
                 raise ValidationError(
                     "CRM e UF são obrigatórios para profissionais com papel "
-                    "MEDICO (CFM 2.314/2022)."
+                    f"MEDICO (recebido crm={clean_crm!r}, uf={clean_crm_uf!r}; "
+                    "CFM 2.314/2022)."
                 )
             if len(clean_crm_uf) != 2:
                 raise ValidationError(
@@ -95,7 +91,6 @@ class Profissional(Base):
 
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             cpf=digits,
             nome_completo=nome_completo.strip(),
             email=email.strip().lower(),
@@ -106,10 +101,13 @@ class Profissional(Base):
         )
 
     def is_medico(self) -> bool:
+        """Indica se o profissional atua como médico assistente (CFM 2.314/2022)."""
         return self.papel == "MEDICO"
 
     def ativar(self) -> None:
+        """Ativa o cadastro do profissional na plataforma (ADR-013)."""
         self.ativo = True
 
     def desativar(self) -> None:
+        """Desativa o cadastro do profissional na plataforma (ADR-013)."""
         self.ativo = False

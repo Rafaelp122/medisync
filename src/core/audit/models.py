@@ -8,7 +8,6 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -41,7 +40,6 @@ class AtorTipo(StrEnum):
 class AtorPapel(StrEnum):
     """Specific role or capability exercised during the event."""
 
-    ADMIN_GLOBAL = "ADMIN_GLOBAL"
     PACIENTE = "PACIENTE"
     MEDICO = "MEDICO"
     GESTOR_UNIDADE = "GESTOR_UNIDADE"
@@ -65,20 +63,11 @@ class AuditEvent(Base):
             name="chk_audit_ator_tipo",
         ),
         Index("idx_audit_atendimento", "atendimento_id", "registrado_em"),
-        Index("idx_audit_ator", "organizacao_id", "ator_tipo", "ator_id"),
-        Index(
-            "idx_audit_org_atendimento",
-            "organizacao_id",
-            "atendimento_id",
-            "registrado_em",
-        ),
+        Index("idx_audit_ator", "ator_tipo", "ator_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
     )
     atendimento_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -102,7 +91,6 @@ class AuditEvent(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         atendimento_id: UUID | None = None,
         ator_tipo: AtorTipo | str = AtorTipo.SISTEMA,
         ator_papel: AtorPapel | str = AtorPapel.SISTEMA,
@@ -117,12 +105,6 @@ class AuditEvent(Base):
         registrado_em: datetime | None = None,
         id: UUID | None = None,
     ) -> None:
-        if organizacao_id <= 0:
-            raise AuditoriaInvalidaError(
-                f"organizacao_id '{organizacao_id}' inválido: "
-                "deve ser um identificador positivo (> 0)."
-            )
-
         if not tipo_evento or not tipo_evento.strip():
             raise AuditoriaInvalidaError(
                 f"tipo_evento '{tipo_evento}' inválido: "
@@ -181,7 +163,6 @@ class AuditEvent(Base):
 
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             atendimento_id=atendimento_id,
             ator_tipo=tipo_enum.value,
             ator_id=ator_id,

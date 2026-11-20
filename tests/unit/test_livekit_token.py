@@ -17,19 +17,11 @@ from src.modules.consultation.infrastructure.livekit_adapter import (
 
 
 def test_build_room_name_canonical_format() -> None:
-    """Validate canonical room name formatting org_{org_id}_atend_{atend_id}."""
-    org_id = 42
+    """Validate canonical room name formatting atend_{atend_id}."""
     atend_id = UUID("01924b12-9c10-7000-8000-000000000002")
 
-    room_name = build_room_name(organizacao_id=org_id, atendimento_id=atend_id)
-    assert room_name == "org_42_atend_01924b12-9c10-7000-8000-000000000002"
-
-    org_uuid = UUID("01924b12-9c10-7000-8000-000000000001")
-    room_name_uuid = build_room_name(organizacao_id=org_uuid, atendimento_id=atend_id)
-    assert (
-        room_name_uuid == "org_01924b12-9c10-7000-8000-000000000001"
-        "_atend_01924b12-9c10-7000-8000-000000000002"
-    )
+    room_name = build_room_name(atendimento_id=atend_id)
+    assert room_name == "atend_01924b12-9c10-7000-8000-000000000002"
 
 
 def test_build_participant_identity_partitioning() -> None:
@@ -53,10 +45,7 @@ def test_generate_room_token_claims_and_signature() -> None:
         server_url="http://localhost:7880",
     )
 
-    room_name = (
-        "org_11111111-1111-7000-8000-000000000000"
-        "_atend_22222222-2222-7000-8000-000000000000"
-    )
+    room_name = "atend_22222222-2222-7000-8000-000000000000"
     identity = "medico_33333333-3333-7000-8000-000000000000"
 
     token = adapter.generate_room_token(
@@ -128,7 +117,7 @@ def test_generate_room_token_latency_benchmark() -> None:
     start = time.perf_counter()
     for _ in range(iterations):
         adapter.generate_room_token(
-            room_name="org_1_atend_2",
+            room_name="atend_2",
             participant_identity="medico_1",
             is_publisher=True,
         )

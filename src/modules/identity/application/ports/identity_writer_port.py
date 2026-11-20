@@ -15,13 +15,12 @@ class IdentityWriterPort(Protocol):
     async def criar_paciente(
         self,
         *,
-        organizacao_id: int,
         cpf: str,
         nome_completo: str,
         data_nascimento: date,
         telefone: str,
     ) -> PacienteAuthLookupDTO:
-        """Persist a new patient record within the tenant without committing."""
+        """Persist a new patient record in the platform without committing."""
         ...
 
 

@@ -14,7 +14,7 @@ from src.core.database import engine
 _EXPECTED_TABLES = frozenset(
     [
         "alembic_version",
-        "organizacoes",
+        "configuracoes_unidade",
         "profissionais",
         "pacientes",
         "dependentes",
@@ -57,8 +57,8 @@ async def ensure_clean_migration_state() -> AsyncGenerator[None, None]:
 
 
 @pytest.mark.asyncio
-async def test_migration_creates_all_ten_clinical_tables() -> None:
-    """Verify that alembic upgrade head creates all expected domain tables."""
+async def test_migration_creates_all_single_platform_tables() -> None:
+    """Verify that alembic upgrade head creates all expected single-platform tables."""
     async with engine.connect() as conn:
         result = await conn.execute(
             text(
@@ -73,6 +73,38 @@ async def test_migration_creates_all_ten_clinical_tables() -> None:
         existing_tables = {row[0] for row in result.fetchall()}
 
     assert _EXPECTED_TABLES.issubset(existing_tables)
+    assert "organizacoes" not in existing_tables
+
+
+@pytest.mark.asyncio
+async def test_zero_rls_policies_and_zero_organizacao_id_columns() -> None:
+    """Verify no table has organizacao_id column and pg_policies is empty."""
+    async with engine.connect() as conn:
+        cols_res = await conn.execute(
+            text(
+                """
+                SELECT table_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND column_name = 'organizacao_id';
+                """
+            )
+        )
+        org_cols = [row[0] for row in cols_res.fetchall()]
+
+        policies_res = await conn.execute(
+            text(
+                """
+                SELECT policyname
+                FROM pg_policies
+                WHERE schemaname = 'public';
+                """
+            )
+        )
+        policies = [row[0] for row in policies_res.fetchall()]
+
+    assert org_cols == []
+    assert policies == []
 
 
 @pytest.mark.asyncio
@@ -89,7 +121,7 @@ async def test_gen_uuidv7_creates_valid_rfc9562_uuid() -> None:
 
 @pytest.mark.asyncio
 async def test_partial_unique_indexes_on_pacientes() -> None:
-    """Verify partial unique indexes uq_paciente_org_cpf and uq_paciente_org_cns."""
+    """Verify global partial unique indexes uq_paciente_cpf and uq_paciente_cns."""
     async with engine.connect() as conn:
         result = await conn.execute(
             text(
@@ -103,11 +135,13 @@ async def test_partial_unique_indexes_on_pacientes() -> None:
         )
         indexes = {row[0]: row[1] for row in result.fetchall()}
 
-    assert "uq_paciente_org_cpf" in indexes
-    assert "WHERE (cpf IS NOT NULL)" in indexes["uq_paciente_org_cpf"]
+    assert "uq_paciente_cpf" in indexes
+    assert "WHERE (cpf IS NOT NULL)" in indexes["uq_paciente_cpf"]
+    assert "uq_paciente_org_cpf" not in indexes
 
-    assert "uq_paciente_org_cns" in indexes
-    assert "WHERE (cns IS NOT NULL)" in indexes["uq_paciente_org_cns"]
+    assert "uq_paciente_cns" in indexes
+    assert "WHERE (cns IS NOT NULL)" in indexes["uq_paciente_cns"]
+    assert "uq_paciente_org_cns" not in indexes
 
 
 @pytest.mark.asyncio
@@ -128,6 +162,8 @@ async def test_check_constraints_registered() -> None:
         constraints = {row[0] for row in result.fetchall()}
 
     expected_checks = {
+        "chk_configuracoes_unidade_singleton",
+        "chk_configuracoes_plantao_singleton",
         "chk_documento_paciente_obrigatorio",
         "chk_atendimento_status",
         "chk_atendimento_prioridade",
@@ -149,44 +185,77 @@ async def test_check_constraints_registered() -> None:
 
 
 @pytest.mark.asyncio
+async def test_singleton_constraints_on_unidade_and_plantao() -> None:
+    """Verify singleton_guard prevents inserting second row or false guard."""
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                INSERT INTO configuracoes_unidade (cnpj, razao_social, nome_fantasia)
+                VALUES ('11223344000188', 'Hospital Municipal', 'MediSync');
+                """
+            )
+        )
+        with pytest.raises(DBAPIError):
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO configuracoes_unidade
+                        (cnpj, razao_social, nome_fantasia)
+                    VALUES ('99887766000155', 'Outro Hospital', 'Outro');
+                    """
+                )
+            )
+
+    async with engine.begin() as conn:
+        with pytest.raises(DBAPIError):
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO configuracoes_unidade
+                        (singleton_guard, cnpj, razao_social, nome_fantasia)
+                    VALUES (false, '11223344000188', 'Hospital Municipal', 'MediSync');
+                    """
+                )
+            )
+
+    async with engine.begin() as conn:
+        await conn.execute(text("INSERT INTO configuracoes_plantao DEFAULT VALUES;"))
+        with pytest.raises(DBAPIError):
+            await conn.execute(
+                text("INSERT INTO configuracoes_plantao DEFAULT VALUES;")
+            )
+
+
+@pytest.mark.asyncio
 async def test_audit_immutable_trigger_blocks_mutations() -> None:
     """Verify ADR-007 anti-tampering trigger blocks UPDATE on audit_events."""
     async with engine.begin() as conn:
         await conn.execute(
             text(
                 """
-                INSERT INTO organizacoes (id, cnpj, razao_social, nome_fantasia)
-                VALUES (88881, '88881111000188', 'Org Test Migration', 'Org Mig')
-                ON CONFLICT DO NOTHING;
-
-                INSERT INTO pacientes (
-                    id, organizacao_id, cpf, data_nascimento, telefone
-                )
+                INSERT INTO pacientes (id, cpf, data_nascimento, telefone)
                 VALUES (
                     '01a00000-0000-7000-8000-000000000011',
-                    88881,
                     '88881111888',
                     '1985-05-15',
                     '11988881111'
                 )
                 ON CONFLICT DO NOTHING;
 
-                INSERT INTO atendimentos (id, organizacao_id, paciente_id, status)
+                INSERT INTO atendimentos (id, paciente_id, status)
                 VALUES (
                     '01a00000-0000-7000-8000-000000000012',
-                    88881,
                     '01a00000-0000-7000-8000-000000000011',
                     'TRIADO_AGUARDANDO_ELEGIBILIDADE'
                 )
                 ON CONFLICT DO NOTHING;
 
                 INSERT INTO audit_events (
-                    id, organizacao_id, atendimento_id, ator_tipo,
-                    ator_papel, tipo_evento
+                    id, atendimento_id, ator_tipo, ator_papel, tipo_evento
                 )
                 VALUES (
                     '01a00000-0000-7000-8000-000000000013',
-                    88881,
                     '01a00000-0000-7000-8000-000000000012',
                     'SISTEMA',
                     'SISTEMA',
@@ -213,7 +282,6 @@ async def test_audit_immutable_trigger_blocks_mutations() -> None:
 @pytest.mark.asyncio
 async def test_downgrade_base_and_reupgrade_lifecycle() -> None:
     """Verify complete rollback to base and subsequent upgrade to head."""
-    # Downgrade to base
     await asyncio.to_thread(_run_alembic_downgrade_base)
 
     async with engine.connect() as conn:
@@ -231,7 +299,6 @@ async def test_downgrade_base_and_reupgrade_lifecycle() -> None:
 
     assert remaining_tables == []
 
-    # Re-upgrade to head
     await asyncio.to_thread(_run_alembic_upgrade_head)
 
     async with engine.connect() as conn:
