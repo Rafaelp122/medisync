@@ -2,10 +2,7 @@ import { type UseMutationOptions, useMutation, useQueryClient } from "@tanstack/
 import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { finalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePost } from "@/api/generated/sdk.gen";
-import type {
-  FinalizarConsultaRequest,
-  FinalizarConsultaResponse,
-} from "@/api/generated/types.gen";
+import type { FinalizarConsultaResponse } from "@/api/generated/types.gen";
 
 export interface FinalizarConsultaParams {
   token?: string;
@@ -40,7 +37,6 @@ export function useFinalizarConsulta(
           path: {
             atendimento_id: atendimentoId,
           },
-          body: {} as FinalizarConsultaRequest,
           headers,
           throwOnError: true,
         });

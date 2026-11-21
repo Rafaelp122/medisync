@@ -307,33 +307,34 @@ async def test_download_storage_falha_tipada_nao_suprime_generico() -> None:
         await svc.gerar_url_download(str(doc_id))
 
 
+class _DirRowResult:
+    def __init__(self, row: dict[str, Any] | None) -> None:
+        self._row = row
+
+    def mappings(self) -> "_DirRowResult":
+        return self
+
+    def first(self) -> dict[str, Any] | None:
+        return self._row
+
+
+class _DirFakeSession:
+    def __init__(self, rows: list[dict[str, Any] | None]) -> None:
+        self._rows = list(rows)
+        self.statements: list[str] = []
+        self.params: list[Any] = []
+
+    async def execute(self, stmt: Any, params: Any = None) -> _DirRowResult:
+        self.statements.append(str(stmt))
+        self.params.append(params)
+        return _DirRowResult(self._rows.pop(0))
+
+
 @pytest.mark.asyncio
 async def test_sql_document_directory_consulta_configuracoes_unidade_cnpj_cnes() -> (
     None
 ):
     """Q4 Fix #1: SqlDocumentDirectory lê cnpj e cnes de configuracoes_unidade."""
-
-    class _DirRowResult:
-        def __init__(self, row: dict[str, Any] | None) -> None:
-            self._row = row
-
-        def mappings(self) -> "_DirRowResult":
-            return self
-
-        def first(self) -> dict[str, Any] | None:
-            return self._row
-
-    class _DirFakeSession:
-        def __init__(self, rows: list[dict[str, Any] | None]) -> None:
-            self._rows = list(rows)
-            self.statements: list[str] = []
-            self.params: list[Any] = []
-
-        async def execute(self, stmt: Any, params: Any = None) -> _DirRowResult:
-            self.statements.append(str(stmt))
-            self.params.append(params)
-            return _DirRowResult(self._rows.pop(0))
-
     session = _DirFakeSession(
         [
             {
@@ -369,3 +370,81 @@ async def test_sql_document_directory_consulta_configuracoes_unidade_cnpj_cnes()
     assert dto.organizacao_nome == "UPA Virtual Central"
     assert dto.organizacao_cnpj == "12.345.678/0001-99"
     assert dto.cnes == "2077558"
+
+
+@pytest.mark.asyncio
+async def test_sql_document_directory_medico_ausente_raises_with_offending_id() -> None:
+    """DocumentoIntegridadeError interpola medico_id quando profissional ausente."""
+    med_id = uuid4()
+    atend_id = uuid4()
+    session = _DirFakeSession(
+        [
+            {
+                "cnpj": "12345678000199",
+                "razao_social": "UPA",
+                "nome_fantasia": "UPA",
+                "cnes": "2077558",
+            },
+            None,
+        ]
+    )
+    directory = SqlDocumentDirectory(cast("AsyncSession", session))
+
+    with pytest.raises(DocumentoIntegridadeError, match=str(med_id)):
+        await directory.obter_dados_verificacao(
+            medico_id=med_id,
+            atendimento_id=atend_id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_sql_document_directory_medico_sem_crm_raises_with_offending_id() -> None:
+    """DocumentoIntegridadeError interpola medico_id quando CRM/UF ausentes."""
+    med_id = uuid4()
+    atend_id = uuid4()
+    session = _DirFakeSession(
+        [
+            {
+                "cnpj": "12345678000199",
+                "razao_social": "UPA",
+                "nome_fantasia": "UPA",
+                "cnes": "2077558",
+            },
+            {"nome_completo": "Dra. Ana", "crm": "", "crm_uf": ""},
+        ]
+    )
+    directory = SqlDocumentDirectory(cast("AsyncSession", session))
+
+    with pytest.raises(DocumentoIntegridadeError, match=str(med_id)):
+        await directory.obter_dados_verificacao(
+            medico_id=med_id,
+            atendimento_id=atend_id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_sql_document_directory_paciente_ausente_raises_with_offending_id() -> (
+    None
+):
+    """DocumentoIntegridadeError interpola atendimento_id quando paciente ausente."""
+    med_id = uuid4()
+    atend_id = uuid4()
+    session = _DirFakeSession(
+        [
+            {
+                "cnpj": "12345678000199",
+                "razao_social": "UPA",
+                "nome_fantasia": "UPA",
+                "cnes": "2077558",
+            },
+            {"nome_completo": "Dra. Ana", "crm": "12345", "crm_uf": "SP"},
+            None,
+        ]
+    )
+    directory = SqlDocumentDirectory(cast("AsyncSession", session))
+
+    with pytest.raises(DocumentoIntegridadeError, match=str(atend_id)):
+        await directory.obter_dados_verificacao(
+            medico_id=med_id,
+            atendimento_id=atend_id,
+        )

@@ -1227,15 +1227,6 @@ export type Fase2Response = {
 };
 
 /**
- * FinalizarConsultaRequest
- *
- * Payload to conclude attendance and lock PEP records.
- */
-export type FinalizarConsultaRequest = {
-    [key: string]: never;
-};
-
-/**
  * FinalizarConsultaResponse
  *
  * Result of consultation finalization (payload preserved).
@@ -4030,10 +4021,7 @@ export type VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescripti
 export type VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponse = VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses[keyof VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses];
 
 export type FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostData = {
-    /**
-     *  Request
-     */
-    body?: FinalizarConsultaRequest | null;
+    body?: never;
     path: {
         /**
          * Atendimento Id

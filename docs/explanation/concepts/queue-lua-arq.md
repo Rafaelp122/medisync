@@ -50,7 +50,7 @@ vem antes.
 Ingestão mora em
 `src/modules/queue/application/services/fila_service.py`.
 Método `ingressar_fila` calcula o score e grava com
-`zadd` na chave `fila:{org}:aptos`, depois lê
+`zadd` na chave `fila:aptos`, depois lê
 `zrank` para devolver a posição. Dicionário canônico de
 chaves e TTLs em [Valkey Keys Dictionary](../../reference/valkey/keys-dictionary.md)
 (`docs/reference/valkey/keys-dictionary.md`). Reentrada após
@@ -116,7 +116,7 @@ Busca de prova:
 
 Logo após alocar, o service agenda a tarefa com
 `enqueue_job` para `resolver_ring_timeout_task`,
-passando organização, atendimento e médico, com
+passando atendimento e médico, com
 `_defer_by` igual ao ttl do comando e id de job
 `ring_timeout:{atendimento_id}` para deduplicar.
 Catálogo formal de tarefas em

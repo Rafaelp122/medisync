@@ -567,7 +567,7 @@ class PEPService:
     ) -> bytes:
         """Compila PDF/A de documento clínico após validar titularidade do paciente.
 
-        Bloqueia acesso cruzado entre pacientes ou organizações (Anti-IDOR).
+        Bloqueia acesso cruzado entre pacientes por titularidade estrita (Anti-IDOR).
         Regras: LGPD Art. 18, CFM nº 2.314/2022 e
         docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
         """

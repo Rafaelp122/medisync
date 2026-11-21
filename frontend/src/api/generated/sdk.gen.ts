@@ -564,11 +564,7 @@ export const verificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescript
 export const finalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePost = <ThrowOnError extends boolean = false>(options: Options<FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostData, ThrowOnError>): RequestResult<FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostErrors, ThrowOnError> => (options.client ?? client).post<FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/consultations/{atendimento_id}/finalize',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
+    ...options
 });
 
 /**

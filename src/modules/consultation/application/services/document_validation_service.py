@@ -89,7 +89,11 @@ class DocumentValidationService:
         return doc
 
     async def validar_documento(self, token: str) -> DocumentoValidacaoResult:
-        """Validate authenticity and return LGPD-masked verification snapshot."""
+        """Valida autenticidade pública do documento e retorna snapshot mascarado LGPD.
+
+        Regras: CFM nº 2.314/2022, LGPD Art. 11 e
+        docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        """
         doc_id = self.parse_token(token)
         doc = await self._carregar_documento(doc_id)
 

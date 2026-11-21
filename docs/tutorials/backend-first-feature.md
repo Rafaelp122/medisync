@@ -45,7 +45,7 @@ return Fase1OutputDTO(paciente_id=paciente.id, token=token)
 
 Regras obrigatórias do Service:
 - Helpers, policies e validadores nunca chamam `.commit()`.
-- Erros de validação ou regras clínicas devem lançar exceções de domínio de `src/core/errors.py` (ex.: `ValidationError`, `TenantInvalidoError`), nunca `HTTPException`.
+- Erros de validação ou regras clínicas devem lançar exceções de domínio de `src/core/errors.py` (ex.: `ValidationError`, `NotFoundError`), nunca `HTTPException`.
 
 ---
 
@@ -70,8 +70,8 @@ Crie a rota HTTP em `src/modules/identity/presentation/routers/onboarding_router
 
 ```python
 @onboarding_router.post("/fase-1", status_code=201)
-async def intake(body: Fase1Request, t: TenantDep, s: OnboardingServiceDep):
-    result = await s.realizar_fase_1(t, body)
+async def intake(body: Fase1Request, s: OnboardingServiceDep):
+    result = await s.realizar_fase_1(body)
     return Fase1Response.model_validate(result)
 ```
 

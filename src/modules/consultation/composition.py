@@ -175,9 +175,17 @@ class IdentityDocumentDirectoryAdapter:
         medico_id: UUID,
         atendimento_id: UUID,
     ) -> DadosVerificacaoDirectory:
+        """Obtém dados de verificação pública do documento via portas de domínio.
+
+        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md e
+        docs/adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md.
+        """
         snapshot = await self._queue_store.buscar_atendimento(atendimento_id)
         if snapshot is None:
-            raise DocumentoIntegridadeError("Atendimento ausente para o documento.")
+            raise DocumentoIntegridadeError(
+                f"Atendimento '{atendimento_id}' ausente para verificação do documento "
+                "(esperado atendimento registrado)."
+            )
 
         try:
             dto = await self._identity_reader.obter_dados_diretorio(
@@ -186,7 +194,8 @@ class IdentityDocumentDirectoryAdapter:
             )
         except Exception as exc:
             raise DocumentoIntegridadeError(
-                "Dados de diretório ausentes ou incompletos."
+                f"Dados de diretório ausentes ou incompletos para médico '{medico_id}' "
+                f"e atendimento '{atendimento_id}'."
             ) from exc
 
         nasc_str = (

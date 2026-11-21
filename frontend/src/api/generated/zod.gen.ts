@@ -384,13 +384,6 @@ export const zFase2Response = z.object({
 });
 
 /**
- * FinalizarConsultaRequest
- *
- * Payload to conclude attendance and lock PEP records.
- */
-export const zFinalizarConsultaRequest = z.record(z.string(), z.never());
-
-/**
  * FinalizarConsultaResponse
  *
  * Result of consultation finalization (payload preserved).
@@ -1516,11 +1509,6 @@ export const zVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescrip
  * Successful Response
  */
 export const zVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponse = zLivenessVerifyResponse;
-
-/**
- *  Request
- */
-export const zFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostBody = zFinalizarConsultaRequest.nullable();
 
 export const zFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostPath = z.object({
     atendimento_id: z.uuid()

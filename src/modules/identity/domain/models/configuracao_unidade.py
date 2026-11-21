@@ -131,15 +131,24 @@ class ConfiguracaoUnidade(Base):
         )
 
     def is_sus(self) -> bool:
-        """Indica se a unidade opera em modo público SUS (ADR-012 / ADR-013)."""
+        """Indica se a unidade opera em modo público SUS.
+
+        Regras: docs/adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md.
+        """
         return self.modo_publico_sus
 
     def ativar(self) -> None:
-        """Ativa o registro da unidade na plataforma (ADR-013)."""
+        """Ativa o registro da unidade na plataforma única.
+
+        Regras: docs/adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md.
+        """
         self.ativo = True
         self.atualizado_em = datetime.now(UTC)
 
     def desativar(self) -> None:
-        """Desativa operacionalmente o registro da unidade (ADR-013)."""
+        """Desativa operacionalmente o registro da unidade na plataforma única.
+
+        Regras: docs/adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md.
+        """
         self.ativo = False
         self.atualizado_em = datetime.now(UTC)

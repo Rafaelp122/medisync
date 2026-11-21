@@ -30,7 +30,6 @@ from src.modules.consultation.presentation.schemas import (
     DocumentoClinicoResponse,
     EmitirDocumentoRequest,
     EvolucaoSOAPResponse,
-    FinalizarConsultaRequest,
     FinalizarConsultaResponse,
     HistoricoAtendimentoItemResponse,
     LivenessChallengeResponse,
@@ -278,7 +277,6 @@ async def finalizar_consulta(
     atendimento_id: AtendimentoIdPath,
     current_user: ClinicalAccessMutationDep,
     service: PEPServiceDep,
-    _request: Annotated[FinalizarConsultaRequest | None, Body()] = None,
 ) -> FinalizarConsultaResponse:
     """Finaliza teleconsulta travando edição e exclusão de evolução e documentos."""
     cmd = FinalizarConsultaCommand(

@@ -47,7 +47,7 @@ A teleconsulta exige comunicação bidirecional de áudio e vídeo com latência
 Adotamos a **Opção 3: Desacoplamento de Mídia via LiveKit SFU Server**.
 
 ### Diretrizes de Execução:
-1. O backend emite tokens JWT com *Video Grants* específicos por atendimento (`org_{id}_atend_{id}`).
+1. O backend emite tokens JWT com *Video Grants* específicos por atendimento (`atend_{atendimento_id}`).
 2. O tráfego de mídia corre exclusivamente entre o navegador do paciente/médico e o LiveKit SFU.
 3. Respeito irrestrito ao ato médico: o servidor de mídia nunca interrompe uma consulta por tempo.
 

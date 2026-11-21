@@ -426,7 +426,7 @@ async def validar_acesso_livekit(
     - Rejeita requisições anônimas ou com token inválido com RFC 7807 401.
     - Se papel 'medico': exige JWT válido, papel MEDICO e alocação ativa.
     - Se papel 'paciente': exige token de acolhimento (HMAC) ou JWT.
-    - Rejeita atendimentos terminais e divergência de organização com 403.
+    - Rejeita atendimentos em estado terminal com 403.
     """
     if credentials is None:
         raise UnauthorizedError(

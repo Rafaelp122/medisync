@@ -107,7 +107,7 @@ Adotamos a **Opção 3: Hexagonal Pragmático com Modelos Ricos no SQLAlchemy 2.
 ## 8. Adendo — Aprofundamento de Fila, Triagem Persistida e Erradicação de Bypasses Raw SQL (2026-10-08)
 
 * **Deep QueueStore (`QueueStorePort`)**:
-  * Encapsula a persistência e transições de estado do PostgreSQL (`Atendimento`) com a manipulação atômica de chaves e locks no Valkey (`fila:{org}:aptos`, `lock:...`) sob uma única interface profunda em `FilaService`.
+  * Encapsula a persistência e transições de estado do PostgreSQL (`Atendimento`) com a manipulação atômica de chaves e locks no Valkey (`fila:aptos`, `lock:...`) sob uma única interface profunda em `FilaService`.
   * Workers assíncronos (`eligibility`, `ring_timeout`, `sweeper`) tornam-se adaptadores de despacho finos sem conhecimento de chaves brutas de Redis nem queries manuais.
 * **Acolhimento Clínico Unificado & Triagem Persistida (`AdmissaoAtendimentoService`)**:
   * O módulo de triagem foi aprofundado e unificado na admissão clínica (`POST /api/v1/fila/admissao`).

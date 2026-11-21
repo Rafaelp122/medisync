@@ -1881,23 +1881,6 @@
             "description": "Identificador \u00fanico do atendimento"
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/FinalizarConsultaRequest"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": " Request"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4941,13 +4924,6 @@
         ],
         "title": "Fase2Response",
         "description": "Response after Phase 2 CFM regulatory enrichment."
-      },
-      "FinalizarConsultaRequest": {
-        "properties": {},
-        "additionalProperties": false,
-        "type": "object",
-        "title": "FinalizarConsultaRequest",
-        "description": "Payload to conclude attendance and lock PEP records."
       },
       "FinalizarConsultaResponse": {
         "properties": {

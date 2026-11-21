@@ -224,12 +224,6 @@ class AssinarDocumentoResponse(BaseModel):
     status: str = "ASSINADO"
 
 
-class FinalizarConsultaRequest(BaseModel):
-    """Payload to conclude attendance and lock PEP records."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
 class TMAStatusResponse(BaseModel):
     """Telemetry indicator for Average Consultation Time (TMA), enforcing RN06."""
 

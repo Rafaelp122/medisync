@@ -16,7 +16,11 @@ class SqlBpaDirectory(BpaDirectoryPort):
         self,
         competencia: str,
     ) -> list[BpaRegistroDetalheDTO]:
-        """Fetch all individual production items with patient and doctor details."""
+        """Busca itens de produção BPA-I com metadados da unidade SUS singleton.
+
+        Regras: ADR-012, docs/explanation/domains/ambulatory-domain.md e
+        docs/adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md.
+        """
         stmt = text(
             """
             SELECT

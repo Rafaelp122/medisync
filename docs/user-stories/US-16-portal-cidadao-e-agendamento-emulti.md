@@ -61,9 +61,9 @@
 * **Portal Longitudinal do Cidadão (`consultation`):**
   * `GET /api/v1/consultations/me/historico`, `GET /api/v1/consultations/me/documentos`, `GET /api/v1/consultations/me/documents/{documento_id}/pdf` (`PacienteAutenticadoDep` + Anti-IDOR).
 * **Agenda eMulti (`scheduling`):**
-  * `GET /api/v1/scheduling/especialidades` e `GET /api/v1/scheduling/slots` (`TenantDep`).
-  * `POST /api/v1/scheduling/agendamentos`, `GET /api/v1/scheduling/agendamentos/me`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/cancelar` (`Role.PACIENTE` + `TenantDep`).
-  * `POST /api/v1/scheduling/disponibilidades`, `GET /api/v1/scheduling/agenda/dia`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/iniciar` (`Role.MEDICO` + `TenantDep`).
+  * `GET /api/v1/scheduling/especialidades` e `GET /api/v1/scheduling/slots` (consulta pública da unidade).
+  * `POST /api/v1/scheduling/agendamentos`, `GET /api/v1/scheduling/agendamentos/me`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/cancelar` (`Role.PACIENTE`).
+  * `POST /api/v1/scheduling/disponibilidades`, `GET /api/v1/scheduling/agenda/dia`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/iniciar` (`Role.MEDICO`).
 
 ---
 

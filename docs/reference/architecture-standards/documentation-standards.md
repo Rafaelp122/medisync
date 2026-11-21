@@ -75,7 +75,7 @@ A rastreabilidade é uma via de mão dupla:
 ### Quando atualizar
 
 - Router/composition/service/commit → `docs/how-to/backend/create-module-endpoint.md`.
-- RN/score/Lua/RLS → `docs/explanation/architecture/concurrency-and-queues.md`; `concepts/` referencia.
+- RN/score/Lua → `docs/explanation/architecture/concurrency-and-queues.md`; `concepts/` referencia.
 - Novo `.env` → `docs/reference/environment/variables.md` no mesmo PR.
 - Novo erro de domínio → `docs/reference/api/error-envelope.md` no mesmo PR.
 - Novo padrão transversal → este arquivo.
@@ -96,7 +96,7 @@ rg -U '```python[^`]{600,}' docs/tutorials docs/how-to | head -3
 rg -c "^[A-Z_]+=" .env.example
 ```
 
-Esperado: cada arquivo entre 80–250 linhas; nenhum bloco python gigante em `tutorials/` ou `how-to/`; `29` vars no `.env.example` batendo com `variables.md`.
+Esperado: cada arquivo entre 80–250 linhas; nenhum bloco python gigante em `tutorials/` ou `how-to/`; `28` vars no `.env.example` batendo com `variables.md`.
 
 ## Ver também
 
