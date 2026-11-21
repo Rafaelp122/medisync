@@ -1,12 +1,12 @@
 """Application layer for identity module."""
 
 from src.modules.identity.application.dtos import (
-    CriarDependenteDTO,
+    CriarDependenteInput,
     DependenteDetalheDTO,
     DependenteOutputDTO,
-    Fase1InputDTO,
+    Fase1Input,
     Fase1OutputDTO,
-    Fase2InputDTO,
+    Fase2Input,
     Fase2OutputDTO,
 )
 from src.modules.identity.application.services import (
@@ -15,13 +15,13 @@ from src.modules.identity.application.services import (
 )
 
 __all__ = [
-    "CriarDependenteDTO",
+    "CriarDependenteInput",
     "DependenteDetalheDTO",
     "DependenteOutputDTO",
     "DependenteService",
-    "Fase1InputDTO",
+    "Fase1Input",
     "Fase1OutputDTO",
-    "Fase2InputDTO",
+    "Fase2Input",
     "Fase2OutputDTO",
     "OnboardingService",
 ]

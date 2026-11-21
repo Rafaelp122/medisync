@@ -8,7 +8,7 @@ Sob a [ADR-013](../../adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.
 
 O controle de acesso aos dados clínicos apoia-se em **RBAC estrito** (`src/core/authz/roles.py:Role`) e **checagem horizontal de titularidade Anti-IDOR** na camada de apresentação e serviços, preservando integralmente a conformidade com o Art. 11 da LGPD e as Resoluções CFM nº 2.314/2022 e nº 1.821/2007 (guarda mínima de 20 anos e trilha imutável `audit_events`).
 
-Este documento cataloga as 16 tabelas criadas diretamente pela migração consolidada `migrations/versions/0001_initial_schema.py`.
+Este documento cataloga as 16 tabelas criadas pela migração consolidada `migrations/versions/0001_initial_schema.py` e evoluídas incrementalmente pelas migrações subsequentes (como `migrations/versions/0002_add_outorga_tcle_dependentes.py` adicionando `outorga_tcle` em `dependentes`).
 
 ## Conceito
 
@@ -21,7 +21,7 @@ Todas as entidades persistidas utilizam modelos ricos no SQLAlchemy 2.0 (`Mapped
 | `configuracoes_unidade` | `ConfiguracaoUnidade` | `id` (UUIDv7) | Singleton (`uq_configuracoes_unidade_singleton`, `chk_configuracoes_unidade_singleton`), metadados SUS/CNES/CNPJ/IBGE |
 | `profissionais` | `Profissional` | `id` (UUIDv7) | `uq_profissional_email`, `uq_profissional_cpf`, `idx_profissionais_papel` |
 | `pacientes` | `Paciente` | `id` (UUIDv7) | `uq_paciente_cpf`, `uq_paciente_cns` (parciais `IS NOT NULL`), `idx_pacientes_telefone`, `chk_documento_paciente_obrigatorio` |
-| `dependentes` | `Dependente` | `id` (UUIDv7) | `uq_dependente_vinculo` `(titular_id, dependente_id)`, FKs `RESTRICT` para `pacientes.id` |
+| `dependentes` | `Dependente` | `id` (UUIDv7) | `uq_dependente_vinculo` `(titular_id, dependente_id)`, `outorga_tcle` (`NOT NULL DEFAULT false`, RN-IDE-05), FKs `RESTRICT` para `pacientes.id` |
 | `paciente_passkeys` | `PacientePasskey` | `id` (UUIDv7) | `uq_paciente_passkeys_cred` (`credential_id`), `idx_paciente_passkeys_paciente`, FK `CASCADE` em `paciente_id` |
 | `usuarios_credenciais` | `UsuarioCredencial` | `id` (UUIDv7) | `uq_usuarios_credenciais_identificador`, `idx_usuarios_credenciais_papel`, `idx_usuarios_credenciais_usuario_id` |
 | `atendimentos` | `Atendimento` | `id` (UUIDv7) | `idx_atendimentos_status`, `idx_atendimentos_paciente`, `idx_atendimentos_medico`, `idx_atendimentos_fila`, `chk_atendimento_prioridade` |
@@ -56,6 +56,7 @@ Todas as entidades persistidas utilizam modelos ricos no SQLAlchemy 2.0 (`Mapped
 ## Onde no código
 
 - Impl: `migrations/versions/0001_initial_schema.py:upgrade`
+- Impl: `migrations/versions/0002_add_outorga_tcle_dependentes.py:upgrade`
 - Impl: `scripts/postgres/01-init-extensions.sql`
 - Impl: `src/core/database.py:Base`
 - Impl: `src/core/uuid7.py:uuid7`

@@ -1,11 +1,11 @@
 """Unit tests for SqlIdentityReader (Single Platform / ADR-013)."""
 
 from datetime import date
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import pytest
-from src.core.errors import NotFoundError
+from src.core.errors import ConflictError, NotFoundError, ValidationError
 from src.modules.identity.domain.models import (
     ConfiguracaoUnidade,
     Paciente,
@@ -13,41 +13,10 @@ from src.modules.identity.domain.models import (
 )
 from src.modules.identity.infrastructure.identity_reader_sql import SqlIdentityReader
 
+from tests.doubles import FakeAsyncSession, FakeResult
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-
-class _StubScalarList:
-    def __init__(self, value: Any) -> None:
-        self._value = value
-
-    def first(self) -> Any:
-        return self._value
-
-    def all(self) -> list[Any]:
-        if isinstance(self._value, list):
-            return list(cast("list[Any]", self._value))
-        return [self._value] if self._value is not None else []
-
-
-class _StubResult:
-    def __init__(self, value: Any) -> None:
-        self._value = value
-
-    def scalar_one_or_none(self) -> Any:
-        return self._value
-
-    def scalars(self) -> _StubScalarList:
-        return _StubScalarList(self._value)
-
-
-class _StubAsyncSession:
-    def __init__(self, results: list[Any]) -> None:
-        self._results = list(results)
-
-    async def execute(self, *args: Any, **kwargs: Any) -> _StubResult:
-        val = self._results.pop(0) if self._results else None
-        return _StubResult(val)
 
 
 @pytest.mark.asyncio
@@ -84,7 +53,9 @@ async def test_identity_reader_sucesso_com_configuracao_unidade() -> None:
         estado="SP",
     )
 
-    session = _StubAsyncSession([unidade, prof, pac])
+    session = FakeAsyncSession(
+        results=[FakeResult(unidade), FakeResult(prof), FakeResult(pac)]
+    )
     reader = SqlIdentityReader(cast("AsyncSession", session))
     dto = await reader.obter_dados_diretorio(med_id, pac_id)
 
@@ -122,7 +93,9 @@ async def test_identity_reader_fallback_sem_configuracao_unidade() -> None:
         nome_completo="Ana Souza",
     )
 
-    session = _StubAsyncSession([None, prof, pac])
+    session = FakeAsyncSession(
+        results=[FakeResult(None), FakeResult(prof), FakeResult(pac)]
+    )
     reader = SqlIdentityReader(cast("AsyncSession", session))
     dto = await reader.obter_dados_diretorio(med_id, pac_id)
 
@@ -138,7 +111,7 @@ async def test_identity_reader_medico_nao_encontrado_raises() -> None:
         razao_social="Unidade Teste",
         nome_fantasia="Unidade Teste",
     )
-    session = _StubAsyncSession([unidade, None])
+    session = FakeAsyncSession(results=[FakeResult(unidade), FakeResult(None)])
     reader = SqlIdentityReader(cast("AsyncSession", session))
 
     with pytest.raises(NotFoundError, match="Profissional médico"):
@@ -147,10 +120,14 @@ async def test_identity_reader_medico_nao_encontrado_raises() -> None:
 
 @pytest.mark.asyncio
 async def test_identity_reader_obter_modo_sus() -> None:
-    reader_sus = SqlIdentityReader(cast("AsyncSession", _StubAsyncSession([True])))
+    reader_sus = SqlIdentityReader(
+        cast("AsyncSession", FakeAsyncSession(results=[FakeResult(True)]))
+    )
     assert await reader_sus.obter_modo_sus() is True
 
-    reader_empty = SqlIdentityReader(cast("AsyncSession", _StubAsyncSession([None])))
+    reader_empty = SqlIdentityReader(
+        cast("AsyncSession", FakeAsyncSession(results=[FakeResult(None)]))
+    )
     assert await reader_empty.obter_modo_sus() is False
 
 
@@ -164,7 +141,7 @@ async def test_identity_reader_buscar_paciente_por_telefone_encontrado() -> None
         telefone="11987654321",
         nome_completo="Carlos Teste",
     )
-    session = _StubAsyncSession([pac])
+    session = FakeAsyncSession(results=[FakeResult(pac)])
     reader = SqlIdentityReader(cast("AsyncSession", session))
     dto = await reader.buscar_paciente_por_telefone(
         telefone="11987654321",
@@ -181,8 +158,41 @@ async def test_identity_reader_buscar_paciente_por_telefone_encontrado() -> None
 
 @pytest.mark.asyncio
 async def test_identity_reader_buscar_paciente_por_telefone_nao_encontrado() -> None:
-    session = _StubAsyncSession([None])
+    session = FakeAsyncSession(results=[FakeResult(None)])
     reader = SqlIdentityReader(cast("AsyncSession", session))
     dto = await reader.buscar_paciente_por_telefone(telefone="11999999999")
 
     assert dto is None
+
+
+@pytest.mark.asyncio
+async def test_identity_reader_cadsus_bloqueia_query_vazia_e_ambigua() -> None:
+    """CADSUS lookup must block empty criteria and ambiguous multi-row matches."""
+    reader_empty = SqlIdentityReader(cast("AsyncSession", FakeAsyncSession()))
+    with pytest.raises(ValidationError, match="ao menos CPF ou CNS"):
+        await reader_empty.buscar_paciente_cadsus(
+            cpf=None,
+            cns=None,
+            data_nascimento=date(1990, 1, 1),
+        )
+
+    p1 = Paciente(
+        cpf="11144477735",
+        data_nascimento=date(1990, 1, 1),
+        telefone="11987654321",
+        nome_completo="Paciente Um",
+    )
+    p2 = Paciente(
+        cpf="52998224725",
+        data_nascimento=date(1990, 1, 1),
+        telefone="11987654322",
+        nome_completo="Paciente Dois",
+    )
+    reader_ambiguous = SqlIdentityReader(
+        cast("AsyncSession", FakeAsyncSession(results=[FakeResult([p1, p2])]))
+    )
+    with pytest.raises(ConflictError, match="múltiplos registros ambíguos"):
+        await reader_ambiguous.buscar_paciente_cadsus(
+            cpf="11144477735",
+            data_nascimento=date(1990, 1, 1),
+        )

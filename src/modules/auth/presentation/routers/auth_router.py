@@ -1,12 +1,18 @@
+"""FastAPI router for user authentication, MFA TOTP, refresh, and logout."""
+
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Request, Response, Security, status
 from fastapi.security import HTTPAuthorizationCredentials
 
-from src.core.authz import CurrentUserDep, http_bearer_scheme
+from src.core.authz import (
+    CurrentUserDep,
+    MfaSetupOrAccessUserDep,
+    http_bearer_scheme,
+)
 from src.core.errors import NotFoundError, TokenInvalidoError
 from src.modules.auth.application.dtos import LoginCommand
-from src.modules.auth.composition import AuthServiceDep
+from src.modules.auth.composition import AuthServiceDep, CookieSecureDep
 from src.modules.auth.presentation.helpers import (
     clear_refresh_token_cookie,
     extract_refresh_token,
@@ -36,6 +42,7 @@ async def login(
     response: Response,
     body: Annotated[LoginRequest, Body()],
     service: AuthServiceDep,
+    cookie_secure: CookieSecureDep = None,
 ) -> TokenResponse:
     """Autentica o usuário corporativo emitindo par de tokens de acesso e atualização.
 
@@ -52,7 +59,12 @@ async def login(
 
     tokens = await service.autenticar(command)
     if tokens.refresh_token:
-        set_refresh_token_cookie(response, tokens.refresh_token, request=request)
+        set_refresh_token_cookie(
+            response,
+            tokens.refresh_token,
+            request=request,
+            secure=cookie_secure,
+        )
     return TokenResponse.model_validate(tokens)
 
 
@@ -62,11 +74,17 @@ async def login(
     summary="Gera chave secreta e URI para app autenticador (TOTP)",
 )
 async def mfa_setup(
-    user: CurrentUserDep,
+    user: MfaSetupOrAccessUserDep,
     service: AuthServiceDep,
 ) -> MfaSetupResponse:
-    """Gera o segredo Base32 e URI otpauth:// para MFA no app do usuário."""
-    setup_dto = await service.gerar_mfa_secret(user.usuario_id)
+    """Gera segredo Base32 e URI otpauth:// para MFA (aceita access ou mfa_pending).
+
+    Regras: ADR-007 (MFA TOTP), ADR-013, docs/explanation/domains/auth-domain.md
+    """
+    setup_dto = await service.gerar_mfa_secret(
+        user.usuario_id,
+        from_mfa_pending=(user.token_type == "mfa_pending"),  # noqa: S105
+    )
     return MfaSetupResponse.model_validate(setup_dto)
 
 
@@ -77,11 +95,18 @@ async def mfa_setup(
 )
 async def mfa_activate(
     body: Annotated[MfaAtivarRequest, Body()],
-    user: CurrentUserDep,
+    user: MfaSetupOrAccessUserDep,
     service: AuthServiceDep,
 ) -> MfaAtivarResponse:
-    """Valida o primeiro código TOTP de 6 dígitos e ativa o segundo fator."""
-    await service.ativar_mfa(user.usuario_id, body.codigo)
+    """Valida o primeiro código TOTP de 6 dígitos e ativa o segundo fator.
+
+    Regras: ADR-007 (MFA TOTP), ADR-013, docs/explanation/domains/auth-domain.md
+    """
+    await service.ativar_mfa(
+        user.usuario_id,
+        body.codigo,
+        from_mfa_pending=(user.token_type == "mfa_pending"),  # noqa: S105
+    )
     return MfaAtivarResponse()
 
 
@@ -95,15 +120,21 @@ async def mfa_verify(
     response: Response,
     body: Annotated[MfaVerificarLoginRequest, Body()],
     service: AuthServiceDep,
+    cookie_secure: CookieSecureDep = None,
 ) -> TokenResponse:
     """Troca token temporário mfa_pending por tokens definitivos após validação TOTP.
 
-    Regras: RN-AUT-04, RN-AUT-05, RN-AUT-08, OWASP ASVS v4.0 (V3.5.2).
+    Regras: ADR-007 (MFA TOTP), RN-AUT-05, RN-AUT-07, RN-AUT-08, OWASP ASVS (V3.5.2).
     Documentação: docs/explanation/domains/auth-domain.md
     """
     tokens = await service.verificar_mfa_login(body.temp_token, body.codigo)
     if tokens.refresh_token:
-        set_refresh_token_cookie(response, tokens.refresh_token, request=request)
+        set_refresh_token_cookie(
+            response,
+            tokens.refresh_token,
+            request=request,
+            secure=cookie_secure,
+        )
     return TokenResponse.model_validate(tokens)
 
 
@@ -117,6 +148,7 @@ async def refresh_token(
     response: Response,
     service: AuthServiceDep,
     body: Annotated[RefreshTokenRequest | None, Body()] = None,
+    cookie_secure: CookieSecureDep = None,
 ) -> TokenResponse:
     """Rotaciona o refresh token: invalida o token apresentado e emite um novo par.
 
@@ -130,7 +162,12 @@ async def refresh_token(
             f"ou corpo da requisição (recebido: {token!r})."
         )
     tokens = await service.rotacionar_refresh_token(token)
-    set_refresh_token_cookie(response, tokens.refresh_token, request=request)
+    set_refresh_token_cookie(
+        response,
+        tokens.refresh_token,
+        request=request,
+        secure=cookie_secure,
+    )
     return TokenResponse.model_validate(tokens)
 
 
@@ -148,17 +185,18 @@ async def logout(
         HTTPAuthorizationCredentials | None,
         Security(http_bearer_scheme),
     ] = None,
+    cookie_secure: CookieSecureDep = None,
 ) -> Response:
-    """Revoga o refresh token fornecido e expurga cookie HttpOnly síncrono.
+    """Revoga o refresh/access token fornecido e expurga cookie HttpOnly síncrono.
 
     Regras: RN-AUT-06, OWASP ASVS v4.0 (V3.4.1).
     Documentação: docs/explanation/domains/auth-domain.md
     """
     token = extract_refresh_token(request, body.refresh_token if body else None)
     access_token = credentials.credentials if credentials else None
-    if token:
+    if token or access_token:
         await service.revogar_sessao(token, access_token=access_token)
-    clear_refresh_token_cookie(response, request=request)
+    clear_refresh_token_cookie(response, request=request, secure=cookie_secure)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 

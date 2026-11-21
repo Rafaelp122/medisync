@@ -1,8 +1,14 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 import pytest
-from src.core.errors import ValidationError
+from src.core.errors import UnauthorizedError, ValidationError
+from src.modules.identity.application.services.dependente_service import (
+    DependenteService,
+)
+from src.modules.identity.application.services.onboarding_service import (
+    OnboardingService,
+)
 from src.modules.identity.domain.exceptions import DependenteAutoReferenciaError
 from src.modules.identity.domain.models import (
     ConfiguracaoUnidade,
@@ -11,6 +17,13 @@ from src.modules.identity.domain.models import (
     PacientePasskey,
     Profissional,
 )
+from src.modules.identity.domain.validators import validate_cns
+from src.modules.identity.presentation.schemas import (
+    CriarDependenteRequest,
+    Fase1Request,
+)
+
+from tests.doubles import FakeAsyncSession, FakeResult
 
 
 def test_configuracao_unidade_model_attributes_and_defaults() -> None:
@@ -112,13 +125,17 @@ def test_profissional_rejects_admin_global_papel() -> None:
 
 
 def test_profissional_invalid_cpf_raises_validation_error() -> None:
-    with pytest.raises(ValidationError, match=r"CPF do profissional '123' inválido"):
+    with pytest.raises(
+        ValidationError,
+        match=r"CPF do profissional '\*\*\*\.\*\*\*\.\*\*\*-\*\*' inválido",
+    ) as exc_info:
         Profissional(
             cpf="123",
             nome_completo="Carlos",
             email="carlos@medisync.com",
             papel="GESTOR_UNIDADE",
         )
+    assert "123" not in exc_info.value.detail
 
 
 def test_profissional_model_attributes_and_defaults() -> None:
@@ -175,23 +192,27 @@ def test_paciente_without_cpf_and_without_cns_raises_validation_error() -> None:
 
 
 def test_paciente_invalid_cpf_length_raises_validation_error() -> None:
-    with pytest.raises(ValidationError, match=r"CPF do paciente '123' inválido"):
+    with pytest.raises(
+        ValidationError, match=r"CPF do paciente '\*\*\*\.\*\*\*\.\*\*\*-\*\*' inválido"
+    ) as exc_info:
         Paciente(
             cpf="123",
             cns=None,
             data_nascimento=date(2000, 1, 1),
             telefone="11999998888",
         )
+    assert "123" not in exc_info.value.detail
 
 
 def test_paciente_invalid_cns_length_raises_validation_error() -> None:
-    with pytest.raises(ValidationError, match=r"CNS '12345' inválido"):
+    with pytest.raises(ValidationError, match=r"CNS '\*\*\*' inválido") as exc_info:
         Paciente(
             cpf=None,
             cns="12345",
             data_nascimento=date(2000, 1, 1),
             telefone="11999998888",
         )
+    assert "12345" not in exc_info.value.detail
 
 
 def test_paciente_alergias_management() -> None:
@@ -360,7 +381,7 @@ def test_paciente_completar_fase_2_metodo_rico() -> None:
     assert paciente.cidade == "São Paulo"
     assert paciente.estado == "SP"
     assert paciente.nome_social == "Mariana"
-    assert paciente.alergias == ["Dipirona", "Penicilina", "dipirona"]
+    assert paciente.alergias == ["Dipirona", "Penicilina"]
 
     with pytest.raises(ValidationError, match=r"Nome da mãe '' não pode ser vazio"):
         paciente.completar_fase_2(
@@ -373,3 +394,197 @@ def test_paciente_completar_fase_2_metodo_rico() -> None:
             cidade="Cidade",
             estado="SP",
         )
+
+
+def test_mascaramento_cpf_cns_em_modelos_e_validate_cns() -> None:
+    """Exceções em Paciente, Profissional e validate_cns não vazam CPF/CNS bruto."""
+    raw_cpf = "1234567890"
+    with pytest.raises(ValidationError) as exc_pac:
+        Paciente(
+            cpf=raw_cpf,
+            data_nascimento=date(1990, 1, 1),
+            telefone="11987654321",
+            nome_completo="Teste",
+        )
+    assert raw_cpf not in exc_pac.value.detail
+
+    with pytest.raises(ValidationError) as exc_prof:
+        Profissional(
+            cpf=raw_cpf,
+            nome_completo="Dr. Teste",
+            email="dr@test.com",
+            papel="MEDICO",
+            crm="12345",
+            crm_uf="SP",
+        )
+    assert raw_cpf not in exc_prof.value.detail
+
+    bad_cns = "898001234567890"
+    with pytest.raises(ValidationError) as exc_cns:
+        validate_cns(bad_cns)
+    assert "898********7890" in exc_cns.value.detail
+    assert bad_cns not in exc_cns.value.detail
+
+
+def test_dependente_pediatrico_exige_outorga_tcle() -> None:
+    """RN-IDE-05: vínculo de dependente menor exige outorga explícita de TCLE."""
+    titular_id = uuid4()
+    dep_id = uuid4()
+    with pytest.raises(ValidationError, match="Outorga explícita de TCLE"):
+        Dependente(
+            titular_id=titular_id,
+            dependente_id=dep_id,
+            grau_parentesco="FILHO",
+            outorga_tcle=False,
+            is_pediatrico=True,
+        )
+
+    dep = Dependente(
+        titular_id=titular_id,
+        dependente_id=dep_id,
+        grau_parentesco="FILHO",
+        outorga_tcle=True,
+        is_pediatrico=True,
+    )
+    assert dep.outorga_tcle is True
+
+
+@pytest.mark.asyncio
+async def test_onboarding_fase_1_ato_bloqueia_dob_divergente_e_protege_telefone() -> (
+    None
+):
+    """Re-acolhimento exige data_nascimento igual, não altera tel e restringe token."""
+    from typing import TYPE_CHECKING, cast
+
+    from src.core.security import verify_intake_token
+
+    if TYPE_CHECKING:
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+    secret = "test-onboarding-secret-key-min-32-chars-ok"
+    existente = Paciente(
+        cpf="11144477735",
+        data_nascimento=date(1985, 5, 15),
+        telefone="11988887777",
+        nome_completo="Maria Original",
+        nome_social="Maria Social",
+    )
+
+    service_bad_dob = OnboardingService(
+        session=cast("AsyncSession", FakeAsyncSession(results=[FakeResult(existente)])),
+        secret_key=secret,
+    )
+    req_bad = Fase1Request(
+        nome_completo="Atacante",
+        data_nascimento=date(1999, 1, 1),
+        telefone="11911112222",
+        queixa_principal="Dor de cabeça",
+        tcle_hash="a" * 64,
+        cpf="11144477735",
+    )
+    with pytest.raises(UnauthorizedError, match="Dados civis divergentes"):
+        await service_bad_dob.realizar_fase_1(req_bad)
+
+    service_ok = OnboardingService(
+        session=cast("AsyncSession", FakeAsyncSession(results=[FakeResult(existente)])),
+        secret_key=secret,
+    )
+    req_ok = Fase1Request(
+        nome_completo="Outro Nome Nao Deve Sobrescrever",
+        nome_social="Outro Social",
+        data_nascimento=date(1985, 5, 15),
+        telefone="11911112222",
+        queixa_principal="Febre persistente",
+        tcle_hash="a" * 64,
+        cpf="11144477735",
+    )
+    out = await service_ok.realizar_fase_1(req_ok)
+    assert out.is_novo_paciente is False
+    assert existente.telefone == "11988887777"
+    assert existente.nome_completo == "Maria Original"
+    assert existente.nome_social == "Maria Social"
+    claims = verify_intake_token(out.token, secret)
+    assert claims["is_novo_paciente"] is False
+
+
+@pytest.mark.asyncio
+async def test_dependente_service_exige_outorga_tcle_para_menor_e_libera_adulto() -> (
+    None
+):
+    """RN-IDE-05: exige outorga_tcle=True quando dep_paciente.is_pediatrico()."""
+    from typing import TYPE_CHECKING, cast
+
+    if TYPE_CHECKING:
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+    titular = Paciente(
+        cpf="11144477735",
+        data_nascimento=date(1985, 1, 1),
+        telefone="11988887777",
+        nome_completo="Titular Legal",
+    )
+    menor = Paciente(
+        cns="700000000000005",
+        data_nascimento=date(date.today().year - 10, 1, 1),
+        telefone="11988887777",
+        nome_completo="Menor Dependente",
+    )
+    adulto = Paciente(
+        cpf="52998224725",
+        data_nascimento=date(1960, 1, 1),
+        telefone="11977776666",
+        nome_completo="Dependente Idoso",
+    )
+
+    svc_reject = DependenteService(
+        session=cast(
+            "AsyncSession",
+            FakeAsyncSession(results=[FakeResult(titular), FakeResult(menor)]),
+        )
+    )
+    with pytest.raises(ValidationError, match="Outorga explícita de TCLE"):
+        await svc_reject.adicionar_dependente(
+            titular_id=titular.id,
+            dados=CriarDependenteRequest(
+                grau_parentesco="FILHO",
+                dependente_id=menor.id,
+                outorga_tcle=False,
+            ),
+        )
+
+    svc_accept_minor = DependenteService(
+        session=cast(
+            "AsyncSession",
+            FakeAsyncSession(
+                results=[FakeResult(titular), FakeResult(menor), FakeResult(None)]
+            ),
+        )
+    )
+    res_minor = await svc_accept_minor.adicionar_dependente(
+        titular_id=titular.id,
+        dados=CriarDependenteRequest(
+            grau_parentesco="FILHO",
+            dependente_id=menor.id,
+            outorga_tcle=True,
+        ),
+    )
+    assert res_minor.outorga_tcle is True
+
+    svc_accept_adult = DependenteService(
+        session=cast(
+            "AsyncSession",
+            FakeAsyncSession(
+                results=[FakeResult(titular), FakeResult(adulto), FakeResult(None)]
+            ),
+        )
+    )
+    res_adult = await svc_accept_adult.adicionar_dependente(
+        titular_id=titular.id,
+        dados=CriarDependenteRequest(
+            grau_parentesco="GENITOR",
+            dependente_id=adulto.id,
+            outorga_tcle=False,
+        ),
+    )
+    assert res_adult.outorga_tcle is False
+    assert isinstance(datetime.now(UTC), datetime)

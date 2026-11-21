@@ -9,8 +9,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.database import Base
 from src.core.errors import ValidationError
+from src.core.privacy import clean_digits
 from src.core.uuid7 import uuid7
-from src.modules.identity.domain.models._helpers import clean_digits
 
 
 class ConfiguracaoUnidade(Base):

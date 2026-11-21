@@ -1,19 +1,13 @@
-"""Pydantic v2 schemas for progressive onboarding and patient management."""
+"""Pydantic v2 schemas for progressive onboarding and patient management (ADR-008)."""
 
 from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from src.modules.identity.application.dtos import (
-    CriarDependenteDTO,
-    Fase1InputDTO,
-    Fase2InputDTO,
-)
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class Fase1Request(Fase1InputDTO):
+class Fase1Request(BaseModel):
     """Payload for Phase 1 clinical intake."""
 
     model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
@@ -78,7 +72,7 @@ class Fase1Response(BaseModel):
     is_novo_paciente: bool
 
 
-class Fase2Request(Fase2InputDTO):
+class Fase2Request(BaseModel):
     """Payload for Phase 2 CFM regulatory enrichment."""
 
     model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
@@ -151,6 +145,21 @@ class Fase2Request(Fase2InputDTO):
         examples=["eyJhbGciOi..."],
     )
 
+    @field_validator("sexo_biologico", mode="before")
+    @classmethod
+    def _normalizar_sexo(cls, valor: object) -> str:
+        if not isinstance(valor, str):
+            raise ValueError(f"Sexo biológico deve ser string; recebido: '{valor}'.")
+        clean = valor.strip().upper()
+        if clean in ("M", "MASCULINO"):
+            return "M"
+        if clean in ("F", "FEMININO"):
+            return "F"
+        raise ValueError(
+            f"Sexo biológico '{valor}' inválido: esperados 'M', 'F', "
+            "'MASCULINO' ou 'FEMININO'."
+        )
+
 
 class Fase2Response(BaseModel):
     """Response after Phase 2 CFM regulatory enrichment."""
@@ -172,7 +181,7 @@ class Fase2Response(BaseModel):
     status: str
 
 
-class CriarDependenteRequest(CriarDependenteDTO):
+class CriarDependenteRequest(BaseModel):
     """Payload for linking or creating a patient dependent."""
 
     model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
@@ -216,6 +225,13 @@ class CriarDependenteRequest(CriarDependenteDTO):
         max_length=20,
         description="Telefone de contato do dependente (opcional, herda do titular)",
     )
+    outorga_tcle: bool = Field(
+        default=False,
+        description=(
+            "Outorga explícita de TCLE pelo responsável legal "
+            "(obrigatória para menores de 18 anos)"
+        ),
+    )
 
 
 class DependenteResponse(BaseModel):
@@ -228,6 +244,7 @@ class DependenteResponse(BaseModel):
     dependente_id: UUID
     grau_parentesco: str
     vinculado_em: datetime
+    outorga_tcle: bool = False
 
 
 class DependenteDetalheResponse(BaseModel):
@@ -244,3 +261,4 @@ class DependenteDetalheResponse(BaseModel):
     cpf: str | None
     cns: str | None
     vinculado_em: datetime
+    outorga_tcle: bool = False

@@ -7,7 +7,7 @@ from sqlalchemy import ColumnElement, or_, select
 
 from src.core.errors import ValidationError
 from src.modules.identity.application.dtos import (
-    CriarDependenteDTO,
+    CriarDependenteInput,
     DependenteDetalheDTO,
     DependenteOutputDTO,
 )
@@ -31,29 +31,29 @@ if TYPE_CHECKING:
 class DependenteService:
     """Gerencia vínculos e cadastros de dependentes pediátricos e legais de titulares.
 
-    Regras: RN07 (TCLE/responsável legal), LGPD Art. 11, CFM 1.821/2007, ADR-013.
+    Regras: RN-IDE-05, RN07 (TCLE), LGPD Art. 11, CFM 1.821/2007, ADR-013.
     Documentação: docs/explanation/domains/identity-domain.md
     """
 
     def __init__(self, session: "AsyncSession | None" = None) -> None:
         self._session = session
 
-    async def _resolve_dependente_id(
+    async def _resolve_dependente(
         self,
         db: "AsyncSession",
         titular: Paciente,
-        dados: CriarDependenteDTO,
-    ) -> UUID:
+        dados: CriarDependenteInput,
+    ) -> Paciente:
         """Resolve existing dependent entity or register new patient record."""
         if dados.dependente_id is not None:
             stmt_dep = select(Paciente).where(Paciente.id == dados.dependente_id)
-            result_dep = await db.execute(stmt_dep)
-            if result_dep.scalars().first() is None:
+            dep_paciente = (await db.execute(stmt_dep)).scalars().first()
+            if dep_paciente is None:
                 raise PacienteNaoEncontradoError(
                     f"Paciente dependente '{dados.dependente_id}' não encontrado "
                     "na plataforma."
                 )
-            return dados.dependente_id
+            return dep_paciente
 
         if not dados.nome_completo or not dados.data_nascimento:
             raise ValidationError(
@@ -78,10 +78,9 @@ class DependenteService:
             conditions.append(Paciente.cns == clean_cns)
 
         stmt_exist = select(Paciente).where(or_(*conditions))
-        res_exist = await db.execute(stmt_exist)
-        existing_dep = res_exist.scalars().first()
+        existing_dep = (await db.execute(stmt_exist)).scalars().first()
         if existing_dep is not None:
-            return existing_dep.id
+            return existing_dep
 
         telefone_dep = (
             validate_telefone(dados.telefone) if dados.telefone else titular.telefone
@@ -95,18 +94,18 @@ class DependenteService:
         )
         db.add(novo_dep)
         await db.flush()
-        return novo_dep.id
+        return novo_dep
 
     async def adicionar_dependente(
         self,
         titular_id: UUID,
-        dados: CriarDependenteDTO,
+        dados: CriarDependenteInput,
         session: "AsyncSession | None" = None,
     ) -> DependenteOutputDTO:
-        """Cadastra vínculo de dependente com validação anti-reflexiva e unicidade.
+        """Cadastra dependente exigindo outorga TCLE para menores (RN-IDE-05).
 
-        Regras: RN07 (TCLE titular/dependente), LGPD Art. 11, CFM 1.821/2007, ADR-013.
-        Documentação: docs/explanation/domains/identity-domain.md
+        Regras: RN-IDE-05, RN07 (TCLE titular/dependente), LGPD Art. 11, CFM 1.821,
+        docs/explanation/domains/identity-domain.md.
         """
         db = session or self._session
         if db is None:
@@ -114,39 +113,35 @@ class DependenteService:
                 f"AsyncSession não configurada no DependenteService (recebido: {db!r})."
             )
 
-        # 1. Verify titular patient exists
         stmt_titular = select(Paciente).where(Paciente.id == titular_id)
-        result_titular = await db.execute(stmt_titular)
-        titular = result_titular.scalars().first()
+        titular = (await db.execute(stmt_titular)).scalars().first()
         if titular is None:
             raise PacienteNaoEncontradoError(
                 f"Paciente titular '{titular_id}' não encontrado na plataforma."
             )
 
-        # 2. Resolve dependent entity
-        dep_id = await self._resolve_dependente_id(db, titular, dados)
-        if dep_id == titular_id:
+        dep_paciente = await self._resolve_dependente(db, titular, dados)
+        if dep_paciente.id == titular_id:
             raise DependenteAutoReferenciaError(
-                titular_id=titular_id, dependente_id=dep_id
+                titular_id=titular_id, dependente_id=dep_paciente.id
             )
 
-        # 3. Check for existing linkage
         stmt_link = select(Dependente).where(
             Dependente.titular_id == titular_id,
-            Dependente.dependente_id == dep_id,
+            Dependente.dependente_id == dep_paciente.id,
         )
-        result_link = await db.execute(stmt_link)
-        if result_link.scalars().first() is not None:
+        if (await db.execute(stmt_link)).scalars().first() is not None:
             raise VinculoDependenteExistenteError(
-                f"O vínculo entre titular '{titular_id}' e dependente '{dep_id}' "
-                "já está cadastrado."
+                f"O vínculo entre titular '{titular_id}' e dependente "
+                f"'{dep_paciente.id}' já está cadastrado."
             )
 
-        # 4. Create and persist linkage
         vinculo = Dependente(
             titular_id=titular_id,
-            dependente_id=dep_id,
+            dependente_id=dep_paciente.id,
             grau_parentesco=dados.grau_parentesco,
+            outorga_tcle=dados.outorga_tcle,
+            is_pediatrico=dep_paciente.is_pediatrico(),
         )
         db.add(vinculo)
         await db.commit()
@@ -157,6 +152,7 @@ class DependenteService:
             dependente_id=vinculo.dependente_id,
             grau_parentesco=vinculo.grau_parentesco,
             vinculado_em=vinculo.vinculado_em,
+            outorga_tcle=vinculo.outorga_tcle,
         )
 
     async def listar_dependentes(
@@ -181,8 +177,7 @@ class DependenteService:
             .where(Dependente.titular_id == titular_id)
             .order_by(Dependente.vinculado_em.desc())
         )
-        result = await db.execute(stmt)
-        rows = result.all()
+        rows = (await db.execute(stmt)).all()
 
         return [
             DependenteDetalheDTO(
@@ -195,6 +190,7 @@ class DependenteService:
                 cpf=paciente.cpf,
                 cns=paciente.cns,
                 vinculado_em=vinculo.vinculado_em,
+                outorga_tcle=vinculo.outorga_tcle,
             )
             for vinculo, paciente in rows
         ]

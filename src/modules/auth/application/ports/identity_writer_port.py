@@ -1,16 +1,18 @@
-"""Public write port for registering patient records from the auth module."""
+"""Public write port for patient registration and passkeys from auth module."""
 
 from datetime import date
 from typing import Protocol, runtime_checkable
+from uuid import UUID
 
 from src.modules.auth.application.ports.identity_reader_port import (
     PacienteAuthLookupDTO,
+    PacientePasskeyDTO,
 )
 
 
 @runtime_checkable
 class IdentityWriterPort(Protocol):
-    """Protocol for registering new patient records without cross-module coupling."""
+    """CQRS write port for patient and passkey persistence without committing."""
 
     async def criar_paciente(
         self,
@@ -21,6 +23,25 @@ class IdentityWriterPort(Protocol):
         telefone: str,
     ) -> PacienteAuthLookupDTO:
         """Create a new patient record in the identity module without committing."""
+        ...
+
+    async def registrar_passkey_paciente(
+        self,
+        paciente_id: UUID,
+        credential_id: str,
+        public_key: str,
+        sign_count: int = 0,
+        device_name: str | None = None,
+    ) -> PacientePasskeyDTO:
+        """Persist a FIDO2/WebAuthn passkey bound to a patient without committing."""
+        ...
+
+    async def atualizar_sign_count_passkey(
+        self,
+        credential_id: str,
+        novo_sign_count: int,
+    ) -> PacientePasskeyDTO:
+        """Update monotonic FIDO2 signature counter without committing."""
         ...
 
 

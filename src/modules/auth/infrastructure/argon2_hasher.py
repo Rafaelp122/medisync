@@ -1,4 +1,5 @@
-import asyncio
+"""Secure password hasher adapter using Argon2id."""
+
 import contextlib
 
 from pwdlib import PasswordHash
@@ -28,10 +29,6 @@ class Argon2PasswordHasher(PasswordHasherPort):
         except Exception:
             return False
 
-    async def verify_async(self, plain_password: str, hashed_password: str) -> bool:
-        """Verify password asynchronously in worker thread without blocking loop."""
-        return await asyncio.to_thread(self.verify, plain_password, hashed_password)
-
     def needs_rehash(self, hashed_password: str) -> bool:
         """Check if stored hash needs upgrading."""
         return not hashed_password.startswith("$argon2id$")
@@ -40,7 +37,3 @@ class Argon2PasswordHasher(PasswordHasherPort):
         """Execute constant-time dummy verification to mitigate timing attacks."""
         with contextlib.suppress(Exception):
             self._hasher.verify("dummy-constant-time-defense-pwd", _DUMMY_HASH)
-
-    async def dummy_verify_async(self) -> None:
-        """Execute dummy verification asynchronously without blocking loop."""
-        await asyncio.to_thread(self.dummy_verify)

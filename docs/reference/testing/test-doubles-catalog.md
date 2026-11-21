@@ -27,7 +27,11 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 | `FakeEligibilityProvider` | `EligibilityProviderPort` (`src.modules.ambulatory`) | `verificar_elegibilidade(requisicao)` | `requisicoes: list[Any]` (histórico de requisições enviadas), `resultado: ResultadoElegibilidade`. |
 | `FakeElegibilidadeNotifier` | `ElegibilidadeNotifierPort` (`src.modules.ambulatory`) | `notificar_falha(evento)` | `eventos_falha: list[ElegibilidadeFalhaEvent]` (histórico ordenado de alertas de recusa/timeout emitidos). |
 
-| `MemoryTokenRevocation` | `TokenRevocationPort` (`src.core.authz`) | `revogar(jti, exp_segundos)`, `is_revogado(jti)` | `_revoked: set[str]` (conjunto em memória de identificadores JWT invalidados). |
+| `MemoryTokenRevocation` | `TokenRevocationPort` (`src.core.authz`) | `revogar(jti, exp_segundos)`, `marcar_revogado_se_nao_revogado(jti)`, `is_revogado(jti)` | `_revoked: set[str]` (conjunto em memória de identificadores JWT invalidados com `SET NX` lógico). |
+| `MemoryChallengeStore` | `ChallengeStorePort` (`src.modules.auth`) | `store_one_time()`, `consume_one_time()`, `verify_and_increment_otp()` | `entries: dict[str, tuple[str, float]]` com expiração monotônica, `consume_calls: list[str]` e `clear()`. |
+| `FakeIdentityReader` | `IdentityReaderPort` (`src.modules.identity`) | `obter_dados_diretorio()`, `buscar_paciente_cadsus()`, `buscar_passkey_por_credencial()` | Somente leitura CQRS (`lookups`, `passkeys`); bloqueia consultas CADSUS sem CPF/CNS ou ambíguas. |
+| `FakeIdentityWriter` | `IdentityWriterPort` (`src.modules.identity`) | `criar_paciente()`, `registrar_passkey_paciente()`, `atualizar_sign_count_passkey()` | Persiste pacientes e mutações de passkeys no `FakeIdentityReader` compartilhado sem commit. |
+| `FakeSmsSenderAdapter` | `SmsSenderPort` (`src.modules.auth`) | `enviar_otp(telefone, codigo)`, `clear()` | `sent_otps: list[dict]` residente em `src/modules/auth/infrastructure/fake_sms_adapter.py` (removido de `identity`). |
 | `FakeAtendimentoReader` | `AtendimentoReaderPort` (`src.modules.consultation`) | `obter_resumo()`, `concluir_atendimento()`, `atender_chamada()` | `resumo: AtendimentoResumoDTO | None`, `chamada_atendida: bool`, `atendimento_concluido: bool`. |
 | `FakeValkey` / `FakePubSub` | Protocolo Valkey / Redis Pub/Sub | `publish(canal, msg)`, `pubsub()`, `subscribe()`, `listen()` | Filas thread-safe `queue.Queue` em memória para testes de WebSockets e SSE sem infraestrutura externa. |
 
@@ -62,7 +66,11 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
    - Capturam o tráfego de requisições e falhas para validação de regras de tolerância a falhas (RF-02, RF-05, RT-01).
 
 7. **`MemoryTokenRevocation` (`src/core/authz/revocation.py`)**:
-   - Implementa `TokenRevocationPort` com `set[str]` para controle de tokens revogados (logout / blacklisting) sem dependência de Valkey sob `TestSettings`.
+   - Implementa `TokenRevocationPort` com `set[str]` para controle atômico de tokens revogados (`marcar_revogado_se_nao_revogado`, `revogar`, `is_revogado`) sem dependência de Valkey sob `TestSettings`.
+
+8. **`MemoryChallengeStore`, `FakeIdentityReader` & `FakeIdentityWriter` (`tests/doubles.py`) e `FakeSmsSenderAdapter` (`src/modules/auth/infrastructure/fake_sms_adapter.py`)**:
+   - `MemoryChallengeStore` substitui dicts ad-hoc `_memory_*` e stubs locais em testes unitários de OTP e WebAuthn (`consume_one_time` atômico e `verify_and_increment_otp`).
+   - `FakeIdentityReader` (leitura CQRS) e `FakeIdentityWriter` (escrita de pacientes e passkeys) espelham a segregação `IdentityReaderPort`/`IdentityWriterPort`, enquanto `SmsSenderPort`/`FakeSmsSenderAdapter` pertencem exclusivamente ao módulo `auth`.
 
 ## Onde no código
 
@@ -74,7 +82,15 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Impl: `tests/doubles.py:FakeEligibilityProvider`
 - Impl: `tests/doubles.py:FakeElegibilidadeNotifier`
 - Impl: `tests/doubles.py:FakeAtendimentoReader`
+- Impl: `tests/doubles.py:MemoryChallengeStore`
+- Impl: `tests/doubles.py:FakeIdentityReader`
+- Impl: `tests/doubles.py:FakeIdentityWriter`
 - Impl: `src/core/authz/revocation.py:MemoryTokenRevocation`
+- Impl: `src/modules/auth/infrastructure/fake_sms_adapter.py:FakeSmsSenderAdapter`
+- Spec: `src/modules/auth/application/ports/challenge_store_port.py:ChallengeStorePort`
+- Spec: `src/modules/auth/application/ports/sms_sender_port.py:SmsSenderPort`
+- Spec: `src/modules/identity/application/ports/identity_reader_port.py:IdentityReaderPort`
+- Spec: `src/modules/identity/application/ports/identity_writer_port.py:IdentityWriterPort`
 - Spec: `src/modules/consultation/application/ports/pdf_generator_port.py:PDFGeneratorPort`
 - Spec: `src/modules/consultation/application/ports/icp_brasil_signer_port.py:ICPBrasilSignerPort`
 - Spec: `src/modules/consultation/application/ports/storage_port.py:StoragePort`
@@ -100,7 +116,7 @@ uv run pytest tests/unit/test_token_revocation.py -v
 rg -n "class Fake" tests/doubles.py
 ```
 
-Saída esperada: 14 testes selecionados executados com sucesso em menos de 3 segundos, comprovando isolamento total em memória.
+Saída esperada: 18 testes selecionados (`-k "fake"`) executados com sucesso em memória, além dos testes dedicados em `test_token_revocation.py`, comprovando isolamento total sem I/O externo.
 
 ## Ver também
 

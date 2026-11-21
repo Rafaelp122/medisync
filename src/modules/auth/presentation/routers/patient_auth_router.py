@@ -71,20 +71,23 @@ async def verify_otp(
     summary="Autenticar paciente via CADSUS / Gov.br",
     description=(
         "Autenticação sem senha via desambiguação de dados civis "
-        "(CPF, CNS, Data de Nascimento)."
+        "(CPF, CNS, Data de Nascimento e 2º fator civil)."
     ),
     operation_id="post_auth_paciente_cadsus",
 )
 async def post_auth_paciente_cadsus(
+    request: Request,
     body: Annotated[AutenticarCadsusRequest, Body()],
     service: PatientAuthServiceDep,
 ) -> VerificarOtpResponse:
     """Authenticate patient via CADSUS / Gov.br civil registry lookup."""
+    client_ip = request.client.host if request.client else "127.0.0.1"
     result = await service.autenticar_cadsus_govbr(
         cpf=body.cpf,
         data_nascimento=body.data_nascimento,
         cns=body.cns,
         nome_mae=body.nome_mae,
+        client_ip=client_ip,
     )
     return VerificarOtpResponse.model_validate(result)
 

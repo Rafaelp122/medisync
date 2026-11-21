@@ -3,14 +3,21 @@
 Regras: ADR-007, ADR-013, RF-01, CFM nº 2.454/2026, CFM nº 2.314/2022.
 """
 
+import asyncio
 from datetime import date
 from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi.security import HTTPAuthorizationCredentials
+from src.core.authz import (
+    BearerAuthSettings,
+    get_current_user,
+    get_mfa_setup_or_access_user,
+)
 from src.core.authz.revocation import MemoryTokenRevocation
 from src.core.authz.roles import Role
-from src.core.errors import NotFoundError
+from src.core.errors import ForbiddenError, NotFoundError, UnauthorizedError
 from src.core.uuid7 import uuid7
 from src.modules.auth.application.dtos import (
     LoginCommand,
@@ -33,6 +40,7 @@ from src.modules.auth.domain.exceptions import (
     CredenciaisInvalidasError,
     MfaCodigoInvalidoError,
     PacienteNaoEncontradoError,
+    TokenRevogadoError,
 )
 from src.modules.auth.domain.models import UsuarioCredencial
 from src.modules.auth.domain.totp import (
@@ -48,6 +56,7 @@ from tests.doubles import (
     FakeIdentityReader,
     FakePasswordHasher,
     FakeResult,
+    MemoryChallengeStore,
 )
 
 
@@ -392,28 +401,36 @@ async def test_verificar_mfa_login_codigo_incorreto_rejeitado() -> None:
 
 @pytest.mark.asyncio
 async def test_autenticar_cadsus_govbr_sucesso() -> None:
-    """Autenticação sem senha CADSUS/Gov.br desambigua por CPF/CNS e emite token."""
+    """CADSUS/Gov.br desambigua por CPF + nascimento + 2º fator civil."""
     paciente_id = uuid7()
     lookup_paciente = PacienteAuthLookupData(
         id=paciente_id,
         telefone="11987654321",
         cpf="11144477735",
         nome_completo="Carlos Paciente",
+        nome_mae="Maria Paciente",
+        data_nascimento=date(1990, 5, 15),
     )
     fake_reader = FakeIdentityReader(paciente=lookup_paciente)
     service = PatientAuthService(
+        token_service=JWTTokenService(
+            secret_key=TEST_JWT_SECRET, access_token_expire_minutes=15
+        ),
+        challenge_store=MemoryChallengeStore(),
+        rate_limiter=FakeAuthRateLimiter(),
         identity_reader=fake_reader,
-        secret_key=TEST_JWT_SECRET,
     )
 
     resultado = await service.autenticar_cadsus_govbr(
         cpf="11144477735",
         data_nascimento=date(1990, 5, 15),
+        nome_mae="Maria Paciente",
     )
 
     assert resultado.paciente_id == paciente_id
     assert resultado.role == "PACIENTE"
     assert resultado.token_type == "bearer"
+    assert resultado.expires_in == 900
     assert resultado.access_token is not None
 
 
@@ -422,18 +439,214 @@ async def test_autenticar_cadsus_govbr_paciente_nao_encontrado() -> None:
     """Falha de desambiguação CADSUS levanta PacienteNaoEncontradoError."""
     fake_reader = FakeIdentityReader(paciente=None)
     service = PatientAuthService(
+        token_service=JWTTokenService(
+            secret_key=TEST_JWT_SECRET, access_token_expire_minutes=15
+        ),
+        challenge_store=MemoryChallengeStore(),
+        rate_limiter=FakeAuthRateLimiter(),
         identity_reader=fake_reader,
-        secret_key=TEST_JWT_SECRET,
     )
 
     with pytest.raises(PacienteNaoEncontradoError) as exc_info:
         await service.autenticar_cadsus_govbr(
             cpf="11144477735",
             data_nascimento=date(1990, 5, 15),
+            nome_mae="Maria Paciente",
         )
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.code == "PACIENTE_NAO_ENCONTRADO"
+
+
+@pytest.mark.asyncio
+async def test_verificar_mfa_login_exige_mfa_ativo_true() -> None:
+    """temp_token não pode autenticar em /mfa/verify antes de /mfa/activate."""
+    secret = generate_totp_secret()
+    cred = _make_credencial(
+        papel="MEDICO",
+        senha_pura="senha123",
+        mfa_secret=secret,
+        mfa_ativo=False,
+    )
+    token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
+    temp_token = token_svc.gerar_mfa_token(
+        usuario_id=cred.usuario_id,
+        papel=cred.papel,
+    )
+    service = _make_auth_service(
+        FakeAsyncSession(results=[FakeResult(cred)]),
+        token_service=token_svc,
+    )
+
+    with pytest.raises(CredenciaisInvalidasError):
+        await service.verificar_mfa_login(
+            temp_token=temp_token,
+            codigo=generate_totp_code(secret),
+        )
+
+
+@pytest.mark.asyncio
+async def test_verificar_mfa_login_uso_unico_bloqueia_replay_e_pre_revogado() -> None:
+    """temp_token MFA tem uso único atômico: 2ª tentativa levanta TokenRevogadoError."""
+    secret = generate_totp_secret()
+    cred = _make_credencial(
+        papel="GESTOR_UNIDADE",
+        senha_pura="senha123",
+        mfa_secret=secret,
+        mfa_ativo=True,
+    )
+    token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
+    temp_token = token_svc.gerar_mfa_token(
+        usuario_id=cred.usuario_id,
+        papel=cred.papel,
+    )
+    revocation = MemoryTokenRevocation()
+    service = _make_auth_service(
+        FakeAsyncSession(results=[FakeResult(cred), FakeResult(cred)]),
+        token_service=token_svc,
+        revocation=revocation,
+    )
+    code = generate_totp_code(secret)
+
+    tokens = await service.verificar_mfa_login(temp_token=temp_token, codigo=code)
+    assert tokens.access_token is not None
+
+    with pytest.raises(TokenRevogadoError):
+        await service.verificar_mfa_login(temp_token=temp_token, codigo=code)
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_e_activate_mfa_pending_guard() -> None:
+    """mfa_pending permite setup/activate no 1º acesso, mas bloqueia quando já ativo."""
+    cred_novo = _make_credencial(
+        papel="MEDICO",
+        mfa_secret=None,
+        mfa_ativo=False,
+    )
+    service_novo = _make_auth_service(
+        FakeAsyncSession(results=[FakeResult(cred_novo), FakeResult(cred_novo)])
+    )
+    setup_dto = await service_novo.gerar_mfa_secret(
+        cred_novo.usuario_id, from_mfa_pending=True
+    )
+    assert setup_dto.secret == cred_novo.mfa_secret
+    ativado = await service_novo.ativar_mfa(
+        cred_novo.usuario_id,
+        generate_totp_code(setup_dto.secret),
+        from_mfa_pending=True,
+    )
+    assert ativado is True
+    assert cred_novo.mfa_ativo is True
+
+    cred_ativo = _make_credencial(
+        papel="MEDICO",
+        mfa_secret=generate_totp_secret(),
+        mfa_ativo=True,
+    )
+    service_ativo = _make_auth_service(
+        FakeAsyncSession(results=[FakeResult(cred_ativo), FakeResult(cred_ativo)])
+    )
+    with pytest.raises(ForbiddenError, match="MFA já está ativo"):
+        await service_ativo.gerar_mfa_secret(
+            cred_ativo.usuario_id, from_mfa_pending=True
+        )
+    with pytest.raises(ForbiddenError, match="MFA já está ativo"):
+        await service_ativo.ativar_mfa(
+            cred_ativo.usuario_id, "123456", from_mfa_pending=True
+        )
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_or_access_user_dependency_aceita_mfa_pending_e_access() -> (
+    None
+):
+    """MfaSetupOrAccessUserDep aceita access/mfa_pending e rejeita revogados."""
+    token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
+    user_id = uuid7()
+    mfa_pending = token_svc.gerar_mfa_token(usuario_id=user_id, papel="MEDICO")
+    access_pair = token_svc.gerar_tokens(usuario_id=user_id, papel="MEDICO")
+    revocation = MemoryTokenRevocation()
+    auth_settings = BearerAuthSettings(
+        secret_key=TEST_JWT_SECRET,
+        jwt_secret=TEST_JWT_SECRET,
+        jwt_algorithm="HS256",
+    )
+
+    with pytest.raises(UnauthorizedError, match="Tipo de token"):
+        await get_current_user(
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=mfa_pending
+            ),
+            revocation=revocation,
+            auth_settings=auth_settings,
+        )
+
+    pending_user = await get_mfa_setup_or_access_user(
+        credentials=HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=mfa_pending
+        ),
+        revocation=revocation,
+        auth_settings=auth_settings,
+    )
+    assert pending_user.usuario_id == user_id
+    assert pending_user.token_type == "mfa_pending"
+
+    access_user = await get_mfa_setup_or_access_user(
+        credentials=HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=access_pair.access_token
+        ),
+        revocation=revocation,
+        auth_settings=auth_settings,
+    )
+    assert access_user.token_type == "access"
+
+    await revocation.revogar(str(pending_user.token_id))
+    with pytest.raises(TokenRevogadoError):
+        await get_mfa_setup_or_access_user(
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=mfa_pending
+            ),
+            revocation=revocation,
+            auth_settings=auth_settings,
+        )
+
+
+@pytest.mark.asyncio
+async def test_rotacionar_refresh_token_concorrencia_set_nx_apenas_um_sucesso() -> None:
+    """Corrida simultânea em /refresh com mesmo refresh_token permite só 1 troca."""
+    cred = _make_credencial(papel="ATENDENTE", mfa_ativo=False)
+    token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
+    pair = token_svc.gerar_tokens(usuario_id=cred.usuario_id, papel="ATENDENTE")
+    revocation = MemoryTokenRevocation()
+    session = FakeAsyncSession(results=[FakeResult(cred), FakeResult(cred)])
+    service = _make_auth_service(
+        session, token_service=token_svc, revocation=revocation
+    )
+
+    outcomes = await asyncio.gather(
+        service.rotacionar_refresh_token(pair.refresh_token),
+        service.rotacionar_refresh_token(pair.refresh_token),
+        return_exceptions=True,
+    )
+    sucessos = [o for o in outcomes if not isinstance(o, BaseException)]
+    falhas = [o for o in outcomes if isinstance(o, TokenRevogadoError)]
+    assert len(sucessos) == 1
+    assert len(falhas) == 1
+
+
+@pytest.mark.asyncio
+async def test_revogar_sessao_revoga_access_token_mesmo_sem_refresh_token() -> None:
+    """Logout apenas com Authorization Bearer deve revogar JTI do access_token."""
+    token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
+    pair = token_svc.gerar_tokens(usuario_id=uuid7(), papel="MEDICO")
+    revocation = MemoryTokenRevocation()
+    service = _make_auth_service(
+        FakeAsyncSession(), token_service=token_svc, revocation=revocation
+    )
+
+    await service.revogar_sessao(None, access_token=pair.access_token)
+    acc_payload = token_svc.validar_access_token(pair.access_token)
+    assert await revocation.is_revogado(acc_payload.jti) is True
 
 
 @pytest.mark.asyncio

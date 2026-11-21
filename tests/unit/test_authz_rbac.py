@@ -215,6 +215,11 @@ class FailingTokenRevocation(TokenRevocationPort):
     async def revogar(self, jti: str, exp_segundos: int = 86400 * 7) -> None:
         raise ServiceUnavailableError(f"Valkey indisponível ao revogar '{jti}'.")
 
+    async def marcar_revogado_se_nao_revogado(
+        self, jti: str, exp_segundos: int = 86400 * 7
+    ) -> bool:
+        raise ServiceUnavailableError(f"Valkey indisponível ao revogar '{jti}'.")
+
     async def is_revogado(self, jti: str) -> bool:
         raise ServiceUnavailableError(f"Valkey indisponível ao consultar '{jti}'.")
 

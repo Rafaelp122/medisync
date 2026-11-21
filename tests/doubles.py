@@ -12,13 +12,16 @@ from uuid import UUID
 
 from src.core.audit import AtorPapel, AtorTipo
 from src.core.authz.roles import Role
-from src.core.errors import ConflictError
+from src.core.errors import ConflictError, NotFoundError, ValidationError
 from src.core.uuid7 import uuid7
 from src.modules.auth.application.ports.password_hasher_port import PasswordHasherPort
 from src.modules.auth.application.ports.patient_credential_repository_port import (
     PatientCredentialRepositoryPort,
 )
 from src.modules.auth.domain.models.usuario_credencial import UsuarioCredencial
+from src.modules.auth.infrastructure.valkey_challenge_store import (
+    InMemoryChallengeStore,
+)
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
     AtendimentoResumoDTO,
@@ -575,8 +578,30 @@ class FakeAtendimentoReader(AtendimentoReaderPort):
             )
 
 
+def _matches_cadsus_candidate(
+    p: PacienteAuthLookupDTO,
+    *,
+    cpf: str | None,
+    data_nascimento: date | None,
+    cns: str | None,
+    nome_mae: str | None,
+) -> bool:
+    if cpf is not None and p.cpf != cpf:
+        return False
+    if cns is not None and p.cns != cns:
+        return False
+    if data_nascimento is not None and p.data_nascimento != data_nascimento:
+        return False
+    if nome_mae is not None and nome_mae.strip():
+        if p.nome_mae is None:
+            return False
+        if p.nome_mae.strip().lower() != nome_mae.strip().lower():
+            return False
+    return True
+
+
 class FakeIdentityReader(IdentityReaderPort):
-    """Canonical in-memory test double implementing IdentityReaderPort."""
+    """Canonical in-memory read-only test double implementing IdentityReaderPort."""
 
     def __init__(
         self,
@@ -649,26 +674,36 @@ class FakeIdentityReader(IdentityReaderPort):
                 "nome_mae": nome_mae,
             }
         )
-        if self.pacientes is not None:
-            for p in self.pacientes:
-                if cpf is not None and p.cpf != cpf:
-                    continue
-                if cns is not None and getattr(p, "cns", None) != cns:
-                    continue
-                if (
-                    data_nascimento is not None
-                    and getattr(p, "data_nascimento", None) != data_nascimento
-                ):
-                    continue
-                if (
-                    nome_mae is not None
-                    and p.nome_mae is not None
-                    and p.nome_mae.strip().lower() != nome_mae.strip().lower()
-                ):
-                    continue
-                return p
-            return None
-        return self.paciente
+        clean_cpf = cpf.strip() if cpf and cpf.strip() else None
+        clean_cns = cns.strip() if cns and cns.strip() else None
+        if clean_cpf is None and clean_cns is None:
+            raise ValidationError(
+                "Consulta CADSUS requer ao menos CPF ou CNS informado "
+                f"(recebido cpf={cpf!r}, cns={cns!r})."
+            )
+
+        candidates = (
+            list(self.pacientes)
+            if self.pacientes is not None
+            else ([self.paciente] if self.paciente is not None else [])
+        )
+        matches = [
+            p
+            for p in candidates
+            if _matches_cadsus_candidate(
+                p,
+                cpf=clean_cpf,
+                data_nascimento=data_nascimento,
+                cns=clean_cns,
+                nome_mae=nome_mae,
+            )
+        ]
+        if len(matches) > 1:
+            raise ConflictError(
+                "Consulta CADSUS retornou múltiplos registros ambíguos; "
+                "informe CPF ou CNS único junto ao segundo fator civil."
+            )
+        return matches[0] if matches else None
 
     async def buscar_paciente_por_id(
         self,
@@ -683,29 +718,6 @@ class FakeIdentityReader(IdentityReaderPort):
             return self.paciente
         return None
 
-    async def registrar_passkey_paciente(
-        self,
-        paciente_id: UUID,
-        credential_id: str,
-        public_key: str,
-        sign_count: int = 0,
-        device_name: str | None = None,
-    ) -> PacientePasskeyDTO:
-        if credential_id in self.passkeys:
-            raise ConflictError(
-                f"Credencial WebAuthn '{credential_id}' já registrada na plataforma."
-            )
-        record = PacientePasskeyData(
-            id=uuid7(),
-            paciente_id=paciente_id,
-            credential_id=credential_id,
-            public_key=public_key,
-            sign_count=sign_count,
-            device_name=device_name,
-        )
-        self.passkeys[credential_id] = record
-        return record
-
     async def buscar_passkey_por_credencial(
         self,
         credential_id: str,
@@ -717,27 +729,6 @@ class FakeIdentityReader(IdentityReaderPort):
         paciente_id: UUID,
     ) -> Sequence[PacientePasskeyDTO]:
         return [p for p in self.passkeys.values() if p.paciente_id == paciente_id]
-
-    async def atualizar_sign_count_passkey(
-        self,
-        credential_id: str,
-        novo_sign_count: int,
-    ) -> PacientePasskeyDTO:
-        existing = self.passkeys.get(credential_id)
-        if existing is None:
-            raise ValueError(
-                f"Credencial Passkey '{credential_id}' não encontrada na plataforma."
-            )
-        updated = PacientePasskeyData(
-            id=existing.id,
-            paciente_id=existing.paciente_id,
-            credential_id=existing.credential_id,
-            public_key=existing.public_key,
-            sign_count=max(existing.sign_count, novo_sign_count),
-            device_name=existing.device_name,
-        )
-        self.passkeys[credential_id] = updated
-        return updated
 
 
 class FakeProducaoAmbulatorialPort(ProducaoAmbulatorialPort):
@@ -885,7 +876,9 @@ class FakeIdentityWriter(IdentityWriterPort):
     def __init__(self, reader: FakeIdentityReader) -> None:
         self._reader = reader
         if self._reader.pacientes is None:
-            self._reader.pacientes = []
+            self._reader.pacientes = (
+                [self._reader.paciente] if self._reader.paciente is not None else []
+            )
 
     async def criar_paciente(
         self,
@@ -910,10 +903,79 @@ class FakeIdentityWriter(IdentityWriterPort):
             cpf=clean_cpf,
             nome_completo=nome_completo,
             nome_mae=None,
+            data_nascimento=data_nascimento,
         )
         items.append(created)
         self._reader.pacientes = items
         return created
+
+    async def registrar_passkey_paciente(
+        self,
+        paciente_id: UUID,
+        credential_id: str,
+        public_key: str,
+        sign_count: int = 0,
+        device_name: str | None = None,
+    ) -> PacientePasskeyDTO:
+        if credential_id in self._reader.passkeys:
+            raise ConflictError(
+                f"Credencial WebAuthn '{credential_id}' já registrada na plataforma."
+            )
+        record = PacientePasskeyData(
+            id=uuid7(),
+            paciente_id=paciente_id,
+            credential_id=credential_id,
+            public_key=public_key,
+            sign_count=sign_count,
+            device_name=device_name,
+        )
+        self._reader.passkeys[credential_id] = record
+        return record
+
+    async def atualizar_sign_count_passkey(
+        self,
+        credential_id: str,
+        novo_sign_count: int,
+    ) -> PacientePasskeyDTO:
+        existing = self._reader.passkeys.get(credential_id)
+        if existing is None:
+            raise NotFoundError(
+                f"Credencial Passkey '{credential_id}' não encontrada na plataforma."
+            )
+        if novo_sign_count < 0 or (
+            existing.sign_count > 0 and novo_sign_count <= existing.sign_count
+        ):
+            raise ValidationError(
+                f"Contador de assinatura regressivo ou inválido: '{novo_sign_count}'; "
+                f"esperado > {existing.sign_count}."
+            )
+        updated = PacientePasskeyData(
+            id=existing.id,
+            paciente_id=existing.paciente_id,
+            credential_id=existing.credential_id,
+            public_key=existing.public_key,
+            sign_count=novo_sign_count,
+            device_name=existing.device_name,
+        )
+        self._reader.passkeys[credential_id] = updated
+        return updated
+
+
+class MemoryChallengeStore(InMemoryChallengeStore):
+    """Canonical in-memory atomic ChallengeStorePort double with call tracking."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.entries = self._entries
+        self.consume_calls: list[str] = []
+
+    async def consume_one_time(self, key: str) -> str | None:
+        self.consume_calls.append(key)
+        return await super().consume_one_time(key)
+
+    def clear(self) -> None:
+        super().clear()
+        self.consume_calls.clear()
 
 
 class FakePatientCredentialRepository(PatientCredentialRepositoryPort):

@@ -20,6 +20,12 @@ class TokenRevocationPort(Protocol):
         """Mark token JTI as revoked until expiry."""
         ...
 
+    async def marcar_revogado_se_nao_revogado(
+        self, jti: str, exp_segundos: int = 86400 * 7
+    ) -> bool:
+        """Atomically revoke token JTI if absent (False if already revoked)."""
+        ...
+
     async def is_revogado(self, jti: str) -> bool:
         """Check whether token JTI was revoked."""
         ...
@@ -52,15 +58,21 @@ class ValkeyTokenRevocation(TokenRevocationPort):
         active_pool = self._pool if self._pool is not None else get_valkey_pool()
         return Redis(connection_pool=active_pool), True
 
-    async def revogar(self, jti: str, exp_segundos: int = 86400 * 7) -> None:
-        """Persist token JTI revocation in Valkey; aborts with 503 on infra failure."""
+    async def _set_revocation_flag(
+        self,
+        jti: str,
+        exp_segundos: int,
+        *,
+        nx: bool,
+    ) -> bool:
         client: Redis | None = None
         owns_client = False
         try:
             client, owns_client = self._acquire_client()
             key = _format_revoked_key(jti)
             ttl = max(1, exp_segundos)
-            await client.set(key, "1", ex=ttl)  # pyright: ignore[reportUnknownMemberType]
+            result = await client.set(key, "1", ex=ttl, nx=nx)  # pyright: ignore[reportUnknownMemberType]
+            return bool(result)
         except ServiceUnavailableError:
             raise
         except Exception as exc:
@@ -71,6 +83,16 @@ class ValkeyTokenRevocation(TokenRevocationPort):
             ) from exc
         finally:
             await _close_owned_client(client, owns_client)
+
+    async def revogar(self, jti: str, exp_segundos: int = 86400 * 7) -> None:
+        """Persist token JTI revocation in Valkey; aborts with 503 on infra failure."""
+        await self._set_revocation_flag(jti, exp_segundos, nx=False)
+
+    async def marcar_revogado_se_nao_revogado(
+        self, jti: str, exp_segundos: int = 86400 * 7
+    ) -> bool:
+        """Atomically mark token JTI revoked via Valkey SET NX; aborts 503 on error."""
+        return await self._set_revocation_flag(jti, exp_segundos, nx=True)
 
     async def is_revogado(self, jti: str) -> bool:
         """Check if token JTI is revoked in Valkey (strictly fail-closed on errors)."""
@@ -102,6 +124,15 @@ class MemoryTokenRevocation(TokenRevocationPort):
     async def revogar(self, jti: str, exp_segundos: int = 86400 * 7) -> None:
         """Mark token JTI as revoked in memory."""
         self._revoked.add(jti)
+
+    async def marcar_revogado_se_nao_revogado(
+        self, jti: str, exp_segundos: int = 86400 * 7
+    ) -> bool:
+        """Atomically mark token JTI revoked in memory if not already present."""
+        if jti in self._revoked:
+            return False
+        self._revoked.add(jti)
+        return True
 
     async def is_revogado(self, jti: str) -> bool:
         """Return True if token JTI was revoked in memory."""

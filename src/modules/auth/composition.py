@@ -1,7 +1,7 @@
-"""Auth composition root: concrete adapter wiring for AuthService (DI Fase 3).
+"""Auth composition root: concrete adapter wiring for AuthService and patient auth.
 
 Single place in auth module allowed to import infrastructure adapters.
-Routers and tests must resolve AuthService via get_auth_service/AuthServiceDep.
+Routers and tests must resolve services via AuthServiceDep/PatientAuthServiceDep.
 """
 
 from typing import Annotated
@@ -20,6 +20,9 @@ from src.modules.auth.application.ports.active_attendance_lookup_port import (
 )
 from src.modules.auth.application.ports.auth_rate_limiter_port import (
     AuthRateLimiterPort,
+)
+from src.modules.auth.application.ports.challenge_store_port import (
+    ChallengeStorePort,
 )
 from src.modules.auth.application.ports.identity_reader_port import (
     IdentityReaderPort,
@@ -43,9 +46,14 @@ from src.modules.auth.application.services.patient_webauthn_service import (
     PatientWebAuthnService,
 )
 from src.modules.auth.infrastructure.argon2_hasher import Argon2PasswordHasher
+from src.modules.auth.infrastructure.fake_sms_adapter import FakeSmsSenderAdapter
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
 from src.modules.auth.infrastructure.patient_credential_repository_sql import (
     SqlPatientCredentialRepository,
+)
+from src.modules.auth.infrastructure.valkey_challenge_store import (
+    InMemoryChallengeStore,
+    ValkeyChallengeStore,
 )
 from src.modules.auth.infrastructure.valkey_rate_limiter import (
     FakeAuthRateLimiter,
@@ -54,11 +62,32 @@ from src.modules.auth.infrastructure.valkey_rate_limiter import (
 from src.modules.identity.composition import (
     build_identity_reader_sql_for_session,
     build_identity_writer_sql_for_session,
-    get_sms_sender,
 )
 from src.modules.queue.composition import (
     build_active_attendance_reader_for_session,
 )
+
+_sms_adapter_instance = FakeSmsSenderAdapter()
+_memory_challenge_store_instance = InMemoryChallengeStore()
+
+
+def get_sms_sender() -> SmsSenderPort:
+    """Provide SMS sender port adapter."""
+    return _sms_adapter_instance
+
+
+SmsSenderDep = Annotated[SmsSenderPort, Depends(get_sms_sender)]
+
+
+def get_cookie_secure_flag() -> bool | None:
+    """Resolve explicit Secure cookie flag for production/staging profiles (ADR-009)."""
+    settings = get_settings()
+    if settings.ENVIRONMENT in ("production", "staging"):
+        return True
+    return None
+
+
+CookieSecureDep = Annotated[bool | None, Depends(get_cookie_secure_flag)]
 
 
 def get_password_hasher() -> PasswordHasherPort:
@@ -83,6 +112,16 @@ def get_rate_limiter() -> AuthRateLimiterPort:
     if settings.RATE_LIMIT_BACKEND == "memory":
         return FakeAuthRateLimiter()
     return ValkeyAuthRateLimiter()
+
+
+def get_challenge_store(valkey: Redis | None = None) -> ChallengeStorePort:
+    """Provide ChallengeStorePort adapter based on Valkey client or active profile."""
+    if valkey is not None:
+        return ValkeyChallengeStore(client=valkey)
+    settings = get_settings()
+    if settings.RATE_LIMIT_BACKEND == "memory":
+        return _memory_challenge_store_instance
+    return ValkeyChallengeStore()
 
 
 def build_auth_service_for_session(
@@ -124,6 +163,8 @@ def build_patient_auth_service_for_session(
     password_hasher: PasswordHasherPort | None = None,
     govbr_oidc_enabled: bool | None = None,
     rate_limiter: AuthRateLimiterPort | None = None,
+    challenge_store: ChallengeStorePort | None = None,
+    token_service: TokenServicePort | None = None,
 ) -> PatientAuthService:
     """Build PatientAuthService outside request scope (tests/worker tooling)."""
     settings = get_settings()
@@ -133,16 +174,17 @@ def build_patient_auth_service_for_session(
     hasher = password_hasher or get_password_hasher()
     sender = sms_sender or get_sms_sender()
     limiter = rate_limiter or get_rate_limiter()
+    store = challenge_store or get_challenge_store(valkey=valkey)
+    tok_svc = token_service or get_token_service()
     attendance_lookup = (
         active_attendance_lookup or build_active_attendance_reader_for_session(session)
     )
     return PatientAuthService(
+        token_service=tok_svc,
+        challenge_store=store,
+        rate_limiter=limiter,
         identity_reader=reader,
-        valkey_client=valkey,
         sms_sender=sender,
-        secret_key=settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-        access_token_expire_minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
         expose_debug_otp=(
             settings.DEBUG and settings.ENVIRONMENT in ("development", "test")
         ),
@@ -156,7 +198,6 @@ def build_patient_auth_service_for_session(
             else govbr_oidc_enabled
         ),
         session=session,
-        rate_limiter=limiter,
     )
 
 
@@ -175,27 +216,31 @@ def build_patient_webauthn_service_for_session(
     session: AsyncSession,
     valkey: Redis | None = None,
     identity_reader: IdentityReaderPort | None = None,
+    identity_writer: IdentityWriterPort | None = None,
     active_attendance_lookup: ActiveAttendanceLookupPort | None = None,
+    challenge_store: ChallengeStorePort | None = None,
+    token_service: TokenServicePort | None = None,
 ) -> PatientWebAuthnService:
     """Build PatientWebAuthnService outside request scope (tests/tooling)."""
     settings = get_settings()
     reader = identity_reader or build_identity_reader_sql_for_session(session)
+    writer = identity_writer or build_identity_writer_sql_for_session(session)
+    store = challenge_store or get_challenge_store(valkey=valkey)
+    tok_svc = token_service or get_token_service()
     attendance_lookup = (
         active_attendance_lookup or build_active_attendance_reader_for_session(session)
     )
     return PatientWebAuthnService(
-        jwt_secret=settings.JWT_SECRET_KEY,
-        valkey_client=valkey,
-        jwt_algorithm=settings.JWT_ALGORITHM,
-        access_token_expire_minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
+        session=session,
+        token_service=tok_svc,
+        challenge_store=store,
+        identity_reader=reader,
+        identity_writer=writer,
         rp_id=settings.WEBAUTHN_RP_ID,
         rp_name=settings.WEBAUTHN_RP_NAME,
         allowed_origins=tuple(settings.WEBAUTHN_ALLOWED_ORIGINS),
-        allow_memory_fallback=(settings.ENVIRONMENT == "test"),
-        identity_reader=reader,
         active_attendance_lookup=attendance_lookup,
         audit_trail=SqlAuditTrailAdapter(session),
-        session=session,
     )
 
 
@@ -203,7 +248,7 @@ def get_patient_webauthn_service(
     session: DbSessionDep,
     valkey: Annotated[Redis, Depends(get_valkey_client)],
 ) -> PatientWebAuthnService:
-    """Provide PatientWebAuthnService wired with Valkey, identity reader and audit."""
+    """Provide PatientWebAuthnService wired with Valkey, reader/writer and audit."""
     return build_patient_webauthn_service_for_session(session=session, valkey=valkey)
 
 

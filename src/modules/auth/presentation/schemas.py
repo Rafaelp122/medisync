@@ -4,13 +4,7 @@ from datetime import date
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from src.modules.auth.application.dtos import (
-    AutenticarCadsusInputDTO,
-    SolicitarOtpInputDTO,
-    VerificarOtpInputDTO,
-)
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class LoginRequest(BaseModel):
@@ -135,7 +129,7 @@ class UsuarioPerfilResponse(BaseModel):
     ativo: bool
 
 
-class SolicitarOtpRequest(SolicitarOtpInputDTO):
+class SolicitarOtpRequest(BaseModel):
     """Payload to request an OTP code via SMS."""
 
     model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
@@ -164,7 +158,7 @@ class SolicitarOtpResponse(BaseModel):
     codigo_debug: str | None = None
 
 
-class VerificarOtpRequest(VerificarOtpInputDTO):
+class VerificarOtpRequest(BaseModel):
     """Payload to verify OTP code and obtain patient access token."""
 
     model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
@@ -205,34 +199,48 @@ class VerificarOtpResponse(BaseModel):
     )
 
 
-class AutenticarCadsusRequest(AutenticarCadsusInputDTO, BaseModel):
-    """Payload to authenticate patient via CADSUS / Gov.br civil registry."""
+class AutenticarCadsusRequest(BaseModel):
+    """Payload to authenticate patient via CADSUS / Gov.br with 2nd civil factor."""
 
     model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
 
     cpf: str | None = Field(
         default=None,
         max_length=14,
-        description="CPF do paciente (opcional se CNS fornecido)",
+        description="CPF do paciente (requer nome_mae ou cns adicional)",
         examples=["11144477735"],
     )
     cns: str | None = Field(
         default=None,
-        max_length=15,
+        max_length=18,
         description="Cartão Nacional de Saúde (CNS) de 15 dígitos",
-        examples=["898001234567890"],
+        examples=["800000000000001"],
     )
-    data_nascimento: date | None = Field(
-        default=None,
-        description="Data de nascimento do paciente (AAAA-MM-DD)",
+    data_nascimento: date = Field(
+        description="Data de nascimento do paciente (AAAA-MM-DD, obrigatória)",
         examples=["1985-04-12"],
     )
     nome_mae: str | None = Field(
         default=None,
         max_length=200,
-        description="Nome completo da mãe para desambiguação",
+        description="Nome da mãe (obrigatório quando autenticando apenas por CPF)",
         examples=["Maria da Silva"],
     )
+
+    @model_validator(mode="after")
+    def _validar_fatores_civis(self) -> "AutenticarCadsusRequest":
+        if not self.cpf and not self.cns:
+            raise ValueError(
+                "Informe CPF ou CNS válido junto à data de nascimento para "
+                f"autenticação CADSUS (recebido cpf={self.cpf!r}, cns={self.cns!r})."
+            )
+        if self.cpf and not self.cns and not self.nome_mae:
+            raise ValueError(
+                "Ao autenticar por CPF via CADSUS/Gov.br, informe também 'nome_mae' "
+                f"(2º fator civil) ou 'cns' (recebido nome_mae={self.nome_mae!r}, "
+                f"cns={self.cns!r})."
+            )
+        return self
 
 
 class WebAuthnRpSchema(BaseModel):

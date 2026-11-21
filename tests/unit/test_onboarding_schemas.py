@@ -243,3 +243,44 @@ def test_dependente_response_sem_organizacao_id() -> None:
     )
     assert "organizacao_id" not in resp.model_dump()
     assert resp.grau_parentesco == "FILHO"
+    assert resp.outorga_tcle is False
+
+
+def test_criar_dependente_request_com_outorga_tcle() -> None:
+    req = CriarDependenteRequest(
+        grau_parentesco="FILHO",
+        dependente_id=uuid7(),
+        outorga_tcle=True,
+    )
+    assert req.outorga_tcle is True
+
+
+def test_autenticar_cadsus_request_exige_data_nascimento_e_segundo_fator() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+    from src.modules.auth.presentation.schemas import AutenticarCadsusRequest
+
+    with pytest.raises(PydanticValidationError):
+        AutenticarCadsusRequest.model_validate({"cpf": "11144477735"})
+
+    with pytest.raises(PydanticValidationError, match="nome_mae"):
+        AutenticarCadsusRequest(
+            cpf="11144477735",
+            data_nascimento=date(1990, 5, 15),
+        )
+
+    with pytest.raises(PydanticValidationError, match="CPF ou CNS"):
+        AutenticarCadsusRequest(data_nascimento=date(1990, 5, 15))
+
+    req_ok = AutenticarCadsusRequest(
+        cpf="11144477735",
+        data_nascimento=date(1990, 5, 15),
+        nome_mae="Maria da Silva",
+    )
+    assert req_ok.nome_mae == "Maria da Silva"
+
+    req_cns = AutenticarCadsusRequest(
+        cpf="11144477735",
+        cns="800000000000001",
+        data_nascimento=date(1990, 5, 15),
+    )
+    assert req_cns.cns == "800000000000001"

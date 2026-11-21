@@ -17,7 +17,11 @@ from src.modules.auth.domain.exceptions import WebAuthnChallengeInvalidoError
 
 
 def decode_b64url(raw: str) -> bytes | None:
-    """Decode Base64url string into raw bytes, returning None on invalid input."""
+    """Decode Base64url string into raw bytes, returning None on invalid input.
+
+    Regras: RFC 4648 §5 / W3C WebAuthn Level 3,
+    docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+    """
     stripped = raw.strip()
     if not stripped:
         return None
@@ -29,7 +33,11 @@ def decode_b64url(raw: str) -> bytes | None:
 
 
 def encode_b64url(data: bytes) -> str:
-    """Encode raw bytes into unpadded Base64url ASCII string."""
+    """Encode raw bytes into unpadded Base64url ASCII string.
+
+    Regras: RFC 4648 §5 / W3C WebAuthn Level 3,
+    docs/user-stories/US-14-biometria-passkeys-webauthn.md.
+    """
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
@@ -47,7 +55,7 @@ def decode_and_validate_client_data(
     if not isinstance(raw_cdj, str) or not raw_cdj.strip():
         raise WebAuthnChallengeInvalidoError(
             "Payload WebAuthn com desafio divergente ou clientDataJSON ausente "
-            "(esperado Base64url não vazio)."
+            f"(recebido {raw_cdj!r}; esperado Base64url não vazio)."
         )
 
     stripped = raw_cdj.strip()
@@ -58,7 +66,8 @@ def decode_and_validate_client_data(
     )
     if raw_bytes is None:
         raise WebAuthnChallengeInvalidoError(
-            "clientDataJSON WebAuthn malformado (esperado Base64url ou JSON válido)."
+            f"clientDataJSON WebAuthn malformado (recebido '{stripped[:24]}...'; "
+            "esperado Base64url ou JSON válido)."
         )
 
     try:
@@ -96,7 +105,8 @@ def decode_and_validate_client_data(
     challenge = parsed_dict.get("challenge")
     if not isinstance(challenge, str) or not challenge.strip():
         raise WebAuthnChallengeInvalidoError(
-            "Campo 'challenge' divergente ou ausente no clientDataJSON WebAuthn."
+            f"Campo 'challenge' divergente ou ausente no clientDataJSON WebAuthn "
+            f"(recebido challenge={challenge!r})."
         )
     return challenge, raw_bytes
 
@@ -265,7 +275,9 @@ def extract_registration_key_and_count(
     try:
         cose_map, _ = _cbor_decode_item(auth_data, cose_offset)
         if not isinstance(cose_map, dict):
-            raise ValueError("COSE_Key deve ser um mapa CBOR.")
+            raise ValueError(
+                f"COSE_Key deve ser um mapa CBOR; recebido {type(cose_map).__name__}."
+            )
         spki_b64 = _cose_map_to_spki_b64url(cast("dict[Any, Any]", cose_map))
     except ValueError as exc:
         raise WebAuthnChallengeInvalidoError(

@@ -4,28 +4,27 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from src.modules.identity.application.ports.sms_sender_port import SmsSenderPort
+from src.core.privacy import mascarar_telefone
+from src.modules.auth.application.ports.sms_sender_port import SmsSenderPort
 
-logger = logging.getLogger("medisync.identity.sms")
+logger = logging.getLogger("medisync.auth.sms")
 
 
 class FakeSmsSenderAdapter(SmsSenderPort):
     """In-memory and logging SMS sender adapter.
 
     Operates without third-party telecom credentials (e.g. Twilio, Z-API).
-    Logs OTP transmissions and retains sent messages in an in-memory buffer
-    for test inspection.
+    Retains sent messages in an in-memory buffer for deterministic test inspection.
     """
 
     def __init__(self) -> None:
         self.sent_otps: list[dict[str, Any]] = []
 
     async def enviar_otp(self, telefone: str, codigo: str) -> None:
-        """Log structured OTP dispatch and record in in-memory test buffer."""
+        """Record OTP dispatch in in-memory test buffer and emit masked log."""
         logger.info(
-            "Notification [SMS OTP] sent to %s: %s",
-            telefone,
-            codigo,
+            "Notification [SMS OTP] sent to %s",
+            mascarar_telefone(telefone),
         )
         self.sent_otps.append(
             {

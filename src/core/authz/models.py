@@ -15,6 +15,7 @@ class AuthenticatedUser:
     papel: str
     token_id: UUID
     raw_token: str
+    token_type: str = "access"  # noqa: S105
 
     def has_role(self, *roles: str) -> bool:
         """Verify whether the user holds one of the specified roles."""
@@ -35,3 +36,5 @@ class BearerPrincipal:
     auth_kind: Literal["jwt", "intake_hmac"]
     token_id: UUID | None = None
     raw_token: str = ""
+    token_type: str = "access"  # noqa: S105
+    is_intake_restrito: bool = False

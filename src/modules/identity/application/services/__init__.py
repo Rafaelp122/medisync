@@ -1,27 +1,29 @@
 """Application services for identity and onboarding."""
 
-from src.modules.identity.application.services.dependente_service import (
-    CriarDependenteDTO,
+from src.modules.identity.application.dtos import (
+    CriarDependenteInput,
     DependenteDetalheDTO,
     DependenteOutputDTO,
+    Fase1Input,
+    Fase1OutputDTO,
+    Fase2Input,
+    Fase2OutputDTO,
+)
+from src.modules.identity.application.services.dependente_service import (
     DependenteService,
 )
 from src.modules.identity.application.services.onboarding_service import (
-    Fase1InputDTO,
-    Fase1OutputDTO,
-    Fase2InputDTO,
-    Fase2OutputDTO,
     OnboardingService,
 )
 
 __all__ = [
-    "CriarDependenteDTO",
+    "CriarDependenteInput",
     "DependenteDetalheDTO",
     "DependenteOutputDTO",
     "DependenteService",
-    "Fase1InputDTO",
+    "Fase1Input",
     "Fase1OutputDTO",
-    "Fase2InputDTO",
+    "Fase2Input",
     "Fase2OutputDTO",
     "OnboardingService",
 ]

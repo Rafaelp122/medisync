@@ -46,6 +46,8 @@ def create_intake_token(
     paciente_id: UUID,
     secret_key: str,
     expires_in_seconds: int = 7200,
+    *,
+    is_novo_paciente: bool = True,
 ) -> str:
     """Gera token provisório HMAC-SHA256 para sessão de acolhimento (US-01, ADR-001).
 
@@ -55,6 +57,7 @@ def create_intake_token(
     payload = {
         "paciente_id": str(paciente_id),
         "tipo": "intake_provisional",
+        "is_novo_paciente": is_novo_paciente,
         "iat": now,
         "exp": now + expires_in_seconds,
     }

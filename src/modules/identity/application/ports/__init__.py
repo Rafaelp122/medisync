@@ -9,7 +9,6 @@ from src.modules.identity.application.ports.identity_reader_port import (
 from src.modules.identity.application.ports.identity_writer_port import (
     IdentityWriterPort,
 )
-from src.modules.identity.application.ports.sms_sender_port import SmsSenderPort
 
 __all__ = [
     "IdentityDirectoryDTO",
@@ -17,5 +16,4 @@ __all__ = [
     "IdentityWriterPort",
     "PacientePasskeyDTO",
     "PacientePasskeyData",
-    "SmsSenderPort",
 ]
