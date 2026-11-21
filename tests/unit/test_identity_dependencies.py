@@ -409,3 +409,23 @@ async def test_validar_posse_titular_jwt_revogado_raises_401() -> None:
             ),
             revocation=revocation,
         )
+
+
+@pytest.mark.asyncio
+async def test_validar_posse_titular_rejeita_intake_restrito_403() -> None:
+    """Conta existente não gerencia dependentes com intake_token restrito."""
+    settings = get_settings()
+    titular_id = uuid7()
+    restricted_intake = create_intake_token(
+        titular_id,
+        settings.SECRET_KEY,
+        is_novo_paciente=False,
+    )
+
+    with pytest.raises(ForbiddenError, match="Token de acolhimento restrito"):
+        await validar_posse_titular(
+            id=titular_id,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=restricted_intake
+            ),
+        )

@@ -2,7 +2,6 @@
 
 from typing import TYPE_CHECKING
 
-import pytest
 from fastapi import Request, Response
 from src.modules.auth.presentation.helpers import (
     clear_refresh_token_cookie,
@@ -145,12 +144,9 @@ def test_resolve_cookie_secure_returns_false_when_http_and_no_forwarded() -> Non
     assert resolve_cookie_secure(request) is False
 
 
-def test_resolve_cookie_secure_returns_false_on_http_regardless_of_debug(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.core.config import CommonSettings
-    from src.modules.auth.presentation import helpers
-
+def test_resolve_cookie_secure_returns_false_on_http_regardless_of_environment() -> (
+    None
+):
     scope: Scope = {
         "type": "http",
         "method": "POST",
@@ -160,8 +156,7 @@ def test_resolve_cookie_secure_returns_false_on_http_regardless_of_debug(
     }
     request = Request(scope)
 
-    monkeypatch.setattr(helpers, "get_settings", lambda: CommonSettings(DEBUG=False))
-    assert resolve_cookie_secure(request) is False
-
-    monkeypatch.setattr(helpers, "get_settings", lambda: CommonSettings(DEBUG=True))
-    assert resolve_cookie_secure(request) is False
+    assert resolve_cookie_secure(request, environment="development") is False
+    assert resolve_cookie_secure(request, environment="test") is False
+    assert resolve_cookie_secure(request, environment="production") is True
+    assert resolve_cookie_secure(request, environment="staging") is True

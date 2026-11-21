@@ -5,12 +5,12 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import ColumnElement, or_, select
 
-from src.core.errors import ValidationError
+from src.core.errors import UnauthorizedError, ValidationError
 from src.core.security import create_intake_token
 from src.modules.identity.application.dtos import (
-    Fase1InputDTO,
+    Fase1Input,
     Fase1OutputDTO,
-    Fase2InputDTO,
+    Fase2Input,
     Fase2OutputDTO,
 )
 from src.modules.identity.domain.exceptions import (
@@ -44,18 +44,23 @@ class OnboardingService:
         session: "AsyncSession | None" = None,
         secret_key: str | None = None,
     ) -> None:
+        if secret_key is None or not secret_key.strip():
+            raise ValueError(
+                "Chave secreta 'secret_key' obrigatória no OnboardingService "
+                f"(recebido: {secret_key!r}; configure SECRET_KEY via composition.py)."
+            )
         self._session = session
-        self._secret_key = (
-            secret_key or "dev-insecure-secret-key-change-in-production-min-32-chars"
-        )
+        self._secret_key = secret_key
 
     async def realizar_fase_1(
         self,
-        dados: Fase1InputDTO,
+        dados: Fase1Input,
         session: "AsyncSession | None" = None,
     ) -> Fase1OutputDTO:
         """Executa acolhimento rápido Fase 1 em <45 segundos emitindo token provisório.
 
+        Em re-acolhimento de conta existente, exige conferência de data de nascimento,
+        impede sobrescrita não autenticada de contato e emite token restrito.
         Regras: RN07 (TCLE), LGPD Art. 11, ADR-013, NEC-01.
         Documentação: docs/explanation/domains/identity-domain.md
         """
@@ -65,7 +70,6 @@ class OnboardingService:
                 f"AsyncSession não configurada no OnboardingService (recebido: {db!r})."
             )
 
-        # 1. Mandatory input validations
         clean_cpf = validate_cpf(dados.cpf) if dados.cpf else None
         clean_cns = validate_cns(dados.cns) if dados.cns else None
         if not clean_cpf and not clean_cns:
@@ -90,7 +94,6 @@ class OnboardingService:
                 "esperado ao menos 3 caracteres descritivos."
             )
 
-        # 2. Check for existing patient record
         conditions: list[ColumnElement[bool]] = []
         if clean_cpf:
             conditions.append(Paciente.cpf == clean_cpf)
@@ -98,13 +101,12 @@ class OnboardingService:
             conditions.append(Paciente.cns == clean_cns)
 
         stmt = select(Paciente).where(or_(*conditions))
-        result = await db.execute(stmt)
-        paciente = result.scalars().first()
+        paciente = (await db.execute(stmt)).scalars().first()
 
-        is_novo = False
-        nome = dados.nome_completo.strip()
-        nome_social = dados.nome_social.strip() if dados.nome_social else None
+        is_novo = paciente is None
         if paciente is None:
+            nome = dados.nome_completo.strip()
+            nome_social = dados.nome_social.strip() if dados.nome_social else None
             paciente = Paciente(
                 data_nascimento=dados.data_nascimento,
                 telefone=clean_telefone,
@@ -114,20 +116,19 @@ class OnboardingService:
                 nome_social=nome_social,
             )
             db.add(paciente)
-            is_novo = True
-        else:
-            paciente.telefone = clean_telefone
-            if nome:
-                paciente.nome_completo = nome
-            if nome_social:
-                paciente.nome_social = nome_social
-
-        await db.commit()
+            await db.commit()
+        elif paciente.data_nascimento != dados.data_nascimento:
+            raise UnauthorizedError(
+                "Dados civis divergentes para re-acolhimento de paciente já cadastrado "
+                f"(data_nascimento={dados.data_nascimento!r}); realize login prévio "
+                "via OTP, Passkey ou CADSUS."
+            )
 
         token = create_intake_token(
             paciente_id=paciente.id,
             secret_key=self._secret_key,
             expires_in_seconds=7200,
+            is_novo_paciente=is_novo,
         )
 
         return Fase1OutputDTO(
@@ -140,7 +141,7 @@ class OnboardingService:
 
     async def realizar_fase_2(
         self,
-        dados: Fase2InputDTO,
+        dados: Fase2Input,
         session: "AsyncSession | None" = None,
     ) -> Fase2OutputDTO:
         """Executa enriquecimento cadastral e clínico da Fase 2 sob normas regulatórias.
@@ -154,7 +155,6 @@ class OnboardingService:
                 f"AsyncSession não configurada no OnboardingService (recebido: {db!r})."
             )
 
-        # 1. Regulatory validations
         clean_nome_mae = validate_nome_mae(dados.nome_mae)
         clean_cep = validate_cep(dados.cep)
         clean_sexo = validate_sexo_biologico(dados.sexo_biologico)
@@ -179,17 +179,13 @@ class OnboardingService:
                 "esperado exatamente 2 caracteres."
             )
 
-        # 2. Retrieve patient
         stmt = select(Paciente).where(Paciente.id == dados.paciente_id)
-        result = await db.execute(stmt)
-        paciente = result.scalars().first()
-
+        paciente = (await db.execute(stmt)).scalars().first()
         if paciente is None:
             raise PacienteNaoEncontradoError(
                 f"Paciente '{dados.paciente_id}' não encontrado na plataforma."
             )
 
-        # 3. Enrich patient fields via rich domain model (CFM 1.821/2007)
         paciente.completar_fase_2(
             nome_mae=clean_nome_mae,
             sexo_biologico=clean_sexo,

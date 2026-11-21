@@ -16,8 +16,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.database import Base
 from src.core.errors import ValidationError
+from src.core.privacy import clean_digits, mascarar_cpf
 from src.core.uuid7 import uuid7
-from src.modules.identity.domain.models._helpers import clean_digits
 
 PapelProfissional = Literal["GESTOR_UNIDADE", "MEDICO", "FATURAMENTO"]
 
@@ -62,8 +62,8 @@ class Profissional(Base):
         digits = clean_digits(cpf)
         if len(digits) != 11:
             raise ValidationError(
-                f"CPF do profissional '{cpf}' inválido: deve conter 11 dígitos "
-                "numéricos."
+                f"CPF do profissional '{mascarar_cpf(cpf)}' inválido: "
+                "deve conter 11 dígitos numéricos."
             )
 
         papel_clean = papel.strip().upper()

@@ -1,11 +1,9 @@
-"""Data Transfer Objects for the authentication application layer."""
+"""Data Transfer Objects and structural input contracts for auth layer (ADR-008)."""
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Literal
+from typing import Literal, Protocol
 from uuid import UUID
-
-from pydantic import BaseModel, ConfigDict
 
 
 @dataclass(frozen=True)
@@ -61,22 +59,6 @@ class MfaSetupDTO:
 
 
 @dataclass(frozen=True)
-class AtivarMfaCommand:
-    """Command to activate second-factor TOTP for a user."""
-
-    usuario_id: UUID
-    codigo: str
-
-
-@dataclass(frozen=True)
-class VerificarMfaLoginCommand:
-    """Command to exchange temporary MFA token for final token pair."""
-
-    temp_token: str
-    codigo: str
-
-
-@dataclass(frozen=True)
 class RateLimitResultDTO:
     """Result of an anti-brute force rate limit check."""
 
@@ -85,56 +67,54 @@ class RateLimitResultDTO:
     retry_after_segundos: int
 
 
-class SolicitarOtpInputDTO(BaseModel):
-    """Input parameters for patient OTP request."""
+@dataclass(frozen=True)
+class OtpVerifyOutcomeDTO:
+    """Immutable outcome of atomic OTP verification and attempt accounting."""
 
-    model_config = ConfigDict(frozen=True, str_strip_whitespace=True)
+    status: Literal["valid", "invalid", "not_found", "max_attempts"]
+    paciente_id: UUID | None = None
+    tentativas_restantes: int = 0
 
-    telefone: str
-    cpf: str | None = None
+
+class SolicitarOtpInput(Protocol):
+    """Structural contract satisfied directly by SolicitarOtpRequest."""
+
+    @property
+    def telefone(self) -> str: ...
+
+    @property
+    def cpf(self) -> str | None: ...
 
 
-class SolicitarOtpOutputDTO(BaseModel):
+@dataclass(frozen=True)
+class SolicitarOtpOutputDTO:
     """Output results for patient OTP request."""
-
-    model_config = ConfigDict(frozen=True)
 
     mensagem: str
     expira_em_segundos: int
     codigo_debug: str | None = None
 
 
-class VerificarOtpInputDTO(BaseModel):
-    """Input parameters for patient OTP code verification."""
+class VerificarOtpInput(Protocol):
+    """Structural contract satisfied directly by VerificarOtpRequest."""
 
-    model_config = ConfigDict(frozen=True, str_strip_whitespace=True)
+    @property
+    def telefone(self) -> str: ...
 
-    telefone: str
-    codigo: str
+    @property
+    def codigo(self) -> str: ...
 
 
-class VerificarOtpOutputDTO(BaseModel):
+@dataclass(frozen=True)
+class VerificarOtpOutputDTO:
     """Output results containing issued patient JWT access token."""
 
-    model_config = ConfigDict(frozen=True)
-
     access_token: str
-    token_type: str = "bearer"  # noqa: S105
+    token_type: str
     expires_in: int
     paciente_id: UUID
     role: str = "PACIENTE"
     atendimento_id: UUID | None = None
-
-
-class AutenticarCadsusInputDTO(BaseModel):
-    """Input parameters for CADSUS/Gov.br passwordless civil registry lookup."""
-
-    model_config = ConfigDict(frozen=True, str_strip_whitespace=True)
-
-    cpf: str | None = None
-    cns: str | None = None
-    data_nascimento: date | None = None
-    nome_mae: str | None = None
 
 
 @dataclass(frozen=True)

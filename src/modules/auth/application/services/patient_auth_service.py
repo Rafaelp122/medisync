@@ -1,25 +1,20 @@
-"""Application service orchestrating passwordless patient OTP authentication."""
+"""Application service orchestrating passwordless and hybrid patient authentication."""
 
 import asyncio
 import hashlib
-import hmac
 import json
 import logging
 import re
 import secrets
-import time
 from datetime import date
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID
 
-from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.authz.roles import Role
-from src.core.authz.token import create_access_token
 from src.core.errors import ConflictError, ValidationError
-from src.core.privacy import mascarar_cns, mascarar_cpf
-from src.core.uuid7 import uuid7
+from src.core.privacy import mascarar_cns, mascarar_cpf, mascarar_telefone
 from src.modules.auth.application.dtos import (
     IdentificarPacienteCommand,
     IdentificarPacienteOutputDTO,
@@ -27,9 +22,9 @@ from src.modules.auth.application.dtos import (
     MetodosAutenticacaoPacienteOutputDTO,
     RegistrarPacienteCommand,
     RegistrarPacienteOutputDTO,
-    SolicitarOtpInputDTO,
+    SolicitarOtpInput,
     SolicitarOtpOutputDTO,
-    VerificarOtpInputDTO,
+    VerificarOtpInput,
     VerificarOtpOutputDTO,
 )
 from src.modules.auth.application.ports.active_attendance_lookup_port import (
@@ -37,6 +32,9 @@ from src.modules.auth.application.ports.active_attendance_lookup_port import (
 )
 from src.modules.auth.application.ports.auth_rate_limiter_port import (
     AuthRateLimiterPort,
+)
+from src.modules.auth.application.ports.challenge_store_port import (
+    ChallengeStorePort,
 )
 from src.modules.auth.application.ports.identity_reader_port import (
     IdentityReaderPort,
@@ -51,9 +49,8 @@ from src.modules.auth.application.ports.password_hasher_port import (
 from src.modules.auth.application.ports.patient_credential_repository_port import (
     PatientCredentialRepositoryPort,
 )
-from src.modules.auth.application.ports.sms_sender_port import (
-    SmsSenderPort,
-)
+from src.modules.auth.application.ports.sms_sender_port import SmsSenderPort
+from src.modules.auth.application.ports.token_service_port import TokenServicePort
 from src.modules.auth.domain.exceptions import (
     ContaBloqueadaError,
     ContaDesativadaError,
@@ -65,7 +62,11 @@ from src.modules.auth.domain.exceptions import (
     PacienteNaoEncontradoError,
 )
 from src.modules.auth.domain.models.usuario_credencial import UsuarioCredencial
-from src.modules.auth.domain.validators import validate_cpf, validate_telefone
+from src.modules.auth.domain.validators import (
+    validate_cns,
+    validate_cpf,
+    validate_telefone,
+)
 
 logger = logging.getLogger("medisync.auth.patient_auth")
 
@@ -76,6 +77,7 @@ OTP_MAX_VERIFY_ATTEMPTS = 3
 IDENTIFY_RATE_LIMIT_WINDOW = 900
 IDENTIFY_MAX_REQUESTS_PER_IP = 15
 IDENTIFY_MAX_REQUESTS_PER_IDENT = 10
+CADSUS_MAX_REQUESTS_PER_IP = 10
 REGISTER_RATE_LIMIT_WINDOW = 900
 REGISTER_MAX_REQUESTS_PER_IP = 10
 PASSWORD_MAX_FAILURES = 5
@@ -89,13 +91,6 @@ def _hash_pii_key(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
 
-def _mascarar_telefone(clean_telefone: str) -> str:
-    """Mask phone number for safe exception display without leaking PII."""
-    if len(clean_telefone) >= 8:
-        return f"{clean_telefone[:4]}****{clean_telefone[-4:]}"
-    return "****"
-
-
 class PatientAuthService:
     """Autenticação híbrida de pacientes (OTP SMS, CADSUS/Gov.br, senha Argon2id).
 
@@ -106,42 +101,32 @@ class PatientAuthService:
 
     def __init__(
         self,
+        *,
+        token_service: TokenServicePort,
+        challenge_store: ChallengeStorePort,
+        rate_limiter: AuthRateLimiterPort,
         identity_reader: IdentityReaderPort | None = None,
-        valkey_client: Redis | None = None,
         sms_sender: SmsSenderPort | None = None,
-        secret_key: str | None = None,
-        algorithm: str = "HS256",
-        access_token_expire_minutes: int = 60,
-        is_debug: bool = False,
+        expose_debug_otp: bool = False,
         active_attendance_lookup: ActiveAttendanceLookupPort | None = None,
         identity_writer: IdentityWriterPort | None = None,
         credential_repo: PatientCredentialRepositoryPort | None = None,
         password_hasher: PasswordHasherPort | None = None,
         govbr_oidc_enabled: bool = False,
         session: AsyncSession | None = None,
-        expose_debug_otp: bool = False,
-        rate_limiter: AuthRateLimiterPort | None = None,
     ) -> None:
+        self._token_service = token_service
+        self._challenge_store = challenge_store
+        self._rate_limiter = rate_limiter
         self._identity_reader = identity_reader
-        self._valkey = valkey_client
         self._sms_sender = sms_sender
-        self._secret_key = (
-            secret_key
-            or "dev-insecure-jwt-secret-key-change-in-production-min-32-chars"
-        )
-        self._algorithm = algorithm
-        self._access_token_expire_minutes = access_token_expire_minutes
-        self._expose_debug_otp = expose_debug_otp or is_debug
+        self._expose_debug_otp = expose_debug_otp
         self._active_attendance = active_attendance_lookup
         self._identity_writer = identity_writer
         self._credential_repo = credential_repo
         self._password_hasher = password_hasher
         self._govbr_oidc_enabled = govbr_oidc_enabled
         self._session = session
-        self._rate_limiter = rate_limiter
-        # In-memory storage fallback for unit testing when Valkey is None
-        self._memory_otp: dict[str, dict[str, Any]] = {}
-        self._memory_ratelimit: dict[str, list[float]] = {}
 
     async def _resolve_active_attendance(self, paciente_id: UUID) -> UUID | None:
         if self._active_attendance is None:
@@ -150,92 +135,23 @@ class PatientAuthService:
             paciente_id=paciente_id,
         )
 
-    async def _calculate_valkey_retry_after(
-        self, redis_key: str, now: float, window_seconds: int
-    ) -> int:
-        """Calculate seconds remaining until the oldest entry slides out of window."""
-        if self._valkey is None:
-            return window_seconds
-        oldest_entries: list[Any] = await self._valkey.zrange(  # pyright: ignore[reportUnknownMemberType]
-            redis_key, 0, 0, withscores=True
+    def _issue_patient_token(
+        self,
+        paciente_id: UUID,
+        atendimento_id: UUID | None = None,
+    ) -> VerificarOtpOutputDTO:
+        token_pair = self._token_service.gerar_tokens(
+            usuario_id=paciente_id,
+            papel=Role.PACIENTE.value,
         )
-        if not oldest_entries:
-            return window_seconds
-        oldest_time = float(oldest_entries[0][1])
-        return max(1, int(oldest_time + window_seconds - now))
-
-    async def _valkey_sliding_window(
-        self,
-        redis_key: str,
-        max_requests: int,
-        window_seconds: int,
-        now: float,
-    ) -> int | None:
-        """Check Valkey sliding window; return None if unavailable or retry seconds."""
-        if self._valkey is None:
-            return None
-        window_start = now - window_seconds
-        try:
-            async with self._valkey.pipeline(transaction=True) as pipe:
-                await pipe.zremrangebyscore(redis_key, 0, window_start)  # pyright: ignore[reportUnknownMemberType]
-                await pipe.zcard(redis_key)  # pyright: ignore[reportUnknownMemberType]
-                results: list[Any] = await pipe.execute()  # pyright: ignore[reportUnknownMemberType]
-
-            if int(results[1]) >= max_requests:
-                return await self._calculate_valkey_retry_after(
-                    redis_key, now, window_seconds
-                )
-
-            async with self._valkey.pipeline(transaction=True) as pipe:
-                await pipe.zadd(redis_key, {str(uuid7()): now})  # pyright: ignore[reportUnknownMemberType]
-                await pipe.expire(redis_key, window_seconds + 60)  # pyright: ignore[reportUnknownMemberType]
-                await pipe.execute()  # pyright: ignore[reportUnknownMemberType]
-            return 0
-        except Exception as exc:
-            logger.warning("Valkey rate limit failed, falling back to memory: %s", exc)
-            return None
-
-    def _memory_sliding_window(
-        self,
-        mem_key: str,
-        max_requests: int,
-        window_seconds: int,
-        now: float,
-    ) -> int:
-        window_start = now - window_seconds
-        timestamps = self._memory_ratelimit.get(mem_key, [])
-        valid_timestamps = [ts for ts in timestamps if ts > window_start]
-        if len(valid_timestamps) >= max_requests:
-            oldest_ts = valid_timestamps[0]
-            return max(1, int(oldest_ts + window_seconds - now))
-        valid_timestamps.append(now)
-        self._memory_ratelimit[mem_key] = valid_timestamps
-        return 0
-
-    async def _check_sliding_window(
-        self,
-        key: str,
-        max_requests: int,
-        window_seconds: int,
-    ) -> int:
-        """Evaluate sliding window via AuthRateLimiterPort, Valkey, or memory."""
-        if self._rate_limiter is not None:
-            result = await self._rate_limiter.verificar_e_incrementar(
-                chave=key,
-                limite=max_requests,
-                janela_segundos=window_seconds,
-            )
-            if result.permitido:
-                return 0
-            return max(1, result.retry_after_segundos)
-
-        now = time.time()
-        valkey_res = await self._valkey_sliding_window(
-            key, max_requests, window_seconds, now
+        return VerificarOtpOutputDTO(
+            access_token=token_pair.access_token,
+            token_type="bearer",  # noqa: S106
+            expires_in=token_pair.expires_in,
+            paciente_id=paciente_id,
+            role=Role.PACIENTE.value,
+            atendimento_id=atendimento_id,
         )
-        if valkey_res is not None:
-            return valkey_res
-        return self._memory_sliding_window(key, max_requests, window_seconds, now)
 
     async def _enforce_ip_rate_limit(
         self,
@@ -247,151 +163,43 @@ class PatientAuthService:
         action_label: str,
     ) -> None:
         clean_ip = client_ip.strip() or "127.0.0.1"
-        ip_key = f"ratelimit:{namespace}:ip:{clean_ip}"
-        retry_after = await self._check_sliding_window(
-            key=ip_key,
-            max_requests=max_requests,
-            window_seconds=window_seconds,
+        res = await self._rate_limiter.verificar_e_incrementar(
+            chave=f"{namespace}:ip:{clean_ip}",
+            limite=max_requests,
+            janela_segundos=window_seconds,
         )
-        if retry_after > 0:
+        if not res.permitido:
             raise IdentificacaoRateLimitExcedidoError(
                 f"Limite de solicitações de {action_label} excedido para "
-                f"IP '{clean_ip}'. Tente novamente em {retry_after}s.",
-                retry_after_segundos=retry_after,
+                f"IP '{clean_ip}'. Tente novamente em {res.retry_after_segundos}s.",
+                retry_after_segundos=res.retry_after_segundos,
             )
 
     async def _enforce_otp_rate_limit(self, clean_telefone: str) -> None:
         """Enforce maximum 3 OTP requests per 15-minute window using hashed PII."""
         phone_hash = _hash_pii_key(clean_telefone)
-        retry_after = await self._check_sliding_window(
-            key=f"ratelimit:otp:request:{phone_hash}",
-            max_requests=OTP_MAX_REQUESTS_PER_WINDOW,
-            window_seconds=OTP_RATE_LIMIT_WINDOW,
+        res = await self._rate_limiter.verificar_e_incrementar(
+            chave=f"otp:request:{phone_hash}",
+            limite=OTP_MAX_REQUESTS_PER_WINDOW,
+            janela_segundos=OTP_RATE_LIMIT_WINDOW,
         )
-        if retry_after > 0:
-            tel_mask = _mascarar_telefone(clean_telefone)
+        if not res.permitido:
+            tel_mask = mascarar_telefone(clean_telefone)
             raise OtpRateLimitExcedidoError(
                 f"Limite de solicitações de OTP excedido para o telefone '{tel_mask}'. "
-                f"Tente novamente em {retry_after}s.",
-                retry_after_segundos=retry_after,
+                f"Tente novamente em {res.retry_after_segundos}s.",
+                retry_after_segundos=res.retry_after_segundos,
             )
 
-    async def _save_otp(
+    async def _emitir_otp_para_telefone(
         self,
+        *,
         clean_telefone: str,
-        code_hash: str,
-        paciente_id: UUID,
-    ) -> None:
-        """Store OTP state with 5-minute TTL."""
-        data = {
-            "code_hash": code_hash,
-            "paciente_id": str(paciente_id),
-            "attempts": 0,
-            "expires_at": time.time() + OTP_TTL_SECONDS,
-        }
-        if self._valkey is not None:
-            try:
-                await self._valkey.set(  # pyright: ignore[reportUnknownMemberType]
-                    f"otp:{clean_telefone}",
-                    json.dumps(data),
-                    ex=OTP_TTL_SECONDS,
-                )
-                return
-            except Exception as exc:
-                logger.warning(
-                    "Valkey set failed, falling back to in-memory store: %s", exc
-                )
-
-        self._memory_otp[clean_telefone] = data
-
-    async def _get_valkey_otp(self, clean_telefone: str) -> dict[str, Any] | None:
-        if self._valkey is None:
-            return None
-        try:
-            raw: bytes | str | None = await self._valkey.get(f"otp:{clean_telefone}")  # pyright: ignore[reportUnknownMemberType]
-            if raw is None:
-                return None
-            raw_str = (
-                raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else raw
-            )
-            return json.loads(raw_str)  # type: ignore[no-any-return]
-        except Exception as exc:
-            logger.warning(
-                "Valkey get failed, falling back to in-memory store: %s", exc
-            )
-            return None
-
-    async def _get_otp(self, clean_telefone: str) -> dict[str, Any] | None:
-        """Retrieve stored OTP state if not expired."""
-        if self._valkey is not None:
-            valkey_data = await self._get_valkey_otp(clean_telefone)
-            if valkey_data is not None:
-                return valkey_data
-
-        item = self._memory_otp.get(clean_telefone)
-        if item is None:
-            return None
-        if time.time() > float(item.get("expires_at", 0)):
-            self._memory_otp.pop(clean_telefone, None)
-            return None
-        return item
-
-    async def _update_valkey_attempts(
-        self, clean_telefone: str, data: dict[str, Any]
-    ) -> bool:
-        if self._valkey is None:
-            return False
-        try:
-            ttl = await self._valkey.ttl(f"otp:{clean_telefone}")  # pyright: ignore[reportUnknownMemberType]
-            if ttl > 0:
-                await self._valkey.set(  # pyright: ignore[reportUnknownMemberType]
-                    f"otp:{clean_telefone}",
-                    json.dumps(data),
-                    ex=ttl,
-                )
-            return True
-        except Exception as exc:
-            logger.warning("Valkey attempt update failed: %s", exc)
-            return False
-
-    async def _update_attempts(self, clean_telefone: str, data: dict[str, Any]) -> None:
-        """Increment failed attempts count while preserving remaining TTL."""
-        if self._valkey is not None:
-            updated = await self._update_valkey_attempts(clean_telefone, data)
-            if updated:
-                return
-
-        if clean_telefone in self._memory_otp:
-            self._memory_otp[clean_telefone] = data
-
-    async def _delete_otp(self, clean_telefone: str) -> None:
-        """Remove OTP record after successful verification or lockout."""
-        if self._valkey is not None:
-            try:
-                await self._valkey.delete(f"otp:{clean_telefone}")  # pyright: ignore[reportUnknownMemberType]
-            except Exception as exc:
-                logger.warning("Valkey delete failed: %s", exc)
-
-        self._memory_otp.pop(clean_telefone, None)
-
-    async def solicitar_otp(
-        self,
-        dados: SolicitarOtpInputDTO,
+        clean_cpf: str | None,
     ) -> SolicitarOtpOutputDTO:
-        """Emite código OTP de 6 dígitos com rate limiting por telefone (janela 15m).
-
-        Regras: RN-AUT-03, RN-AUT-04, ADR-012, ADR-013, RF-01.
-        Documentação: docs/explanation/domains/auth-domain.md
-        """
         reader = self._require_identity_reader()
-
-        clean_telefone = validate_telefone(dados.telefone)
-        clean_cpf = validate_cpf(dados.cpf) if dados.cpf else None
-
-        # 1. Enforce rate limiting before reading DB or generating OTP
         await self._enforce_otp_rate_limit(clean_telefone)
 
-        # 2. Look up patient record via IdentityReaderPort
         paciente = await reader.buscar_paciente_por_telefone(
             telefone=clean_telefone,
             cpf=clean_cpf,
@@ -403,57 +211,77 @@ class PatientAuthService:
                 codigo_debug=None,
             )
 
-        # 3. Generate cryptographically secure 6-digit OTP
         codigo = f"{secrets.randbelow(1_000_000):06d}"
         code_hash = hashlib.sha256(codigo.encode("utf-8")).hexdigest()
-
-        # 4. Save hash and patient info in Valkey with 5-minute TTL
-        await self._save_otp(
-            clean_telefone=clean_telefone,
-            code_hash=code_hash,
-            paciente_id=paciente.id,
+        payload = json.dumps(
+            {
+                "code_hash": code_hash,
+                "paciente_id": str(paciente.id),
+                "attempts": 0,
+            }
+        )
+        await self._challenge_store.store_one_time(
+            key=f"otp:{clean_telefone}",
+            value=payload,
+            ttl_seconds=OTP_TTL_SECONDS,
         )
 
-        # 5. Dispatch OTP via SMS port
         if self._sms_sender is not None:
             await self._sms_sender.enviar_otp(clean_telefone, codigo)
 
         codigo_debug = codigo if self._expose_debug_otp else None
-
         return SolicitarOtpOutputDTO(
             mensagem="Código de verificação enviado com sucesso.",
             expira_em_segundos=OTP_TTL_SECONDS,
             codigo_debug=codigo_debug,
         )
 
-    async def verificar_otp(
+    async def solicitar_otp(
         self,
-        dados: VerificarOtpInputDTO,
-    ) -> VerificarOtpOutputDTO:
-        """Valida OTP em tempo constante e emite JWT de paciente (Role.PACIENTE).
+        dados: SolicitarOtpInput,
+    ) -> SolicitarOtpOutputDTO:
+        """Emite código OTP de 6 dígitos com rate limiting por telefone (janela 15m).
 
         Regras: RN-AUT-03, RN-AUT-04, ADR-012, ADR-013, RF-01.
         Documentação: docs/explanation/domains/auth-domain.md
         """
         clean_telefone = validate_telefone(dados.telefone)
-        tel_mask = _mascarar_telefone(clean_telefone)
+        clean_cpf = validate_cpf(dados.cpf) if dados.cpf else None
+        return await self._emitir_otp_para_telefone(
+            clean_telefone=clean_telefone,
+            clean_cpf=clean_cpf,
+        )
+
+    async def verificar_otp(
+        self,
+        dados: VerificarOtpInput,
+    ) -> VerificarOtpOutputDTO:
+        """Valida OTP atomicamente via ChallengeStorePort e emite JWT de paciente.
+
+        Regras: RN-AUT-03, RN-AUT-04, ADR-012, ADR-013, RF-01.
+        Documentação: docs/explanation/domains/auth-domain.md
+        """
+        clean_telefone = validate_telefone(dados.telefone)
+        tel_mask = mascarar_telefone(clean_telefone)
         codigo = dados.codigo.strip()
         if len(codigo) != 6 or not codigo.isdigit():
             raise OtpInvalidoOuExpiradoError(
                 f"Código OTP '{codigo}' deve conter exatamente 6 dígitos numéricos."
             )
 
-        # 1. Retrieve OTP state
-        stored = await self._get_otp(clean_telefone)
-        if stored is None:
+        input_hash = hashlib.sha256(codigo.encode("utf-8")).hexdigest()
+        outcome = await self._challenge_store.verify_and_increment_otp(
+            key=f"otp:{clean_telefone}",
+            code_hash=input_hash,
+            max_attempts=OTP_MAX_VERIFY_ATTEMPTS,
+        )
+
+        if outcome.status == "not_found":
             raise OtpInvalidoOuExpiradoError(
                 f"Código OTP incorreto ou expirado para o telefone '{tel_mask}'."
             )
 
-        # 2. Check failed attempts count to mitigate brute-force guessing
-        attempts = int(stored.get("attempts", 0))
-        if attempts >= OTP_MAX_VERIFY_ATTEMPTS:
-            await self._delete_otp(clean_telefone)
+        if outcome.status == "max_attempts":
             raise OtpTentativasExcedidasError(
                 f"Número máximo de {OTP_MAX_VERIFY_ATTEMPTS} tentativas de "
                 f"validação excedido para o telefone '{tel_mask}'. "
@@ -461,50 +289,19 @@ class PatientAuthService:
                 retry_after_segundos=OTP_RATE_LIMIT_WINDOW,
             )
 
-        # 3. Compare hash in constant time
-        expected_hash = str(stored.get("code_hash", ""))
-        input_hash = hashlib.sha256(codigo.encode("utf-8")).hexdigest()
-
-        if not hmac.compare_digest(expected_hash, input_hash):
-            nova_tentativa = attempts + 1
-            stored["attempts"] = nova_tentativa
-            if nova_tentativa >= OTP_MAX_VERIFY_ATTEMPTS:
-                await self._delete_otp(clean_telefone)
-                raise OtpTentativasExcedidasError(
-                    f"Número máximo de {OTP_MAX_VERIFY_ATTEMPTS} tentativas de "
-                    f"validação excedido para o telefone '{tel_mask}'. "
-                    f"Código invalidado; tente novamente em {OTP_RATE_LIMIT_WINDOW}s.",
-                    retry_after_segundos=OTP_RATE_LIMIT_WINDOW,
-                )
-            await self._update_attempts(clean_telefone, stored)
-            tentativas_restantes = max(0, OTP_MAX_VERIFY_ATTEMPTS - nova_tentativa)
+        if outcome.status == "invalid":
             raise OtpInvalidoOuExpiradoError(
                 f"Código OTP incorreto para o telefone '{tel_mask}'. "
-                f"Restam {tentativas_restantes} tentativa(s) antes do bloqueio."
+                f"Restam {outcome.tentativas_restantes} tentativa(s) antes do bloqueio."
             )
 
-        # 4. Successful verification: remove OTP immediately to prevent replay
-        await self._delete_otp(clean_telefone)
+        if outcome.paciente_id is None:
+            raise OtpInvalidoOuExpiradoError(
+                f"Registro de OTP inconsistente sem paciente vinculado ('{tel_mask}')."
+            )
 
-        # 5. Issue lightweight JWT access token with Role.PACIENTE
-        paciente_id = UUID(str(stored["paciente_id"]))
-        atendimento_id = await self._resolve_active_attendance(paciente_id)
-        token = create_access_token(
-            usuario_id=paciente_id,
-            papel=Role.PACIENTE.value,
-            secret_key=self._secret_key,
-            algorithm=self._algorithm,
-            expire_minutes=self._access_token_expire_minutes,
-        )
-
-        return VerificarOtpOutputDTO(
-            access_token=token,
-            token_type="bearer",  # noqa: S106
-            expires_in=self._access_token_expire_minutes * 60,
-            paciente_id=paciente_id,
-            role=Role.PACIENTE.value,
-            atendimento_id=atendimento_id,
-        )
+        atendimento_id = await self._resolve_active_attendance(outcome.paciente_id)
+        return self._issue_patient_token(outcome.paciente_id, atendimento_id)
 
     async def autenticar_cadsus_govbr(
         self,
@@ -512,29 +309,52 @@ class PatientAuthService:
         data_nascimento: date | None = None,
         cns: str | None = None,
         nome_mae: str | None = None,
+        *,
+        client_ip: str = "127.0.0.1",
     ) -> VerificarOtpOutputDTO:
-        """Autenticação sem senha via CADSUS/Gov.br por desambiguação de dados civis.
+        """Autenticação sem senha via CADSUS/Gov.br com 2º fator civil e rate limit.
 
         Regras: RN-AUT-09, ADR-012, ADR-013, RF-01, CFM nº 2.314/2022 e
         docs/explanation/domains/auth-domain.md.
         """
         reader = self._require_identity_reader()
+        await self._enforce_ip_rate_limit(
+            namespace="cadsus",
+            client_ip=client_ip,
+            max_requests=CADSUS_MAX_REQUESTS_PER_IP,
+            window_seconds=OTP_RATE_LIMIT_WINDOW,
+            action_label="autenticação CADSUS",
+        )
 
-        clean_cpf = validate_cpf(cpf) if cpf else None
-        clean_cns = cns.strip() if cns and cns.strip() else None
+        if data_nascimento is None:
+            raise ValidationError(
+                "Data de nascimento é obrigatória para autenticação CADSUS/Gov.br "
+                f"(recebido data_nascimento={data_nascimento!r})."
+            )
+
+        clean_cpf = validate_cpf(cpf) if cpf and cpf.strip() else None
+        clean_cns = validate_cns(cns) if cns and cns.strip() else None
 
         if not clean_cpf and not clean_cns:
-            raise PacienteNaoEncontradoError(
+            raise ValidationError(
                 f"Desambiguação CADSUS inválida (recebido cpf={cpf!r}, "
                 f"cns={cns!r}); esperado ao menos CPF (11 dígitos) ou CNS "
                 "(15 dígitos) válido para autenticação sem senha."
+            )
+
+        clean_nome_mae = nome_mae.strip() if nome_mae and nome_mae.strip() else None
+        if clean_cpf and not clean_cns and clean_nome_mae is None:
+            raise ValidationError(
+                "Autenticação CADSUS por CPF exige também o nome completo da mãe "
+                f"ou CNS como segundo fator civil (recebido nome_mae={nome_mae!r}, "
+                f"cns={cns!r}; RN-AUT-09)."
             )
 
         paciente = await reader.buscar_paciente_cadsus(
             cpf=clean_cpf,
             data_nascimento=data_nascimento,
             cns=clean_cns,
-            nome_mae=nome_mae,
+            nome_mae=clean_nome_mae,
         )
         if paciente is None:
             cpf_masked = mascarar_cpf(clean_cpf) if clean_cpf else "N/A"
@@ -545,21 +365,8 @@ class PatientAuthService:
                 "não encontrado na plataforma."
             )
 
-        token = create_access_token(
-            usuario_id=paciente.id,
-            papel=Role.PACIENTE.value,
-            secret_key=self._secret_key,
-            algorithm=self._algorithm,
-            expire_minutes=self._access_token_expire_minutes,
-        )
-
-        return VerificarOtpOutputDTO(
-            access_token=token,
-            token_type="bearer",  # noqa: S106
-            expires_in=self._access_token_expire_minutes * 60,
-            paciente_id=paciente.id,
-            role=Role.PACIENTE.value,
-        )
+        atendimento_id = await self._resolve_active_attendance(paciente.id)
+        return self._issue_patient_token(paciente.id, atendimento_id)
 
     def _require_identity_reader(self) -> IdentityReaderPort:
         if self._identity_reader is None:
@@ -582,9 +389,9 @@ class PatientAuthService:
     def _require_credential_repo(self) -> PatientCredentialRepositoryPort:
         if self._credential_repo is None:
             raise ValueError(
-                "PatientCredentialRepositoryPort não configurado no PatientAuthService "
-                f"(recebido: {self._credential_repo!r}; esperado repositório de "
-                "credenciais)."
+                "PatientCredentialRepositoryPort não configurado no "
+                f"PatientAuthService (recebido: {self._credential_repo!r}; "
+                "esperado repositório de credenciais)."
             )
         return self._credential_repo
 
@@ -673,8 +480,9 @@ class PatientAuthService:
         self, clean_telefone: str, clean_cpf: str
     ) -> tuple[bool, int, str | None]:
         try:
-            otp_out = await self.solicitar_otp(
-                dados=SolicitarOtpInputDTO(telefone=clean_telefone, cpf=clean_cpf),
+            otp_out = await self._emitir_otp_para_telefone(
+                clean_telefone=clean_telefone,
+                clean_cpf=clean_cpf,
             )
             return True, otp_out.expira_em_segundos, otp_out.codigo_debug
         except OtpRateLimitExcedidoError:
@@ -740,7 +548,7 @@ class PatientAuthService:
         )
         return RegistrarPacienteOutputDTO(
             paciente_id=paciente.id,
-            telefone_mascarado=_mascarar_telefone(clean_telefone),
+            telefone_mascarado=mascarar_telefone(clean_telefone),
             otp_enviado=otp_enviado,
             expira_em_segundos=expira_em,
             codigo_debug=codigo_debug,
@@ -754,25 +562,26 @@ class PatientAuthService:
         ident_hash = _hash_pii_key(normalized_ident)
         checks = (
             (
-                f"ratelimit:identify:ip:{client_ip}",
+                f"identify:ip:{client_ip}",
                 IDENTIFY_MAX_REQUESTS_PER_IP,
             ),
             (
-                f"ratelimit:identify:id:{ident_hash}",
+                f"identify:id:{ident_hash}",
                 IDENTIFY_MAX_REQUESTS_PER_IDENT,
             ),
         )
         for key, max_req in checks:
-            retry_after = await self._check_sliding_window(
-                key=key,
-                max_requests=max_req,
-                window_seconds=IDENTIFY_RATE_LIMIT_WINDOW,
+            res = await self._rate_limiter.verificar_e_incrementar(
+                chave=key,
+                limite=max_req,
+                janela_segundos=IDENTIFY_RATE_LIMIT_WINDOW,
             )
-            if retry_after > 0:
+            if not res.permitido:
                 raise IdentificacaoRateLimitExcedidoError(
                     f"Limite de solicitações de identificação excedido para "
-                    f"IP '{client_ip}'. Tente novamente em {retry_after}s.",
-                    retry_after_segundos=retry_after,
+                    f"IP '{client_ip}'. Tente novamente em "
+                    f"{res.retry_after_segundos}s.",
+                    retry_after_segundos=res.retry_after_segundos,
                 )
 
     def _parse_patient_identifier(
@@ -875,7 +684,7 @@ class PatientAuthService:
             )
 
         metodos = await self._collect_patient_methods(paciente, cred)
-        tel_mask = _mascarar_telefone(paciente.telefone) if paciente.telefone else None
+        tel_mask = mascarar_telefone(paciente.telefone) if paciente.telefone else None
         return IdentificarPacienteOutputDTO(
             possui_conta=True,
             metodos_disponiveis=metodos,
@@ -963,21 +772,7 @@ class PatientAuthService:
 
         paciente_id = cred.usuario_id
         atendimento_id = await self._resolve_active_attendance(paciente_id)
-        token = create_access_token(
-            usuario_id=paciente_id,
-            papel=Role.PACIENTE.value,
-            secret_key=self._secret_key,
-            algorithm=self._algorithm,
-            expire_minutes=self._access_token_expire_minutes,
-        )
-        return VerificarOtpOutputDTO(
-            access_token=token,
-            token_type="bearer",  # noqa: S106
-            expires_in=self._access_token_expire_minutes * 60,
-            paciente_id=paciente_id,
-            role=Role.PACIENTE.value,
-            atendimento_id=atendimento_id,
-        )
+        return self._issue_patient_token(paciente_id, atendimento_id)
 
     def obter_capacidades_metodos(self) -> MetodosAutenticacaoPacienteOutputDTO:
         """Retorna capacidades habilitadas de login do paciente conforme settings.

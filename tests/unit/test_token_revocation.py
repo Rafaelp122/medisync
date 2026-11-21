@@ -42,10 +42,19 @@ class FakeRevocationRedis:
             raise self.error_on_exists
         return 1 if key in self.revoked else 0
 
-    async def set(self, key: str, value: str, *, ex: int | None = None) -> bool:
+    async def set(
+        self,
+        key: str,
+        value: str,
+        *,
+        ex: int | None = None,
+        nx: bool = False,
+    ) -> bool:
         self.set_calls.append((key, value, ex))
         if self.error_on_set is not None:
             raise self.error_on_set
+        if nx and key in self.revoked:
+            return False
         self.revoked.add(key)
         return True
 

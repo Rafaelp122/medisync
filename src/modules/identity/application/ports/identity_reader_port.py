@@ -44,6 +44,12 @@ class PacienteAuthLookupDTO(Protocol):
     @property
     def nome_mae(self) -> str | None: ...
 
+    @property
+    def cns(self) -> str | None: ...
+
+    @property
+    def data_nascimento(self) -> date | None: ...
+
 
 @dataclass(frozen=True)
 class PacienteAuthLookupData:
@@ -54,6 +60,8 @@ class PacienteAuthLookupData:
     cpf: str | None
     nome_completo: str
     nome_mae: str | None = None
+    cns: str | None = None
+    data_nascimento: date | None = None
 
 
 class PacientePasskeyDTO(Protocol):
@@ -92,7 +100,7 @@ class PacientePasskeyData:
 
 @runtime_checkable
 class IdentityReaderPort(Protocol):
-    """Protocol for reading identity entities using chainable ORM queries."""
+    """Read-only protocol for querying identity entities across module boundaries."""
 
     async def obter_dados_diretorio(
         self,
@@ -131,17 +139,6 @@ class IdentityReaderPort(Protocol):
         """Look up patient authentication record by patient ID."""
         ...
 
-    async def registrar_passkey_paciente(
-        self,
-        paciente_id: UUID,
-        credential_id: str,
-        public_key: str,
-        sign_count: int = 0,
-        device_name: str | None = None,
-    ) -> PacientePasskeyDTO:
-        """Persist or update a FIDO2/WebAuthn passkey bound to a patient record."""
-        ...
-
     async def buscar_passkey_por_credencial(
         self,
         credential_id: str,
@@ -154,12 +151,4 @@ class IdentityReaderPort(Protocol):
         paciente_id: UUID,
     ) -> Sequence[PacientePasskeyDTO]:
         """List all registered WebAuthn passkeys for a patient."""
-        ...
-
-    async def atualizar_sign_count_passkey(
-        self,
-        credential_id: str,
-        novo_sign_count: int,
-    ) -> PacientePasskeyDTO:
-        """Update monotonic FIDO2 signature counter for a registered passkey."""
         ...

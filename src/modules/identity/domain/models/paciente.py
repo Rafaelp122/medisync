@@ -17,8 +17,23 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.database import Base
 from src.core.errors import ValidationError
+from src.core.privacy import clean_digits, mascarar_cns, mascarar_cpf
 from src.core.uuid7 import uuid7
-from src.modules.identity.domain.models._helpers import clean_digits
+
+
+def _deduplicar_alergias(alergias: list[str]) -> list[str]:
+    """Normaliza e remove duplicidades case-insensitive de alergias clínicas."""
+    vistas: set[str] = set()
+    resultado: list[str] = []
+    for item in alergias:
+        stripped = item.strip()
+        if not stripped:
+            continue
+        key = stripped.lower()
+        if key not in vistas:
+            vistas.add(key)
+            resultado.append(stripped)
+    return resultado
 
 
 class Paciente(Base):
@@ -103,12 +118,14 @@ class Paciente(Base):
 
         if clean_cpf and len(clean_cpf) != 11:
             raise ValidationError(
-                f"CPF do paciente '{cpf}' inválido: deve conter 11 dígitos numéricos."
+                f"CPF do paciente '{mascarar_cpf(cpf or '')}' inválido: "
+                "deve conter 11 dígitos numéricos."
             )
 
         if clean_cns and len(clean_cns) != 15:
             raise ValidationError(
-                f"CNS '{cns}' inválido: deve conter 15 dígitos numéricos."
+                f"CNS '{mascarar_cns(cns or '')}' inválido: "
+                "deve conter 15 dígitos numéricos."
             )
 
         clean_sexo = sexo_biologico.strip().upper() if sexo_biologico else None
@@ -224,8 +241,7 @@ class Paciente(Base):
             self.nome_social = nome_social.strip()
 
         if alergias:
-            clean_alergias = [a.strip() for a in alergias if a.strip()]
-            self.alergias = clean_alergias
+            self.alergias = _deduplicar_alergias(alergias)
 
     def is_pediatrico(self) -> bool:
         """Indica se o paciente é menor de 18 anos (RN07)."""

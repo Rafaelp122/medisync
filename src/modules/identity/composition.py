@@ -13,14 +13,12 @@ from src.modules.identity.application.ports.identity_reader_port import (
 from src.modules.identity.application.ports.identity_writer_port import (
     IdentityWriterPort,
 )
-from src.modules.identity.application.ports.sms_sender_port import SmsSenderPort
 from src.modules.identity.application.services.dependente_service import (
     DependenteService,
 )
 from src.modules.identity.application.services.onboarding_service import (
     OnboardingService,
 )
-from src.modules.identity.infrastructure.fake_sms_adapter import FakeSmsSenderAdapter
 from src.modules.identity.infrastructure.identity_reader_sql import (
     SqlIdentityReader,
 )
@@ -82,14 +80,3 @@ def build_identity_writer_sql_for_session(
 ) -> IdentityWriterPort:
     """Build identity writer outside request scope (tests/worker tooling)."""
     return SqlIdentityWriter(session=session)
-
-
-_sms_adapter_instance = FakeSmsSenderAdapter()
-
-
-def get_sms_sender() -> SmsSenderPort:
-    """Provide SMS sender port adapter."""
-    return _sms_adapter_instance
-
-
-SmsSenderDep = Annotated[SmsSenderPort, Depends(get_sms_sender)]

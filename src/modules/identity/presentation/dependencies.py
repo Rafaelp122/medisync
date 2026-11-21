@@ -96,6 +96,7 @@ async def validar_posse_titular(
         raw_token,
         allowed_roles=(Role.PACIENTE,),
         accept_intake=True,
+        allow_restricted_intake=False,
         revocation=resolved_revocation,
         secret_key=resolved_settings.secret_key,
         jwt_secret=resolved_settings.jwt_secret,

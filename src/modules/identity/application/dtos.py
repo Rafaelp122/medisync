@@ -1,79 +1,97 @@
-"""Data Transfer Objects for identity and onboarding application layer."""
+"""Data Transfer Objects and structural input protocols for identity layer (ADR-008)."""
 
+from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Literal
+from typing import Literal, Protocol
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from src.core.errors import ValidationError
-from src.modules.identity.domain.validators import validate_sexo_biologico
+class Fase1Input(Protocol):
+    """Structural contract satisfied directly by Fase1Request."""
+
+    @property
+    def nome_completo(self) -> str: ...
+
+    @property
+    def data_nascimento(self) -> date: ...
+
+    @property
+    def telefone(self) -> str: ...
+
+    @property
+    def queixa_principal(self) -> str: ...
+
+    @property
+    def tcle_hash(self) -> str: ...
+
+    @property
+    def nome_social(self) -> str | None: ...
+
+    @property
+    def cpf(self) -> str | None: ...
+
+    @property
+    def cns(self) -> str | None: ...
 
 
-class Fase1InputDTO(BaseModel):
-    """Input parameters for Phase 1 clinical intake."""
-
-    model_config = ConfigDict(frozen=True, str_strip_whitespace=True)
-
-    nome_completo: str
-    data_nascimento: date
-    telefone: str
-    queixa_principal: str
-    tcle_hash: str
-    nome_social: str | None = None
-    cpf: str | None = None
-    cns: str | None = None
-
-
-class Fase1OutputDTO(BaseModel):
-    """Output results for Phase 1 clinical intake."""
-
-    model_config = ConfigDict(from_attributes=True, frozen=True)
+@dataclass(frozen=True)
+class Fase1OutputDTO:
+    """Immutable output results for Phase 1 clinical intake."""
 
     paciente_id: UUID
     token: str
-    status: str = "APTO_PARA_CHAMADA"
+    status: str
     mensagem: str
     is_novo_paciente: bool
 
 
-class Fase2InputDTO(BaseModel):
-    """Input parameters for Phase 2 CFM regulatory enrichment."""
+class Fase2Input(Protocol):
+    """Structural contract satisfied directly by Fase2Request."""
 
-    model_config = ConfigDict(frozen=True, str_strip_whitespace=True)
+    @property
+    def paciente_id(self) -> UUID: ...
 
-    paciente_id: UUID
-    nome_mae: str
-    sexo_biologico: Literal["M", "F"]
-    cep: str
-    logradouro: str
-    numero: str
-    bairro: str
-    cidade: str
-    estado: str
-    nome_social: str | None = None
-    alergias: list[str] = Field(default_factory=list)
-    token: str | None = None
+    @property
+    def nome_social(self) -> str | None: ...
 
-    @field_validator("sexo_biologico", mode="before")
-    @classmethod
-    def _normalizar_sexo(cls, valor: object) -> str:
-        if not isinstance(valor, str):
-            raise ValueError(f"Sexo biológico deve ser string; recebido: '{valor}'.")
-        try:
-            return validate_sexo_biologico(valor)
-        except ValidationError as exc:
-            raise ValueError(exc.detail) from exc
+    @property
+    def nome_mae(self) -> str: ...
+
+    @property
+    def sexo_biologico(self) -> Literal["M", "F"]: ...
+
+    @property
+    def cep(self) -> str: ...
+
+    @property
+    def logradouro(self) -> str: ...
+
+    @property
+    def numero(self) -> str: ...
+
+    @property
+    def bairro(self) -> str: ...
+
+    @property
+    def cidade(self) -> str: ...
+
+    @property
+    def estado(self) -> str: ...
+
+    @property
+    def alergias(self) -> list[str]: ...
+
+    @property
+    def token(self) -> str | None: ...
 
 
-class Fase2OutputDTO(BaseModel):
+@dataclass(frozen=True)
+class Fase2OutputDTO:
     """Enriched patient output adhering to CFM 1.821/2007."""
-
-    model_config = ConfigDict(from_attributes=True, frozen=True)
 
     paciente_id: UUID
     nome_completo: str | None
-    nome_social: str | None = None
+    nome_social: str | None
     nome_mae: str
     sexo_biologico: str
     cep: str
@@ -86,36 +104,49 @@ class Fase2OutputDTO(BaseModel):
     status: str
 
 
-class CriarDependenteDTO(BaseModel):
-    """Input parameters for linking or creating a dependent."""
+class CriarDependenteInput(Protocol):
+    """Structural contract satisfied directly by CriarDependenteRequest."""
 
-    model_config = ConfigDict(frozen=True, str_strip_whitespace=True)
+    @property
+    def grau_parentesco(self) -> str: ...
 
-    grau_parentesco: str
-    dependente_id: UUID | None = None
-    nome_completo: str | None = None
-    data_nascimento: date | None = None
-    cpf: str | None = None
-    cns: str | None = None
-    telefone: str | None = None
+    @property
+    def dependente_id(self) -> UUID | None: ...
+
+    @property
+    def nome_completo(self) -> str | None: ...
+
+    @property
+    def data_nascimento(self) -> date | None: ...
+
+    @property
+    def cpf(self) -> str | None: ...
+
+    @property
+    def cns(self) -> str | None: ...
+
+    @property
+    def telefone(self) -> str | None: ...
+
+    @property
+    def outorga_tcle(self) -> bool: ...
 
 
-class DependenteOutputDTO(BaseModel):
+@dataclass(frozen=True)
+class DependenteOutputDTO:
     """Summary of created dependent relationship."""
-
-    model_config = ConfigDict(from_attributes=True, frozen=True)
 
     id: UUID
     titular_id: UUID
     dependente_id: UUID
     grau_parentesco: str
     vinculado_em: datetime
+    outorga_tcle: bool = False
 
 
-class DependenteDetalheDTO(BaseModel):
-    """Detailed dependent projection including demographics."""
-
-    model_config = ConfigDict(from_attributes=True, frozen=True)
+@dataclass(frozen=True)
+class DependenteDetalheDTO:
+    """Full detail of a dependent including clinical demographics."""
 
     id: UUID
     titular_id: UUID
@@ -126,3 +157,15 @@ class DependenteDetalheDTO(BaseModel):
     cpf: str | None
     cns: str | None
     vinculado_em: datetime
+    outorga_tcle: bool = False
+
+
+__all__ = [
+    "CriarDependenteInput",
+    "DependenteDetalheDTO",
+    "DependenteOutputDTO",
+    "Fase1Input",
+    "Fase1OutputDTO",
+    "Fase2Input",
+    "Fase2OutputDTO",
+]

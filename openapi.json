@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MediSync Express",
-    "version": "0.18.0"
+    "version": "0.19.0"
   },
   "paths": {
     "/healthz": {
@@ -75,7 +75,7 @@
           "Authentication & Sessions (OWASP)"
         ],
         "summary": "Gera chave secreta e URI para app autenticador (TOTP)",
-        "description": "Gera o segredo Base32 e URI otpauth:// para MFA no app do usu\u00e1rio.",
+        "description": "Gera segredo Base32 e URI otpauth:// para MFA (aceita access ou mfa_pending).\n\nRegras: ADR-007 (MFA TOTP), ADR-013, docs/explanation/domains/auth-domain.md",
         "operationId": "mfa_setup_api_v1_auth_mfa_setup_post",
         "responses": {
           "200": {
@@ -102,7 +102,7 @@
           "Authentication & Sessions (OWASP)"
         ],
         "summary": "Valida c\u00f3digo de 6 d\u00edgitos e ativa o segundo fator (MFA)",
-        "description": "Valida o primeiro c\u00f3digo TOTP de 6 d\u00edgitos e ativa o segundo fator.",
+        "description": "Valida o primeiro c\u00f3digo TOTP de 6 d\u00edgitos e ativa o segundo fator.\n\nRegras: ADR-007 (MFA TOTP), ADR-013, docs/explanation/domains/auth-domain.md",
         "operationId": "mfa_activate_api_v1_auth_mfa_activate_post",
         "requestBody": {
           "content": {
@@ -149,7 +149,7 @@
           "Authentication & Sessions (OWASP)"
         ],
         "summary": "Verifica\u00e7\u00e3o do segundo fator (MFA) e emiss\u00e3o de tokens de sess\u00e3o",
-        "description": "Troca token tempor\u00e1rio mfa_pending por tokens definitivos ap\u00f3s valida\u00e7\u00e3o TOTP.\n\nRegras: RN-AUT-04, RN-AUT-05, RN-AUT-08, OWASP ASVS v4.0 (V3.5.2).\nDocumenta\u00e7\u00e3o: docs/explanation/domains/auth-domain.md",
+        "description": "Troca token tempor\u00e1rio mfa_pending por tokens definitivos ap\u00f3s valida\u00e7\u00e3o TOTP.\n\nRegras: ADR-007 (MFA TOTP), RN-AUT-05, RN-AUT-07, RN-AUT-08, OWASP ASVS (V3.5.2).\nDocumenta\u00e7\u00e3o: docs/explanation/domains/auth-domain.md",
         "operationId": "mfa_verify_api_v1_auth_mfa_verify_post",
         "requestBody": {
           "content": {
@@ -240,7 +240,7 @@
           "Authentication & Sessions (OWASP)"
         ],
         "summary": "Revoga\u00e7\u00e3o de sess\u00e3o e logout de usu\u00e1rio",
-        "description": "Revoga o refresh token fornecido e expurga cookie HttpOnly s\u00edncrono.\n\nRegras: RN-AUT-06, OWASP ASVS v4.0 (V3.4.1).\nDocumenta\u00e7\u00e3o: docs/explanation/domains/auth-domain.md",
+        "description": "Revoga o refresh/access token fornecido e expurga cookie HttpOnly s\u00edncrono.\n\nRegras: RN-AUT-06, OWASP ASVS v4.0 (V3.4.1).\nDocumenta\u00e7\u00e3o: docs/explanation/domains/auth-domain.md",
         "operationId": "logout_api_v1_auth_logout_post",
         "requestBody": {
           "content": {
@@ -398,7 +398,7 @@
           "Auth Paciente"
         ],
         "summary": "Autenticar paciente via CADSUS / Gov.br",
-        "description": "Autentica\u00e7\u00e3o sem senha via desambigua\u00e7\u00e3o de dados civis (CPF, CNS, Data de Nascimento).",
+        "description": "Autentica\u00e7\u00e3o sem senha via desambigua\u00e7\u00e3o de dados civis (CPF, CNS, Data de Nascimento e 2\u00ba fator civil).",
         "operationId": "post_auth_paciente_cadsus",
         "requestBody": {
           "content": {
@@ -3284,7 +3284,7 @@
               }
             ],
             "title": "Cpf",
-            "description": "CPF do paciente (opcional se CNS fornecido)",
+            "description": "CPF do paciente (requer nome_mae ou cns adicional)",
             "examples": [
               "11144477735"
             ]
@@ -3293,7 +3293,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 15
+                "maxLength": 18
               },
               {
                 "type": "null"
@@ -3302,21 +3302,14 @@
             "title": "Cns",
             "description": "Cart\u00e3o Nacional de Sa\u00fade (CNS) de 15 d\u00edgitos",
             "examples": [
-              "898001234567890"
+              "800000000000001"
             ]
           },
           "data_nascimento": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date",
             "title": "Data Nascimento",
-            "description": "Data de nascimento do paciente (AAAA-MM-DD)",
+            "description": "Data de nascimento do paciente (AAAA-MM-DD, obrigat\u00f3ria)",
             "examples": [
               "1985-04-12"
             ]
@@ -3332,15 +3325,18 @@
               }
             ],
             "title": "Nome Mae",
-            "description": "Nome completo da m\u00e3e para desambigua\u00e7\u00e3o",
+            "description": "Nome da m\u00e3e (obrigat\u00f3rio quando autenticando apenas por CPF)",
             "examples": [
               "Maria da Silva"
             ]
           }
         },
         "type": "object",
+        "required": [
+          "data_nascimento"
+        ],
         "title": "AutenticarCadsusRequest",
-        "description": "Payload to authenticate patient via CADSUS / Gov.br civil registry."
+        "description": "Payload to authenticate patient via CADSUS / Gov.br with 2nd civil factor."
       },
       "BpaProducaoItemResponse": {
         "properties": {
@@ -3910,6 +3906,12 @@
             ],
             "title": "Telefone",
             "description": "Telefone de contato do dependente (opcional, herda do titular)"
+          },
+          "outorga_tcle": {
+            "type": "boolean",
+            "title": "Outorga Tcle",
+            "description": "Outorga expl\u00edcita de TCLE pelo respons\u00e1vel legal (obrigat\u00f3ria para menores de 18 anos)",
+            "default": false
           }
         },
         "type": "object",
@@ -4027,6 +4029,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Vinculado Em"
+          },
+          "outorga_tcle": {
+            "type": "boolean",
+            "title": "Outorga Tcle",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -4070,6 +4077,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Vinculado Em"
+          },
+          "outorga_tcle": {
+            "type": "boolean",
+            "title": "Outorga Tcle",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -4690,6 +4702,22 @@
             "title": "Paciente Id",
             "description": "ID do paciente obtido na Fase 1"
           },
+          "nome_social": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nome Social",
+            "description": "Nome social do paciente (CFM 1.821/2007 e SUS)",
+            "examples": [
+              "Carla Silva"
+            ]
+          },
           "nome_mae": {
             "type": "string",
             "maxLength": 255,
@@ -4770,22 +4798,6 @@
             "description": "Unidade Federativa (UF)",
             "examples": [
               "SP"
-            ]
-          },
-          "nome_social": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 255
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Nome Social",
-            "description": "Nome social do paciente (CFM 1.821/2007 e SUS)",
-            "examples": [
-              "Carla Silva"
             ]
           },
           "alergias": {
