@@ -4,51 +4,18 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, Security
+from fastapi.security import HTTPAuthorizationCredentials
 
-from src.core.authz.dependencies import (
-    HTTPAuthorizationCredentials,
+from src.core.authz import (
+    OptionalBearerAuthSettingsDep,
+    OptionalTokenRevocationDep,
+    Role,
+    get_bearer_auth_settings,
+    get_token_revocation,
     http_bearer_scheme,
+    resolve_bearer_principal,
 )
-from src.core.authz.revocation import is_token_revoked
-from src.core.authz.roles import Role
-from src.core.authz.token import decode_access_token
-from src.core.config import get_settings
-from src.core.errors import ForbiddenError, TokenRevogadoError, UnauthorizedError
-from src.core.security import verify_intake_token
-
-
-def _parse_intake_patient_id(raw_token: str) -> UUID:
-    settings = get_settings()
-    try:
-        claims = verify_intake_token(raw_token, settings.SECRET_KEY)
-    except ValueError as exc:
-        raise UnauthorizedError(
-            f"Token de acolhimento inválido ou expirado: {exc}."
-        ) from exc
-
-    return UUID(str(claims["paciente_id"]))
-
-
-async def _parse_jwt_patient_id(raw_token: str) -> UUID:
-    try:
-        user = decode_access_token(raw_token)
-    except Exception as exc:
-        raise UnauthorizedError(
-            f"Token JWT de paciente inválido ou expirado: {exc}."
-        ) from exc
-
-    if await is_token_revoked(user.token_id):
-        raise TokenRevogadoError(
-            f"Token de acesso '{user.token_id}' revogado. Realize novo login."
-        )
-
-    if user.papel != Role.PACIENTE:
-        raise ForbiddenError(
-            f"Acesso negado: papel '{user.papel}' sem permissão para "
-            f"registrar biometria de paciente (esperado: '{Role.PACIENTE.value}')."
-        )
-
-    return user.usuario_id
+from src.core.errors import UnauthorizedError
 
 
 async def require_patient_auth(
@@ -56,6 +23,8 @@ async def require_patient_auth(
         HTTPAuthorizationCredentials | None,
         Security(http_bearer_scheme),
     ] = None,
+    revocation: OptionalTokenRevocationDep = None,
+    auth_settings: OptionalBearerAuthSettingsDep = None,
 ) -> UUID:
     """Authenticate caller using either 2-part intake HMAC token or 3-part JWT."""
     if credentials is None:
@@ -64,17 +33,19 @@ async def require_patient_auth(
             "esperado 'Authorization: Bearer <token>')."
         )
 
-    raw_token = credentials.credentials
-    parts = raw_token.split(".")
-    if len(parts) == 2:
-        return _parse_intake_patient_id(raw_token)
-    if len(parts) == 3:
-        return await _parse_jwt_patient_id(raw_token)
-
-    raise UnauthorizedError(
-        f"Token em formato inválido ({len(parts)} segmentos; "
-        "esperados 2 segmentos HMAC ou 3 segmentos JWT)."
+    resolved_settings = auth_settings or get_bearer_auth_settings()
+    resolved_revocation = revocation or get_token_revocation()
+    principal = await resolve_bearer_principal(
+        credentials.credentials,
+        allowed_roles=(Role.PACIENTE,),
+        accept_intake=True,
+        revocation=resolved_revocation,
+        secret_key=resolved_settings.secret_key,
+        jwt_secret=resolved_settings.jwt_secret,
+        jwt_algorithm=resolved_settings.jwt_algorithm,
+        transport="http",
     )
+    return principal.actor_id
 
 
 PatientAuthDep = Annotated[UUID, Depends(require_patient_auth)]

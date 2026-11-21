@@ -11,6 +11,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.audit import SqlAuditTrailAdapter
+from src.core.authz.revocation import TokenRevocationPort, get_token_revocation
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
 from src.core.valkey import get_valkey_client
@@ -33,9 +34,6 @@ from src.modules.auth.application.ports.patient_credential_repository_port impor
     PatientCredentialRepositoryPort,
 )
 from src.modules.auth.application.ports.sms_sender_port import SmsSenderPort
-from src.modules.auth.application.ports.token_revocation_port import (
-    TokenRevocationPort,
-)
 from src.modules.auth.application.ports.token_service_port import TokenServicePort
 from src.modules.auth.application.services.auth_service import AuthService
 from src.modules.auth.application.services.patient_auth_service import (
@@ -52,10 +50,6 @@ from src.modules.auth.infrastructure.patient_credential_repository_sql import (
 from src.modules.auth.infrastructure.valkey_rate_limiter import (
     FakeAuthRateLimiter,
     ValkeyAuthRateLimiter,
-)
-from src.modules.auth.infrastructure.valkey_token_revocation import (
-    MemoryTokenRevocation,
-    ValkeyTokenRevocation,
 )
 from src.modules.identity.composition import (
     build_identity_reader_sql_for_session,
@@ -89,14 +83,6 @@ def get_rate_limiter() -> AuthRateLimiterPort:
     if settings.RATE_LIMIT_BACKEND == "memory":
         return FakeAuthRateLimiter()
     return ValkeyAuthRateLimiter()
-
-
-def get_token_revocation() -> TokenRevocationPort:
-    """Provide token revocation adapter based on active settings."""
-    settings = get_settings()
-    if settings.TOKEN_REVOCATION_BACKEND == "memory":  # noqa: S105
-        return MemoryTokenRevocation()
-    return ValkeyTokenRevocation()
 
 
 def build_auth_service_for_session(

@@ -9,7 +9,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from src.core.audit.models import AtorPapel, AtorTipo, AuditEvent
 from src.core.audit.service import AuditService
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.modules.queue.domain.models import Atendimento
 
 from tests.factories.audit import make_audit_event
@@ -31,7 +31,7 @@ async def setup_audit_tables() -> AsyncGenerator[None, None]:
 
 @pytest.mark.asyncio
 async def test_persist_audit_event_success() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="10101010101")
         medico = make_profissional(
             cpf="20202020202",
@@ -87,7 +87,7 @@ async def test_persist_audit_event_success() -> None:
 
 @pytest.mark.asyncio
 async def test_database_trigger_blocks_update_and_delete() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="30303030303")
         medico = make_profissional(
             cpf="40404040404",
@@ -142,7 +142,7 @@ async def test_database_trigger_blocks_update_and_delete() -> None:
 
 @pytest.mark.asyncio
 async def test_on_delete_restrict_atendimento_with_audit_events() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="50505050505")
         medico = make_profissional(
             cpf="60606060606",
@@ -186,7 +186,7 @@ async def test_on_delete_restrict_atendimento_with_audit_events() -> None:
 
 @pytest.mark.asyncio
 async def test_audit_service_list_events_chronological_order() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="70707070707")
         session.add(paciente)
         await session.commit()
@@ -233,7 +233,7 @@ async def test_audit_service_list_events_chronological_order() -> None:
 
 @pytest.mark.asyncio
 async def test_database_check_constraint_ator_tipo() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="80808080808")
         session.add(paciente)
         await session.commit()

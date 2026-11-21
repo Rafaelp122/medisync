@@ -14,7 +14,7 @@ from sqlalchemy.exc import DBAPIError
 from src.core.audit.adapter import SqlAuditTrailAdapter
 from src.core.audit.models import AtorPapel, AtorTipo
 from src.core.audit.service import AuditService
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
     CriarItemPrescricaoDTO,
@@ -69,7 +69,7 @@ async def setup_clean_db() -> AsyncGenerator[None, None]:
 @pytest.mark.asyncio
 async def test_admissao_paciente_records_audit_event_in_postgres() -> None:
     """Validate persistence of Atendimento and ADMISSAO_PACIENTE in PostgreSQL."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="10101010199")
         session.add(paciente)
         await session.commit()
@@ -108,7 +108,7 @@ async def test_admissao_paciente_records_audit_event_in_postgres() -> None:
         atend_id = result.atendimento_id
 
     # Verify in separate session that both Atendimento and AuditEvent are committed
-    async with async_session_factory() as verify_session:
+    async with get_session_factory()() as verify_session:
         events = await AuditService.list_events_by_atendimento(
             verify_session,
             atendimento_id=atend_id,
@@ -128,7 +128,7 @@ async def test_admissao_paciente_records_audit_event_in_postgres() -> None:
 @pytest.mark.asyncio
 async def test_rollback_reverts_audit_event_atomically() -> None:
     """Rollback reverts clinical entities and audit events (zero orphans)."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="20202020299")
         session.add(paciente)
         await session.commit()
@@ -155,7 +155,7 @@ async def test_rollback_reverts_audit_event_atomically() -> None:
         atend_id = atend.id
 
     # Verify zero records in separate session
-    async with async_session_factory() as verify_session:
+    async with get_session_factory()() as verify_session:
         events = await AuditService.list_events_by_atendimento(
             verify_session,
             atendimento_id=atend_id,
@@ -166,7 +166,7 @@ async def test_rollback_reverts_audit_event_atomically() -> None:
 @pytest.mark.asyncio
 async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
     """Validate clinical audit trail reconstruction in chronological order."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         cenario = await seed_clinical_scenario(
             session,
             unidade_cnpj="30303030000199",
@@ -233,7 +233,7 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
         assert finalizada.is_finalizado is True
 
     # Reconstruct audit trail from separate session
-    async with async_session_factory() as verify_session:
+    async with get_session_factory()() as verify_session:
         events = await AuditService.list_events_by_atendimento(
             verify_session,
             atendimento_id=atend_id,
@@ -291,7 +291,7 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
 @pytest.mark.asyncio
 async def test_clinical_audit_event_immutability_trigger() -> None:
     """Clinical audit events are protected by append-only trigger."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         cenario = await seed_clinical_scenario(
             session,
             unidade_cnpj="50505050000199",
@@ -322,7 +322,7 @@ async def test_clinical_audit_event_immutability_trigger() -> None:
         event_id = events[0].id
 
     # Attempt forbidden UPDATE
-    async with async_session_factory() as evil_session:
+    async with get_session_factory()() as evil_session:
         with pytest.raises(DBAPIError, match="append-only"):
             await evil_session.execute(
                 text("UPDATE audit_events SET payload = '{}'::jsonb WHERE id = :id"),
@@ -331,7 +331,7 @@ async def test_clinical_audit_event_immutability_trigger() -> None:
             await evil_session.commit()
 
     # Attempt forbidden DELETE
-    async with async_session_factory() as evil_session:
+    async with get_session_factory()() as evil_session:
         with pytest.raises(DBAPIError, match="append-only"):
             await evil_session.execute(
                 text("DELETE FROM audit_events WHERE id = :id"),

@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
-from src.core.errors import NotFoundError, TravaAntiFraudeAtestadoError
+from src.core.errors import NotFoundError
 from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
     DocumentoAssinadoResult,
@@ -56,6 +56,7 @@ from src.modules.consultation.domain.exceptions import (
     PrescricaoFisicaObrigatoriaError,
     ProvaDeVidaObrigatoriaError,
     SpoofingFacialDetectadoError,
+    TravaAntiFraudeAtestadoError,
 )
 from src.modules.consultation.domain.models import (
     DocumentoClinico,

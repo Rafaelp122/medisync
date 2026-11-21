@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid4
 
 import pytest
+from src.core.authz.revocation import MemoryTokenRevocation
 from src.core.authz.roles import Role
-from src.core.errors import MfaCodigoInvalidoError, NotFoundError
+from src.core.errors import NotFoundError
 from src.core.uuid7 import uuid7
 from src.modules.auth.application.dtos import (
     LoginCommand,
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.auth.domain.exceptions import (
     CredenciaisInvalidasError,
+    MfaCodigoInvalidoError,
     PacienteNaoEncontradoError,
 )
 from src.modules.auth.domain.models import UsuarioCredencial
@@ -40,9 +42,6 @@ from src.modules.auth.domain.totp import (
     verify_totp_code,
 )
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
-from src.modules.auth.infrastructure.valkey_token_revocation import (
-    MemoryTokenRevocation,
-)
 
 from tests.doubles import (
     FakeAsyncSession,

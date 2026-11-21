@@ -4,7 +4,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.uuid7 import uuid7
 from src.core.valkey import get_valkey_client
 from src.modules.queue.application.dtos import (
@@ -61,7 +61,7 @@ async def test_acceptance_criterion_1_urgency_precedence_rn01() -> None:
     time_e = now - timedelta(days=1)
 
     async for valkey in get_valkey_client():
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             alocacao_service = AlocacaoChamadaService(
                 valkey=valkey,
                 db_session=session,
@@ -120,7 +120,7 @@ async def test_acceptance_criterion_2_uuidv7_sub_millisecond_fifo() -> None:
     assert str(id_1) < str(id_2)
 
     async for valkey in get_valkey_client():
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             alocacao_service = AlocacaoChamadaService(
                 valkey=valkey,
                 db_session=session,
@@ -165,7 +165,7 @@ async def test_acceptance_criterion_2_uuidv7_sub_millisecond_fifo() -> None:
 @pytest.mark.asyncio
 async def test_acceptance_criterion_3_retry_loop_allocates_second_patient() -> None:
     """Retry loop seamlessly allocates 2nd patient when 1st patient was snatched."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente_1 = make_paciente(cpf="11122233344", telefone="11987654301")
         paciente_2 = make_paciente(cpf="55566677788", telefone="11987654302")
         medico_1 = make_profissional(
@@ -213,7 +213,7 @@ async def test_acceptance_criterion_3_retry_loop_allocates_second_patient() -> N
         await session.refresh(atend_2)
 
     async for valkey in get_valkey_client():
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             alocacao_service = AlocacaoChamadaService(
                 valkey=valkey,
                 db_session=session,

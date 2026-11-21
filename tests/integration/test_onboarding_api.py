@@ -554,11 +554,11 @@ async def test_dependente_security_rejections(
 
 
 @pytest.mark.asyncio
-async def test_dependente_allowed_with_gestor_unidade_jwt(
+async def test_dependente_and_onboarding_fase2_forbidden_with_gestor_unidade_jwt(
     async_client: AsyncClient,
     seeded_unidade: None,
 ) -> None:
-    """Validate GESTOR_UNIDADE role can register and list patient dependents."""
+    """RN-IDE-07: GESTOR_UNIDADE gets 403 on /onboarding/fase-2 and /dependentes."""
     settings = get_settings()
 
     intake_res = await async_client.post(
@@ -579,24 +579,45 @@ async def test_dependente_allowed_with_gestor_unidade_jwt(
         papel=Role.GESTOR_UNIDADE,
         secret_key=settings.JWT_SECRET_KEY,
     )
+    gestor_headers = {"Authorization": f"Bearer {gestor_jwt}"}
+
+    res_gestor_fase2 = await async_client.post(
+        "/api/v1/onboarding/fase-2",
+        json={
+            "paciente_id": titular_id,
+            "nome_mae": "Mae Teste Bloqueio Gestor",
+            "sexo_biologico": "F",
+            "cep": "01310-100",
+            "logradouro": "Avenida Paulista",
+            "numero": "100",
+            "bairro": "Bela Vista",
+            "cidade": "São Paulo",
+            "estado": "SP",
+        },
+        headers=gestor_headers,
+    )
+    assert res_gestor_fase2.status_code == 403
+    assert cast("dict[str, object]", res_gestor_fase2.json())["code"] == "FORBIDDEN"
+
     res_gestor_create = await async_client.post(
         f"/api/v1/pacientes/{titular_id}/dependentes",
         json={
             "grau_parentesco": "FILHO",
-            "nome_completo": "Dependente Cadastrado Por Gestor",
+            "nome_completo": "Dependente Bloqueado Para Gestor",
             "data_nascimento": "2019-02-15",
             "cns": "800000000000001",
         },
-        headers={"Authorization": f"Bearer {gestor_jwt}"},
+        headers=gestor_headers,
     )
-    assert res_gestor_create.status_code == 201
+    assert res_gestor_create.status_code == 403
+    assert cast("dict[str, object]", res_gestor_create.json())["code"] == "FORBIDDEN"
 
     res_gestor_list = await async_client.get(
         f"/api/v1/pacientes/{titular_id}/dependentes",
-        headers={"Authorization": f"Bearer {gestor_jwt}"},
+        headers=gestor_headers,
     )
-    assert res_gestor_list.status_code == 200
-    assert len(cast("list[dict[str, object]]", res_gestor_list.json())) == 1
+    assert res_gestor_list.status_code == 403
+    assert cast("dict[str, object]", res_gestor_list.json())["code"] == "FORBIDDEN"
 
 
 @pytest.mark.asyncio

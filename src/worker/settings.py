@@ -10,7 +10,7 @@ from arq.typing import WorkerCoroutine
 from arq.worker import Function, func
 
 from src.core.config import get_settings
-from src.core.database import async_session_factory, engine
+from src.core.database import dispose_engine, get_engine, get_session_factory
 from src.core.valkey import close_valkey_pool, get_valkey_pool
 from src.worker.tasks import (
     on_job_failure,
@@ -38,8 +38,8 @@ async def startup(ctx: dict[Any, Any]) -> None:
     """Initialize shared connections in worker context upon startup."""
     settings = get_settings()
     ctx["settings"] = settings
-    ctx["db_engine"] = engine
-    ctx["db_session_factory"] = async_session_factory
+    ctx["db_engine"] = get_engine()
+    ctx["db_session_factory"] = get_session_factory()
     ctx["valkey_pool"] = get_valkey_pool()
     logger.info(
         "ARQ worker started successfully. DB pool_size=%d, Valkey URL=%s",
@@ -52,7 +52,7 @@ async def shutdown(ctx: dict[Any, Any]) -> None:
     """Dispose of shared connection pools upon worker shutdown."""
     logger.info("ARQ worker shutting down gracefully...")
     await close_valkey_pool()
-    await engine.dispose()
+    await dispose_engine()
     logger.info("ARQ worker connection pools disposed.")
 
 

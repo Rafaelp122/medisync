@@ -104,3 +104,31 @@ class ProvaDeVidaObrigatoriaError(ValidationError):
     status_code: int = 422
     title: str = "Prova de Vida Facial Obrigatória para Controle Especial"
     code: str = "PROVA_DE_VIDA_OBRIGATORIA"
+
+
+class IANaoRatificadaError(DomainError):
+    """Raised when clinical AI was used but unconfirmed by attending physician."""
+
+    status_code: int = 422
+    title: str = "IA Não Ratificada"
+    code: str = "IA_NAO_RATIFICADA"
+
+    def __init__(
+        self,
+        detail: str = (
+            "Sugestão de IA para o plano SOAP não foi ratificada pelo médico "
+            "assistente conforme Resolução CFM nº 2.454/2026."
+        ),
+    ) -> None:
+        super().__init__(detail, title=self.title, code=self.code)
+
+
+class TravaAntiFraudeAtestadoError(DomainError):
+    """Raised when medical certificate is issued before minimum consultation floor."""
+
+    status_code: int = 422
+    title: str = "Trava Anti-Fraude de Atestado Violada"
+    code: str = "TRAVA_TEMPORAL_ATESTADO_VIOLADA"
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail, title=self.title, code=self.code)

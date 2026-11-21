@@ -81,16 +81,17 @@ async def test_startup_injects_connection_pools() -> None:
 async def test_shutdown_disposes_pools() -> None:
     """Worker shutdown hook should call pool close and engine dispose."""
     ctx: dict[str, Any] = {}
-    mock_engine = AsyncMock(spec=AsyncEngine)
     with (
         patch(
             "src.worker.settings.close_valkey_pool", new_callable=AsyncMock
         ) as mock_valkey,
-        patch("src.worker.settings.engine", mock_engine),
+        patch(
+            "src.worker.settings.dispose_engine", new_callable=AsyncMock
+        ) as mock_dispose,
     ):
         await shutdown(ctx)
         mock_valkey.assert_awaited_once()
-        mock_engine.dispose.assert_awaited_once()
+        mock_dispose.assert_awaited_once()
 
 
 def test_context_accessors_with_populated_ctx() -> None:

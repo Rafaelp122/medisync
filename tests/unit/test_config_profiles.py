@@ -4,6 +4,7 @@ import os
 from collections.abc import Generator
 
 import pytest
+from pydantic import ValidationError
 from src.core.config import (
     CommonSettings,
     DevelopmentSettings,
@@ -37,6 +38,10 @@ def test_default_environment_is_development() -> None:
     assert settings.RATE_LIMIT_BACKEND == "valkey"
     assert settings.TOKEN_REVOCATION_BACKEND == "valkey"
     assert settings.SIGNED_CACHE_BACKEND == "valkey"
+    assert settings.CORS_ORIGINS == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
 
 
 def test_test_environment_settings() -> None:
@@ -54,44 +59,67 @@ def test_test_environment_settings() -> None:
     assert settings.TELEMETRY_CACHE_BACKEND == "memory"
     assert settings.NOTIFICATION_PROVIDER == "fake"
     assert settings.POSTGRES_DB == "medisync"
+    assert settings.CORS_ORIGINS == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
 
 
 def test_production_environment_fails_with_dev_secret_key() -> None:
     os.environ["ENVIRONMENT"] = "production"
     get_settings.cache_clear()
 
-    with pytest.raises(ValueError, match="SECRET_KEY insegura"):
+    dev_secret = "dev-insecure-secret-key-change-in-production-min-32-chars"
+    with pytest.raises(ValidationError, match="SECRET_KEY insegura") as exc_info:
         ProductionSettings(
-            SECRET_KEY="dev-insecure-secret-key-change-in-production-min-32-chars",
+            SECRET_KEY=dev_secret,
             JWT_SECRET_KEY="a-super-secret-jwt-key-with-sufficient-length-32-chars",
             CORS_ORIGINS=["https://app.medisync.com.br"],
         )
+    msg = exc_info.value.errors()[0]["msg"]
+    assert f"len={len(dev_secret)}" in msg
+    assert dev_secret not in msg
 
 
 def test_production_environment_fails_with_short_secret_key() -> None:
-    with pytest.raises(ValueError, match="SECRET_KEY insegura"):
+    short_secret = "short-key"
+    with pytest.raises(ValidationError, match="SECRET_KEY insegura") as exc_info:
         ProductionSettings(
-            SECRET_KEY="short-key",
+            SECRET_KEY=short_secret,
             JWT_SECRET_KEY="a-super-secret-jwt-key-with-sufficient-length-32-chars",
             CORS_ORIGINS=["https://app.medisync.com.br"],
         )
+    msg = exc_info.value.errors()[0]["msg"]
+    assert f"len={len(short_secret)}" in msg
+    assert short_secret not in msg
 
 
 def test_production_environment_fails_with_dev_jwt_secret_key() -> None:
-    with pytest.raises(ValueError, match="JWT_SECRET_KEY insegura"):
+    dev_jwt = "dev-insecure-jwt-secret-key-change-in-production-min-32-chars"
+    with pytest.raises(ValidationError, match="JWT_SECRET_KEY insegura") as exc_info:
         ProductionSettings(
             SECRET_KEY="a-super-secret-app-key-with-sufficient-length-32-chars",
-            JWT_SECRET_KEY="dev-insecure-jwt-secret-key-change-in-production-min-32-chars",
+            JWT_SECRET_KEY=dev_jwt,
             CORS_ORIGINS=["https://app.medisync.com.br"],
         )
+    msg = exc_info.value.errors()[0]["msg"]
+    assert f"len={len(dev_jwt)}" in msg
+    assert dev_jwt not in msg
 
 
-def test_production_environment_fails_with_empty_cors() -> None:
-    with pytest.raises(ValueError, match="CORS_ORIGINS deve listar"):
+def test_production_environment_fails_with_empty_or_wildcard_cors() -> None:
+    with pytest.raises(ValueError, match=r"CORS_ORIGINS deve listar.*\[\]"):
         ProductionSettings(
             SECRET_KEY="a-super-secret-app-key-with-sufficient-length-32-chars",
             JWT_SECRET_KEY="a-super-secret-jwt-key-with-sufficient-length-32-chars",
             CORS_ORIGINS=[],
+        )
+
+    with pytest.raises(ValueError, match=r"CORS_ORIGINS deve listar.*\*"):
+        ProductionSettings(
+            SECRET_KEY="a-super-secret-app-key-with-sufficient-length-32-chars",
+            JWT_SECRET_KEY="a-super-secret-jwt-key-with-sufficient-length-32-chars",
+            CORS_ORIGINS=["*"],
         )
 
 
@@ -177,10 +205,45 @@ def test_production_environment_fails_with_localhost_webauthn_or_http_origin() -
             CORS_ORIGINS=["https://app.medisync.com.br"],
             WEBAUTHN_RP_ID="localhost",
         )
-    with pytest.raises(ValueError, match="WEBAUTHN_ALLOWED_ORIGINS"):
+    with pytest.raises(
+        ValueError, match=r"WEBAUTHN_ALLOWED_ORIGINS.*http://medisync\.app"
+    ):
         ProductionSettings(
             SECRET_KEY="a-super-secret-app-key-with-sufficient-length-32-chars",
             JWT_SECRET_KEY="a-super-secret-jwt-key-with-sufficient-length-32-chars",
             CORS_ORIGINS=["https://app.medisync.com.br"],
             WEBAUTHN_ALLOWED_ORIGINS=["http://medisync.app"],
         )
+
+
+def test_settings_removed_orphan_psc_and_s3_presigned_fields() -> None:
+    """Dead config fields with zero readers must not exist in CommonSettings."""
+    for field in (
+        "S3_PRESIGNED_EXPIRATION_SECONDS",
+        "PSC_CLIENT_ID",
+        "PSC_CLIENT_SECRET",
+    ):
+        assert field not in CommonSettings.model_fields
+
+
+def test_create_app_never_uses_wildcard_cors_even_under_debug_true(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CORSMiddleware must never receive allow_origins=['*'] with credentials=True."""
+    from fastapi.middleware.cors import CORSMiddleware
+    from src.main import create_app
+
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("DEBUG", "true")
+    monkeypatch.setenv("CORS_ORIGINS", '["http://localhost:5173", "*"]')
+    get_settings.cache_clear()
+    try:
+        app = create_app()
+        cors_mw = next(m for m in app.user_middleware if m.cls is CORSMiddleware)
+        allow_origins = cors_mw.kwargs.get("allow_origins")
+        assert isinstance(allow_origins, list)
+        assert "*" not in allow_origins
+        assert "http://localhost:5173" in allow_origins
+        assert cors_mw.kwargs.get("allow_credentials") is True
+    finally:
+        get_settings.cache_clear()

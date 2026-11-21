@@ -6,7 +6,7 @@ Rules: US-05, RF-05, RN01, RN03.
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.uuid7 import uuid7
 from src.core.valkey import get_valkey_client
 from src.modules.queue.application.dtos import (
@@ -32,7 +32,7 @@ async def test_e2e_regularizacao_contingencia_restaura_antiguidade() -> None:
     """Paciente regularizado restaura primazia por antiguidade (RN01, RN03, US-05)."""
     now = datetime.now(UTC)
 
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente_1 = make_paciente(cpf="11122233344", telefone="11987654301")
         paciente_2 = make_paciente(cpf="55566677788", telefone="11987654302")
         medico_1 = make_profissional(
@@ -112,7 +112,7 @@ async def test_e2e_regularizacao_contingencia_restaura_antiguidade() -> None:
 @pytest.mark.asyncio
 async def test_e2e_corrida_concorrente_retorno_worker_e_contingencia() -> None:
     """Disparo quase simultâneo é tratado com idempotência estrita."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="33344455566")
         session.add(paciente)
         await session.commit()

@@ -71,8 +71,11 @@ def test_get_storage_returns_s3_with_injected_client_vars(
     assert storage._bucket_name == "test-bucket"  # pyright: ignore[reportPrivateUsage]
 
 
-def test_get_auth_service_wires_real_adapters() -> None:
+def test_get_auth_service_wires_real_adapters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Auth composition must wire hasher, token service and rate limiter."""
+    from src.core.config import get_settings
     from src.modules.auth.composition import get_auth_service
     from src.modules.auth.infrastructure.argon2_hasher import Argon2PasswordHasher
     from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
@@ -80,6 +83,8 @@ def test_get_auth_service_wires_real_adapters() -> None:
         ValkeyAuthRateLimiter,
     )
 
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    get_settings.cache_clear()
     session = AsyncMock(spec=AsyncSession)
     service = get_auth_service(cast("AsyncSession", session))
     assert isinstance(service._hasher, Argon2PasswordHasher)  # pyright: ignore[reportPrivateUsage]

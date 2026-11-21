@@ -1,32 +1,50 @@
 """Multi-tier authorization framework (Tier 1 Macro RBAC and security context)."""
 
 from src.core.authz.dependencies import (
+    BearerAuthSettings,
+    BearerAuthSettingsDep,
     CurrentUserDep,
+    OptionalBearerAuthSettingsDep,
+    OptionalTokenRevocationDep,
+    get_bearer_auth_settings,
     get_current_user,
     http_bearer_scheme,
-    require_authenticated_user,
     require_permission,
     require_role,
-    require_roles,
+    resolve_bearer_principal,
 )
-from src.core.authz.models import AuthenticatedUser
-from src.core.authz.revocation import is_token_revoked, revoke_token_id
+from src.core.authz.models import AuthenticatedUser, BearerPrincipal
+from src.core.authz.revocation import (
+    MemoryTokenRevocation,
+    TokenRevocationDep,
+    TokenRevocationPort,
+    ValkeyTokenRevocation,
+    get_token_revocation,
+)
 from src.core.authz.roles import ROLE_PERMISSIONS, Permission, Role
 from src.core.authz.token import decode_access_token
 
 __all__ = [
     "ROLE_PERMISSIONS",
     "AuthenticatedUser",
+    "BearerAuthSettings",
+    "BearerAuthSettingsDep",
+    "BearerPrincipal",
     "CurrentUserDep",
+    "MemoryTokenRevocation",
+    "OptionalBearerAuthSettingsDep",
+    "OptionalTokenRevocationDep",
     "Permission",
     "Role",
+    "TokenRevocationDep",
+    "TokenRevocationPort",
+    "ValkeyTokenRevocation",
     "decode_access_token",
+    "get_bearer_auth_settings",
     "get_current_user",
+    "get_token_revocation",
     "http_bearer_scheme",
-    "is_token_revoked",
-    "require_authenticated_user",
     "require_permission",
     "require_role",
-    "require_roles",
-    "revoke_token_id",
+    "resolve_bearer_principal",
 ]

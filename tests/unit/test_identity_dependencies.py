@@ -1,12 +1,12 @@
 """Unit tests for identity presentation proof-of-possession dependencies."""
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import jwt
 import pytest
 from fastapi.security import HTTPAuthorizationCredentials
+from src.core.authz.revocation import MemoryTokenRevocation
 from src.core.authz.roles import Role
 from src.core.config import get_settings
 from src.core.errors import ForbiddenError, TokenRevogadoError, UnauthorizedError
@@ -24,6 +24,7 @@ def _make_jwt(
     papel: str,
     secret_key: str,
     expires_in_seconds: int = 900,
+    jti: UUID | None = None,
 ) -> str:
     now = datetime.now(UTC)
     exp = now + timedelta(seconds=expires_in_seconds)
@@ -32,7 +33,7 @@ def _make_jwt(
         "papel": papel,
         "iat": int(now.timestamp()),
         "exp": int(exp.timestamp()),
-        "jti": str(uuid4()),
+        "jti": str(jti or uuid4()),
         "type": "access",
     }
     return jwt.encode(payload, secret_key, algorithm="HS256")
@@ -156,7 +157,8 @@ async def test_validar_intake_fase2_via_jwt_patient_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_validar_intake_fase2_via_jwt_gestor_unidade_success() -> None:
+async def test_validar_intake_fase2_via_jwt_gestor_unidade_raises_403() -> None:
+    """RN-IDE-07: GESTOR_UNIDADE is forbidden from bypassing Phase 2 ownership."""
     settings = get_settings()
     paciente_id = uuid7()
     gestor_id = uuid7()
@@ -167,10 +169,14 @@ async def test_validar_intake_fase2_via_jwt_gestor_unidade_success() -> None:
     )
     body = _make_fase2_request(paciente_id)
 
-    await validar_intake_fase2(
-        body=body,
-        credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials=token),
-    )
+    with pytest.raises(ForbiddenError, match="não possui permissão"):
+        await validar_intake_fase2(
+            body=body,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=token
+            ),
+            revocation=MemoryTokenRevocation(),
+        )
 
 
 @pytest.mark.asyncio
@@ -240,26 +246,24 @@ async def test_validar_intake_fase2_via_jwt_expired_raises_401() -> None:
 async def test_validar_intake_fase2_via_jwt_revogado_raises_401() -> None:
     settings = get_settings()
     paciente_id = uuid7()
+    jti = uuid4()
+    revocation = MemoryTokenRevocation()
+    await revocation.revogar(str(jti))
     token = _make_jwt(
         usuario_id=paciente_id,
         papel=Role.PACIENTE,
         secret_key=settings.JWT_SECRET_KEY,
+        jti=jti,
     )
     body = _make_fase2_request(paciente_id)
 
-    with (
-        patch(
-            "src.modules.identity.presentation.dependencies.is_token_revoked",
-            new_callable=AsyncMock,
-            return_value=True,
-        ),
-        pytest.raises(TokenRevogadoError, match="revogado"),
-    ):
+    with pytest.raises(TokenRevogadoError, match="revogado"):
         await validar_intake_fase2(
             body=body,
             credentials=HTTPAuthorizationCredentials(
                 scheme="Bearer", credentials=token
             ),
+            revocation=revocation,
         )
 
 
@@ -327,17 +331,20 @@ async def test_validar_posse_titular_intake_token_other_patient_raises_403() -> 
 
 
 @pytest.mark.asyncio
-async def test_validar_posse_titular_corporate_jwt_success() -> None:
+async def test_validar_posse_titular_gestor_unidade_jwt_raises_403() -> None:
+    """RN-IDE-07: GESTOR_UNIDADE is forbidden from accessing titular dependents."""
     settings = get_settings()
     titular_id = uuid7()
 
     gestor_jwt = _make_jwt(uuid4(), Role.GESTOR_UNIDADE, settings.JWT_SECRET_KEY)
-    await validar_posse_titular(
-        id=titular_id,
-        credentials=HTTPAuthorizationCredentials(
-            scheme="Bearer", credentials=gestor_jwt
-        ),
-    )
+    with pytest.raises(ForbiddenError, match="não possui permissão"):
+        await validar_posse_titular(
+            id=titular_id,
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=gestor_jwt
+            ),
+            revocation=MemoryTokenRevocation(),
+        )
 
 
 @pytest.mark.asyncio
@@ -389,19 +396,16 @@ async def test_validar_posse_titular_unauthorized_role_raises_403() -> None:
 async def test_validar_posse_titular_jwt_revogado_raises_401() -> None:
     settings = get_settings()
     titular_id = uuid7()
-    patient_jwt = _make_jwt(titular_id, Role.PACIENTE, settings.JWT_SECRET_KEY)
+    jti = uuid4()
+    revocation = MemoryTokenRevocation()
+    await revocation.revogar(str(jti))
+    patient_jwt = _make_jwt(titular_id, Role.PACIENTE, settings.JWT_SECRET_KEY, jti=jti)
 
-    with (
-        patch(
-            "src.modules.identity.presentation.dependencies.is_token_revoked",
-            new_callable=AsyncMock,
-            return_value=True,
-        ),
-        pytest.raises(TokenRevogadoError, match="revogado"),
-    ):
+    with pytest.raises(TokenRevogadoError, match="revogado"):
         await validar_posse_titular(
             id=titular_id,
             credentials=HTTPAuthorizationCredentials(
                 scheme="Bearer", credentials=patient_jwt
             ),
+            revocation=revocation,
         )

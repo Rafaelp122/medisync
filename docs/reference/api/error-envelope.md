@@ -76,8 +76,8 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 422 | `CONSULTA_INVALIDA` | Violação de regra clínica em evolução, ausência de identidade verificada (CFM nº 2.314/2022) ou prescrição inválida (`ConsultaInvalidaError`) |
 | 422 | `ASSINATURA_DIGITAL_INVALIDA` | Falha na assinatura digital ICP-Brasil (`AssinaturaDigitalInvalidaError`) |
 | 422 | `AUDITORIA_INVALIDA` | Inconsistência nos atributos do evento forense (`AuditoriaInvalidaError`) |
-| 422 | `TRAVA_TEMPORAL_ATESTADO_VIOLADA` | Emissão de atestado médico com tempo de consulta <180s sem justificativa circunstanciada - RN09 (`TravaTemporalAtestadoVioladaError`) |
-| 422 | `IA_NAO_RATIFICADA` | Submissão de sugestão de IA no prontuário sem ratificação médica expressa - CFM nº 2.454/2026, RN08 (`IaNaoRatificadaError`) |
+| 422 | `TRAVA_TEMPORAL_ATESTADO_VIOLADA` | Emissão de atestado médico com tempo de consulta <180s sem justificativa circunstanciada - RN09 (`TravaAntiFraudeAtestadoError`) |
+| 422 | `IA_NAO_RATIFICADA` | Submissão de sugestão de IA no prontuário sem ratificação médica expressa - CFM nº 2.454/2026, RN08 (`IANaoRatificadaError`) |
 | 422 | `SPOOFING_FACIAL_DETECTADO` | Prova de vida facial reprovada por suspeita de spoofing - US-15 (`SpoofingFacialDetectadoError`) |
 | 422 | `LIVENESS_CHALLENGE_INVALIDO` | Desafio de prova de vida ausente, expirado ou já consumido (sem disparar incidente de spoofing) - US-15 (`LivenessChallengeInvalidoError`) |
 | 422 | `PROVA_DE_VIDA_OBRIGATORIA` | Prescrição Lista C1 bloqueada sem prova de vida aprovada ou justificativa - US-15 (`ProvaDeVidaObrigatoriaError`) |
@@ -88,6 +88,7 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 429 | sem `code` | Rate limit de rede por IP (`Retry-After` obrigatório via `exigir_rate_limit`) |
 | 500 | `DOCUMENTO_INTEGRIDADE` | Metadados de médico/paciente ausentes (`DocumentoIntegridadeError`) |
 | 500 | `INTERNAL_SERVER_ERROR` | Fallback genérico para erros internos não tratados |
+| 503 | `SERVICE_UNAVAILABLE` | Indisponibilidade de dependência crítica como revogação no Valkey fail-closed (`ServiceUnavailableError`) |
 | 503 | `ADMISSAO_FILA_SUSPENSA` | Admissão suspensa por backpressure estocástico ou cota atingida - RN05 (`AdmissaoFilaSuspensaError`) |
 
 Notas de semântica:
@@ -104,10 +105,12 @@ Notas de semântica:
 
 - Impl: `src/core/errors.py:ProblemDetails`
 - Impl: `src/core/errors.py:DomainError`
+- Impl: `src/core/errors.py:ServiceUnavailableError`
 - Impl: `src/core/errors.py:create_problem_response`
 - Impl: `src/core/errors.py:register_exception_handlers`
 - Impl: `src/core/audit/exceptions.py:AuditoriaImutavelError`
 - Impl: `src/modules/auth/domain/exceptions.py:ContaBloqueadaError`
+- Impl: `src/modules/auth/domain/exceptions.py:MfaCodigoInvalidoError`
 - Impl: `src/modules/auth/domain/exceptions.py:OtpRateLimitExcedidoError`
 - Impl: `src/modules/auth/domain/exceptions.py:OtpTentativasExcedidasError`
 - Impl: `src/modules/auth/domain/exceptions.py:WebAuthnChallengeInvalidoError`
@@ -121,6 +124,8 @@ Notas de semântica:
 - Impl: `src/modules/queue/domain/exceptions.py:MedicoOcupadoError`
 - Impl: `src/modules/triage/domain/exceptions.py:EmergenciaCriticaSamuError`
 - Impl: `src/modules/consultation/domain/exceptions.py:PrescricaoFisicaObrigatoriaError`
+- Impl: `src/modules/consultation/domain/exceptions.py:IANaoRatificadaError`
+- Impl: `src/modules/consultation/domain/exceptions.py:TravaAntiFraudeAtestadoError`
 - Impl: `src/modules/consultation/domain/exceptions.py:SpoofingFacialDetectadoError`
 - Impl: `src/modules/consultation/domain/exceptions.py:LivenessChallengeInvalidoError`
 - Impl: `src/modules/consultation/domain/exceptions.py:ProvaDeVidaObrigatoriaError`

@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.errors import ForbiddenError, NotFoundError
 from src.modules.identity.domain.models import Paciente, Profissional
 from src.modules.queue.domain.models import Atendimento, StatusAtendimento
@@ -64,7 +64,7 @@ async def test_anti_idor_ownership_scheduling_operations(
 
     dia_base = _futuro_dia_utc(7)
 
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         service = build_scheduling_service(session=session)
         await service.cadastrar_disponibilidade(
             CriarDisponibilidadeCommand(
@@ -133,7 +133,7 @@ async def test_sql_scheduling_repository_queries_reais(
 
     dia_base = _futuro_dia_utc(10)
 
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         repo = SqlSchedulingRepository(session)
 
         # Disponibilidades: 2 ativas PSICOLOGIA (ordem inversa), 1 inativa, 1 NUTRI
@@ -307,7 +307,7 @@ async def test_buscar_agendamento_por_id_for_update_adquire_row_lock(
     db_session.add(ag)
     await db_session.commit()
 
-    async with async_session_factory() as s1, async_session_factory() as s2:
+    async with get_session_factory()() as s1, get_session_factory()() as s2:
         repo1 = SqlSchedulingRepository(s1)
         locked = await repo1.buscar_agendamento_por_id(ag.id, for_update=True)
         assert locked is not None
@@ -341,7 +341,7 @@ async def test_gist_excl_agendamento_slot_ativo_e_liberacao_apos_cancelamento(
     slot_0915 = dia_dt.replace(hour=9, minute=15)
 
     # 1. Cria janela [09:00, 12:00) e agenda [09:00, 09:50) via SchedulingService
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         service = build_scheduling_service(session=session)
         await service.cadastrar_disponibilidade(
             CriarDisponibilidadeCommand(
@@ -374,7 +374,7 @@ async def test_gist_excl_agendamento_slot_ativo_e_liberacao_apos_cancelamento(
         ) -> Agendamento | None:
             return None
 
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         disp_antiga = (
             await session.execute(
                 select(AgendaDisponibilidade).where(
@@ -430,7 +430,7 @@ async def test_gist_excl_agendamento_slot_ativo_e_liberacao_apos_cancelamento(
             )
 
     # 3. Cancelar [09:00, 09:50) libera o intervalo na constraint GiST para nova reserva
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         service = build_scheduling_service(session=session)
         cancelado = await service.cancelar_agendamento(
             agendamento_id=ag_0900_id,
@@ -516,7 +516,7 @@ async def test_scheduling_foreign_keys_23503_e_ondelete_restrict(
         await db_session.rollback()
 
     # 3. SchedulingService traduz 23503 de paciente_id inexistente para NotFoundError
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         service = build_scheduling_service(session=session)
         await service.cadastrar_disponibilidade(
             CriarDisponibilidadeCommand(

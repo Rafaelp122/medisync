@@ -107,7 +107,8 @@ flowchart TD
 - `src/modules/auth/application/dtos.py`
 - `src/modules/auth/application/ports/password_hasher_port.py`
 - `src/modules/auth/application/ports/token_service_port.py`
-- `src/modules/auth/application/ports/token_revocation_port.py`
+- `src/core/authz/revocation.py`
+- `src/core/authz/dependencies.py`
 - `src/modules/auth/application/ports/auth_rate_limiter_port.py`
 - `src/modules/auth/application/ports/sms_sender_port.py`
 - `src/modules/auth/application/ports/identity_reader_port.py`
@@ -121,7 +122,6 @@ flowchart TD
 - `src/modules/auth/infrastructure/argon2_hasher.py`
 - `src/modules/auth/infrastructure/jwt_token_service.py`
 - `src/modules/auth/infrastructure/patient_credential_repository_sql.py`
-- `src/modules/auth/infrastructure/valkey_token_revocation.py`
 - `src/modules/auth/infrastructure/valkey_rate_limiter.py`
 - `src/modules/identity/application/ports/identity_writer_port.py`
 - `src/modules/identity/infrastructure/identity_writer_sql.py`

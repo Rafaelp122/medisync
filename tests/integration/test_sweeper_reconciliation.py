@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import text
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.valkey import get_valkey_client
 from src.modules.queue.domain.models import PrioridadeClinica
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
@@ -22,7 +22,7 @@ pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 async def test_end_to_end_sweeper_restores_orphaned_appointment() -> None:
     """Orphaned attendance missing from Valkey ZSET is restored with exact score."""
     entrada = datetime.now(UTC) - timedelta(seconds=120)
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         cenario = await seed_clinical_scenario(
             session,
             status_atendimento=StatusAtendimento.APTO_PARA_CHAMADA,
@@ -68,7 +68,7 @@ async def test_end_to_end_sweeper_restores_orphaned_appointment() -> None:
 async def test_end_to_end_sweeper_protects_in_flight_ring_call() -> None:
     """Active in-flight call (ring lock active) is never reinjected into queue."""
     entrada = datetime.now(UTC) - timedelta(seconds=120)
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         cenario = await seed_clinical_scenario(
             session,
             status_atendimento=StatusAtendimento.APTO_PARA_CHAMADA,
@@ -109,7 +109,7 @@ async def test_end_to_end_sweeper_protects_in_flight_ring_call() -> None:
 async def test_end_to_end_sweeper_idempotent_when_already_in_queue() -> None:
     """Idempotent behavior: already queued attendances remain unaffected."""
     entrada = datetime.now(UTC) - timedelta(seconds=120)
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         cenario = await seed_clinical_scenario(
             session,
             status_atendimento=StatusAtendimento.APTO_PARA_CHAMADA,

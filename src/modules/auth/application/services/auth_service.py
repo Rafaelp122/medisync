@@ -8,8 +8,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.authz.revocation import TokenRevocationPort
 from src.core.authz.roles import ROLES_REQUIRING_MFA, Role
-from src.core.errors import ConflictError, MfaCodigoInvalidoError, NotFoundError
+from src.core.errors import ConflictError, NotFoundError
 from src.modules.auth.application.dtos import (
     CadastrarCredencialCommand,
     LoginCommand,
@@ -23,9 +24,6 @@ from src.modules.auth.application.ports.auth_rate_limiter_port import (
 from src.modules.auth.application.ports.password_hasher_port import (
     PasswordHasherPort,
 )
-from src.modules.auth.application.ports.token_revocation_port import (
-    TokenRevocationPort,
-)
 from src.modules.auth.application.ports.token_service_port import (
     TokenServicePort,
 )
@@ -33,6 +31,7 @@ from src.modules.auth.domain.exceptions import (
     ContaBloqueadaError,
     ContaDesativadaError,
     CredenciaisInvalidasError,
+    MfaCodigoInvalidoError,
     TokenRevogadoError,
 )
 from src.modules.auth.domain.models import UsuarioCredencial

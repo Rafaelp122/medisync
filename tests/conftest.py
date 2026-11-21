@@ -14,7 +14,7 @@ CommonSettings.model_config["env_file"] = None
 DevelopmentSettings.model_config["env_file"] = None
 get_settings.cache_clear()
 
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.valkey import close_valkey_pool
 from src.main import app
 
@@ -56,7 +56,7 @@ async def async_client() -> AsyncGenerator[AsyncClient, None]:
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Yield an isolated AsyncSession connected to PostgreSQL."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         yield session
 
 

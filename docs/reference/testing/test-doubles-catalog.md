@@ -8,7 +8,7 @@ A suíte de testes unitários do MediSync Express opera sob o princípio de feed
 Em alinhamento com o Clean Code para Agentes de IA (AGENTS.md) e a arquitetura Hexagonal Pragmática (ADR-001), o projeto adota **Fakes Nomeados sobre Mocks Inline Anônimos**.
 Em vez de instâncias genéricas de `unittest.mock.MagicMock` ou `patch()`, o repositório emprega dublês de teste tipados que implementam fielmente as portas abstratas (`typing.Protocol`) do sistema.
 Essa abordagem assegura checagem de tipos estrita (`basedpyright` em modo estrito), refatorações seguras de contratos e diagnóstico imediato de asserções via estado rastreável.
-Os dublês residem principalmente em `tests/doubles.py`, com implementações em memória específicas de infraestrutura mantidas nos próprios módulos (como `src/modules/auth/infrastructure/valkey_token_revocation.py`).
+Os dublês residem principalmente em `tests/doubles.py`, com implementações em memória específicas de infraestrutura mantidas nos próprios módulos ou no núcleo de autorização (como `src/core/authz/revocation.py`).
 
 ## Conceito
 
@@ -27,7 +27,7 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 | `FakeEligibilityProvider` | `EligibilityProviderPort` (`src.modules.ambulatory`) | `verificar_elegibilidade(requisicao)` | `requisicoes: list[Any]` (histórico de requisições enviadas), `resultado: ResultadoElegibilidade`. |
 | `FakeElegibilidadeNotifier` | `ElegibilidadeNotifierPort` (`src.modules.ambulatory`) | `notificar_falha(evento)` | `eventos_falha: list[ElegibilidadeFalhaEvent]` (histórico ordenado de alertas de recusa/timeout emitidos). |
 
-| `MemoryTokenRevocation` | `TokenRevocationPort` (`src.modules.auth`) | `revogar(jti, exp_segundos)`, `is_revogado(jti)` | `_revoked: set[str]` (conjunto em memória de identificadores JWT invalidados). |
+| `MemoryTokenRevocation` | `TokenRevocationPort` (`src.core.authz`) | `revogar(jti, exp_segundos)`, `is_revogado(jti)` | `_revoked: set[str]` (conjunto em memória de identificadores JWT invalidados). |
 | `FakeAtendimentoReader` | `AtendimentoReaderPort` (`src.modules.consultation`) | `obter_resumo()`, `concluir_atendimento()`, `atender_chamada()` | `resumo: AtendimentoResumoDTO | None`, `chamada_atendida: bool`, `atendimento_concluido: bool`. |
 | `FakeValkey` / `FakePubSub` | Protocolo Valkey / Redis Pub/Sub | `publish(canal, msg)`, `pubsub()`, `subscribe()`, `listen()` | Filas thread-safe `queue.Queue` em memória para testes de WebSockets e SSE sem infraestrutura externa. |
 
@@ -61,8 +61,8 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
    - Dublam a verificação de convênios SUS/Privado e a mensageria de alertas na sala de espera.
    - Capturam o tráfego de requisições e falhas para validação de regras de tolerância a falhas (RF-02, RF-05, RT-01).
 
-7. **`MemoryTokenRevocation` (`src/modules/auth/infrastructure/valkey_token_revocation.py`)**:
-   - Implementa `TokenRevocationPort` com `set[str]` para controle de tokens revogados (logout / blacklisting).
+7. **`MemoryTokenRevocation` (`src/core/authz/revocation.py`)**:
+   - Implementa `TokenRevocationPort` com `set[str]` para controle de tokens revogados (logout / blacklisting) sem dependência de Valkey sob `TestSettings`.
 
 ## Onde no código
 
@@ -74,14 +74,14 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Impl: `tests/doubles.py:FakeEligibilityProvider`
 - Impl: `tests/doubles.py:FakeElegibilidadeNotifier`
 - Impl: `tests/doubles.py:FakeAtendimentoReader`
-- Impl: `src/modules/auth/infrastructure/valkey_token_revocation.py:MemoryTokenRevocation`
+- Impl: `src/core/authz/revocation.py:MemoryTokenRevocation`
 - Spec: `src/modules/consultation/application/ports/pdf_generator_port.py:PDFGeneratorPort`
 - Spec: `src/modules/consultation/application/ports/icp_brasil_signer_port.py:ICPBrasilSignerPort`
 - Spec: `src/modules/consultation/application/ports/storage_port.py:StoragePort`
 - Spec: `src/modules/consultation/application/ports/atendimento_reader_port.py:AtendimentoReaderPort`
 - Spec: `src/modules/ambulatory/application/ports/eligibility_provider.py:EligibilityProviderPort`
 - Spec: `src/modules/ambulatory/application/ports/eligibility_notifier.py:ElegibilidadeNotifierPort`
-- Spec: `src/modules/auth/application/ports/token_revocation_port.py:TokenRevocationPort`
+- Spec: `src/core/authz/revocation.py:TokenRevocationPort`
 - Prova viva: `tests/unit/test_factories.py:test_seed_clinical_scenario_with_fake_session`
 - Prova viva: `tests/unit/test_pyhanko_signer.py:test_fake_icp_brasil_signer_success`
 - Prova viva: `tests/unit/test_ambulatory_production.py:test_elegibilidade_service_emits_failure_event_on_rejection`

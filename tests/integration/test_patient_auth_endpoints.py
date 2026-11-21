@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.authz.roles import Role
 from src.core.authz.token import decode_access_token
 from src.core.config import DevelopmentSettings
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.errors import ConflictError
 from src.core.valkey import get_valkey_pool
 from src.modules.auth.application.dtos import RegistrarPacienteCommand
@@ -384,7 +384,7 @@ async def test_patient_register_email_conflict_atomic_rollback(
         async def existe_identificador(self, identificador: str) -> bool:
             return False
 
-    async with async_session_factory() as race_session:
+    async with get_session_factory()() as race_session:
         service = build_patient_auth_service_for_session(
             session=race_session,
             credential_repo=_RaceBypassCredentialRepo(session=race_session),
@@ -403,7 +403,7 @@ async def test_patient_register_email_conflict_atomic_rollback(
             )
         await race_session.rollback()
 
-    async with async_session_factory() as check_session:
+    async with get_session_factory()() as check_session:
         pacientes = (await check_session.execute(select(Paciente))).scalars().all()
         creds = (await check_session.execute(select(UsuarioCredencial))).scalars().all()
         assert len(pacientes) == 1

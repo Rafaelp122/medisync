@@ -3,15 +3,16 @@
 from unittest.mock import patch
 
 import pytest
+from src.core.authz.revocation import (
+    MemoryTokenRevocation,
+    ValkeyTokenRevocation,
+    get_token_revocation,
+)
 from src.core.config import CommonSettings
-from src.modules.auth.composition import get_rate_limiter, get_token_revocation
+from src.modules.auth.composition import get_rate_limiter
 from src.modules.auth.infrastructure.valkey_rate_limiter import (
     FakeAuthRateLimiter,
     ValkeyAuthRateLimiter,
-)
-from src.modules.auth.infrastructure.valkey_token_revocation import (
-    MemoryTokenRevocation,
-    ValkeyTokenRevocation,
 )
 from src.modules.consultation.composition import (
     get_signed_cache,
@@ -50,7 +51,7 @@ def test_auth_rate_limiter_resolution() -> None:
 
 
 def test_auth_token_revocation_resolution() -> None:
-    with patch("src.modules.auth.composition.get_settings") as mock_settings:
+    with patch("src.core.authz.revocation.get_settings") as mock_settings:
         mock_settings.return_value = CommonSettings(TOKEN_REVOCATION_BACKEND="memory")
         revocation = get_token_revocation()
         assert isinstance(revocation, MemoryTokenRevocation)

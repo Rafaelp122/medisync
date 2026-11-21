@@ -7,7 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.valkey import close_valkey_pool, get_valkey_client
 from src.modules.ambulatory import (
     EligibilityProviderPort,
@@ -47,7 +47,7 @@ async def test_end_to_end_sus_eligibility_flow() -> None:
         tcle_hash=_VALID_TCLE_HASH,
     )
 
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         session.add_all([unidade, patient, atend])
         await session.commit()
 
@@ -65,7 +65,7 @@ async def test_end_to_end_sus_eligibility_flow() -> None:
         assert result["codigo_autorizacao"] == "SUS-ISENTO"
 
         # Verify PostgreSQL state promotion
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             refreshed = await session.get(Atendimento, atend.id)
             assert refreshed is not None
             assert refreshed.status == StatusAtendimento.APTO_PARA_CHAMADA.value
@@ -94,7 +94,7 @@ async def test_end_to_end_private_eligibility_approved() -> None:
         tcle_hash=_VALID_TCLE_HASH,
     )
 
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         session.add_all([unidade, patient, atend])
         await session.commit()
 
@@ -120,7 +120,7 @@ async def test_end_to_end_private_eligibility_approved() -> None:
         assert result["codigo_autorizacao"] == "SULAMERICA-AUTH-77"
 
         # Verify DB state
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             refreshed = await session.get(Atendimento, atend.id)
             assert refreshed is not None
             assert refreshed.status == StatusAtendimento.APTO_PARA_CHAMADA.value
@@ -150,7 +150,7 @@ async def test_end_to_end_private_eligibility_rejected_preserves_queue_position(
         tcle_hash=_VALID_TCLE_HASH,
     )
 
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         session.add_all([unidade, patient, atend])
         await session.commit()
 
@@ -176,7 +176,7 @@ async def test_end_to_end_private_eligibility_rejected_preserves_queue_position(
         assert result["motivo"] == "Plano cancelado"
 
         # Verify DB status is strictly preserved (RF-05)
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             refreshed = await session.get(Atendimento, atend.id)
             assert refreshed is not None
             assert (

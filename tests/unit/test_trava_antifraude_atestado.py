@@ -8,7 +8,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
-from src.core.errors import TravaAntiFraudeAtestadoError
 from src.modules.consultation.application.dtos import (
     CriarItemPrescricaoDTO,
     EmitirDocumentoClinicoCommand,
@@ -19,6 +18,7 @@ from src.modules.consultation.application.ports.atendimento_reader_port import (
 from src.modules.consultation.application.services.documento_service import (
     DocumentoService,
 )
+from src.modules.consultation.domain.exceptions import TravaAntiFraudeAtestadoError
 from src.modules.consultation.domain.models import (
     EvolucaoClinica,
     TipoDocumentoClinico,

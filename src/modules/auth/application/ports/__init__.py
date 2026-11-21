@@ -24,9 +24,6 @@ from src.modules.auth.application.ports.patient_credential_repository_port impor
 from src.modules.auth.application.ports.sms_sender_port import (
     SmsSenderPort,
 )
-from src.modules.auth.application.ports.token_revocation_port import (
-    TokenRevocationPort,
-)
 from src.modules.auth.application.ports.token_service_port import (
     TokenServicePort,
 )
@@ -42,6 +39,5 @@ __all__ = [
     "PasswordHasherPort",
     "PatientCredentialRepositoryPort",
     "SmsSenderPort",
-    "TokenRevocationPort",
     "TokenServicePort",
 ]

@@ -4,8 +4,9 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.security import HTTPAuthorizationCredentials
+from src.core.authz.revocation import MemoryTokenRevocation
 from src.core.authz.token import create_access_token
-from src.core.errors import ConflictError, ForbiddenError
+from src.core.errors import ConflictError, ForbiddenError, TokenRevogadoError
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoResumoDTO,
 )
@@ -52,6 +53,7 @@ async def test_validar_acesso_livekit_paciente_ausente_retorna_conflict_error() 
             request=req,
             reader=reader,
             credentials=creds,
+            revocation=MemoryTokenRevocation(),
         )
 
     assert "PACIENTE_AUSENTE" in exc_info.value.detail
@@ -88,7 +90,34 @@ async def test_validar_acesso_livekit_status_concluido_mantem_forbidden_error() 
             request=req,
             reader=reader,
             credentials=creds,
+            revocation=MemoryTokenRevocation(),
         )
 
     assert "CONCLUIDO" in exc_info.value.detail
     assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_validar_acesso_livekit_rejeita_jwt_revogado_com_401() -> None:
+    """Verifica que JWT explicitamente revogado é bloqueado antes de consultar o BD."""
+    from src.core.authz.token import decode_access_token
+
+    atend_id = uuid4()
+    doc_id = uuid4()
+    creds = _make_doctor_token(doc_id)
+    decoded = decode_access_token(creds.credentials)
+    revocation = MemoryTokenRevocation()
+    await revocation.revogar(str(decoded.token_id))
+
+    reader = FakeAtendimentoReader(resumo=None)
+    req = LiveKitTokenRequest(participant_id=doc_id, role="medico")
+
+    with pytest.raises(TokenRevogadoError, match="revogado") as exc_info:
+        await validar_acesso_livekit(
+            atendimento_id=atend_id,
+            request=req,
+            reader=reader,
+            credentials=creds,
+            revocation=revocation,
+        )
+    assert exc_info.value.status_code == 401

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.errors import NotFoundError
 from src.modules.consultation.application.dtos import (
     CriarItemPrescricaoDTO,
@@ -40,7 +40,7 @@ async def test_salvar_evolucao_soap_service_commit_visivel_outra_sessao(
     atend_id = cenario.atendimento.id
     medico_id = cenario.medico.id
 
-    async with async_session_factory() as s1:
+    async with get_session_factory()() as s1:
         svc = make_pep_service(s1)
         cmd = RegistrarEvolucaoSOAPCommand(
             atendimento_id=atend_id,
@@ -53,7 +53,7 @@ async def test_salvar_evolucao_soap_service_commit_visivel_outra_sessao(
         await svc.salvar_evolucao_soap(cmd)
         # Sem commit no router: service deve ter commitado.
 
-    async with async_session_factory() as s2:
+    async with get_session_factory()() as s2:
         res = await s2.execute(
             select(EvolucaoClinica).where(EvolucaoClinica.atendimento_id == atend_id)
         )
@@ -78,7 +78,7 @@ async def test_emitir_documento_service_commit_visivel_outra_sessao(
     atend_id = cenario.atendimento.id
     medico_id = cenario.medico.id
 
-    async with async_session_factory() as s1:
+    async with get_session_factory()() as s1:
         svc = make_pep_service(s1)
         await svc.salvar_evolucao_soap(
             RegistrarEvolucaoSOAPCommand(
@@ -105,7 +105,7 @@ async def test_emitir_documento_service_commit_visivel_outra_sessao(
         doc = await svc.emitir_documento(cmd)
         doc_id = doc.id
 
-    async with async_session_factory() as s2:
+    async with get_session_factory()() as s2:
         res = await s2.execute(
             select(DocumentoClinico).where(DocumentoClinico.id == doc_id)
         )
@@ -131,7 +131,7 @@ async def test_finalizar_consulta_service_commit_visivel_outra_sessao(
     atend_id = cenario.atendimento.id
     medico_id = cenario.medico.id
 
-    async with async_session_factory() as s1:
+    async with get_session_factory()() as s1:
         svc = make_pep_service(s1)
         await svc.salvar_evolucao_soap(
             RegistrarEvolucaoSOAPCommand(
@@ -143,7 +143,7 @@ async def test_finalizar_consulta_service_commit_visivel_outra_sessao(
             )
         )
 
-    async with async_session_factory() as s1b:
+    async with get_session_factory()() as s1b:
         svc = make_pep_service(s1b)
         await svc.finalizar_consulta(
             FinalizarConsultaCommand(
@@ -152,7 +152,7 @@ async def test_finalizar_consulta_service_commit_visivel_outra_sessao(
             )
         )
 
-    async with async_session_factory() as s2:
+    async with get_session_factory()() as s2:
         res = await s2.execute(
             text("SELECT status FROM atendimentos WHERE id = :id"),
             {"id": atend_id},
@@ -183,7 +183,7 @@ async def test_assinar_documento_service_commit_visivel_outra_sessao(
     storage.obter_documento.return_value = b"%PDF-fake%"
     storage.salvar_documento.return_value = None
 
-    async with async_session_factory() as s1:
+    async with get_session_factory()() as s1:
         svc = make_pep_service(s1, signer=signer, storage=storage)
         await svc.salvar_evolucao_soap(
             RegistrarEvolucaoSOAPCommand(
@@ -210,7 +210,7 @@ async def test_assinar_documento_service_commit_visivel_outra_sessao(
         )
         doc_id = doc.id
 
-    async with async_session_factory() as s1b:
+    async with get_session_factory()() as s1b:
         svc = make_pep_service(s1b, signer=signer, storage=storage)
         creds = DoctorCertificateCredentials(
             token="valid-token", provider="fake", certificate_alias="cert-tx"
@@ -219,7 +219,7 @@ async def test_assinar_documento_service_commit_visivel_outra_sessao(
         assert result.tamanho_bytes == len(b"%PDF-signed-bytes%")
         assert result.sha256_hash is not None
 
-    async with async_session_factory() as s2:
+    async with get_session_factory()() as s2:
         res = await s2.execute(
             select(DocumentoClinico).where(DocumentoClinico.id == doc_id)
         )
@@ -261,7 +261,7 @@ async def test_assinar_documento_outro_atendimento_404_signer_nao_chamado(
     storage.obter_documento.return_value = b"%PDF-fake%"
     storage.salvar_documento.return_value = None
 
-    async with async_session_factory() as s1:
+    async with get_session_factory()() as s1:
         svc = make_pep_service(s1, signer=signer_spy, storage=storage)
         await svc.salvar_evolucao_soap(
             RegistrarEvolucaoSOAPCommand(
@@ -289,7 +289,7 @@ async def test_assinar_documento_outro_atendimento_404_signer_nao_chamado(
         doc_id = doc.id
         original_hash = doc.sha256_hash
 
-    async with async_session_factory() as s2:
+    async with get_session_factory()() as s2:
         svc2 = make_pep_service(s2, signer=signer_spy, storage=storage)
         creds = DoctorCertificateCredentials(token="tok", provider="fake")
         with pytest.raises(NotFoundError):
@@ -298,7 +298,7 @@ async def test_assinar_documento_outro_atendimento_404_signer_nao_chamado(
     signer_spy.assinar_pdf.assert_not_called()
     storage.salvar_documento.assert_not_called()
 
-    async with async_session_factory() as s3:
+    async with get_session_factory()() as s3:
         res = await s3.execute(
             select(DocumentoClinico).where(DocumentoClinico.id == doc_id)
         )

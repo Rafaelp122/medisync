@@ -16,10 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.audit import AuditTrailPort, SqlAuditTrailAdapter
 from src.core.config import get_settings
-from src.core.database import DbSessionDep
-from src.core.dependencies import ValkeyDep
+from src.core.database import DbSessionDep, get_session_factory
 from src.core.realtime import publish_realtime_event
-from src.core.valkey import get_arq_pool, get_valkey_pool
+from src.core.valkey import ValkeyDep, get_arq_pool, get_valkey_pool
 from src.modules.consultation.application.realtime_channels import (
     channel_doctor_calls,
 )
@@ -229,9 +228,8 @@ async def default_verificar_posse_paciente_fila(
     Abre uma sessão isolada pontual que é fechada imediatamente, evitando
     reter conexões do pool de banco durante a vida do streaming WebSocket.
     """
-    from src.core.database import async_session_factory
-
-    async with async_session_factory() as session:
+    session_factory = get_session_factory()
+    async with session_factory() as session:
         queue_store = build_fila_service_for_session(session=session)
         snapshot = await queue_store.buscar_atendimento(atendimento_id)
         if snapshot is None:

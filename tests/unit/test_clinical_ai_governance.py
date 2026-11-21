@@ -6,7 +6,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from src.core.audit import AtorPapel, AtorTipo
-from src.core.errors import IANaoRatificadaError
 from src.modules.consultation.application.dtos import RegistrarEvolucaoSOAPCommand
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoResumoDTO,
@@ -14,6 +13,7 @@ from src.modules.consultation.application.ports.atendimento_reader_port import (
 from src.modules.consultation.application.services.evolucao_service import (
     EvolucaoService,
 )
+from src.modules.consultation.domain.exceptions import IANaoRatificadaError
 from src.modules.consultation.domain.models import EvolucaoClinica
 
 from tests.doubles import FakeAsyncSession, FakeAuditTrail, FakeResult

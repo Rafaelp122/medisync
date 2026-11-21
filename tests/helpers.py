@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 from sqlalchemy import text
 from src.core.config import get_settings
-from src.core.database import engine
+from src.core.database import get_engine
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -32,7 +32,7 @@ CLEAN_TABLES_SQL = text(
 
 async def clean_database_tables() -> None:
     """Safely truncate all domain tables respecting foreign keys."""
-    async with engine.begin() as conn:
+    async with get_engine().begin() as conn:
         await conn.execute(CLEAN_TABLES_SQL)
 
 
@@ -84,10 +84,8 @@ def auth_headers(papel: str, usuario_id: UUID) -> dict[str, str]:
 
 def make_auth_service(session: AsyncSession, **overrides: Any) -> AuthService:
     """Build AuthService with AsyncMock fakes unless overridden."""
+    from src.core.authz.revocation import MemoryTokenRevocation
     from src.modules.auth.application.services.auth_service import AuthService
-    from src.modules.auth.infrastructure.valkey_token_revocation import (
-        MemoryTokenRevocation,
-    )
 
     hasher: Any = overrides.get("hasher", AsyncMock())
     token_service: Any = overrides.get("token_service", AsyncMock())

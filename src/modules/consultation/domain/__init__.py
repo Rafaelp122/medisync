@@ -7,8 +7,10 @@ from src.modules.consultation.domain.exceptions import (
     DocumentoClinicoNaoEncontradoError,
     DocumentoNaoEncontradoNoStorageError,
     EvolucaoNaoEncontradaError,
+    IANaoRatificadaError,
     PrescricaoFisicaObrigatoriaError,
     PrescricaoFisicaObrigatoriaException,
+    TravaAntiFraudeAtestadoError,
 )
 from src.modules.consultation.domain.models import (
     DocumentoClinico,
@@ -28,8 +30,10 @@ __all__ = [
     "DocumentoNaoEncontradoNoStorageError",
     "EvolucaoClinica",
     "EvolucaoNaoEncontradaError",
+    "IANaoRatificadaError",
     "PrescricaoFisicaObrigatoriaError",
     "PrescricaoFisicaObrigatoriaException",
     "TipoDocumentoClinico",
+    "TravaAntiFraudeAtestadoError",
     "validar_substancia_permitida_telemedicina",
 ]

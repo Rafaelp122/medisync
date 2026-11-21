@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 import pytest
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.uuid7 import uuid7
 
 if TYPE_CHECKING:
@@ -57,7 +57,7 @@ async def test_acceptance_criteria_backpressure_rejection_and_queue_preservation
     spy_notifier = SpyNotifier()
 
     async for valkey in get_valkey_client():
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             medico = make_profissional(
                 cpf="11122233344",
                 email="dr.shift@ubs.gov.br",
@@ -150,7 +150,7 @@ async def test_acceptance_criterion_3_queue_overflow_transit_event_emitted() -> 
     spy_notifier = SpyNotifier()
 
     async for valkey in get_valkey_client():
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             controle = ControleAdmissaoService(valkey=valkey, notifier=spy_notifier)
             alocacao = AlocacaoChamadaService(
                 valkey=valkey,
@@ -207,7 +207,7 @@ async def test_rejection_no_active_doctors_emits_event() -> None:
     spy_notifier = SpyNotifier()
 
     async for valkey in get_valkey_client():
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             controle = ControleAdmissaoService(valkey=valkey, notifier=spy_notifier)
             alocacao = AlocacaoChamadaService(
                 valkey=valkey,
@@ -243,7 +243,7 @@ async def test_rejection_daily_quota_reached_emits_event() -> None:
     spy_notifier = SpyNotifier()
 
     async for valkey in get_valkey_client():
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             controle = ControleAdmissaoService(valkey=valkey, notifier=spy_notifier)
             alocacao = AlocacaoChamadaService(
                 valkey=valkey,

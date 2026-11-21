@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
-from src.core.dependencies import ValkeyDep
+from src.core.valkey import ValkeyDep
 from src.modules.telemetry.application.ports.telemetry_cache_port import (
     TelemetryCachePort,
 )

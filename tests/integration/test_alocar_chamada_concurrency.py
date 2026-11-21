@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 from redis.asyncio import Redis
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.uuid7 import uuid7
 from src.core.valkey import get_valkey_client
 from src.modules.queue.application.dtos import AlocarChamadaCommand
@@ -109,7 +109,7 @@ async def test_doctor_active_lock_returns_0_conflict() -> None:
         assert res == 0, "Expected code 0 when doctor has active lock"
 
         # Also verify application service translates code 0 to MedicoOcupadoError
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             service = AlocacaoChamadaService(
                 valkey=client,
                 db_session=session,
@@ -171,7 +171,7 @@ async def test_alocar_chamada_sub_10ms_latency_benchmark() -> None:
 @pytest.mark.asyncio
 async def test_end_to_end_alocacao_service_with_postgres() -> None:
     """Verify end-to-end atomic allocation with PostgreSQL and Valkey consistency."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         # 1. Setup DB records via seed_clinical_scenario
         sample_tcle_hash = (
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

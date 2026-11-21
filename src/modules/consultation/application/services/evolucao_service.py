@@ -6,7 +6,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
-from src.core.errors import IANaoRatificadaError
 from src.modules.consultation.application.dtos import RegistrarEvolucaoSOAPCommand
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
@@ -15,6 +14,7 @@ from src.modules.consultation.application.ports.atendimento_reader_port import (
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     EvolucaoNaoEncontradaError,
+    IANaoRatificadaError,
 )
 from src.modules.consultation.domain.models import EvolucaoClinica
 

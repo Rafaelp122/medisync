@@ -674,7 +674,7 @@ async def test_webauthn_register_dependency_accepts_patient_and_rejects_non_pati
             papel=Role.MEDICO.value,
             secret_key=_JWT_SECRET,
         )
-        with pytest.raises(ForbiddenError, match="sem permissão"):
+        with pytest.raises(ForbiddenError, match="não possui permissão"):
             await require_patient_auth(
                 credentials=HTTPAuthorizationCredentials(
                     scheme="Bearer", credentials=medico_token

@@ -8,7 +8,7 @@ from redis.asyncio import ConnectionPool, Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from src.core.config import Settings, get_settings
-from src.core.database import async_session_factory, engine
+from src.core.database import get_engine, get_session_factory
 from src.core.valkey import get_valkey_pool
 
 
@@ -25,7 +25,7 @@ def get_db_engine_from_ctx(ctx: dict[str, Any]) -> AsyncEngine:
     extracted = ctx.get("db_engine")
     if extracted is not None:
         return cast("AsyncEngine", extracted)
-    return engine
+    return get_engine()
 
 
 def get_session_factory_from_ctx(
@@ -35,7 +35,7 @@ def get_session_factory_from_ctx(
     extracted = ctx.get("db_session_factory")
     if extracted is not None:
         return cast("async_sessionmaker[AsyncSession]", extracted)
-    return async_session_factory
+    return get_session_factory()
 
 
 @contextlib.asynccontextmanager

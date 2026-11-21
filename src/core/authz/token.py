@@ -23,14 +23,19 @@ def create_access_token(
     Decisões: docs/adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md
     Regras: docs/explanation/architecture/security-and-authorization.md
     """
-    settings = get_settings()
-    key = secret_key or settings.JWT_SECRET_KEY
-    algo = algorithm or settings.JWT_ALGORITHM
-    exp_minutes = (
-        expire_minutes
-        if expire_minutes is not None
-        else settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
-    )
+    if secret_key is None or algorithm is None or expire_minutes is None:
+        settings = get_settings()
+        key = secret_key or settings.JWT_SECRET_KEY
+        algo = algorithm or settings.JWT_ALGORITHM
+        exp_minutes = (
+            expire_minutes
+            if expire_minutes is not None
+            else settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        )
+    else:
+        key = secret_key
+        algo = algorithm
+        exp_minutes = expire_minutes
     now = datetime.now(UTC)
     access_exp = now + timedelta(minutes=exp_minutes)
 
@@ -58,9 +63,13 @@ def decode_access_token(
     Decisões: docs/adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md
     Regras: docs/explanation/architecture/security-and-authorization.md
     """
-    settings = get_settings()
-    key = secret_key or settings.JWT_SECRET_KEY
-    algo = algorithm or settings.JWT_ALGORITHM
+    if secret_key is None or algorithm is None:
+        settings = get_settings()
+        key = secret_key or settings.JWT_SECRET_KEY
+        algo = algorithm or settings.JWT_ALGORITHM
+    else:
+        key = secret_key
+        algo = algorithm
 
     try:
         payload: dict[str, Any] = jwt.decode(

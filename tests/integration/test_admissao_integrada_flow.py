@@ -3,7 +3,7 @@
 import pytest
 from arq.connections import create_pool
 from sqlalchemy import select
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoCommand,
     AdmissaoAtendimentoResult,
@@ -30,13 +30,13 @@ async def test_admissao_integrada_persists_both_models_and_enqueues_arq_job() ->
     unidade = make_configuracao_unidade(modo_publico_sus=True)
     patient = make_paciente()
 
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         session.add_all([unidade, patient])
         await session.commit()
 
     pool = await create_pool(WorkerSettings.redis_settings)
     try:
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             service = build_fila_service_for_session(
                 session=session,
                 valkey=pool,
@@ -61,7 +61,7 @@ async def test_admissao_integrada_persists_both_models_and_enqueues_arq_job() ->
             assert len(result.tcle_hash) == 64
 
         # 1. Verify DB persistence of Atendimento
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             atend = await session.get(Atendimento, result.atendimento_id)
             assert atend is not None
             assert atend.tcle_hash == result.tcle_hash
@@ -91,14 +91,14 @@ async def test_admissao_integrada_emergencia_samu_dispatches_alert_and_blocks_db
     unidade = make_configuracao_unidade(modo_publico_sus=False)
     patient = make_paciente()
 
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         session.add_all([unidade, patient])
         await session.commit()
 
     samu_notifier = SamuEmergencyNotifierAdapter()
     pool = await create_pool(WorkerSettings.redis_settings)
     try:
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             triage_svc = build_triage_service_for_session(
                 session=session,
                 notifier=samu_notifier,
@@ -126,7 +126,7 @@ async def test_admissao_integrada_emergencia_samu_dispatches_alert_and_blocks_db
         assert "inconsciencia" in alert.sintomas_alerta
 
         # Verify no Atendimento was created in DB for this patient
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             stmt = select(Atendimento).where(Atendimento.paciente_id == patient.id)
             atendimentos = (await session.execute(stmt)).scalars().all()
             assert len(atendimentos) == 0

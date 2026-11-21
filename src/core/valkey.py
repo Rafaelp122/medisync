@@ -3,9 +3,10 @@
 import asyncio
 import contextlib
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Annotated, Any
 
 from arq.connections import ArqRedis, RedisSettings, create_pool
+from fastapi import Depends
 from redis.asyncio import ConnectionPool, Redis
 from redis.asyncio.retry import Retry
 from redis.backoff import ExponentialBackoff
@@ -111,12 +112,6 @@ async def close_arq_pool() -> None:
         _arq_pool_loop = None
 
 
-async def get_arq_pool_client() -> AsyncGenerator[ArqRedis, None]:
-    """FastAPI dependency yielding the singleton ArqRedis client pool."""
-    pool = await get_arq_pool()
-    yield pool
-
-
 async def get_valkey_client() -> AsyncGenerator[Redis, None]:
     """FastAPI dependency yielding an asynchronous Valkey Redis client."""
     pool = get_valkey_pool()
@@ -125,6 +120,9 @@ async def get_valkey_client() -> AsyncGenerator[Redis, None]:
         yield client
     finally:
         await client.aclose()
+
+
+ValkeyDep = Annotated[Redis, Depends(get_valkey_client)]
 
 
 async def check_valkey_health(client: Redis) -> dict[str, Any]:
