@@ -1,3 +1,24 @@
+## v0.19.0 (2026-11-21)
+
+### BREAKING CHANGE
+
+- removidos o header HTTP X-Tenant-ID, os campos
+organizacao_id dos contratos OpenAPI/JWT/Valkey, o papel ADMIN_GLOBAL,
+as variáveis MULTI_TENANCY_ENABLED/DEFAULT_TENANT_ID/VITE_TENANT_ID e o
+histórico incremental Alembic 0002..0015 (consolidado em 0001).
+
+### Feat
+
+- **tooling**: segregar receitas do justfile por grupos e adicionar comandos de container
+
+### Fix
+
+- **consultation,docs**: aplicar correções da revisão de PR
+
+### Refactor
+
+- simplificar arquitetura para plataforma única sem multi-tenancy e RLS
+
 ## v0.18.0 (2026-11-17)
 
 ### Feat
