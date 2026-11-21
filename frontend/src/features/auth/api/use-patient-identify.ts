@@ -1,6 +1,6 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import {
   extractProblemDetail,
   type ProblemDetailsError,
@@ -44,7 +44,6 @@ export function usePatientIdentify(
       try {
         const response = await postAuthPatientIdentify({
           client,
-          headers: { ...getTenantHeaders() },
           body,
           throwOnError: true,
         });

@@ -11,7 +11,6 @@ class AtendimentoResumoDTO:
     """Immutable attendance summary for cross-module terminal checks."""
 
     atendimento_id: UUID
-    organizacao_id: int
     medico_id: UUID | None
     status: str
     tcle_hash: str | None
@@ -27,7 +26,6 @@ class AtendimentoHistoricoDTO:
     """Immutable patient attendance history entry from queue-owned tables."""
 
     atendimento_id: UUID
-    organizacao_id: int
     paciente_id: UUID
     status: str
     prioridade_clinica: int
@@ -56,7 +54,6 @@ class HistoricoAtendimentoReaderPort(Protocol):
 
     async def listar_historico_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> list[AtendimentoHistoricoDTO]: ...
 

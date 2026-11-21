@@ -7,7 +7,6 @@ from arq.connections import create_pool
 from arq.worker import create_worker
 from httpx import ASGITransport, AsyncClient
 from src.core.config import get_settings
-from src.core.context import tenant_context
 from src.core.database import async_session_factory
 from src.core.security import create_intake_token
 from src.main import app
@@ -22,39 +21,33 @@ from src.worker.settings import WorkerSettings
 
 from tests.factories.scenarios import seed_clinical_scenario
 
-_TEST_ORG_ID = 777
-
 pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 
 
 @pytest.mark.asyncio
 async def test_end_to_end_ring_timeout_releases_locks_and_marks_no_show() -> None:
     """Worker resolves no-show, marks attendance absent and frees doctor immediately."""
-    with tenant_context(_TEST_ORG_ID):
-        async with async_session_factory() as session:
-            cenario = await seed_clinical_scenario(
-                session,
-                org_id=_TEST_ORG_ID,
-                status_atendimento=StatusAtendimento.CHAMANDO_PACIENTE,
-            )
-            cenario.atendimento.chamada_iniciada_em = datetime.now(UTC)
-            session.add(cenario.atendimento)
-            await session.commit()
-            org = cenario.organizacao
-            doctor = cenario.medico
-            atendimento = cenario.atendimento
+    async with async_session_factory() as session:
+        cenario = await seed_clinical_scenario(
+            session,
+            status_atendimento=StatusAtendimento.CHAMANDO_PACIENTE,
+        )
+        cenario.atendimento.chamada_iniciada_em = datetime.now(UTC)
+        session.add(cenario.atendimento)
+        await session.commit()
+        doctor = cenario.medico
+        atendimento = cenario.atendimento
 
     pool = await create_pool(WorkerSettings.redis_settings)
     try:
-        k_medico = f"lock:{org.id}:medico:{doctor.id}"
-        k_atend = f"lock:{org.id}:atendimento:{atendimento.id}"
+        k_medico = f"lock:medico:{doctor.id}"
+        k_atend = f"lock:atendimento:{atendimento.id}"
         await pool.set(k_medico, str(atendimento.id), ex=45)
         await pool.set(k_atend, str(doctor.id), ex=45)
 
         # Enqueue the timeout resolution job
         job = await pool.enqueue_job(
             "resolver_ring_timeout_task",
-            organizacao_id=org.id,
             atendimento_id=str(atendimento.id),
             medico_id=str(doctor.id),
         )
@@ -71,12 +64,11 @@ async def test_end_to_end_ring_timeout_releases_locks_and_marks_no_show() -> Non
         assert worker.jobs_complete >= 1
 
         # 1. Verify PostgreSQL persistence: state must be PACIENTE_AUSENTE
-        with tenant_context(org.id):
-            async with async_session_factory() as session:
-                refreshed = await session.get(Atendimento, atendimento.id)
-                assert refreshed is not None
-                assert refreshed.status == StatusAtendimento.PACIENTE_AUSENTE.value
-                assert refreshed.chamada_finalizada_em is not None
+        async with async_session_factory() as session:
+            refreshed = await session.get(Atendimento, atendimento.id)
+            assert refreshed is not None
+            assert refreshed.status == StatusAtendimento.PACIENTE_AUSENTE.value
+            assert refreshed.chamada_finalizada_em is not None
 
         # 2. Verify Valkey locks: both locks must be completely deleted
         medico_lock_exists = await pool.exists(k_medico)
@@ -90,32 +82,28 @@ async def test_end_to_end_ring_timeout_releases_locks_and_marks_no_show() -> Non
 @pytest.mark.asyncio
 async def test_end_to_end_answered_call_promotes_active_consultation_lock() -> None:
     """When patient answers in time, worker preserves call and promotes lock."""
-    with tenant_context(_TEST_ORG_ID):
-        async with async_session_factory() as session:
-            cenario = await seed_clinical_scenario(
-                session,
-                org_id=_TEST_ORG_ID,
-                status_atendimento=StatusAtendimento.EM_ATENDIMENTO,
-            )
-            cenario.atendimento.chamada_iniciada_em = datetime.now(UTC)
-            session.add(cenario.atendimento)
-            await session.commit()
-            org = cenario.organizacao
-            doctor = cenario.medico
-            atendimento = cenario.atendimento
+    async with async_session_factory() as session:
+        cenario = await seed_clinical_scenario(
+            session,
+            status_atendimento=StatusAtendimento.EM_ATENDIMENTO,
+        )
+        cenario.atendimento.chamada_iniciada_em = datetime.now(UTC)
+        session.add(cenario.atendimento)
+        await session.commit()
+        doctor = cenario.medico
+        atendimento = cenario.atendimento
 
     pool = await create_pool(WorkerSettings.redis_settings)
     try:
-        k_medico = f"lock:{org.id}:medico:{doctor.id}"
-        k_atend = f"lock:{org.id}:atendimento:{atendimento.id}"
-        k_consulta = f"lock:{org.id}:consulta_ativa:medico:{doctor.id}"
+        k_medico = f"lock:medico:{doctor.id}"
+        k_atend = f"lock:atendimento:{atendimento.id}"
+        k_consulta = f"lock:consulta_ativa:medico:{doctor.id}"
         await pool.set(k_medico, str(atendimento.id), ex=45)
         await pool.set(k_atend, str(doctor.id), ex=45)
 
         # Enqueue the timeout resolution job
         job = await pool.enqueue_job(
             "resolver_ring_timeout_task",
-            organizacao_id=org.id,
             atendimento_id=str(atendimento.id),
             medico_id=str(doctor.id),
         )
@@ -130,11 +118,10 @@ async def test_end_to_end_answered_call_promotes_active_consultation_lock() -> N
         await worker.main()
 
         # 1. Verify PostgreSQL persistence: state must remain EM_ATENDIMENTO
-        with tenant_context(org.id):
-            async with async_session_factory() as session:
-                refreshed = await session.get(Atendimento, atendimento.id)
-                assert refreshed is not None
-                assert refreshed.status == StatusAtendimento.EM_ATENDIMENTO.value
+        async with async_session_factory() as session:
+            refreshed = await session.get(Atendimento, atendimento.id)
+            assert refreshed is not None
+            assert refreshed.status == StatusAtendimento.EM_ATENDIMENTO.value
 
         # 2. Verify active consultation lock is promoted in Valkey with TTL
         consulta_lock_exists = await pool.exists(k_consulta)
@@ -152,43 +139,38 @@ async def test_end_to_end_answered_call_promotes_active_consultation_lock() -> N
 @pytest.mark.asyncio
 async def test_alocar_chamada_schedules_arq_job_in_valkey() -> None:
     """alocar_chamada service schedules deferred job with deduplicated ID in Valkey."""
-    with tenant_context(_TEST_ORG_ID):
-        async with async_session_factory() as session:
-            cenario = await seed_clinical_scenario(
-                session,
-                org_id=_TEST_ORG_ID,
-                status_atendimento=StatusAtendimento.APTO_PARA_CHAMADA,
-            )
-            cenario.atendimento.medico_id = None
-            cenario.atendimento.data_entrada_fila = datetime.now(UTC)
-            session.add(cenario.atendimento)
-            await session.commit()
-            org = cenario.organizacao
-            doctor = cenario.medico
-            atendimento = cenario.atendimento
+    async with async_session_factory() as session:
+        cenario = await seed_clinical_scenario(
+            session,
+            status_atendimento=StatusAtendimento.APTO_PARA_CHAMADA,
+        )
+        cenario.atendimento.medico_id = None
+        cenario.atendimento.data_entrada_fila = datetime.now(UTC)
+        session.add(cenario.atendimento)
+        await session.commit()
+        doctor = cenario.medico
+        atendimento = cenario.atendimento
 
     pool = await create_pool(WorkerSettings.redis_settings)
     try:
         # Push to Valkey queue
-        k_fila = f"fila:{org.id}:aptos"
+        k_fila = "fila:aptos"
         await pool.zadd(k_fila, {str(atendimento.id): 100.0})
 
-        with tenant_context(org.id):
-            async with async_session_factory() as session:
-                service = AlocacaoChamadaService(
-                    valkey=pool,
-                    db_session=session,
-                    lua_manager=get_lua_script_manager(),
-                    arq_pool=pool,
-                )
-                cmd = AlocarChamadaCommand(
-                    organizacao_id=org.id,
-                    medico_id=doctor.id,
-                    atendimento_id=atendimento.id,
-                    ttl_segundos=45,
-                )
-                res = await service.alocar_chamada(cmd)
-                assert res.atendimento_id == atendimento.id
+        async with async_session_factory() as session:
+            service = AlocacaoChamadaService(
+                valkey=pool,
+                db_session=session,
+                lua_manager=get_lua_script_manager(),
+                arq_pool=pool,
+            )
+            cmd = AlocarChamadaCommand(
+                medico_id=doctor.id,
+                atendimento_id=atendimento.id,
+                ttl_segundos=45,
+            )
+            res = await service.alocar_chamada(cmd)
+            assert res.atendimento_id == atendimento.id
 
         # Verify deferred job was enqueued in ARQ queue with expected job_id
         job_key = f"arq:job:ring_timeout:{atendimento.id}"
@@ -204,33 +186,29 @@ async def test_end_to_end_patient_livekit_token_issuance_prevents_noshow() -> No
 
     and locks promote, preventing false no-show when ring timeout worker fires.
     """
-    with tenant_context(_TEST_ORG_ID):
-        async with async_session_factory() as session:
-            cenario = await seed_clinical_scenario(
-                session,
-                org_id=_TEST_ORG_ID,
-                status_atendimento=StatusAtendimento.CHAMANDO_PACIENTE,
-            )
-            cenario.atendimento.chamada_iniciada_em = datetime.now(UTC)
-            session.add(cenario.atendimento)
-            await session.commit()
-            org = cenario.organizacao
-            doctor = cenario.medico
-            patient = cenario.paciente
-            atendimento = cenario.atendimento
+    async with async_session_factory() as session:
+        cenario = await seed_clinical_scenario(
+            session,
+            status_atendimento=StatusAtendimento.CHAMANDO_PACIENTE,
+        )
+        cenario.atendimento.chamada_iniciada_em = datetime.now(UTC)
+        session.add(cenario.atendimento)
+        await session.commit()
+        doctor = cenario.medico
+        patient = cenario.paciente
+        atendimento = cenario.atendimento
 
     pool = await create_pool(WorkerSettings.redis_settings)
     try:
-        k_medico = f"lock:{org.id}:medico:{doctor.id}"
-        k_atend = f"lock:{org.id}:atendimento:{atendimento.id}"
-        k_consulta = f"lock:{org.id}:consulta_ativa:medico:{doctor.id}"
+        k_medico = f"lock:medico:{doctor.id}"
+        k_atend = f"lock:atendimento:{atendimento.id}"
+        k_consulta = f"lock:consulta_ativa:medico:{doctor.id}"
         await pool.set(k_medico, str(atendimento.id), ex=45)
         await pool.set(k_atend, str(doctor.id), ex=45)
 
         # Enqueue the 45s timeout resolution job
         job = await pool.enqueue_job(
             "resolver_ring_timeout_task",
-            organizacao_id=org.id,
             atendimento_id=str(atendimento.id),
             medico_id=str(doctor.id),
         )
@@ -238,9 +216,8 @@ async def test_end_to_end_patient_livekit_token_issuance_prevents_noshow() -> No
 
         # Patient answers the call by requesting the LiveKit token
         settings = get_settings()
-        intake_token = create_intake_token(patient.id, org.id, settings.SECRET_KEY)
+        intake_token = create_intake_token(patient.id, settings.SECRET_KEY)
         payload = {
-            "organizacao_id": org.id,
             "participant_id": str(patient.id),
             "role": "paciente",
             "participant_name": "Juliana Silva",
@@ -266,12 +243,11 @@ async def test_end_to_end_patient_livekit_token_issuance_prevents_noshow() -> No
 
         # Verify PostgreSQL persistence: state must remain EM_ATENDIMENTO
         # (NOT PACIENTE_AUSENTE)
-        with tenant_context(org.id):
-            async with async_session_factory() as session:
-                refreshed = await session.get(Atendimento, atendimento.id)
-                assert refreshed is not None
-                assert refreshed.status == StatusAtendimento.EM_ATENDIMENTO.value
-                assert refreshed.chamada_finalizada_em is None
+        async with async_session_factory() as session:
+            refreshed = await session.get(Atendimento, atendimento.id)
+            assert refreshed is not None
+            assert refreshed.status == StatusAtendimento.EM_ATENDIMENTO.value
+            assert refreshed.chamada_finalizada_em is None
 
         # Verify active consultation lock is promoted in Valkey with TTL 7200s
         consulta_lock_exists = await pool.exists(k_consulta)

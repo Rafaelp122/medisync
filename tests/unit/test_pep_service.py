@@ -167,7 +167,6 @@ async def test_pep_service_salvar_e_obter_evolucao(
     atend_id = uuid4()
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=uuid4(),
         anamnese="Paciente com febre",
         conduta="Prescrito paracetamol",
@@ -196,7 +195,6 @@ async def test_pep_service_unified_is_terminal(
     # Terminal state
     mock_atendimento_reader.obter_resumo.return_value = AtendimentoResumoDTO(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=uuid4(),
         status="CONCLUIDO",
         tcle_hash="x" * 64,
@@ -207,7 +205,6 @@ async def test_pep_service_unified_is_terminal(
     # Non-terminal state
     mock_atendimento_reader.obter_resumo.return_value = AtendimentoResumoDTO(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=uuid4(),
         status="EM_ATENDIMENTO",
         tcle_hash="x" * 64,
@@ -302,7 +299,6 @@ async def test_pep_service_finalizar_consulta_dispara_consolidacao_ambulatorial(
     paciente_id = uuid4()
 
     evolucao = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         anamnese="Paciente com tosse",
@@ -314,7 +310,6 @@ async def test_pep_service_finalizar_consulta_dispara_consolidacao_ambulatorial(
     fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
     resumo = AtendimentoResumoDTO(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=medico_id,
         paciente_id=paciente_id,
         status="EM_ATENDIMENTO",
@@ -336,7 +331,6 @@ async def test_pep_service_finalizar_consulta_dispara_consolidacao_ambulatorial(
 
     cmd = FinalizarConsultaCommand(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=medico_id,
     )
 
@@ -349,7 +343,6 @@ async def test_pep_service_finalizar_consulta_dispara_consolidacao_ambulatorial(
     # Verificação da consolidação ambulatorial BPA-I (ADR-012, US-11)
     assert len(fake_producao.consolidacoes) == 1
     consolidacao = fake_producao.consolidacoes[0]
-    assert consolidacao["organizacao_id"] == 1
     assert consolidacao["atendimento_id"] == atend_id
     assert consolidacao["profissional_id"] == medico_id
     assert consolidacao["paciente_id"] == paciente_id
@@ -364,7 +357,6 @@ async def test_pep_service_finalizar_consulta_tolera_falha_na_producao() -> None
     paciente_id = uuid4()
 
     evolucao = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         anamnese="Paciente com febre",
@@ -376,7 +368,6 @@ async def test_pep_service_finalizar_consulta_tolera_falha_na_producao() -> None
     fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
     resumo = AtendimentoResumoDTO(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=medico_id,
         paciente_id=paciente_id,
         status="EM_ATENDIMENTO",
@@ -401,7 +392,6 @@ async def test_pep_service_finalizar_consulta_tolera_falha_na_producao() -> None
 
     cmd = FinalizarConsultaCommand(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=medico_id,
     )
 
@@ -444,7 +434,6 @@ async def test_pep_warning_on_reader_obter_resumo_failure(
     medico_id = uuid4()
 
     evolucao = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         anamnese="Paciente com dor",
@@ -461,7 +450,6 @@ async def test_pep_warning_on_reader_obter_resumo_failure(
     )
     cmd = FinalizarConsultaCommand(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=medico_id,
     )
 
@@ -484,7 +472,6 @@ async def test_pep_warning_on_reader_concluir_atendimento_failure(
     paciente_id = uuid4()
 
     evolucao = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         anamnese="Paciente com febre",
@@ -494,7 +481,6 @@ async def test_pep_warning_on_reader_concluir_atendimento_failure(
     fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
     resumo = AtendimentoResumoDTO(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=medico_id,
         paciente_id=paciente_id,
         status="EM_ATENDIMENTO",
@@ -511,7 +497,6 @@ async def test_pep_warning_on_reader_concluir_atendimento_failure(
     )
     cmd = FinalizarConsultaCommand(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=medico_id,
     )
 
@@ -534,7 +519,6 @@ async def test_pep_warning_on_producao_failure_with_context(
     paciente_id = uuid4()
 
     evolucao = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         anamnese="Paciente com tosse",
@@ -545,7 +529,6 @@ async def test_pep_warning_on_producao_failure_with_context(
     fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
     resumo = AtendimentoResumoDTO(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=medico_id,
         paciente_id=paciente_id,
         status="EM_ATENDIMENTO",
@@ -563,7 +546,6 @@ async def test_pep_warning_on_producao_failure_with_context(
     )
     cmd = FinalizarConsultaCommand(
         atendimento_id=atend_id,
-        organizacao_id=1,
         medico_id=medico_id,
     )
 
@@ -588,7 +570,6 @@ async def test_finalizar_consulta_bloqueia_sem_identidade_verificada_cfm() -> No
     atend_id = uuid4()
     medico_id = uuid4()
     evolucao = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         anamnese="Cefaleia",
@@ -601,7 +582,6 @@ async def test_finalizar_consulta_bloqueia_sem_identidade_verificada_cfm() -> No
         await svc.finalizar_consulta(
             FinalizarConsultaCommand(
                 atendimento_id=atend_id,
-                organizacao_id=1,
                 medico_id=medico_id,
             )
         )
@@ -636,7 +616,7 @@ async def test_pep_service_patient_portal_empty_history_and_uuid7_docs() -> None
             return None
 
         async def listar_historico_paciente(
-            self, organizacao_id: int, paciente_id: object
+            self, paciente_id: object
         ) -> list[AtendimentoHistoricoDTO]:
             return []
 
@@ -645,18 +625,17 @@ async def test_pep_service_patient_portal_empty_history_and_uuid7_docs() -> None
         session=fake_session_empty,
         atendimento_reader=_EmptyReader(),  # pyright: ignore[reportArgumentType]
     )
-    assert await svc_empty.listar_historico_paciente(1, paciente_id_val) == []
-    assert await svc_empty.listar_documentos_paciente(1, paciente_id_val) == []
+    assert await svc_empty.listar_historico_paciente(paciente_id_val) == []
+    assert await svc_empty.listar_documentos_paciente(paciente_id_val) == []
     assert fake_session_empty.executes == 0
 
     class _OneReader(_EmptyReader):
         async def listar_historico_paciente(
-            self, organizacao_id: int, paciente_id: object
+            self, paciente_id: object
         ) -> list[AtendimentoHistoricoDTO]:
             return [
                 AtendimentoHistoricoDTO(
                     atendimento_id=atend_id,
-                    organizacao_id=1,
                     paciente_id=paciente_id_val,
                     status="CONCLUIDO",
                     prioridade_clinica=3,
@@ -666,18 +645,17 @@ async def test_pep_service_patient_portal_empty_history_and_uuid7_docs() -> None
 
     doc = DocumentoClinico(
         id=uuid7(),
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
-        chave_s3="orgs/1/consultations/doc.pdf",
+        chave_s3="consultations/doc.pdf",
     )
     fake_session_doc = FakeAsyncSession(results=[FakeResult([doc])])
     svc_doc = _build_test_pep_service(
         session=fake_session_doc,
         atendimento_reader=_OneReader(),  # pyright: ignore[reportArgumentType]
     )
-    docs = await svc_doc.listar_documentos_paciente(1, paciente_id_val)
+    docs = await svc_doc.listar_documentos_paciente(paciente_id_val)
     assert len(docs) == 1
     assert isinstance(docs[0], PacienteDocumentoItemDTO)
     assert docs[0].status_assinatura == "EMITIDO"

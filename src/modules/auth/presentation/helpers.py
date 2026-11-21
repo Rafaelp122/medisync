@@ -3,58 +3,10 @@
 from fastapi import Request, Response
 
 from src.core.config import get_settings
-from src.core.errors import ValidationError
 
 AUTH_COOKIE_NAME = "refresh_token"
 AUTH_COOKIE_PATH = "/api/v1/auth"
 DEFAULT_REFRESH_COOKIE_MAX_AGE_DAYS = 7
-
-
-def resolve_login_tenant_id(
-    body_org_id: int | None,
-    context_tenant_id: int | None,
-    *,
-    multi_tenancy_enabled: bool | None = None,
-    default_tenant_id: int | None = None,
-) -> int:
-    """Resolve organização no login respeitando modo single-tenant (anti-spoofing).
-
-    Regras: RN-AUT-01, ADR-001, ADR-003.
-    Documentação: docs/explanation/domains/auth-domain.md
-    """
-    settings = get_settings()
-    is_multi = (
-        settings.MULTI_TENANCY_ENABLED
-        if multi_tenancy_enabled is None
-        else multi_tenancy_enabled
-    )
-    if not is_multi:
-        resolved = (
-            default_tenant_id
-            if default_tenant_id is not None
-            else settings.DEFAULT_TENANT_ID
-        )
-        if resolved is not None and resolved > 0:
-            return resolved
-        raise ValidationError(
-            f"Tenant padrão '{resolved!r}' inválido no modo single-tenant; "
-            "esperado DEFAULT_TENANT_ID inteiro positivo (> 0)."
-        )
-    if body_org_id is not None:
-        if body_org_id <= 0:
-            raise ValidationError(
-                f"Identificador da organização (tenant) '{body_org_id}' inválido; "
-                "esperado valor inteiro positivo (> 0)."
-            )
-        return body_org_id
-    if context_tenant_id is not None and context_tenant_id > 0:
-        return context_tenant_id
-    raise ValidationError(
-        "Identificador da organização (tenant) inválido ou não informado "
-        f"(recebido body_org_id={body_org_id!r}, "
-        f"context_tenant_id={context_tenant_id!r}; esperado inteiro positivo > 0 "
-        "no corpo ou no cabeçalho X-Tenant-ID)."
-    )
 
 
 def resolve_cookie_secure(

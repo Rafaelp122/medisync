@@ -337,7 +337,6 @@ class PEPService:
         ):
             try:
                 await self._producao_port.consolidar_teleconsulta(
-                    organizacao_id=command.organizacao_id,
                     atendimento_id=command.atendimento_id,
                     profissional_id=command.medico_id,
                     paciente_id=resumo.paciente_id,
@@ -346,10 +345,9 @@ class PEPService:
             except Exception as exc:
                 logger.warning(
                     "Falha ao consolidar teleconsulta ambulatorial (BPA-I/SUS) "
-                    "para atendimento '%s' (org: %s, médico: %s, paciente: %s, "
+                    "para atendimento '%s' (médico: %s, paciente: %s, "
                     "sigtap: '%s'): %s",
                     command.atendimento_id,
-                    command.organizacao_id,
                     command.medico_id,
                     resumo.paciente_id,
                     evolucao.codigo_sigtap,
@@ -360,7 +358,6 @@ class PEPService:
         await self._session.flush()
         if self._audit_trail is not None:
             await self._audit_trail.record_event(
-                organizacao_id=command.organizacao_id,
                 tipo_evento="CONSULTA_FINALIZADA",
                 ator_tipo=AtorTipo.PROFISSIONAL.value,
                 ator_papel=AtorPapel.MEDICO.value,
@@ -459,31 +456,21 @@ class PEPService:
 
     async def _listar_atendimentos_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> list[AtendimentoHistoricoDTO]:
         if isinstance(self._reader, HistoricoAtendimentoReaderPort):
-            return await self._reader.listar_historico_paciente(
-                organizacao_id, paciente_id
-            )
+            return await self._reader.listar_historico_paciente(paciente_id)
         raise RuntimeError(
             "HistoricoAtendimentoReaderPort não configurado em PEPService para "
-            f"consultar histórico do paciente '{paciente_id}' na organização "
-            f"'{organizacao_id}' (reader atual: '{type(self._reader).__name__}')."
+            f"consultar histórico do paciente '{paciente_id}' "
+            f"(reader atual: '{type(self._reader).__name__}')."
         )
 
     async def _validar_titularidade_documento(
         self,
         doc: DocumentoClinico,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> None:
-        if doc.organizacao_id != organizacao_id:
-            raise ForbiddenError(
-                f"Acesso negado ao documento '{doc.id}': organização do documento "
-                f"({doc.organizacao_id}) diverge da organização do paciente "
-                f"({organizacao_id})."
-            )
         if self._reader is None:
             raise RuntimeError(
                 "AtendimentoReaderPort não configurado em PEPService para "
@@ -496,12 +483,6 @@ class PEPService:
                 f"Atendimento '{doc.atendimento_id}' vinculado ao documento "
                 f"'{doc.id}' não encontrado para o paciente '{paciente_id}'."
             )
-        if resumo.organizacao_id != organizacao_id:
-            raise ForbiddenError(
-                f"Acesso negado ao documento '{doc.id}': organização do "
-                f"atendimento ({resumo.organizacao_id}) diverge da organização "
-                f"({organizacao_id})."
-            )
         if resumo.paciente_id != paciente_id:
             raise ForbiddenError(
                 f"Acesso negado ao documento '{doc.id}': paciente '{paciente_id}' "
@@ -510,7 +491,6 @@ class PEPService:
 
     async def listar_historico_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> list[HistoricoAtendimentoItemDTO]:
         """Lista histórico de consultas do paciente com resumo SOAP finalizado.
@@ -519,23 +499,18 @@ class PEPService:
         Regras: LGPD Art. 18, CFM nº 1.821/2007 e
         docs/explanation/domains/consultation-domain.md.
         """
-        atendimentos = await self._listar_atendimentos_paciente(
-            organizacao_id, paciente_id
-        )
+        atendimentos = await self._listar_atendimentos_paciente(paciente_id)
         if not atendimentos:
             return []
 
         atendimento_ids = [item.atendimento_id for item in atendimentos]
         stmt = select(EvolucaoClinica).where(
-            EvolucaoClinica.organizacao_id == organizacao_id,
             EvolucaoClinica.atendimento_id.in_(atendimento_ids),
             EvolucaoClinica.finalizado_em.is_not(None),
         )
         res = await self._session.execute(stmt)
         evolucoes = {
-            ev.atendimento_id: ev
-            for ev in res.scalars().all()
-            if ev.organizacao_id == organizacao_id and ev.is_finalizado
+            ev.atendimento_id: ev for ev in res.scalars().all() if ev.is_finalizado
         }
         return [
             _montar_historico_item(item, evolucoes.get(item.atendimento_id))
@@ -544,18 +519,15 @@ class PEPService:
 
     async def listar_documentos_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> list[PacienteDocumentoItemDTO]:
         """Lista documentos do paciente ordenados do mais recente ao mais antigo.
 
-        Omite chaves internas S3 e aplica isolamento estrito por paciente e tenant.
+        Omite chaves internas S3 e aplica isolamento estrito por titularidade.
         Regras: LGPD Art. 18, CFM nº 2.314/2022 e
         docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
         """
-        atendimentos = await self._listar_atendimentos_paciente(
-            organizacao_id, paciente_id
-        )
+        atendimentos = await self._listar_atendimentos_paciente(paciente_id)
         if not atendimentos:
             return []
 
@@ -563,7 +535,6 @@ class PEPService:
         stmt = (
             select(DocumentoClinico)
             .where(
-                DocumentoClinico.organizacao_id == organizacao_id,
                 DocumentoClinico.atendimento_id.in_(list(atendimento_map.keys())),
             )
             .order_by(
@@ -577,8 +548,7 @@ class PEPService:
                 doc, atendimento_map[doc.atendimento_id].criado_em
             )
             for doc in res.scalars().all()
-            if doc.organizacao_id == organizacao_id
-            and doc.atendimento_id in atendimento_map
+            if doc.atendimento_id in atendimento_map
         ]
         items.sort(
             key=lambda d: (
@@ -593,12 +563,11 @@ class PEPService:
     async def compilar_pdf_para_paciente(
         self,
         documento_id: UUID,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> bytes:
         """Compila PDF/A de documento clínico após validar titularidade do paciente.
 
-        Bloqueia acesso cruzado entre pacientes ou organizações (Anti-IDOR).
+        Bloqueia acesso cruzado entre pacientes por titularidade estrita (Anti-IDOR).
         Regras: LGPD Art. 18, CFM nº 2.314/2022 e
         docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
         """
@@ -611,5 +580,5 @@ class PEPService:
                 f"para o paciente '{paciente_id}'."
             )
 
-        await self._validar_titularidade_documento(doc, organizacao_id, paciente_id)
+        await self._validar_titularidade_documento(doc, paciente_id)
         return await self.compilar_pdf(documento_id)

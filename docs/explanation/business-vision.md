@@ -15,7 +15,7 @@
 
 O **MediSync Express** é uma plataforma de código aberto concebida para operar como **Infraestrutura Nacional de Pronto-Atendimento Virtual (UPA Digital 24/7)** para demandas de saúde de baixa e média complexidade clínica, sob regime de **demanda espontânea** (sem necessidade de agendamento prévio). O objetivo central é conectar cidadãos com queixas e sintomas agudos a grandes contingentes de médicos plantonistas (generalistas ou especialistas em Medicina de Família e Comunidade) em um ambiente digital seguro, resolutivo, altamente disponível e auditável.
 
-A solução foi projetada para implantações públicas de grande escala e alta concorrência, atendendo a **redes públicas municipais, estaduais e Consórcios Públicos Intermunicipais de Saúde (Centrais de UPA Digital e Telessaúde do SUS)**.
+A solução foi projetada para implantações públicas de grande escala e alta concorrência em **plataforma única**, atendendo à demanda assistencial de UPA Digital 24/7 e Telessaúde do SUS.
 
 ### 1.1 A Esteira de Atendimento Integral
 
@@ -26,11 +26,11 @@ flowchart LR
     A["1. Acolhimento & Triagem<br/>(com TCLE Digital)"] --> B["2. Fila Dinâmica com<br/>Salvaguarda SAMU 192"]
     B --> C["3. Convocação & Teleconsulta<br/>(Vídeo + SOAP + ICP-Brasil)"]
     C --> D["4. Produção Ambulatorial SUS<br/>(BPA-I, SISAB e SIGTAP)"]
-    D --> E["5. Telemetria Operacional<br/>& Governança Consorcial"]
+    D --> E["5. Telemetria Operacional<br/>& Governança da Unidade"]
 ```
 
 > **📌 FLUXO DE VALOR ASSISTENCIAL INTEGRAL**  
-> Acolhimento & Triagem Estruturada (com TCLE Digital) ➔ Fila Dinâmica com Salvaguarda SAMU 192 ➔ Convocação e Teleconsulta Integrada (Vídeo WebRTC + Prontuário SOAP + Prescrição Digital ICP-Brasil + SIGTAP 03.01.01.025-0) ➔ Consolidação da Produção Ambulatorial SUS (BPA-I / SISAB) ➔ Telemetria Operacional, Governança Consorcial & Auditoria Médica.
+> Acolhimento & Triagem Estruturada (com TCLE Digital) ➔ Fila Dinâmica com Salvaguarda SAMU 192 ➔ Convocação e Teleconsulta Integrada (Vídeo WebRTC + Prontuário SOAP + Prescrição Digital ICP-Brasil + SIGTAP 03.01.01.025-0) ➔ Consolidação da Produção Ambulatorial SUS (BPA-I / SISAB) ➔ Telemetria Operacional, Governança da Unidade & Auditoria Médica.
 
 ---
 
@@ -65,7 +65,7 @@ A modelagem do problema e dos direcionadores de negócio baseia-se na identifica
 
 Para orientar a validação do produto no mundo real e medir o impacto direto na saúde e na gestão assistencial em larga escala, definem-se os seguintes objetivos estratégicos fundamentados na metodologia SMART:
 
-* **S (Específico)**: Disponibilizar uma plataforma de código aberto para Pronto-Atendimento Virtual 24/7 de alta concorrência capaz de absorver a demanda espontânea de atenção primária e urgências de baixa/média complexidade, desafogando a rede física de pronto-atendimento, eliminando barreiras burocráticas de entrada aos cidadãos e assegurando a sustentabilidade da gestão em saúde pública municipal e consorcial.
+* **S (Específico)**: Disponibilizar uma plataforma de código aberto para Pronto-Atendimento Virtual 24/7 de alta concorrência capaz de absorver a demanda espontânea de atenção primária e urgências de baixa/média complexidade, desafogando a rede física de pronto-atendimento, eliminando barreiras burocráticas de entrada aos cidadãos e assegurando a sustentabilidade da gestão em saúde pública na unidade.
 * **M (Mensurável — Indicadores de Desfecho Assistencial e Econômico)**:
   * **Taxa de Resolutividade Clínica no PA Virtual:** $\ge 80\%$ das queixas acolhidas resolvidas integralmente na teleconsulta, sem necessidade de encaminhamento presencial imediato para unidades físicas de urgência.
   * **Cumprimento de SLA Assistencial:** $\ge 95\%$ dos pacientes admitidos atendidos dentro da janela temporal estipulada para seu nível de triagem clínica (ACR).
@@ -106,11 +106,11 @@ Para orientar a validação do produto no mundo real e medir o impacto direto na
   * Respeito irrestrito ao seu tempo clínico: nenhuma intervenção de software pode desconectar uma consulta em andamento por atingir médias de tempo estimadas.
 
 #### 3. Patrícia Mendes (Reguladora e Coordenadora de Produção Ambulatorial SUS)
-* **Perfil**: 38 anos, sanitarista e coordenadora de regulação e produção ambulatorial do consórcio público intermunicipal de saúde.
-* **Contexto**: Gerencia a regulação do acesso dos cidadãos dos municípios consorciados e consolida os lotes de produção ambulatorial (BPA-I e SISAB) para faturamento e repasse de incentivos federais (eMulti / SUS Digital).
+* **Perfil**: 38 anos, sanitarista e coordenadora de regulação e produção ambulatorial SUS da unidade.
+* **Contexto**: Gerencia a regulação do acesso dos cidadãos e consolida os lotes de produção ambulatorial (BPA-I e SISAB) para faturamento e repasse de incentivos federais (eMulti / SUS Digital).
 * **Necessidades Críticas**:
   * Integração cadastral transparente com o CADSUS/Gov.br, garantindo a qualificação unívoca do cidadão e município de residência sem atritos na porta de entrada.
-  * Monitoramento da taxa de ocupação da escala médica compartilhada entre os municípios do consórcio, otimizando despesas sob a LRF (teto de 54%).
+  * Monitoramento da taxa de ocupação da escala médica da unidade, otimizando despesas sob a LRF (teto de 54%).
   * Fechamento e consolidação automática dos atendimentos em lotes BPA-I e alimentação do SISAB com procedimento SIGTAP `03.01.01.025-0` e CNES 160/006.
 
 #### 4. Carlos Drumond (Diretor Clínico e Gestor de Operações)
@@ -134,48 +134,44 @@ Para orientar a validação do produto no mundo real e medir o impacto direto na
 | **NEC-04** | Painel médico sem travamento e sem *overbooking* | Dr. Eduardo | Exatamente uma consulta ativa por médico; resolução determinística e liberação de tela caso paciente não atenda (*no-show*). |
 | **NEC-05** | Estação clínica unificada com assinatura digital | Dr. Eduardo | Videoconferência, histórico clínico, registro em prontuário e emissão com certificado digital ICP-Brasil em fluxo contínuo. |
 | **NEC-06** | Consolidação ambulatorial e conformidade SUS | Patrícia Mendes | Consolidação automatizada da produção ambulatorial pós-consulta (BPA-I e SISAB) sob o procedimento SIGTAP `03.01.01.025-0` e incentivo eMulti. |
-| **NEC-07** | Parametrização operacional e governança consorcial | Carlos Drumond | Ajuste dinâmico de capacidade, TMA, margem estocástica alfa e cotas de atendimento por município consorciado. |
+| **NEC-07** | Parametrização operacional e governança da unidade | Carlos Drumond | Ajuste dinâmico de capacidade, TMA, margem estocástica alfa e cotas de atendimento da unidade. |
 | **NEC-08** | Telemetria contínua e trilha de auditoria legal | Carlos Drumond | Visualização em tempo real de ocupação, abandonos e histórico imutável com carimbo de tempo para auditoria judicial. |
 
 ---
 
-## 5. Modelagem Federativa: Consórcios Intermunicipais e SUS Digital
+## 5. Modelagem 100% SUS em Plataforma Única e SUS Digital (ADR-013)
 
-Para viabilizar pronto-atendimento virtual 24/7 de alta resolutividade sem colapsar as finanças municipais, o MediSync Express adota o modelo federativo de **Consórcios Públicos de Saúde (Lei Federal nº 11.107/2005)** integrado às diretrizes do **Programa SUS Digital (Portaria GM/MS nº 3.232/2024)** e ao incentivo federal **eMulti (Portaria GM/MS nº 635/2023)**.
+Para viabilizar pronto-atendimento virtual 24/7 de alta resolutividade com máxima simplicidade operacional, o MediSync Express adota o modelo de **plataforma única** integrado às diretrizes do **Programa SUS Digital (Portaria GM/MS nº 3.232/2024)** e ao incentivo federal **eMulti (Portaria GM/MS nº 635/2023)**.
 
 ```mermaid
 flowchart TD
-    subgraph Consorcio["Consórcio Público Intermunicipal de Saúde (Lei nº 11.107/2005)"]
-        M1["Município A (Tenant 1 - RLS)"] --> Hub["Central de Regulação e Escala Médica Unificada"]
-        M2["Município B (Tenant 2 - RLS)"] --> Hub
-        M3["Município C (Tenant 3 - RLS)"] --> Hub
+    subgraph Unidade["Unidade SUS (ConfiguracaoUnidade Singleton)"]
+        Portal["Portal Cidadão & PA Digital 24/7"] --> Hub["Central Única de Regulação e Escala Médica"]
     end
 
     subgraph EsteiraSUS["Esteira Assistencial 100% SUS (Portaria MS nº 3.232/2024)"]
         Hub --> Acolhe["Acolhimento Gratuito Universal<br/>(CPF / CADSUS / Gov.br)"]
         Acolhe --> Triagem["Triagem Aberta + Salvaguarda SAMU 192<br/>(CREMESP nº 278.262/2023)"]
-        Triagem --> Fila["Fila Dinâmica Multi-Tenant com ZSET<br/>(ADR-002 / ADR-003)"]
+        Triagem --> Fila["Fila Dinâmica Única com ZSET<br/>(ADR-002 / ADR-013)"]
         Fila --> Consulta["Teleconsulta Integrada<br/>(SOAP + Prescrição ICP-Brasil + SIGTAP 03.01.01.025-0)"]
         Consulta --> Ambulatory["Produção Ambulatorial Consolidada<br/>(Lotes BPA-I, SISAB e eMulti R$ 2.500/mês)"]
     end
 ```
 
-### 5.1 O Desafio Fiscal da LRF (54%) e a Solução dos Consórcios Públicos
-O teto da Lei de Responsabilidade Fiscal (LRF - Lei Complementar nº 101/2000) limita a despesa de pessoal do Poder Executivo municipal a 54% da Receita Corrente Líquida. Em municípios de pequeno e médio porte, a manutenção de plantonistas médicos 24 horas por dia, 7 dias por semana, é financeiramente inviável de forma isolada.
-A adesão ao Consórcio Público Intermunicipal de Saúde (Lei nº 11.107/2005) permite o rateio solidário da capacidade médica contratada:
-* Uma única escala de plantão médico regional atende à demanda agregada de dezenas de municípios.
-* O custo per capita é reduzido substancialmente, permanecendo rigorosamente dentro dos limites prudenciais da LRF.
-* O rateio de despesas administrativas é complementado pelo incentivo federal eMulti de até R$ 2.500,00/mês por equipe multiprofissional em telessaúde.
+### 5.1 Otimização da Escala Médica e Sustentabilidade Fiscal
+A consolidação em plataforma única reduz atritos administrativos e viabiliza operação enxuta mesmo em redes públicas com restrições orçamentárias (LRF - Lei Complementar nº 101/2000):
+* Escala unificada de plantão médico atende de forma direta toda a demanda espontânea e agendada da unidade.
+* Redução substancial do custo operacional sem infraestrutura complexa de multi-tenancy em banco compartilhado.
+* Custeio complementado pelo incentivo federal eMulti de até R$ 2.500,00/mês por equipe multiprofissional em telessaúde.
 
 ### 5.2 Universalidade e Gratuidade no SUS Digital (Portaria MS nº 3.232/2024)
 Em conformidade com o Art. 196 da Constituição Federal e com a Portaria GM/MS nº 3.232/2024, a plataforma garante:
 * **Gratuidade Universal na Entrada**: Vedada qualquer cobrança de taxa, copagamento ou barreira financeira ao cidadão.
 * **Zero Paywall / Zero Glosas**: Não há validação de operadoras de planos de saúde, cancelando integralmente a complexidade burocrática de arquivos XML TISS/TUSS e o risco de glosas financeiras.
-* **Classificação de Ponto de Telessaúde (CNES 160/006)**: Cada polo assistencial é devidamente registrado no Cadastro Nacional de Estabelecimentos de Saúde sob a tipologia regulamentada de Telessaúde.
+* **Classificação de Ponto de Telessaúde (CNES 160/006)**: A unidade é devidamente configurada na tabela singleton `configuracoes_unidade` (CNES, CNPJ, código IBGE) sob a tipologia regulamentada de Telessaúde.
 * **Procedimento SIGTAP Canônico**: Atendimentos registram o procedimento unificado `03.01.01.025-0` (Consulta de Profissional de Nível Superior na Atenção Primária / Teleconsulta na Atenção Básica) para integração direta com o BPA-I e alimentação da base nacional do SISAB.
 
-### 5.3 Segregação Municipal Federativa via Row-Level Security (PostgreSQL RLS)
-Mesmo compartilhando a mesma infraestrutura computacional e escala médica no consórcio, o sistema garante:
-* **Isolamento de Dados Estrito (ADR-003)**: Cada município consorciado opera sob uma chave discriminadora `organizacao_id` com políticas ativas de Row-Level Security (RLS) no PostgreSQL 17.
-* **Privacidade e LGPD (Art. 11)**: Gestores e reguladores do Município A visualizam exclusivamente a fila e os prontuários de seus munícipes, eliminando qualquer risco de vazamento cruzado.
-* **Governança Consorcial Regional**: O Diretor Clínico e o Regulador Geral do consórcio mantêm visão analítica consolidada para dimensionamento dinâmico de capacidade e distribuição equitativa de plantões.
+### 5.3 Controle de Acesso RBAC e Anti-IDOR por Titularidade (ADR-013)
+Operando em plataforma única, a proteção de privacidade e dados sensíveis (LGPD Art. 11) apoia-se em:
+* **RBAC Estrito em 4 Papéis**: `GESTOR_UNIDADE`, `MEDICO`, `FATURAMENTO` e `PACIENTE`, sem papel transversal global (`ADMIN_GLOBAL` removido).
+* **Privacidade Horizontal (Anti-IDOR)**: Cidadãos visualizam apenas seus próprios atendimentos, documentos e dependentes; somente o médico alocado acessa o prontuário SOAP ativo; gestores visualizam exclusivamente telemetria agregada sem acesso ao PEP clínico.

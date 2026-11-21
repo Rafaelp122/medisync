@@ -14,7 +14,6 @@ class PacienteAusenteEvent:
     """Immutable domain event emitted when a patient does not answer in 45s."""
 
     atendimento_id: UUID
-    organizacao_id: int
     medico_id: UUID
     paciente_id: UUID
     tempo_toque_segundos: int = 45
@@ -36,9 +35,8 @@ class LoggingPacienteAusenteNotifier:
     async def emitir_paciente_ausente(self, event: PacienteAusenteEvent) -> None:
         """Logs the PACIENTE_AUSENTE event with contextual diagnostics."""
         logger.warning(
-            "Event %s: org=%d, atendimento=%s, medico=%s, paciente=%s, ring=%ds",
+            "Event %s: atendimento=%s, medico=%s, paciente=%s, ring=%ds",
             event.evento,
-            event.organizacao_id,
             event.atendimento_id,
             event.medico_id,
             event.paciente_id,

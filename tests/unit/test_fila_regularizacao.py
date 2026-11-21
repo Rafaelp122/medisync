@@ -41,12 +41,10 @@ async def test_regularizar_contingencia_sucesso_restaura_score_original_no_valke
     now = datetime.now(UTC)
     t0 = now - timedelta(minutes=30)
     t1 = now - timedelta(minutes=5)
-    org_id = 1
 
     # Paciente 1 admitido há 30 min (T0), prioridade URGENTE, retido em elegibilidade
     paciente_1 = Atendimento(
         id=uuid4(),
-        organizacao_id=org_id,
         paciente_id=uuid4(),
         status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -58,7 +56,6 @@ async def test_regularizar_contingencia_sucesso_restaura_score_original_no_valke
     # Paciente 2 admitido há 5 min (T1), prioridade URGENTE, já ativo na fila de aptos
     paciente_2 = Atendimento(
         id=uuid4(),
-        organizacao_id=org_id,
         paciente_id=uuid4(),
         status=StatusAtendimento.APTO_PARA_CHAMADA,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -68,7 +65,7 @@ async def test_regularizar_contingencia_sucesso_restaura_score_original_no_valke
 
     fake_valkey = FakeValkey()
     score_p2 = calcular_score(paciente_2.prioridade_clinica, t1)
-    await fake_valkey.zadd(f"fila:{org_id}:aptos", {str(paciente_2.id): score_p2})
+    await fake_valkey.zadd("fila:aptos", {str(paciente_2.id): score_p2})
 
     fake_session = FakeAsyncSession(
         entities={paciente_1.id: paciente_1, paciente_2.id: paciente_2}
@@ -81,7 +78,6 @@ async def test_regularizar_contingencia_sucesso_restaura_score_original_no_valke
     )
 
     cmd = RegularizacaoFilaCommand(
-        organizacao_id=org_id,
         atendimento_id=paciente_1.id,
         tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
         motivo="Indisponibilidade gateway operadora",
@@ -92,17 +88,15 @@ async def test_regularizar_contingencia_sucesso_restaura_score_original_no_valke
     assert result.promovido is True
     assert result.status == StatusAtendimento.APTO_PARA_CHAMADA.value
 
-    score_p1 = await fake_valkey.zscore(f"fila:{org_id}:aptos", str(paciente_1.id))
-    score_p2_valkey = await fake_valkey.zscore(
-        f"fila:{org_id}:aptos", str(paciente_2.id)
-    )
+    score_p1 = await fake_valkey.zscore("fila:aptos", str(paciente_1.id))
+    score_p2_valkey = await fake_valkey.zscore("fila:aptos", str(paciente_2.id))
     assert score_p1 is not None
     assert score_p2_valkey is not None
     # Score de Paciente 1 (T0) deve ser menor que o de Paciente 2 (T1) (FIFO justo)
     assert score_p1 < score_p2_valkey
 
     # Paciente 1 assume a primeira posição na fila (FIFO justo RN01)
-    rank_p1 = await fake_valkey.zrank(f"fila:{org_id}:aptos", str(paciente_1.id))
+    rank_p1 = await fake_valkey.zrank("fila:aptos", str(paciente_1.id))
     assert rank_p1 == 0
 
 
@@ -115,11 +109,9 @@ async def test_regularizar_idempotencia_duplo_acionamento() -> None:
     """
     now = datetime.now(UTC)
     t0 = now - timedelta(minutes=20)
-    org_id = 1
 
     paciente = Atendimento(
         id=uuid4(),
-        organizacao_id=org_id,
         paciente_id=uuid4(),
         status=StatusAtendimento.APTO_PARA_CHAMADA,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -129,7 +121,7 @@ async def test_regularizar_idempotencia_duplo_acionamento() -> None:
 
     fake_valkey = FakeValkey()
     score_original = calcular_score(paciente.prioridade_clinica, t0)
-    await fake_valkey.zadd(f"fila:{org_id}:aptos", {str(paciente.id): score_original})
+    await fake_valkey.zadd("fila:aptos", {str(paciente.id): score_original})
 
     fake_session = FakeAsyncSession(entities={paciente.id: paciente})
 
@@ -140,7 +132,6 @@ async def test_regularizar_idempotencia_duplo_acionamento() -> None:
     )
 
     cmd = RegularizacaoFilaCommand(
-        organizacao_id=org_id,
         atendimento_id=paciente.id,
         tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
         motivo="Segunda regularização redundante",
@@ -151,15 +142,15 @@ async def test_regularizar_idempotencia_duplo_acionamento() -> None:
     assert result.promovido is False
     assert result.status == "already_promoted"
 
-    score_atual = await fake_valkey.zscore(f"fila:{org_id}:aptos", str(paciente.id))
+    score_atual = await fake_valkey.zscore("fila:aptos", str(paciente.id))
     assert score_atual == score_original
 
 
 @pytest.mark.asyncio
-async def test_regularizar_atendimento_inexistente_ou_tenant_divergente() -> None:
-    """Tentativa de regularizar atendimento inexistente ou de outro tenant lança erro.
+async def test_regularizar_atendimento_inexistente() -> None:
+    """Tentativa de regularizar atendimento inexistente lança NotFoundError.
 
-    Regras: Isolamento Multi-tenant (ADR-001), Tratamento de Erros Ricos.
+    Regras: Tratamento de Erros Ricos (ADR-001).
     História: docs/user-stories/US-05-regularizacao-elegibilidade-fila.md
     """
     fake_valkey = FakeValkey()
@@ -170,10 +161,8 @@ async def test_regularizar_atendimento_inexistente_ou_tenant_divergente() -> Non
         alocacao_service=MagicMock(spec=AlocacaoChamadaService),
     )
 
-    # 1. Atendimento inexistente
     inexistente_id = uuid4()
     cmd_inexistente = RegularizacaoFilaCommand(
-        organizacao_id=1,
         atendimento_id=inexistente_id,
         tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
         motivo="Tentativa de regularizar atendimento inexistente",
@@ -182,35 +171,6 @@ async def test_regularizar_atendimento_inexistente_ou_tenant_divergente() -> Non
         await fila_service.regularizar_atendimento(cmd_inexistente)
 
     assert str(inexistente_id) in str(exc_inexistente.value)
-    assert "1" in str(exc_inexistente.value)
-
-    # 2. Tenant divergente (pertence ao tenant 99, comando pede tenant 1)
-    paciente_outro_tenant = Atendimento(
-        id=uuid4(),
-        organizacao_id=99,
-        paciente_id=uuid4(),
-        status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
-        prioridade_clinica=PrioridadeClinica.URGENTE,
-    )
-    fake_session_tenant = FakeAsyncSession(
-        entities={paciente_outro_tenant.id: paciente_outro_tenant}
-    )
-    fila_service_tenant = FilaService(
-        valkey=cast("Any", fake_valkey),
-        db_session=cast("Any", fake_session_tenant),
-        alocacao_service=MagicMock(spec=AlocacaoChamadaService),
-    )
-    cmd_divergente = RegularizacaoFilaCommand(
-        organizacao_id=1,
-        atendimento_id=paciente_outro_tenant.id,
-        tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
-        motivo="Tentativa cross-tenant indevida",
-    )
-    with pytest.raises(NotFoundError) as exc_divergente:
-        await fila_service_tenant.regularizar_atendimento(cmd_divergente)
-
-    assert str(paciente_outro_tenant.id) in str(exc_divergente.value)
-    assert "1" in str(exc_divergente.value)
 
 
 @pytest.mark.asyncio
@@ -222,7 +182,6 @@ async def test_regularizar_status_invalido_rejeita_com_offending_value() -> None
     """
     paciente_em_atendimento = Atendimento(
         id=uuid4(),
-        organizacao_id=1,
         paciente_id=uuid4(),
         status=StatusAtendimento.EM_ATENDIMENTO,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -239,7 +198,6 @@ async def test_regularizar_status_invalido_rejeita_com_offending_value() -> None
     )
 
     cmd = RegularizacaoFilaCommand(
-        organizacao_id=1,
         atendimento_id=paciente_em_atendimento.id,
         tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
         motivo="Tentativa de regularizar atendimento já em consulta médica",
@@ -260,7 +218,6 @@ async def test_regularizar_motivo_vazio_lanca_validation_error() -> None:
     """
     paciente = Atendimento(
         id=uuid4(),
-        organizacao_id=1,
         paciente_id=uuid4(),
         status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -277,7 +234,6 @@ async def test_regularizar_motivo_vazio_lanca_validation_error() -> None:
     for motivo_invalido in ["", "   ", "\t  \n"]:
         with pytest.raises(ValidationError):
             cmd = RegularizacaoFilaCommand(
-                organizacao_id=1,
                 atendimento_id=paciente.id,
                 tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
                 motivo=motivo_invalido,
@@ -294,7 +250,6 @@ async def test_regularizar_reenvio_convenio_enfileira_tarefa_assincrona() -> Non
     """
     paciente = Atendimento(
         id=uuid4(),
-        organizacao_id=1,
         paciente_id=uuid4(),
         status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -314,7 +269,6 @@ async def test_regularizar_reenvio_convenio_enfileira_tarefa_assincrona() -> Non
     )
 
     cmd = RegularizacaoFilaCommand(
-        organizacao_id=1,
         atendimento_id=paciente.id,
         tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
         motivo="Liberação assistencial imediata pelo acolhimento SUS",
@@ -332,7 +286,6 @@ async def test_regularizar_atendimento_registra_audit_trail_sem_refresh() -> Non
     """Record ELEGIBILIDADE_CONFIRMADA before commit without refresh."""
     paciente = Atendimento(
         id=uuid4(),
-        organizacao_id=1,
         paciente_id=uuid4(),
         status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -351,7 +304,6 @@ async def test_regularizar_atendimento_registra_audit_trail_sem_refresh() -> Non
 
     await fila_service.regularizar_atendimento(
         RegularizacaoFilaCommand(
-            organizacao_id=1,
             atendimento_id=paciente.id,
             tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
             motivo="Paciente regularizou documento no acolhimento",

@@ -120,10 +120,6 @@ class CommonSettings(BaseSettings):
     PSC_CLIENT_ID: str = "medisync-psc-client"
     PSC_CLIENT_SECRET: str = "dev-psc-secret"
 
-    # --- Multi-Tenancy & Single-Tenant Mode (ADR-003 / ADR-009) ---
-    MULTI_TENANCY_ENABLED: bool = True
-    DEFAULT_TENANT_ID: int | None = None
-
     # --- Facial Liveness (US-15 / Portaria 344/98 Lista C1/C5) ---
     LIVENESS_PROVIDER: Literal["valkey_sandbox", "mock", "govbr", "datavalid"] = (
         "valkey_sandbox"
@@ -131,24 +127,6 @@ class CommonSettings(BaseSettings):
 
     # --- Gov.br OIDC (Optional Feature Flag) ---
     GOVBR_OIDC_ENABLED: bool = False
-
-    @model_validator(mode="after")
-    def validate_multi_tenancy_config(self) -> Self:
-        """Enforce explicit DEFAULT_TENANT_ID only when multi-tenancy is disabled."""
-        if self.MULTI_TENANCY_ENABLED:
-            if self.DEFAULT_TENANT_ID is not None:
-                raise ValueError(
-                    f"DEFAULT_TENANT_ID={self.DEFAULT_TENANT_ID!r} não pode ser "
-                    "definido quando MULTI_TENANCY_ENABLED=True; fallback "
-                    "silencioso é proibido."
-                )
-            return self
-        if self.DEFAULT_TENANT_ID is None or self.DEFAULT_TENANT_ID <= 0:
-            raise ValueError(
-                f"DEFAULT_TENANT_ID={self.DEFAULT_TENANT_ID!r} inválido quando "
-                "MULTI_TENANCY_ENABLED=False; esperado inteiro >= 1."
-            )
-        return self
 
     @computed_field  # pyright: ignore[reportUntypedFunctionDecorator]
     @property

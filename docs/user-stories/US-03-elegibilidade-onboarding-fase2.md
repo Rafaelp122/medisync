@@ -47,7 +47,7 @@
 ## 3. Contrato de API
 
 * **Endpoint:** `POST /api/v1/onboarding/fase-2`
-* **Headers:** `X-Tenant-ID: <org_id>`, `Authorization: Bearer <token_intake_ou_jwt>`
+* **Headers:** `Authorization: Bearer <token_intake_ou_jwt>`
 * **Payload de Entrada (`OnboardingFase2Request`):**
   ```json
   {

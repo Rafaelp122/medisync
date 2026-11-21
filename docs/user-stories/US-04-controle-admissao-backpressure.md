@@ -62,7 +62,7 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Cota Diária Atômica:** Chave Valkey `queue:admissoes:{org}:{today}` consultada e incrementada atomicamente (`src/modules/queue/application/services/controle_admissao_service.py`).
+- [x] **Cota Diária Atômica:** Chave Valkey `queue:admissoes:{today}` consultada e incrementada atomicamente (`src/modules/queue/application/services/controle_admissao_service.py`).
 - [x] **Fórmula Estocástica $\alpha$:** Avaliação de $\alpha \in [1{,}20; 1{,}30]$ implementada em `ControleAdmissaoService.avaliar_capacidade()`.
 - [x] **Evento de Transbordo:** Emissão de `QUEUE_OVERFLOW_TRANSIT` disparada ao exceder limites.
 - [x] **Testes Automatizados:**

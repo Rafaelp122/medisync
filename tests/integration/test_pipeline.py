@@ -2,7 +2,6 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel, Field
-from src.core.context import get_current_tenant_id
 from src.core.errors import ConflictError, NotFoundError
 from src.core.uuid7 import is_valid_uuid, uuid7_str
 from src.main import create_app
@@ -34,10 +33,6 @@ def app_with_routes() -> FastAPI:
     @test_app.get("/test/unhandled-error")
     async def route_unhandled_error() -> None:
         raise RuntimeError("Secret database password / catastrophic crash")
-
-    @test_app.get("/test/tenant-check")
-    async def route_tenant_check() -> dict[str, int | None]:
-        return {"tenant_id": get_current_tenant_id()}
 
     return test_app
 
@@ -85,32 +80,6 @@ async def test_replaces_invalid_incoming_request_id(
         req_id = res.headers["x-request-id"]
         assert req_id != "invalid-non-uuid"
         assert is_valid_uuid(req_id)
-
-
-@pytest.mark.asyncio
-async def test_tenant_resolution_via_header(
-    app_with_routes: FastAPI,
-) -> None:
-    async with AsyncClient(
-        transport=ASGITransport(app=app_with_routes), base_url="http://test"
-    ) as client:
-        res = await client.get("/test/tenant-check", headers={"X-Tenant-ID": "505"})
-        assert res.status_code == 200
-        assert res.json()["tenant_id"] == 505
-
-
-@pytest.mark.asyncio
-async def test_tenant_resolution_via_subdomain(
-    app_with_routes: FastAPI,
-) -> None:
-    async with AsyncClient(
-        transport=ASGITransport(app=app_with_routes), base_url="http://test"
-    ) as client:
-        res = await client.get(
-            "/test/tenant-check", headers={"Host": "tenant-88.medisync.local"}
-        )
-        assert res.status_code == 200
-        assert res.json()["tenant_id"] == 88
 
 
 @pytest.mark.asyncio

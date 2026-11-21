@@ -28,9 +28,8 @@ A validação ocorre antes de `websocket.accept()` (`validar_ws_queue_token` e `
 
 1. **Token Provisório de Acolhimento (HMAC-SHA256, 2 partes):** Emitido durante a triagem inicial do paciente. Permite acesso exclusivo ao atendimento correspondente.
 2. **Token JWT de Acesso (3 partes):** Emitido no login de usuário cadastrado.
-   - Paciente: papel `PACIENTE` com checagem de posse ReBAC (`PatientQueueOwnershipChecker`) vinculando `paciente_id` ao `atendimento_id`.
-   - Administrador: papel `ADMIN_GLOBAL` possui permissão irrestrita de observabilidade.
-   - Médico: papel `MEDICO` onde `usuario_id` deve coincidir estritamente com `medico_id` da rota.
+   - Paciente: papel `PACIENTE` com checagem de posse Anti-IDOR (`PatientQueueOwnershipChecker`) vinculando `paciente_id` ao `atendimento_id`.
+   - Médico: papel `MEDICO` onde `usuario_id` deve coincidir estritamente com `medico_id` da rota (sem bypass administrativo horizontal).
 3. **Códigos de Rejeição WS:**
    - `4401`: Token ausente, assinatura inválida, formato corrompido ou token revogado.
    - `4403`: Papel não autorizado ou paciente sem posse sobre o atendimento.

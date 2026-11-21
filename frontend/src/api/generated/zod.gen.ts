@@ -27,7 +27,6 @@ export const zAdmissaoRequest = z.object({
 export const zAdmissaoResponse = z.object({
     atendimento_id: z.uuid(),
     triagem_id: z.uuid(),
-    organizacao_id: z.int(),
     paciente_id: z.uuid(),
     status_atendimento: z.string(),
     prioridade_clinica: z.int(),
@@ -43,7 +42,6 @@ export const zAdmissaoResponse = z.object({
  */
 export const zAgendamentoResponse = z.object({
     id: z.uuid(),
-    organizacao_id: z.int(),
     paciente_id: z.uuid(),
     profissional_id: z.uuid(),
     especialidade: z.string(),
@@ -173,7 +171,6 @@ export const zConfigPlantaoRequest = z.object({
  */
 export const zConfigPlantaoResponse = z.object({
     id: z.uuid(),
-    organizacao_id: z.int(),
     medicos_ativos_planejados: z.int(),
     alpha_backpressure: z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/),
     cota_diaria_maxima: z.int().nullable(),
@@ -255,7 +252,6 @@ export const zDependenteDetalheResponse = z.object({
  */
 export const zDependenteResponse = z.object({
     id: z.uuid(),
-    organizacao_id: z.int(),
     titular_id: z.uuid(),
     dependente_id: z.uuid(),
     grau_parentesco: z.string(),
@@ -269,7 +265,6 @@ export const zDependenteResponse = z.object({
  */
 export const zDisponibilidadeResponse = z.object({
     id: z.uuid(),
-    organizacao_id: z.int(),
     profissional_id: z.uuid(),
     especialidade: z.string(),
     dia_semana: z.int(),
@@ -299,7 +294,6 @@ export const zEspecialidadeResponse = z.object({
 export const zEvolucaoSoapResponse = z.object({
     id: z.uuid(),
     atendimento_id: z.uuid(),
-    organizacao_id: z.int(),
     medico_id: z.uuid(),
     anamnese: z.string(),
     exame_fisico_virtual: z.string().nullable(),
@@ -387,15 +381,6 @@ export const zFase2Response = z.object({
     estado: z.string(),
     alergias: z.array(z.string()),
     status: z.string()
-});
-
-/**
- * FinalizarConsultaRequest
- *
- * Payload to conclude attendance and lock PEP records.
- */
-export const zFinalizarConsultaRequest = z.object({
-    organizacao_id: z.int().nullish()
 });
 
 /**
@@ -497,8 +482,7 @@ export const zEmitirDocumentoRequest = z.object({
     sha256_hash: z.string().nullish(),
     justificativa_tempo_inferior: z.string().nullish(),
     liveness_verificacao_hash: z.string().max(128).nullish(),
-    justificativa_excecao_liveness: z.string().max(500).nullish(),
-    organizacao_id: z.int().nullish()
+    justificativa_excecao_liveness: z.string().max(500).nullish()
 });
 
 /**
@@ -523,7 +507,6 @@ export const zItemPrescricaoResponse = z.object({
 export const zDocumentoClinicoResponse = z.object({
     id: z.uuid(),
     atendimento_id: z.uuid(),
-    organizacao_id: z.int(),
     medico_id: z.uuid(),
     tipo_documento: z.string(),
     chave_s3: z.string(),
@@ -559,7 +542,6 @@ export const zListaProducaoAmbulatorialResponse = z.object({
     items: z.array(zBpaProducaoItemResponse),
     total: z.int(),
     competencia: z.string(),
-    organizacao_id: z.int(),
     page: z.int(),
     size: z.int()
 });
@@ -570,7 +552,6 @@ export const zListaProducaoAmbulatorialResponse = z.object({
  * Payload to request an authenticated LiveKit room access token.
  */
 export const zLiveKitTokenRequest = z.object({
-    organizacao_id: z.int().nullish(),
     participant_id: z.uuid(),
     role: z.enum(['medico', 'paciente']),
     participant_name: z.string().nullish(),
@@ -642,8 +623,7 @@ export const zLoginPacienteSenhaRequest = z.object({
  */
 export const zLoginRequest = z.object({
     identificador: z.string().min(3).max(255),
-    senha: z.string().min(1).max(128),
-    organizacao_id: z.int().nullish()
+    senha: z.string().min(1).max(128)
 });
 
 /**
@@ -730,7 +710,6 @@ export const zPacienteDocumentoItemResponse = z.object({
  * Aggregated operational telemetry dashboard response (RF-10).
  */
 export const zPainelTelemetriaResponse = z.object({
-    organizacao_id: z.int(),
     gerado_em: z.iso.datetime(),
     tme_medio_segundos: z.number(),
     tme_nivel_1_segundos: z.number(),
@@ -864,8 +843,7 @@ export const zRegistrarSoapRequest = z.object({
         'CPF_FOTO',
         'EXCECAO_CLINICA'
     ]).nullish(),
-    justificativa_excecao_identidade: z.string().max(500).nullish(),
-    organizacao_id: z.int().nullish()
+    justificativa_excecao_identidade: z.string().max(500).nullish()
 });
 
 /**
@@ -961,7 +939,6 @@ export const zTokenResponse = z.object({
  */
 export const zUsuarioPerfilResponse = z.object({
     usuario_id: z.uuid(),
-    organizacao_id: z.int(),
     identificador: z.string(),
     papel: z.string(),
     ativo: z.boolean()
@@ -1051,7 +1028,6 @@ export const zValkeyHealth = z.object({
 export const zHealthCheckResponse = z.object({
     status: z.string(),
     version: z.string(),
-    tenant_id: z.int().nullable(),
     request_id: z.string().nullable(),
     valkey: zValkeyHealth.nullish()
 });
@@ -1533,8 +1509,6 @@ export const zVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescrip
  * Successful Response
  */
 export const zVerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponse = zLivenessVerifyResponse;
-
-export const zFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostBody = zFinalizarConsultaRequest;
 
 export const zFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostPath = z.object({
     atendimento_id: z.uuid()

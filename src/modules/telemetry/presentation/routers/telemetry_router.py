@@ -4,7 +4,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, status
 
-from src.core.dependencies import TenantDep
 from src.modules.telemetry.composition import (
     ConfigPlantaoServiceDep,
     TelemetryServiceDep,
@@ -36,7 +35,6 @@ telemetry_router = APIRouter(
     ),
 )
 async def obter_painel_telemetria(
-    tenant_id: TenantDep,
     telemetry_service: TelemetryServiceDep,
     _auth: TelemetryViewAuthDep,
     desconsiderar_cache: Annotated[
@@ -46,7 +44,6 @@ async def obter_painel_telemetria(
 ) -> PainelTelemetriaResponse:
     """Fetch aggregated shift operational metrics and SLA compliance."""
     dto = await telemetry_service.obter_painel(
-        organizacao_id=tenant_id,
         desconsiderar_cache=desconsiderar_cache,
     )
     return PainelTelemetriaResponse.model_validate(dto)
@@ -57,18 +54,17 @@ async def obter_painel_telemetria(
     status_code=status.HTTP_200_OK,
     summary="Consulta parametrização de políticas do plantão (RF-09)",
     description=(
-        "Consulta os parâmetros ativos do plantão para a organização "
+        "Consulta os parâmetros ativos do plantão da plataforma "
         "(médicos planejados, fator alpha, cota diária, TMA padrão e metas de SLA). "
         "Se inexistente, inicializa e persiste a configuração default."
     ),
 )
 async def obter_configuracao_plantao(
-    tenant_id: TenantDep,
     config_service: ConfigPlantaoServiceDep,
     _auth: TelemetryConfigAuthDep,
 ) -> ConfigPlantaoResponse:
-    """Query current shift configuration policies for the organization."""
-    dto = await config_service.obter_configuracao(organizacao_id=tenant_id)
+    """Query current singleton shift configuration policies."""
+    dto = await config_service.obter_configuracao()
     return ConfigPlantaoResponse.model_validate(dto)
 
 
@@ -77,21 +73,17 @@ async def obter_configuracao_plantao(
     status_code=status.HTTP_200_OK,
     summary="Atualiza parametrização de políticas do plantão (RF-09)",
     description=(
-        "Atualiza as políticas e metas de SLA do plantão para a organização, "
+        "Atualiza as políticas e metas de SLA do plantão da plataforma, "
         "validando limites e invariantes de domínio, invalidando o cache do painel "
         "e persistindo as alterações atomicamente."
     ),
 )
 async def atualizar_configuracao_plantao(
     body: Annotated[ConfigPlantaoRequest, Body()],
-    tenant_id: TenantDep,
     config_service: ConfigPlantaoServiceDep,
     auth: TelemetryConfigAuthDep,
 ) -> ConfigPlantaoResponse:
     """Update shift operational parameters and SLA thresholds."""
-    cmd = body.to_command(
-        organizacao_id=tenant_id,
-        atualizado_por_id=auth.usuario_id,
-    )
+    cmd = body.to_command(atualizado_por_id=auth.usuario_id)
     dto = await config_service.atualizar_configuracao(cmd)
     return ConfigPlantaoResponse.model_validate(dto)

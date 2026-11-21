@@ -25,17 +25,17 @@ def test_valkey_health_frozen_and_valid() -> None:
 
 
 def test_healthcheck_response_frozen_and_valid() -> None:
-    """Verifica instanciação e imutabilidade de HealthCheckResponse."""
+    """Verifica instanciação e imutabilidade de HealthCheckResponse sem tenant_id."""
+    assert "tenant_id" not in HealthCheckResponse.model_fields
     vh = ValkeyHealth(status="ok", ping=True)
     resp = HealthCheckResponse(
         status="ok",
         version="0.1.0",
-        tenant_id=42,
         request_id="0192e100-0000-7000-8000-000000000001",
         valkey=vh,
     )
     assert resp.status == "ok"
-    assert resp.tenant_id == 42
+    assert resp.request_id == "0192e100-0000-7000-8000-000000000001"
     assert resp.valkey is not None
     assert resp.valkey.ping is True
 

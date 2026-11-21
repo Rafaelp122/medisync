@@ -29,13 +29,12 @@ async def test_lua_preload_scripts_on_live_valkey() -> None:
 async def test_alocar_chamada_adr002_scenarios() -> None:
     """Verify all four return states of ADR-002 alocar_chamada.lua."""
     manager = get_lua_script_manager()
-    org_id = 999
     medico_id = "01924b11-1111-7000-8000-000000000001"
     atendimento_id = "01924b22-2222-7000-8000-000000000002"
 
-    k_medico_lock = f"lock:{org_id}:medico:{medico_id}"
-    k_atend_lock = f"lock:{org_id}:atendimento:{atendimento_id}"
-    k_fila = f"fila:{org_id}:aptos"
+    k_medico_lock = f"lock:medico:{medico_id}"
+    k_atend_lock = f"lock:atendimento:{atendimento_id}"
+    k_fila = "fila:aptos"
 
     async for client in get_valkey_client():
         # Setup: clear previous state
@@ -108,10 +107,9 @@ async def test_alocar_chamada_adr002_scenarios() -> None:
 async def test_alocar_chamada_race_condition_zero_overbooking() -> None:
     """Stress test: 20 doctors simultaneously calling same patient = 1 winner."""
     manager = get_lua_script_manager()
-    org_id = 999
     atendimento_id = "01924b33-3333-7000-8000-000000000003"
-    k_fila = f"fila:{org_id}:aptos"
-    k_atend_lock = f"lock:{org_id}:atendimento:{atendimento_id}"
+    k_fila = "fila:aptos"
+    k_atend_lock = f"lock:atendimento:{atendimento_id}"
 
     async for client in get_valkey_client():
         # Setup: put single patient in queue
@@ -123,7 +121,7 @@ async def test_alocar_chamada_race_condition_zero_overbooking() -> None:
 
         async def attempt_call(doc_idx: int, cl: Redis = client) -> int:
             doc_id = f"doc-{doc_idx}"
-            k_doc = f"lock:{org_id}:medico:{doc_id}"
+            k_doc = f"lock:medico:{doc_id}"
             await cl.delete(k_doc)
             res = await manager.execute_script(
                 client=cl,
@@ -154,12 +152,11 @@ async def test_alocar_chamada_race_condition_zero_overbooking() -> None:
 async def test_lua_manager_self_healing_after_script_flush() -> None:
     """Verify LuaScriptManager automatically recovers when Valkey flushes scripts."""
     manager = get_lua_script_manager()
-    org_id = 999
     medico_id = "doc-heal"
     atendimento_id = "atend-heal"
-    k_medico_lock = f"lock:{org_id}:medico:{medico_id}"
-    k_atend_lock = f"lock:{org_id}:atendimento:{atendimento_id}"
-    k_fila = f"fila:{org_id}:aptos"
+    k_medico_lock = f"lock:medico:{medico_id}"
+    k_atend_lock = f"lock:atendimento:{atendimento_id}"
+    k_fila = "fila:aptos"
 
     async for client in get_valkey_client():
         # Setup

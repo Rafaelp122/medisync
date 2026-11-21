@@ -48,22 +48,20 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 _JWT_SECRET = "test-webauthn-secret-key-min-32-chars-ok"
-_ORG_ID = 1
 _RP_ID = "medisync.app"
 
 
 class FakeActiveAttendanceLookup(ActiveAttendanceLookupPort):
     """Named in-memory double implementing ActiveAttendanceLookupPort."""
 
-    def __init__(self, active_map: dict[tuple[int, UUID], UUID] | None = None) -> None:
+    def __init__(self, active_map: dict[UUID, UUID] | None = None) -> None:
         self._active_map = dict(active_map or {})
 
     async def buscar_atendimento_ativo_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> UUID | None:
-        return self._active_map.get((organizacao_id, paciente_id))
+        return self._active_map.get(paciente_id)
 
 
 def _b64url(data: bytes) -> str:
@@ -212,7 +210,6 @@ async def test_gerar_opcoes_registro_usa_dados_paciente_e_persiste_desafio() -> 
     reader = FakeIdentityReader(
         paciente=PacienteAuthLookupData(
             id=paciente_id,
-            organizacao_id=_ORG_ID,
             telefone="11999990000",
             cpf="12345678901",
             nome_completo="Maria da Silva",
@@ -220,7 +217,7 @@ async def test_gerar_opcoes_registro_usa_dados_paciente_e_persiste_desafio() -> 
     )
     svc = _make_service(identity_reader=reader)
 
-    options = await svc.gerar_opcoes_registro(_ORG_ID, paciente_id)
+    options = await svc.gerar_opcoes_registro(paciente_id)
 
     assert len(options.challenge) >= 20
     assert options.rp.id == "medisync.app"
@@ -236,7 +233,6 @@ async def test_verificar_registro_sucesso_persiste_passkey_e_auditoria() -> None
     reader = FakeIdentityReader(
         paciente=PacienteAuthLookupData(
             id=paciente_id,
-            organizacao_id=_ORG_ID,
             telefone="11999990000",
             cpf="12345678901",
             nome_completo="Maria da Silva",
@@ -251,10 +247,9 @@ async def test_verificar_registro_sucesso_persiste_passkey_e_auditoria() -> None
     )
     private_key, pub_spki_b64 = _generate_es256_keypair()
 
-    options = await svc.gerar_opcoes_registro(_ORG_ID, paciente_id)
+    options = await svc.gerar_opcoes_registro(paciente_id)
     assert options.authenticatorSelection.residentKey == "required"
     cmd = WebAuthnRegisterVerifyCommand(
-        organizacao_id=_ORG_ID,
         paciente_id=paciente_id,
         id="cred-us14-001",
         raw_id="cred-us14-001",
@@ -269,7 +264,7 @@ async def test_verificar_registro_sucesso_persiste_passkey_e_auditoria() -> None
 
     assert result.status == "registrado"
     assert result.credencial_id == "cred-us14-001"
-    saved = await reader.buscar_passkey_por_credencial(_ORG_ID, "cred-us14-001")
+    saved = await reader.buscar_passkey_por_credencial("cred-us14-001")
     assert saved is not None
     assert saved.paciente_id == paciente_id
     assert saved.public_key == pub_spki_b64
@@ -286,7 +281,6 @@ async def test_verificar_registro_rejeita_replay_e_desafio_divergente() -> None:
     _, pub_spki_b64 = _generate_es256_keypair()
 
     without_challenge = WebAuthnRegisterVerifyCommand(
-        organizacao_id=_ORG_ID,
         paciente_id=paciente_id,
         id="cred-x",
         raw_id="cred-x",
@@ -298,9 +292,8 @@ async def test_verificar_registro_rejeita_replay_e_desafio_divergente() -> None:
     with pytest.raises(WebAuthnChallengeInvalidoError, match="ausente ou expirado"):
         await svc.verificar_registro(without_challenge)
 
-    options = await svc.gerar_opcoes_registro(_ORG_ID, paciente_id)
+    options = await svc.gerar_opcoes_registro(paciente_id)
     mismatched = WebAuthnRegisterVerifyCommand(
-        organizacao_id=_ORG_ID,
         paciente_id=paciente_id,
         id="cred-x",
         raw_id="cred-x",
@@ -314,9 +307,7 @@ async def test_verificar_registro_rejeita_replay_e_desafio_divergente() -> None:
     with pytest.raises(WebAuthnChallengeInvalidoError, match="divergente"):
         await svc.verificar_registro(mismatched)
 
-    # Challenge was consumed once; replaying with original challenge must also fail.
     replay = WebAuthnRegisterVerifyCommand(
-        organizacao_id=_ORG_ID,
         paciente_id=paciente_id,
         id="cred-x",
         raw_id="cred-x",
@@ -335,10 +326,9 @@ async def test_verificar_registro_rejeita_client_data_json_sem_challenge() -> No
     paciente_id = uuid7()
     reader = FakeIdentityReader()
     svc = _make_service(identity_reader=reader)
-    await svc.gerar_opcoes_registro(_ORG_ID, paciente_id)
+    await svc.gerar_opcoes_registro(paciente_id)
 
     empty_response_cmd = WebAuthnRegisterVerifyCommand(
-        organizacao_id=_ORG_ID,
         paciente_id=paciente_id,
         id="cred-empty",
         raw_id="cred-empty",
@@ -363,16 +353,13 @@ async def test_autenticacao_passkey_1_toque_emite_jwt_e_atendimento(
         private_key, pub_spki_b64 = _generate_es256_keypair()
         reader = FakeIdentityReader()
         await reader.registrar_passkey_paciente(
-            organizacao_id=_ORG_ID,
             paciente_id=paciente_id,
             credential_id="cred-1tap-abc",
             public_key=pub_spki_b64,
             sign_count=1,
             device_name="iPhone FaceID",
         )
-        active_lookup = FakeActiveAttendanceLookup(
-            {(_ORG_ID, paciente_id): atendimento_id}
-        )
+        active_lookup = FakeActiveAttendanceLookup({paciente_id: atendimento_id})
         audit = FakeAuditTrail()
         session = FakeAsyncSession()
         svc = _make_service(
@@ -382,14 +369,10 @@ async def test_autenticacao_passkey_1_toque_emite_jwt_e_atendimento(
             session=session,
         )
 
-        auth_opts = await svc.gerar_opcoes_autenticacao(
-            organizacao_id=_ORG_ID,
-            paciente_id=paciente_id,
-        )
+        auth_opts = await svc.gerar_opcoes_autenticacao(paciente_id=paciente_id)
         assert [c.id for c in auth_opts.allowCredentials] == ["cred-1tap-abc"]
 
         verify_cmd = WebAuthnAuthVerifyCommand(
-            organizacao_id=_ORG_ID,
             id="cred-1tap-abc",
             raw_id="cred-1tap-abc",
             response=_build_signed_assertion(
@@ -402,15 +385,13 @@ async def test_autenticacao_passkey_1_toque_emite_jwt_e_atendimento(
 
         decoded = decode_access_token(out.access_token)
         assert decoded.usuario_id == paciente_id
-        assert decoded.organizacao_id == _ORG_ID
+        assert not hasattr(decoded, "organizacao_id")
         assert decoded.papel == "PACIENTE"
         assert out.atendimento_id == atendimento_id
         assert out.role == "PACIENTE"
         assert session.commits == 1
         assert len(audit.get_events_by_type("LOGIN_PASSKEY_SUCESSO")) == 1
-        updated_pk = await reader.buscar_passkey_por_credencial(
-            _ORG_ID, "cred-1tap-abc"
-        )
+        updated_pk = await reader.buscar_passkey_por_credencial("cred-1tap-abc")
         assert updated_pk is not None
         assert updated_pk.sign_count == 2
     finally:
@@ -425,7 +406,6 @@ async def test_autenticacao_passkey_bloqueia_assinatura_ou_sign_count() -> None:
     wrong_private_key, _ = _generate_es256_keypair()
     reader = FakeIdentityReader()
     await reader.registrar_passkey_paciente(
-        organizacao_id=_ORG_ID,
         paciente_id=paciente_id,
         credential_id="cred-sec-01",
         public_key=pub_spki_b64,
@@ -434,10 +414,8 @@ async def test_autenticacao_passkey_bloqueia_assinatura_ou_sign_count() -> None:
     )
     svc = _make_service(identity_reader=reader)
 
-    # 1. Forged signature with wrong keypair
-    opts1 = await svc.gerar_opcoes_autenticacao(_ORG_ID, paciente_id)
+    opts1 = await svc.gerar_opcoes_autenticacao(paciente_id)
     forged_cmd = WebAuthnAuthVerifyCommand(
-        organizacao_id=_ORG_ID,
         id="cred-sec-01",
         raw_id="cred-sec-01",
         response=_build_signed_assertion(
@@ -447,10 +425,8 @@ async def test_autenticacao_passkey_bloqueia_assinatura_ou_sign_count() -> None:
     with pytest.raises(WebAuthnChallengeInvalidoError, match="assinatura"):
         await svc.verificar_autenticacao(forged_cmd)
 
-    # 2. Cloned authenticator regression (sign_count <= 5)
-    opts2 = await svc.gerar_opcoes_autenticacao(_ORG_ID, paciente_id)
+    opts2 = await svc.gerar_opcoes_autenticacao(paciente_id)
     cloned_cmd = WebAuthnAuthVerifyCommand(
-        organizacao_id=_ORG_ID,
         id="cred-sec-01",
         raw_id="cred-sec-01",
         response=_build_signed_assertion(private_key, opts2.challenge, sign_count=5),
@@ -461,21 +437,19 @@ async def test_autenticacao_passkey_bloqueia_assinatura_ou_sign_count() -> None:
 
 @pytest.mark.asyncio
 async def test_autenticacao_passkeys_concorrentes_nao_sobrescrevem_desafio() -> None:
-    """Two simultaneous authentication ceremonies in the same org must both succeed."""
+    """Two simultaneous authentication ceremonies must both succeed."""
     p1_id = uuid7()
     p2_id = uuid7()
     k1, pub1 = _generate_es256_keypair()
     k2, pub2 = _generate_es256_keypair()
     reader = FakeIdentityReader()
     await reader.registrar_passkey_paciente(
-        organizacao_id=_ORG_ID,
         paciente_id=p1_id,
         credential_id="cred-p1",
         public_key=pub1,
         sign_count=0,
     )
     await reader.registrar_passkey_paciente(
-        organizacao_id=_ORG_ID,
         paciente_id=p2_id,
         credential_id="cred-p2",
         public_key=pub2,
@@ -483,12 +457,11 @@ async def test_autenticacao_passkeys_concorrentes_nao_sobrescrevem_desafio() -> 
     )
     svc = _make_service(identity_reader=reader)
 
-    opts_p1 = await svc.gerar_opcoes_autenticacao(_ORG_ID, p1_id)
-    opts_p2 = await svc.gerar_opcoes_autenticacao(_ORG_ID, p2_id)
+    opts_p1 = await svc.gerar_opcoes_autenticacao(p1_id)
+    opts_p2 = await svc.gerar_opcoes_autenticacao(p2_id)
 
     res1 = await svc.verificar_autenticacao(
         WebAuthnAuthVerifyCommand(
-            organizacao_id=_ORG_ID,
             id="cred-p1",
             raw_id="cred-p1",
             response=_build_signed_assertion(k1, opts_p1.challenge, sign_count=1),
@@ -496,7 +469,6 @@ async def test_autenticacao_passkeys_concorrentes_nao_sobrescrevem_desafio() -> 
     )
     res2 = await svc.verificar_autenticacao(
         WebAuthnAuthVerifyCommand(
-            organizacao_id=_ORG_ID,
             id="cred-p2",
             raw_id="cred-p2",
             response=_build_signed_assertion(k2, opts_p2.challenge, sign_count=1),
@@ -511,10 +483,9 @@ async def test_autenticacao_passkey_inexistente_rejeitada() -> None:
     """Unknown credential_id must raise PasskeyNaoEncontradaError (401)."""
     reader = FakeIdentityReader()
     svc = _make_service(identity_reader=reader)
-    auth_opts = await svc.gerar_opcoes_autenticacao(_ORG_ID)
+    auth_opts = await svc.gerar_opcoes_autenticacao()
 
     cmd = WebAuthnAuthVerifyCommand(
-        organizacao_id=_ORG_ID,
         id="cred-desconhecida",
         raw_id="cred-desconhecida",
         response={
@@ -537,8 +508,7 @@ async def test_webauthn_rejects_wrong_client_data_type_or_origin() -> None:
     )
     private_key, _ = _generate_es256_keypair()
 
-    # Wrong type (webauthn.get instead of webauthn.create) on registration
-    opts_type = await svc.gerar_opcoes_registro(_ORG_ID, paciente_id)
+    opts_type = await svc.gerar_opcoes_registro(paciente_id)
     wrong_type_cdj = _b64url(
         json.dumps(
             {
@@ -551,7 +521,6 @@ async def test_webauthn_rejects_wrong_client_data_type_or_origin() -> None:
     with pytest.raises(WebAuthnChallengeInvalidoError, match="type"):
         await svc.verificar_registro(
             WebAuthnRegisterVerifyCommand(
-                organizacao_id=_ORG_ID,
                 paciente_id=paciente_id,
                 id="cred-bad-type",
                 raw_id="cred-bad-type",
@@ -562,8 +531,7 @@ async def test_webauthn_rejects_wrong_client_data_type_or_origin() -> None:
             )
         )
 
-    # Untrusted origin
-    opts_origin = await svc.gerar_opcoes_registro(_ORG_ID, paciente_id)
+    opts_origin = await svc.gerar_opcoes_registro(paciente_id)
     evil_origin_cdj = _b64url(
         json.dumps(
             {
@@ -576,7 +544,6 @@ async def test_webauthn_rejects_wrong_client_data_type_or_origin() -> None:
     with pytest.raises(WebAuthnChallengeInvalidoError, match="origin"):
         await svc.verificar_registro(
             WebAuthnRegisterVerifyCommand(
-                organizacao_id=_ORG_ID,
                 paciente_id=paciente_id,
                 id="cred-bad-origin",
                 raw_id="cred-bad-origin",
@@ -594,12 +561,11 @@ async def test_webauthn_rejects_raw_public_key_without_attestation_object() -> N
     paciente_id = uuid7()
     svc = _make_service(identity_reader=FakeIdentityReader())
     _, pub_spki_b64 = _generate_es256_keypair()
-    options = await svc.gerar_opcoes_registro(_ORG_ID, paciente_id)
+    options = await svc.gerar_opcoes_registro(paciente_id)
 
     with pytest.raises(WebAuthnChallengeInvalidoError, match="attestationObject"):
         await svc.verificar_registro(
             WebAuthnRegisterVerifyCommand(
-                organizacao_id=_ORG_ID,
                 paciente_id=paciente_id,
                 id="cred-raw-only",
                 raw_id="cred-raw-only",
@@ -622,19 +588,17 @@ async def test_webauthn_rejects_localhost_rpid_when_configured_to_medisync_app()
     private_key, pub_spki_b64 = _generate_es256_keypair()
     reader = FakeIdentityReader()
     await reader.registrar_passkey_paciente(
-        organizacao_id=_ORG_ID,
         paciente_id=paciente_id,
         credential_id="cred-prod-rp",
         public_key=pub_spki_b64,
         sign_count=0,
     )
     svc = _make_service(identity_reader=reader, rp_id="medisync.app")
-    opts = await svc.gerar_opcoes_autenticacao(_ORG_ID, paciente_id)
+    opts = await svc.gerar_opcoes_autenticacao(paciente_id)
 
     with pytest.raises(WebAuthnChallengeInvalidoError, match="rpIdHash"):
         await svc.verificar_autenticacao(
             WebAuthnAuthVerifyCommand(
-                organizacao_id=_ORG_ID,
                 id="cred-prod-rp",
                 raw_id="cred-prod-rp",
                 response=_build_signed_assertion(
@@ -654,10 +618,9 @@ async def test_webauthn_challenge_consumed_atomically_via_getdel() -> None:
     private_key, _ = _generate_es256_keypair()
     valkey = FakeValkey()
     svc = _make_service(identity_reader=FakeIdentityReader(), valkey_client=valkey)
-    opts = await svc.gerar_opcoes_registro(_ORG_ID, paciente_id)
+    opts = await svc.gerar_opcoes_registro(paciente_id)
 
     cmd = WebAuthnRegisterVerifyCommand(
-        organizacao_id=_ORG_ID,
         paciente_id=paciente_id,
         id="cred-valkey-atomic",
         raw_id="cred-valkey-atomic",
@@ -674,10 +637,10 @@ async def test_webauthn_challenge_consumed_atomically_via_getdel() -> None:
 
 
 @pytest.mark.asyncio
-async def test_webauthn_register_dependency_rejects_mismatched_tenant(
+async def test_webauthn_register_dependency_accepts_patient_and_rejects_non_patient(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PatientAuthDep blocks cross-tenant intake and JWT with ForbiddenError."""
+    """PatientAuthDep accepts intake/patient JWT and rejects corporate roles."""
     from fastapi.security import HTTPAuthorizationCredentials
     from src.core.config import get_settings
 
@@ -686,26 +649,35 @@ async def test_webauthn_register_dependency_rejects_mismatched_tenant(
     get_settings.cache_clear()
     try:
         paciente_id = uuid7()
-        intake_token = create_intake_token(paciente_id, 1, _JWT_SECRET)
-        with pytest.raises(ForbiddenError, match="organização"):
-            await require_patient_auth(
-                tenant_id=2,
-                credentials=HTTPAuthorizationCredentials(
-                    scheme="Bearer", credentials=intake_token
-                ),
-            )
+        intake_token = create_intake_token(paciente_id, _JWT_SECRET)
+        resolved_intake = await require_patient_auth(
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=intake_token
+            ),
+        )
+        assert resolved_intake == paciente_id
 
         jwt_token = create_access_token(
             usuario_id=paciente_id,
-            organizacao_id=1,
             papel=Role.PACIENTE.value,
             secret_key=_JWT_SECRET,
         )
-        with pytest.raises(ForbiddenError, match="organização"):
+        resolved_jwt = await require_patient_auth(
+            credentials=HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=jwt_token
+            ),
+        )
+        assert resolved_jwt == paciente_id
+
+        medico_token = create_access_token(
+            usuario_id=uuid7(),
+            papel=Role.MEDICO.value,
+            secret_key=_JWT_SECRET,
+        )
+        with pytest.raises(ForbiddenError, match="sem permissão"):
             await require_patient_auth(
-                tenant_id=2,
                 credentials=HTTPAuthorizationCredentials(
-                    scheme="Bearer", credentials=jwt_token
+                    scheme="Bearer", credentials=medico_token
                 ),
             )
     finally:
@@ -717,7 +689,6 @@ async def test_passkey_model_and_sql_reader_enforce_monotonic_counter() -> None:
     """Enforce monotonic sign_count in model and reject collisions in SQL reader."""
     paciente_id = uuid7()
     passkey = PacientePasskey(
-        organizacao_id=_ORG_ID,
         paciente_id=paciente_id,
         credential_id="cred-mono-01",
         public_key="pub-key-initial",
@@ -730,7 +701,6 @@ async def test_passkey_model_and_sql_reader_enforce_monotonic_counter() -> None:
     sql_reader = SqlIdentityReader(session=cast("AsyncSession", session))
     with pytest.raises(ConflictError, match="já registrada"):
         await sql_reader.registrar_passkey_paciente(
-            organizacao_id=_ORG_ID,
             paciente_id=paciente_id,
             credential_id="cred-mono-01",
             public_key="pub-key-tampered",

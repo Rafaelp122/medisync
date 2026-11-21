@@ -21,7 +21,7 @@ O registro formal das decisões arquiteturais adotadas no projeto está cataloga
 
 - [ADR-001](adrs/ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md) — Hexagonal Pragmático, Modelos Ricos, Protocols e Tach
 - [ADR-002](adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md) — Alocação Atômica em Fila com Valkey e Script Lua
-- [ADR-003](adrs/ADR-003-Multi-Tenancy-Logico-Postgres-RLS.md) — Multi-Tenancy Lógico com PostgreSQL Row-Level Security (RLS)
+- [ADR-003](adrs/ADR-003-Multi-Tenancy-Logico-Postgres-RLS.md) — Multi-Tenancy Lógico com PostgreSQL RLS (*Superseded* por ADR-013)
 - [ADR-004](adrs/ADR-004-Worker-Assincrono-ARQ-sobre-Valkey.md) — Worker Assíncrono ARQ sobre Valkey
 - [ADR-005](adrs/ADR-005-Desacoplamento-de-Midia-LiveKit-SFU.md) — Desacoplamento de Mídia com LiveKit SFU
 - [ADR-006](adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md) — Assinatura Digital ICP-Brasil em Nuvem (PSC)
@@ -30,7 +30,8 @@ O registro formal das decisões arquiteturais adotadas no projeto está cataloga
 - [ADR-009](adrs/ADR-009-Configuracoes-Polimorficas-por-Perfil-e-Desacoplamento-nos-Composition-Roots.md) — Configurações Polimórficas e Desacoplamento nos Composition Roots
 - [ADR-010](adrs/ADR-010-Estrategia-DevSecOps-Defesa-em-Profundidade-de-Segredos-e-SAST.md) — Estratégia DevSecOps e Prevenção de Vazamento de Segredos
 - [ADR-011](adrs/ADR-011-Arquitetura-Frontend-SPA-PWA-e-Estrategia-de-Testes.md) — Arquitetura Frontend SPA/PWA com React 19, Hey API e Troféu de Testes
-- [ADR-012](adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md) — Transição 100% SUS, Consórcios Intermunicipais e Autenticação Tripartida
+- [ADR-012](adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md) — Transição 100% SUS e Autenticação Tripartida
+- [ADR-013](adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md) — Simplificação para Plataforma Única e Remoção de Multi-Tenancy & RLS
 
 ---
 

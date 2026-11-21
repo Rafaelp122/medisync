@@ -11,9 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.core.authz.models import AuthenticatedUser
 from src.core.authz.revocation import is_token_revoked
-from src.core.authz.roles import Role
 from src.core.authz.token import decode_access_token
-from src.core.context import get_current_tenant_id, set_current_tenant_id
 from src.core.errors import ForbiddenError, TokenRevogadoError, UnauthorizedError
 
 http_bearer_scheme = HTTPBearer(
@@ -28,10 +26,10 @@ async def get_current_user(
         Security(http_bearer_scheme),
     ] = None,
 ) -> AuthenticatedUser:
-    """Extrai e valida token Bearer assegurando isolamento multi-tenant (ADR-003).
+    """Extrai e valida token Bearer verificando revogação em tempo real (ADR-013).
 
-    Verifica revogação em tempo real via Valkey e alinha tenant context (LGPD Art. 11).
-    Decisões: docs/adrs/ADR-003-Multi-Tenancy-Logico-Postgres-RLS.md
+    Verifica assinatura JWT e blacklist em Valkey (LGPD Art. 11).
+    Decisões: docs/adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md
     Regras: docs/explanation/architecture/security-and-authorization.md
     """
     if credentials is None:
@@ -49,16 +47,6 @@ async def get_current_user(
             f"Token de acesso revogado (jti={user.token_id}). Realize novo login."
         )
 
-    # Validate Tenant Isolation (defense in depth alongside PostgreSQL RLS)
-    active_tenant = get_current_tenant_id()
-    if active_tenant is None:
-        set_current_tenant_id(user.organizacao_id)
-    elif user.papel != Role.ADMIN_GLOBAL and user.organizacao_id != active_tenant:
-        raise ForbiddenError(
-            f"Acesso negado: o token pertence à organização {user.organizacao_id}, "
-            f"mas o contexto solicitado é da organização {active_tenant}."
-        )
-
     return user
 
 
@@ -66,7 +54,7 @@ CurrentUserDep = Annotated[AuthenticatedUser, Security(get_current_user)]
 
 
 def require_authenticated_user(current_user: CurrentUserDep) -> AuthenticatedUser:
-    """Garante autenticação válida do usuário solicitante (ADR-003).
+    """Garante autenticação válida do usuário solicitante (ADR-013).
 
     Regras: docs/explanation/architecture/security-and-authorization.md
     """
@@ -74,7 +62,7 @@ def require_authenticated_user(current_user: CurrentUserDep) -> AuthenticatedUse
 
 
 def require_role(*roles: str) -> Callable[[AuthenticatedUser], AuthenticatedUser]:
-    """Fabrica guard de autorização macro RBAC por papéis de usuário (ADR-003).
+    """Fabrica guard de autorização macro RBAC por papéis de usuário (ADR-013).
 
     Regras: docs/explanation/architecture/security-and-authorization.md
     """
@@ -97,7 +85,7 @@ def require_role(*roles: str) -> Callable[[AuthenticatedUser], AuthenticatedUser
 
 
 def require_roles(*roles: str) -> Callable[[AuthenticatedUser], AuthenticatedUser]:
-    """Alias para require_role (ADR-003).
+    """Alias para require_role (ADR-013).
 
     Regras: docs/explanation/architecture/security-and-authorization.md
     """
@@ -107,7 +95,7 @@ def require_roles(*roles: str) -> Callable[[AuthenticatedUser], AuthenticatedUse
 def require_permission(
     *permissions: str,
 ) -> Callable[[AuthenticatedUser], AuthenticatedUser]:
-    """Fabrica guard de autorização por permissões granulares de acesso (ADR-003).
+    """Fabrica guard de autorização por permissões granulares de acesso (ADR-013).
 
     Regras: docs/explanation/architecture/security-and-authorization.md
     """

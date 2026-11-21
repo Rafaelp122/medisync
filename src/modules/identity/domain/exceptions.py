@@ -6,19 +6,18 @@ from src.core.errors import (
     BadRequestError,
     ConflictError,
     NotFoundError,
-    TenantInvalidoError,
     UnauthorizedError,
     ValidationError,
 )
 
 
 class PacienteNaoEncontradoError(NotFoundError):
-    """Raised when a patient record is not found within the tenant."""
+    """Raised when a patient record is not found."""
 
     title = "Paciente Não Encontrado"
     code = "PACIENTE_NAO_ENCONTRADO"
 
-    def __init__(self, detail: str = "Paciente não encontrado na organização.") -> None:
+    def __init__(self, detail: str = "Paciente não encontrado na plataforma.") -> None:
         super().__init__(detail, title=self.title, code=self.code)
 
 
@@ -85,7 +84,6 @@ __all__ = [
     "DependenteAutoReferenciaError",
     "IdentificacaoObrigatoriaError",
     "PacienteNaoEncontradoError",
-    "TenantInvalidoError",
     "TokenAcolhimentoInvalidoError",
     "VinculoDependenteExistenteError",
 ]

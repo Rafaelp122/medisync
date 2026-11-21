@@ -83,7 +83,6 @@ async def test_admissao_consulta_e_incrementa_cota_diaria(
     triage_service: TriageService,
 ) -> None:
     cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=42,
         paciente_id=uuid4(),
         queixa_principal="Febre baixa há 1 dia",
         sintomas=["febre"],
@@ -92,10 +91,10 @@ async def test_admissao_consulta_e_incrementa_cota_diaria(
     )
 
     result = await mock_fila_service.admitir_paciente(cmd)
-    assert result.organizacao_id == 42
+    assert result.paciente_id == cmd.paciente_id
 
     # Verifica que consultou a cota do Valkey
-    mock_controle_admissao.obter_admissoes_hoje.assert_awaited_once_with(42)
+    mock_controle_admissao.obter_admissoes_hoje.assert_awaited_once_with()
 
     # Verifica que avaliou admissão passando total de admissões do dia
     avaliacao_call = mock_controle_admissao.avaliar_admissao.call_args[0][0]
@@ -103,7 +102,7 @@ async def test_admissao_consulta_e_incrementa_cota_diaria(
     assert avaliacao_call.cota_diaria_maxima == 300
 
     # Verifica que incrementou a cota no Valkey após persistência
-    mock_controle_admissao.incrementar_admissoes_hoje.assert_awaited_once_with(42)
+    mock_controle_admissao.incrementar_admissoes_hoje.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
@@ -130,7 +129,6 @@ async def test_admissao_bloqueada_quando_cota_diaria_atingida(
     )
 
     cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=42,
         paciente_id=uuid4(),
         queixa_principal="Cansaço leve",
         sintomas=[],

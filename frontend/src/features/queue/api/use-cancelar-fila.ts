@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { cancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPost } from "@/api/generated/sdk.gen";
 import type { CancelarFilaRequest, CancelarFilaResponse } from "@/api/generated/types.gen";
@@ -19,9 +19,7 @@ export function useCancelarFila(
   return useMutation<CancelarFilaResponse, ProblemDetailsError, CancelarFilaParams>({
     mutationFn: async ({ atendimentoId, body, token }: CancelarFilaParams) => {
       try {
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

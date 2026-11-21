@@ -31,7 +31,6 @@ def _translate_patient_integrity_error(
     exc: IntegrityError,
     *,
     cpf: str,
-    organizacao_id: int,
 ) -> ConflictError | NotFoundError | ValidationError:
     """Translate PostgreSQL IntegrityError SQLSTATE into accurate domain error."""
     orig = exc.orig
@@ -40,9 +39,7 @@ def _translate_patient_integrity_error(
 
     if sqlstate == "23505":
         logger.warning(
-            "Conflito de unicidade ao criar paciente "
-            "(org_id=%s, cpf=%s, constraint=%s).",
-            organizacao_id,
+            "Conflito de unicidade ao criar paciente (cpf=%s, constraint=%s).",
             mascarar_cpf(cpf),
             constraint,
         )
@@ -50,24 +47,22 @@ def _translate_patient_integrity_error(
 
     if sqlstate == "23503":
         logger.error(
-            "Chave estrangeira ausente ao criar paciente (org_id=%s, constraint=%s).",
-            organizacao_id,
+            "Chave estrangeira ausente ao criar paciente (constraint=%s).",
             constraint,
         )
         return NotFoundError(
-            f"Unidade de atendimento '{organizacao_id}' não localizada "
-            "para realizar o cadastro."
+            f"Referência associada ao cadastro de paciente não localizada "
+            f"(constraint={constraint!r})."
         )
 
     logger.exception(
-        "Erro de integridade ao criar paciente "
-        "(org_id=%s, sqlstate=%s, constraint=%s).",
-        organizacao_id,
+        "Erro de integridade ao criar paciente (sqlstate=%s, constraint=%s).",
         sqlstate,
         constraint,
     )
     return ValidationError(
-        "Não foi possível validar os dados para concluir o cadastro do paciente."
+        "Não foi possível validar os dados para concluir o cadastro do paciente "
+        f"(sqlstate={sqlstate!r})."
     )
 
 
@@ -80,32 +75,26 @@ class SqlIdentityWriter(IdentityWriterPort):
     async def criar_paciente(
         self,
         *,
-        organizacao_id: int,
         cpf: str,
         nome_completo: str,
         data_nascimento: date,
         telefone: str,
     ) -> PacienteAuthLookupDTO:
-        """Create a new Paciente in the organization without committing.
+        """Create a new Paciente in the platform without committing.
 
         Transaction ownership remains in the caller Application Service (ADR-001 §6).
         """
         clean_cpf = clean_digits(cpf)
-        stmt = select(Paciente).where(
-            Paciente.organizacao_id == organizacao_id,
-            Paciente.cpf == clean_cpf,
-        )
+        stmt = select(Paciente).where(Paciente.cpf == clean_cpf)
         existing = (await self._session.execute(stmt)).scalar_one_or_none()
         if existing is not None:
             logger.warning(
-                "Tentativa de cadastro duplicado para CPF '%s' na organização '%s'.",
+                "Tentativa de cadastro duplicado para CPF '%s'.",
                 mascarar_cpf(clean_cpf),
-                organizacao_id,
             )
             raise ConflictError(_CONFLICT_PUBLIC_MESSAGE)
 
         paciente = Paciente(
-            organizacao_id=organizacao_id,
             cpf=clean_cpf,
             nome_completo=nome_completo,
             data_nascimento=data_nascimento,
@@ -118,12 +107,10 @@ class SqlIdentityWriter(IdentityWriterPort):
             raise _translate_patient_integrity_error(
                 exc,
                 cpf=clean_cpf,
-                organizacao_id=organizacao_id,
             ) from exc
 
         return PacienteAuthLookupData(
             id=paciente.id,
-            organizacao_id=paciente.organizacao_id,
             telefone=paciente.telefone,
             cpf=paciente.cpf,
             nome_completo=paciente.nome_completo or "",

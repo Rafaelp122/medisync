@@ -6,7 +6,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Path, Query, status
 
-from src.core.dependencies import TenantDep
 from src.modules.scheduling.composition import SchedulingServiceDep
 from src.modules.scheduling.presentation.dependencies import (
     PacienteSchedulingAuthDep,
@@ -44,7 +43,6 @@ def _resolver_periodo_agenda(
     summary="Lista especialidades disponíveis na agenda multiprofissional",
 )
 async def listar_especialidades(
-    _tenant_id: TenantDep,
     service: SchedulingServiceDep,
 ) -> list[EspecialidadeResponse]:
     """Lista especialidades programadas com descrição e duração padrão."""
@@ -58,7 +56,6 @@ async def listar_especialidades(
     summary="Lista slots disponíveis por especialidade e período",
 )
 async def listar_slots(
-    tenant_id: TenantDep,
     service: SchedulingServiceDep,
     especialidade: Annotated[
         str, Query(description="Especialidade (PSICOLOGIA ou NUTRICAO)")
@@ -68,7 +65,6 @@ async def listar_slots(
 ) -> list[SlotDisponivelResponse]:
     """Gera e retorna slots livres a partir das disponibilidades ativas."""
     slots = await service.listar_slots_disponiveis(
-        organizacao_id=tenant_id,
         especialidade=especialidade,
         data_inicio=data_inicio,
         data_fim=data_fim,
@@ -83,12 +79,11 @@ async def listar_slots(
 )
 async def criar_agendamento(
     body: Annotated[CriarAgendamentoRequest, Body()],
-    tenant_id: TenantDep,
     user: PacienteSchedulingAuthDep,
     service: SchedulingServiceDep,
 ) -> AgendamentoResponse:
     """Cria agendamento vinculado ao usuário autenticado prevenindo double-booking."""
-    cmd = body.to_command(organizacao_id=tenant_id, paciente_id=user.usuario_id)
+    cmd = body.to_command(paciente_id=user.usuario_id)
     agendamento = await service.agendar_consulta(cmd)
     return AgendamentoResponse.model_validate(agendamento)
 
@@ -99,13 +94,11 @@ async def criar_agendamento(
     summary="Lista agendamentos do paciente autenticado",
 )
 async def listar_meus_agendamentos(
-    tenant_id: TenantDep,
     user: PacienteSchedulingAuthDep,
     service: SchedulingServiceDep,
 ) -> list[AgendamentoResponse]:
     """Retorna os agendamentos pertencentes ao paciente autenticado."""
     itens = await service.listar_agendamentos_paciente(
-        organizacao_id=tenant_id,
         paciente_id=user.usuario_id,
     )
     return [AgendamentoResponse.model_validate(item) for item in itens]
@@ -118,13 +111,11 @@ async def listar_meus_agendamentos(
 )
 async def cancelar_agendamento(
     agendamento_id: Annotated[UUID, Path(description="ID do agendamento")],
-    tenant_id: TenantDep,
     user: PacienteSchedulingAuthDep,
     service: SchedulingServiceDep,
 ) -> AgendamentoResponse:
     """Cancela o agendamento se pertencer ao paciente autenticado."""
     agendamento = await service.cancelar_agendamento(
-        organizacao_id=tenant_id,
         agendamento_id=agendamento_id,
         paciente_id=user.usuario_id,
     )
@@ -138,12 +129,11 @@ async def cancelar_agendamento(
 )
 async def cadastrar_disponibilidade(
     body: Annotated[CriarDisponibilidadeRequest, Body()],
-    tenant_id: TenantDep,
     user: ProfissionalSchedulingAuthDep,
     service: SchedulingServiceDep,
 ) -> DisponibilidadeResponse:
     """Registra janela recorrente de atendimento do profissional."""
-    cmd = body.to_command(organizacao_id=tenant_id, profissional_id=user.usuario_id)
+    cmd = body.to_command(profissional_id=user.usuario_id)
     disponibilidade = await service.cadastrar_disponibilidade(cmd)
     return DisponibilidadeResponse.model_validate(disponibilidade)
 
@@ -157,7 +147,6 @@ async def cadastrar_disponibilidade(
     ),
 )
 async def listar_agenda_dia(
-    tenant_id: TenantDep,
     user: ProfissionalSchedulingAuthDep,
     service: SchedulingServiceDep,
     data: Annotated[
@@ -191,7 +180,6 @@ async def listar_agenda_dia(
     """Lista os agendamentos vinculados ao profissional autenticado (default UTC)."""
     inicio, fim = _resolver_periodo_agenda(data, data_inicio, data_fim)
     itens = await service.listar_agenda_profissional(
-        organizacao_id=tenant_id,
         profissional_id=user.usuario_id,
         data_inicio=inicio,
         data_fim=fim,
@@ -206,7 +194,6 @@ async def listar_agenda_dia(
 )
 async def iniciar_atendimento_agendado(
     agendamento_id: Annotated[UUID, Path(description="ID do agendamento")],
-    tenant_id: TenantDep,
     user: ProfissionalSchedulingAuthDep,
     service: SchedulingServiceDep,
     body: Annotated[IniciarAgendamentoRequest | None, Body()] = None,
@@ -214,7 +201,6 @@ async def iniciar_atendimento_agendado(
     """Transiciona o agendamento do profissional para EM_ATENDIMENTO."""
     atendimento_id = body.atendimento_id if body is not None else None
     agendamento = await service.iniciar_atendimento_agendado(
-        organizacao_id=tenant_id,
         agendamento_id=agendamento_id,
         profissional_id=user.usuario_id,
         atendimento_id=atendimento_id,

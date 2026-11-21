@@ -13,19 +13,6 @@ import { client } from "./generated/client.gen";
 
 const baseUrl = settings.env.apiBaseUrl;
 
-export function getActiveTenantId(): string | null {
-  if (typeof window !== "undefined" && window.localStorage) {
-    const stored = window.localStorage.getItem(settings.storage.tenantId);
-    if (stored) return stored;
-  }
-  return settings.env.defaultTenantId ?? null;
-}
-
-export function getTenantHeaders(): Record<string, string> {
-  const tenantId = getActiveTenantId();
-  return tenantId ? { "X-Tenant-ID": tenantId } : {};
-}
-
 function decodeJwtPayload(token?: string | null): Record<string, unknown> | undefined {
   if (!token || typeof token !== "string") return undefined;
   const parts = token.split(".");
@@ -39,24 +26,6 @@ function decodeJwtPayload(token?: string | null): Record<string, unknown> | unde
     }
   } catch {
     return undefined;
-  }
-  return undefined;
-}
-
-/**
- * Extrai o identificador numérico de organização (claim `organizacao_id`) do payload JWT
- * sem validar assinatura (apenas leitura de metadado no cliente).
- */
-export function extractTenantIdFromJwt(token?: string | null): number | undefined {
-  const payload = decodeJwtPayload(token);
-  if (!payload) return undefined;
-  const rawTenant = payload.organizacao_id;
-  if (typeof rawTenant === "number" && Number.isFinite(rawTenant) && rawTenant > 0) {
-    return rawTenant;
-  }
-  if (typeof rawTenant === "string") {
-    const parsed = Number.parseInt(rawTenant, 10);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
   return undefined;
 }
@@ -83,10 +52,9 @@ export function resolveExplicitAuthHeaders(token?: string): Record<string, strin
 }
 
 /**
- * Deriva chave de escopo (tenant + identidade/sessão) para isolar entradas do TanStack Query.
+ * Deriva chave de escopo (identidade/sessão) para isolar entradas do TanStack Query.
  */
 export function getSessionQueryScope(explicitToken?: string): string {
-  const tenantScope = getActiveTenantId() ?? "default";
   const trimmedExplicit = explicitToken?.trim();
   const activeToken = trimmedExplicit || getAccessToken() || getStoredToken();
 
@@ -95,24 +63,23 @@ export function getSessionQueryScope(explicitToken?: string): string {
   const payload = decodeJwtPayload(activeToken);
   const jwtSub = typeof payload?.sub === "string" ? payload.sub.trim() : "";
 
-  let userScope = "anon";
   if (jwtSub) {
-    userScope = `sub:${jwtSub}`;
-  } else if (
+    return `sub:${jwtSub}`;
+  }
+  if (
     patientSession?.pacienteId &&
     (!trimmedExplicit || trimmedExplicit === patientSession.token)
   ) {
-    userScope = `pac:${patientSession.pacienteId}`;
-  } else if (
-    doctorSession?.medicoId &&
-    (!trimmedExplicit || trimmedExplicit === getAccessToken())
-  ) {
-    userScope = `med:${doctorSession.medicoId}`;
-  } else if (activeToken) {
-    userScope = `tok:${hashTokenFingerprint(activeToken)}`;
+    return `pac:${patientSession.pacienteId}`;
+  }
+  if (doctorSession?.medicoId && (!trimmedExplicit || trimmedExplicit === getAccessToken())) {
+    return `med:${doctorSession.medicoId}`;
+  }
+  if (activeToken) {
+    return `tok:${hashTokenFingerprint(activeToken)}`;
   }
 
-  return `${tenantScope}:${userScope}`;
+  return "anon";
 }
 
 client.setConfig({
@@ -141,7 +108,6 @@ export async function silentRefreshToken(): Promise<string | null> {
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          ...getTenantHeaders(),
         },
         body: JSON.stringify({}),
       });
@@ -172,13 +138,9 @@ export async function silentRefreshToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-// Configure client request interceptor to inject dynamic X-Tenant-ID and Authorization headers
+// Configure client request interceptor to inject dynamic Authorization header
 // and preserve an unconsumed Request clone for safe 401 retries on POST/PUT/PATCH.
 client.interceptors.request.use((request) => {
-  const tenantId = getActiveTenantId();
-  if (tenantId && !request.headers.has("X-Tenant-ID")) {
-    request.headers.set("X-Tenant-ID", tenantId);
-  }
   const token = getAccessToken() || getStoredToken();
   if (token && !request.headers.has("Authorization")) {
     request.headers.set("Authorization", `Bearer ${token}`);

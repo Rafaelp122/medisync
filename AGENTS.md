@@ -23,7 +23,7 @@ Este documento contém as instruções mandatórias para qualquer agente de IA o
     * `just logs [serviço]` — Acompanha logs dos contêineres em tempo real (todos ou filtrado por serviço: ex. `just logs backend`).
     * `just clean-docker` — Remove contêineres e apaga volumes persistentes locais.
     * `just migrate` — Aplica migrações pendentes no banco relacional via Alembic (host local).
-    * `just seed-dev` — Popula o banco de desenvolvimento local com tenant e pacientes de demonstração (host local).
+    * `just seed-dev` — Popula o banco de desenvolvimento local com unidade SUS e pacientes de demonstração (host local).
     * `just docker-migrate` — Executa migrações do Alembic dentro do contêiner backend (modo Docker puro).
     * `just docker-seed` — Popula dados de desenvolvimento dentro do contêiner backend (modo Docker puro).
     * `just docker-shell` — Abre terminal interativo bash dentro do contêiner backend.

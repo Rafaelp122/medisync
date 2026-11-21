@@ -7,10 +7,9 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     Integer,
     Numeric,
     String,
@@ -42,7 +41,7 @@ _VALID_MODOS: frozenset[str] = frozenset(
 
 
 class ConfiguracaoPlantao(Base):
-    """Configuração operacional do plantão de telemedicina por organização de saúde.
+    """Configuração operacional singleton do plantão de telemedicina da plataforma.
 
     Modela capacidade médica, tolerância a ring, metas de TMA e SLAs clínicos.
     Regras: RN06 (Ato Médico) e docs/explanation/domains/telemetry-domain.md.
@@ -50,7 +49,14 @@ class ConfiguracaoPlantao(Base):
 
     __tablename__ = "configuracoes_plantao"
     __table_args__ = (
-        UniqueConstraint("organizacao_id", name="uq_configuracoes_plantao_org"),
+        UniqueConstraint(
+            "singleton_guard",
+            name="uq_configuracoes_plantao_singleton",
+        ),
+        CheckConstraint(
+            "singleton_guard IS TRUE",
+            name="chk_configuracoes_plantao_singleton",
+        ),
         CheckConstraint(
             "alpha_backpressure >= 1.20 AND alpha_backpressure <= 1.30",
             name="chk_config_plantao_alpha",
@@ -72,9 +78,7 @@ class ConfiguracaoPlantao(Base):
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
     )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
-    )
+    singleton_guard: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     medicos_ativos_planejados: Mapped[int] = mapped_column(
         Integer, default=1, nullable=False
     )
@@ -123,9 +127,9 @@ class ConfiguracaoPlantao(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         *,
         id: UUID | None = None,
+        singleton_guard: bool = True,
         medicos_ativos_planejados: int = 1,
         alpha_backpressure: Decimal | float | str = Decimal("1.25"),
         cota_diaria_maxima: int | None = 300,
@@ -141,8 +145,13 @@ class ConfiguracaoPlantao(Base):
         criado_em: datetime | None = None,
         atualizado_em: datetime | None = None,
     ) -> None:
+        if singleton_guard is not True:
+            raise ValidationError(
+                f"singleton_guard '{singleton_guard}' inválido; "
+                "esperado True para garantir configuração única do plantão."
+            )
+
         self._validar_invariantes(
-            organizacao_id=organizacao_id,
             medicos_ativos_planejados=medicos_ativos_planejados,
             alpha_backpressure=alpha_backpressure,
             cota_diaria_maxima=cota_diaria_maxima,
@@ -158,7 +167,7 @@ class ConfiguracaoPlantao(Base):
 
         now = datetime.now(UTC)
         self.id = id or uuid7()
-        self.organizacao_id = organizacao_id
+        self.singleton_guard = True
         self.medicos_ativos_planejados = medicos_ativos_planejados
         self.alpha_backpressure = self._converter_alpha(alpha_backpressure)
         self.cota_diaria_maxima = cota_diaria_maxima
@@ -190,7 +199,6 @@ class ConfiguracaoPlantao(Base):
     def _validar_invariantes(
         cls,
         *,
-        organizacao_id: int,
         medicos_ativos_planejados: int,
         alpha_backpressure: Decimal | float | str,
         cota_diaria_maxima: int | None,
@@ -203,12 +211,6 @@ class ConfiguracaoPlantao(Base):
         sla_minutos_nivel_4: int,
         sla_minutos_nivel_5: int,
     ) -> None:
-        if organizacao_id <= 0:
-            raise ValidationError(
-                f"organizacao_id inválido: {organizacao_id}; "
-                "deve ser um identificador positivo (> 0)."
-            )
-
         if medicos_ativos_planejados < 1:
             raise ValidationError(
                 f"medicos_ativos_planejados inválido: {medicos_ativos_planejados}; "
@@ -340,7 +342,6 @@ class ConfiguracaoPlantao(Base):
         )
 
         self._validar_invariantes(
-            organizacao_id=self.organizacao_id,
             medicos_ativos_planejados=novo_medicos,
             alpha_backpressure=novo_alpha,
             cota_diaria_maxima=novo_cota,

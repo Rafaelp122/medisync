@@ -46,7 +46,7 @@
 ## 3. Contrato de API
 
 * **Solicitação de Desafio de Prova de Vida:** `POST /api/v1/consultations/{atendimento_id}/prescriptions/liveness/challenge`
-  * *Headers:* `Authorization: Bearer <jwt_medico>`, `X-Tenant-ID: <org_id>`
+  * *Headers:* `Authorization: Bearer <jwt_medico>`
   * *Resposta (`200 OK`):*
     ```json
     {
@@ -57,7 +57,7 @@
     ```
 
 * **Validação de Prova de Vida pelo Paciente:** `POST /api/v1/consultations/{atendimento_id}/prescriptions/liveness/verify`
-  * *Headers:* `Authorization: Bearer <jwt_paciente>`, `X-Tenant-ID: <org_id>`
+  * *Headers:* `Authorization: Bearer <jwt_paciente>`
   * *Payload de Entrada:*
     ```json
     {

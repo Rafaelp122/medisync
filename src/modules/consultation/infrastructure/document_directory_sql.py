@@ -31,16 +31,19 @@ class SqlDocumentDirectory(DocumentDirectoryPort):
 
     async def obter_dados_verificacao(
         self,
-        organizacao_id: int,
         medico_id: UUID,
         atendimento_id: UUID,
     ) -> DadosVerificacaoDirectory:
+        """Consulta metadados da unidade SUS, médico emissor e paciente do documento.
+
+        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md e
+        docs/adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md.
+        """
         org_res = await self._session.execute(
             text(
-                "SELECT razao_social, nome_fantasia, cnes FROM organizacoes "
-                "WHERE id = :org_id"
+                "SELECT cnpj, razao_social, nome_fantasia, cnes "
+                "FROM configuracoes_unidade LIMIT 1"
             ),
-            {"org_id": organizacao_id},
         )
         org_row = org_res.mappings().first()
         org_nome = _ORG_DEFAULT
@@ -65,7 +68,8 @@ class SqlDocumentDirectory(DocumentDirectoryPort):
                 medico_id,
             )
             raise DocumentoIntegridadeError(
-                "Dados do médico emissor ausentes para o documento."
+                f"Dados do médico emissor '{medico_id}' ausentes para o documento "
+                "(esperado registro com 'nome_completo' em profissionais)."
             )
         medico_nome = str(med_row.get("nome_completo"))
         medico_crm = str(med_row.get("crm") or "")
@@ -73,7 +77,9 @@ class SqlDocumentDirectory(DocumentDirectoryPort):
         if not medico_crm or not medico_uf:
             logger.error("Integridade: CRM/UF ausente para médico %s", medico_id)
             raise DocumentoIntegridadeError(
-                "Dados do médico emissor incompletos para o documento."
+                f"Dados do médico emissor '{medico_id}' incompletos para o documento "
+                f"(recebido crm={medico_crm!r}, crm_uf={medico_uf!r}; "
+                "esperados CRM e UF preenchidos)."
             )
 
         pac_res = await self._session.execute(
@@ -93,7 +99,8 @@ class SqlDocumentDirectory(DocumentDirectoryPort):
                 atendimento_id,
             )
             raise DocumentoIntegridadeError(
-                "Dados do paciente ausentes para o documento."
+                f"Dados do paciente ausentes para o atendimento '{atendimento_id}' "
+                "(esperado paciente vinculado com 'nome_completo')."
             )
 
         data_n = pac_row.get("data_nascimento")

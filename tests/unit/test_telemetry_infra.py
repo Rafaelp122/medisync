@@ -30,22 +30,22 @@ async def test_sql_config_plantao_repository_salvar_e_obter() -> None:
     session.flush = AsyncMock()
 
     repo = SqlConfigPlantaoRepository(session)
-    config = ConfiguracaoPlantao(organizacao_id=123)
+    config = ConfiguracaoPlantao()
 
     # Test salvar
     salvo = await repo.salvar(config)
-    assert salvo.organizacao_id == 123
+    assert salvo.singleton_guard is True
     session.add.assert_called_once_with(config)
     session.flush.assert_awaited_once()
 
-    # Test obter_por_organizacao
+    # Test obter_atual
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = config
     session.execute.return_value = mock_result
 
-    obtido = await repo.obter_por_organizacao(123)
+    obtido = await repo.obter_atual()
     assert obtido is not None
-    assert obtido.organizacao_id == 123
+    assert obtido.singleton_guard is True
     session.execute.assert_awaited_once()
 
 
@@ -99,11 +99,11 @@ async def test_sql_telemetry_reader_obter_painel() -> None:
     ]
 
     reader = SqlTelemetryReader(session)
-    config = ConfiguracaoPlantao(organizacao_id=1)
+    config = ConfiguracaoPlantao()
 
-    painel = await reader.obter_painel_telemetria(organizacao_id=1, config=config)
+    painel = await reader.obter_painel_telemetria(config=config)
 
-    assert painel.organizacao_id == 1
+    assert not hasattr(painel, "organizacao_id")
     assert painel.total_atendimentos == 20
     assert painel.no_show_rate == 10.0  # 2 / 20 = 10%
     assert painel.evasao_rate == 5.0  # 1 / 20 = 5%
@@ -115,13 +115,15 @@ async def test_sql_telemetry_reader_obter_painel() -> None:
     assert painel.medicos_tma[0].medico_id == medico_id
     assert painel.medicos_tma[0].nome == "Dr. House"
 
+    for call in session.execute.call_args_list:
+        assert "organizacao_id" not in str(call.args[0])
+
 
 @pytest.mark.asyncio
 async def test_memory_telemetry_cache_lifecycle() -> None:
     cache = MemoryTelemetryCache()
 
     painel = PainelTelemetriaDTO(
-        organizacao_id=99,
         gerado_em=datetime.now(UTC),
         tme_medio_segundos=120.0,
         tme_nivel_1_segundos=0.0,
@@ -141,21 +143,20 @@ async def test_memory_telemetry_cache_lifecycle() -> None:
     )
 
     # Initial get: miss
-    assert await cache.obter_painel(99) is None
+    assert await cache.obter_painel() is None
 
     # Save
-    await cache.salvar_painel(99, painel, ttl_segundos=60)
+    await cache.salvar_painel(painel, ttl_segundos=60)
 
     # Get: hit
-    cached = await cache.obter_painel(99)
+    cached = await cache.obter_painel()
     assert cached is not None
-    assert cached.organizacao_id == 99
     assert cached.sla_compliance_percentual == 96.5
     assert cached.sla_em_conformidade is True
 
     # Invalidate
-    await cache.invalidar_painel(99)
-    assert await cache.obter_painel(99) is None
+    await cache.invalidar_painel()
+    assert await cache.obter_painel() is None
 
 
 @pytest.mark.asyncio
@@ -165,7 +166,6 @@ async def test_valkey_telemetry_cache_mocked() -> None:
 
     med_id = uuid4()
     painel = PainelTelemetriaDTO(
-        organizacao_id=77,
         gerado_em=datetime.now(UTC),
         tme_medio_segundos=100.0,
         tme_nivel_1_segundos=0.0,
@@ -192,23 +192,22 @@ async def test_valkey_telemetry_cache_mocked() -> None:
     )
 
     # Test salvar
-    await cache.salvar_painel(77, painel, ttl_segundos=30)
+    await cache.salvar_painel(painel, ttl_segundos=30)
     mock_redis.set.assert_awaited_once()
     call_args = mock_redis.set.call_args
-    assert call_args[0][0] == "telemetry:painel:77"
+    assert call_args[0][0] == "telemetry:painel"
     payload_str = call_args[0][1]
     assert call_args[1]["ex"] == 30
 
     # Test obter
     mock_redis.get.return_value = payload_str
-    obtido = await cache.obter_painel(77)
+    obtido = await cache.obter_painel()
     assert obtido is not None
-    assert obtido.organizacao_id == 77
     assert obtido.sla_compliance_percentual == 94.0
     assert obtido.sla_em_conformidade is False
     assert len(obtido.medicos_tma) == 1
     assert obtido.medicos_tma[0].medico_id == med_id
 
     # Test invalidar
-    await cache.invalidar_painel(77)
-    mock_redis.delete.assert_awaited_once_with("telemetry:painel:77")
+    await cache.invalidar_painel()
+    mock_redis.delete.assert_awaited_once_with("telemetry:painel")

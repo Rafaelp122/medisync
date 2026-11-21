@@ -11,7 +11,6 @@ class BpaDirectoryPort(Protocol):
 
     async def buscar_detalhes_bpa_lote(
         self,
-        organizacao_id: int,
         competencia: str,
     ) -> list[BpaRegistroDetalheDTO]:
         """Fetch all individual production items with patient and doctor details."""

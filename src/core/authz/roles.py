@@ -10,23 +10,13 @@ from enum import StrEnum
 class Role(StrEnum):
     """Corporate and patient roles in MediSync Express."""
 
-    ADMIN_GLOBAL = "ADMIN_GLOBAL"
     GESTOR_UNIDADE = "GESTOR_UNIDADE"
     MEDICO = "MEDICO"
     FATURAMENTO = "FATURAMENTO"
     PACIENTE = "PACIENTE"
 
 
-ROLES_REQUIRING_MFA: frozenset[str] = frozenset(
-    {
-        "MEDICO",
-        "GESTOR_UNIDADE",
-        "GESTOR_CONSORCIO",
-        "REGULADOR_MUNICIPAL",
-        "AUDITOR_PRODUCAO",
-        "ADMIN_GLOBAL",
-    }
-)
+ROLES_REQUIRING_MFA: frozenset[str] = frozenset({"MEDICO", "GESTOR_UNIDADE"})
 
 
 class Permission(StrEnum):
@@ -48,14 +38,6 @@ class Permission(StrEnum):
 # In conformity with CFM 1.821/2007 and 2.314/2022, clinical records (PRONTUARIO_*)
 # are strictly restricted to the attending physician (MEDICO).
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
-    Role.ADMIN_GLOBAL: frozenset(
-        {
-            Permission.TMA_CONFIG,
-            Permission.PROFISSIONAL_MANAGE,
-            Permission.QUEUE_VIEW,
-            Permission.AMBULATORY_CONSOLIDATE,
-        }
-    ),
     Role.GESTOR_UNIDADE: frozenset(
         {
             Permission.TMA_CONFIG,

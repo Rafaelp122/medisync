@@ -13,11 +13,7 @@ from src.core.database import async_session_factory
 from src.modules.queue.domain.models import Atendimento
 
 from tests.factories.audit import make_audit_event
-from tests.factories.identity import (
-    make_organizacao,
-    make_paciente,
-    make_profissional,
-)
+from tests.factories.identity import make_paciente, make_profissional
 from tests.factories.queue import make_atendimento
 
 _SAMPLE_TCLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -36,14 +32,8 @@ async def setup_audit_tables() -> AsyncGenerator[None, None]:
 @pytest.mark.asyncio
 async def test_persist_audit_event_success() -> None:
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="10101010000101")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="10101010101")
+        paciente = make_paciente(cpf="10101010101")
         medico = make_profissional(
-            org.id,
             cpf="20202020202",
             email="dr.audit@ubs.gov.br",
             papel="MEDICO",
@@ -55,18 +45,16 @@ async def test_persist_audit_event_success() -> None:
         await session.refresh(paciente)
         await session.refresh(medico)
 
-        atendimento = make_atendimento(org.id, paciente.id)
+        atendimento = make_atendimento(paciente.id)
         session.add(atendimento)
         await session.commit()
         await session.refresh(atendimento)
 
-        org_id = org.id
         atend_id = atendimento.id
         medico_id = medico.id
 
         evt = await AuditService.record_event(
             session,
-            organizacao_id=org_id,
             atendimento_id=atend_id,
             ator_tipo=AtorTipo.PROFISSIONAL,
             ator_papel=AtorPapel.MEDICO,
@@ -88,7 +76,6 @@ async def test_persist_audit_event_success() -> None:
         evt_recuperado = res.scalar_one()
 
         assert evt_recuperado.id == evt_id
-        assert evt_recuperado.organizacao_id == org_id
         assert evt_recuperado.atendimento_id == atend_id
         assert evt_recuperado.ator_tipo == AtorTipo.PROFISSIONAL
         assert evt_recuperado.ator_id == medico_id
@@ -101,14 +88,8 @@ async def test_persist_audit_event_success() -> None:
 @pytest.mark.asyncio
 async def test_database_trigger_blocks_update_and_delete() -> None:
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="20202020000102")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="30303030303")
+        paciente = make_paciente(cpf="30303030303")
         medico = make_profissional(
-            org.id,
             cpf="40404040404",
             email="dr.sec@ubs.gov.br",
             papel="MEDICO",
@@ -120,17 +101,15 @@ async def test_database_trigger_blocks_update_and_delete() -> None:
         await session.refresh(paciente)
         await session.refresh(medico)
 
-        atendimento = make_atendimento(org.id, paciente.id)
+        atendimento = make_atendimento(paciente.id)
         session.add(atendimento)
         await session.commit()
         await session.refresh(atendimento)
 
-        org_id = org.id
         atend_id = atendimento.id
         medico_id = medico.id
 
         evt = make_audit_event(
-            organizacao_id=org_id,
             atendimento_id=atend_id,
             ator_tipo=AtorTipo.PROFISSIONAL,
             ator_papel=AtorPapel.MEDICO,
@@ -164,14 +143,8 @@ async def test_database_trigger_blocks_update_and_delete() -> None:
 @pytest.mark.asyncio
 async def test_on_delete_restrict_atendimento_with_audit_events() -> None:
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="30303030000103")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="50505050505")
+        paciente = make_paciente(cpf="50505050505")
         medico = make_profissional(
-            org.id,
             cpf="60606060606",
             email="dr.restr@ubs.gov.br",
             papel="MEDICO",
@@ -183,17 +156,15 @@ async def test_on_delete_restrict_atendimento_with_audit_events() -> None:
         await session.refresh(paciente)
         await session.refresh(medico)
 
-        atendimento = make_atendimento(org.id, paciente.id)
+        atendimento = make_atendimento(paciente.id)
         session.add(atendimento)
         await session.commit()
         await session.refresh(atendimento)
 
-        org_id = org.id
         atend_id = atendimento.id
         medico_id = medico.id
 
         evt = make_audit_event(
-            organizacao_id=org_id,
             atendimento_id=atend_id,
             ator_tipo=AtorTipo.PROFISSIONAL,
             ator_papel=AtorPapel.MEDICO,
@@ -216,28 +187,21 @@ async def test_on_delete_restrict_atendimento_with_audit_events() -> None:
 @pytest.mark.asyncio
 async def test_audit_service_list_events_chronological_order() -> None:
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="40404040000104")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="70707070707")
+        paciente = make_paciente(cpf="70707070707")
         session.add(paciente)
         await session.commit()
         await session.refresh(paciente)
 
-        atendimento = make_atendimento(org.id, paciente.id)
+        atendimento = make_atendimento(paciente.id)
         session.add(atendimento)
         await session.commit()
         await session.refresh(atendimento)
 
-        org_id = org.id
         atend_id = atendimento.id
         base_time = datetime.now(UTC)
 
         # Inserir eventos com tempos sequenciais
         evt1 = make_audit_event(
-            organizacao_id=org_id,
             atendimento_id=atend_id,
             ator_tipo=AtorTipo.SISTEMA,
             ator_papel=AtorPapel.SISTEMA,
@@ -245,7 +209,6 @@ async def test_audit_service_list_events_chronological_order() -> None:
             registrado_em=base_time - timedelta(minutes=5),
         )
         evt2 = make_audit_event(
-            organizacao_id=org_id,
             atendimento_id=atend_id,
             ator_tipo=AtorTipo.SISTEMA,
             ator_papel=AtorPapel.SISTEMA,
@@ -253,7 +216,6 @@ async def test_audit_service_list_events_chronological_order() -> None:
             registrado_em=base_time - timedelta(minutes=2),
         )
         evt3 = make_audit_event(
-            organizacao_id=org_id,
             atendimento_id=atend_id,
             ator_tipo=AtorTipo.SISTEMA,
             ator_papel=AtorPapel.SISTEMA,
@@ -272,30 +234,24 @@ async def test_audit_service_list_events_chronological_order() -> None:
 @pytest.mark.asyncio
 async def test_database_check_constraint_ator_tipo() -> None:
     async with async_session_factory() as session:
-        org = make_organizacao(cnpj="50505050000105")
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
-
-        paciente = make_paciente(org.id, cpf="80808080808")
+        paciente = make_paciente(cpf="80808080808")
         session.add(paciente)
         await session.commit()
         await session.refresh(paciente)
 
-        atendimento = make_atendimento(org.id, paciente.id)
+        atendimento = make_atendimento(paciente.id)
         session.add(atendimento)
         await session.commit()
         await session.refresh(atendimento)
 
-        org_id = org.id
         atend_id = atendimento.id
 
         sql_invalid_ator = text(
             "INSERT INTO audit_events ("
-            "id, organizacao_id, atendimento_id, ator_tipo, ator_papel, "
+            "id, atendimento_id, ator_tipo, ator_papel, "
             "tipo_evento, registrado_em"
             ") VALUES ("
-            ":id, :org_id, :atend_id, 'ROBOT_INVALIDO', 'SISTEMA', "
+            ":id, :atend_id, 'ROBOT_INVALIDO', 'SISTEMA', "
             "'TESTE', NOW()"
             ")"
         )
@@ -304,7 +260,6 @@ async def test_database_check_constraint_ator_tipo() -> None:
                 sql_invalid_ator,
                 {
                     "id": uuid4(),
-                    "org_id": org_id,
                     "atend_id": atend_id,
                 },
             )

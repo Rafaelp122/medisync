@@ -1,5 +1,5 @@
 import { type UseQueryOptions, useMutation, useQuery } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
   exportarBpaApiV1AmbulatoryProducaoExportarGet,
@@ -22,9 +22,7 @@ export function useProducaoBpa(
     queryKey: ["ambulatory", "producao", competencia],
     queryFn: async () => {
       try {
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }
@@ -52,9 +50,7 @@ export function useExportarBpa(token?: string) {
   return useMutation<string, ProblemDetailsError, string>({
     mutationFn: async (competencia: string) => {
       try {
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

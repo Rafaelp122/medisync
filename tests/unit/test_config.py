@@ -1,8 +1,12 @@
 """Unit tests for application configuration and settings validation."""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 from src.core.config import ProductionSettings, Settings, get_settings
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_default_settings() -> None:
@@ -64,47 +68,18 @@ def test_invalid_port_validation(monkeypatch: pytest.MonkeyPatch) -> None:
         Settings()
 
 
-def test_multi_tenancy_defaults_to_enabled_without_default_tenant() -> None:
-    """Multi-tenancy is enabled by default with no silent DEFAULT_TENANT_ID."""
+def test_config_sem_variaveis_multi_tenant() -> None:
+    """Single-platform settings and .env.example must not define multi-tenant vars."""
+    assert "MULTI_TENANCY_ENABLED" not in Settings.model_fields
+    assert "DEFAULT_TENANT_ID" not in Settings.model_fields
     settings = Settings()
-    assert settings.MULTI_TENANCY_ENABLED is True
-    assert settings.DEFAULT_TENANT_ID is None
+    assert not hasattr(settings, "MULTI_TENANCY_ENABLED")
+    assert not hasattr(settings, "DEFAULT_TENANT_ID")
 
-
-def test_single_tenant_mode_accepts_positive_default_tenant(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Single-tenant mode succeeds when DEFAULT_TENANT_ID >= 1 is configured."""
-    monkeypatch.setenv("MULTI_TENANCY_ENABLED", "false")
-    monkeypatch.setenv("DEFAULT_TENANT_ID", "42")
-
-    settings = Settings()
-    assert settings.MULTI_TENANCY_ENABLED is False
-    assert settings.DEFAULT_TENANT_ID == 42
-
-
-@pytest.mark.parametrize("invalid_tenant_id", [None, 0, -1, -99])
-def test_single_tenant_mode_rejects_missing_or_non_positive_default_tenant(
-    invalid_tenant_id: int | None,
-) -> None:
-    """Single-tenant mode fails fast when DEFAULT_TENANT_ID is absent or <= 0."""
-    with pytest.raises(ValidationError) as exc_info:
-        Settings(
-            MULTI_TENANCY_ENABLED=False,
-            DEFAULT_TENANT_ID=invalid_tenant_id,
-        )
-    msg = str(exc_info.value)
-    assert str(invalid_tenant_id) in msg
-    assert "MULTI_TENANCY_ENABLED=False" in msg
-
-
-def test_multi_tenant_mode_rejects_default_tenant_id() -> None:
-    """Multi-tenant mode forbids DEFAULT_TENANT_ID to prevent silent fallback."""
-    with pytest.raises(ValidationError) as exc_info:
-        Settings(MULTI_TENANCY_ENABLED=True, DEFAULT_TENANT_ID=1)
-    msg = str(exc_info.value)
-    assert "1" in msg
-    assert "MULTI_TENANCY_ENABLED=True" in msg
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "VITE_TENANT_ID" not in env_example
+    assert "MULTI_TENANCY_ENABLED" not in env_example
+    assert "DEFAULT_TENANT_ID" not in env_example
 
 
 def test_production_settings_rejects_debug_true() -> None:

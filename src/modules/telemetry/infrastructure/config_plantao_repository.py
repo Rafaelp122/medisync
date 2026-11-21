@@ -15,12 +15,10 @@ class SqlConfigPlantaoRepository(ConfigPlantaoRepositoryPort):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def obter_por_organizacao(
-        self, organizacao_id: int
-    ) -> ConfiguracaoPlantao | None:
-        """Fetch active shift configuration for a specific organization."""
+    async def obter_atual(self) -> ConfiguracaoPlantao | None:
+        """Fetch singleton shift configuration of the platform."""
         stmt = select(ConfiguracaoPlantao).where(
-            ConfiguracaoPlantao.organizacao_id == organizacao_id
+            ConfiguracaoPlantao.singleton_guard.is_(True)
         )
         res = await self._session.execute(stmt)
         return res.scalar_one_or_none()

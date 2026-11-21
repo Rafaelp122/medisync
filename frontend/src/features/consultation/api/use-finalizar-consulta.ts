@@ -1,13 +1,10 @@
 import { type UseMutationOptions, useMutation, useQueryClient } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { finalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePost } from "@/api/generated/sdk.gen";
-import type {
-  FinalizarConsultaRequest,
-  FinalizarConsultaResponse,
-} from "@/api/generated/types.gen";
+import type { FinalizarConsultaResponse } from "@/api/generated/types.gen";
 
-export interface FinalizarConsultaParams extends FinalizarConsultaRequest {
+export interface FinalizarConsultaParams {
   token?: string;
 }
 
@@ -28,11 +25,9 @@ export function useFinalizarConsulta(
 
   return useMutation<FinalizarConsultaResponse, ProblemDetailsError, FinalizarConsultaParams>({
     ...options,
-    mutationFn: async ({ token, ...body }: FinalizarConsultaParams = {}) => {
+    mutationFn: async ({ token }: FinalizarConsultaParams = {}) => {
       try {
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }
@@ -42,7 +37,6 @@ export function useFinalizarConsulta(
           path: {
             atendimento_id: atendimentoId,
           },
-          body,
           headers,
           throwOnError: true,
         });

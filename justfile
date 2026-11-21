@@ -120,7 +120,7 @@ clean-docker:
 migrate:
     uv run alembic upgrade head
 
-# Popula o banco de desenvolvimento local com tenant e pacientes de demonstração (host local)
+# Popula o banco de desenvolvimento local com unidade SUS e pacientes de demonstração (host local)
 [group('infra')]
 seed-dev:
     uv run python -m scripts.seed_dev

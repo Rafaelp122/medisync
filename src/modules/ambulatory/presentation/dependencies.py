@@ -10,7 +10,7 @@ from src.core.authz.roles import Permission, Role
 from src.core.errors import ForbiddenError
 
 _ALLOWED_AMBULATORY_ROLES: frozenset[str] = frozenset(
-    {Role.FATURAMENTO.value, Role.GESTOR_UNIDADE.value, Role.ADMIN_GLOBAL.value}
+    {Role.FATURAMENTO.value, Role.GESTOR_UNIDADE.value}
 )
 
 

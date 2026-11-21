@@ -95,7 +95,6 @@ async def test_obter_posicao_e_estimativa_em_fila(
     atend_id = uuid4()
     atend = Atendimento(
         id=atend_id,
-        organizacao_id=10,
         paciente_id=uuid4(),
         status=StatusAtendimento.APTO_PARA_CHAMADA,
         prioridade_clinica=3,
@@ -104,9 +103,7 @@ async def test_obter_posicao_e_estimativa_em_fila(
     )
     mock_db_session.get.return_value = atend
 
-    res = await fila_service.obter_posicao_e_estimativa(
-        organizacao_id=10, atendimento_id=atend_id
-    )
+    res = await fila_service.obter_posicao_e_estimativa(atendimento_id=atend_id)
 
     assert res.atendimento_id == atend_id
     assert res.status == StatusAtendimento.APTO_PARA_CHAMADA.value
@@ -124,9 +121,7 @@ async def test_obter_posicao_e_estimativa_atendimento_nao_encontrado(
     mock_db_session.get.return_value = None
 
     with pytest.raises(NotFoundError):
-        await fila_service.obter_posicao_e_estimativa(
-            organizacao_id=10, atendimento_id=uuid4()
-        )
+        await fila_service.obter_posicao_e_estimativa(atendimento_id=uuid4())
 
 
 @pytest.mark.asyncio
@@ -138,7 +133,6 @@ async def test_cancelar_atendimento_paciente_sucesso(
     atend_id = uuid4()
     atend = Atendimento(
         id=atend_id,
-        organizacao_id=10,
         paciente_id=uuid4(),
         status=StatusAtendimento.APTO_PARA_CHAMADA,
         prioridade_clinica=3,
@@ -148,7 +142,6 @@ async def test_cancelar_atendimento_paciente_sucesso(
     mock_db_session.get.return_value = atend
 
     res = await fila_service.cancelar_atendimento_paciente(
-        organizacao_id=10,
         atendimento_id=atend_id,
         motivo="Melhora dos sintomas",
     )
@@ -156,7 +149,7 @@ async def test_cancelar_atendimento_paciente_sucesso(
     assert res.atendimento_id == atend_id
     assert res.status == StatusAtendimento.CANCELADO_PACIENTE.value
     assert atend.status == StatusAtendimento.CANCELADO_PACIENTE.value
-    mock_valkey.zrem.assert_awaited_once_with("fila:10:aptos", str(atend_id))
+    mock_valkey.zrem.assert_awaited_once_with("fila:aptos", str(atend_id))
     mock_db_session.commit.assert_awaited_once()
 
 
@@ -170,7 +163,6 @@ async def test_processar_piora_clinica_desvio_samu(
     atend_id = uuid4()
     atend = Atendimento(
         id=atend_id,
-        organizacao_id=10,
         paciente_id=uuid4(),
         status=StatusAtendimento.APTO_PARA_CHAMADA,
         prioridade_clinica=4,
@@ -190,7 +182,6 @@ async def test_processar_piora_clinica_desvio_samu(
     )
 
     cmd = PioraClinicaCommand(
-        organizacao_id=10,
         atendimento_id=atend_id,
         novos_sintomas=["dor_toracica", "falta_de_ar"],
         escala_dor=9,
@@ -205,7 +196,7 @@ async def test_processar_piora_clinica_desvio_samu(
     assert res.redirecionado_emergencia is True
     assert res.nova_posicao is None
     # Verifica que foi removido da fila virtual
-    mock_valkey.zrem.assert_awaited_once_with("fila:10:aptos", str(atend_id))
+    mock_valkey.zrem.assert_awaited_once_with("fila:aptos", str(atend_id))
     assert atend.status == StatusAtendimento.CANCELADO_PACIENTE.value
     mock_db_session.commit.assert_awaited_once()
 
@@ -220,7 +211,6 @@ async def test_processar_piora_clinica_reclassificacao_prioridade(
     atend_id = uuid4()
     atend = Atendimento(
         id=atend_id,
-        organizacao_id=10,
         paciente_id=uuid4(),
         status=StatusAtendimento.APTO_PARA_CHAMADA,
         prioridade_clinica=4,  # Pouco Urgente (Verde)
@@ -240,7 +230,6 @@ async def test_processar_piora_clinica_reclassificacao_prioridade(
     )
 
     cmd = PioraClinicaCommand(
-        organizacao_id=10,
         atendimento_id=atend_id,
         novos_sintomas=["febre_alta"],
         escala_dor=7,

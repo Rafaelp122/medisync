@@ -25,7 +25,7 @@
 - **Então** o sistema registra a comprovação imutável do consentimento com carimbo de data/hora oficial UTC,
 - **E** estratifica o risco clínico preliminar segundo a taxonomia aberta ACR em 5 níveis (ex: Nível 3 - Urgente),
 - **E** admite o atendimento diretamente como apto para chamada (`APTO_PARA_CHAMADA`) pelo Art. 196 da CF/88 (ADR-012),
-- **E** calcula o score determinístico de 64 bits e insere atomicamente no ZSET do Valkey `fila:{org}:aptos`,
+- **E** calcula o score determinístico de 64 bits e insere atomicamente no ZSET do Valkey `fila:aptos`,
 - **E** persiste atomicamente o evento auditável 'ADMISSAO_PACIENTE' na trilha append-only (ADR-007 / CFM nº 2.314/2022),
 - **E** retorna confirmação de admissão (HTTP 201 Created) com status `APTO_PARA_CHAMADA`, identificador do atendimento e credencial provisória de acesso.
 
@@ -60,7 +60,7 @@
 ## 3. Contrato de API
 
 * **Endpoint:** `POST /api/v1/fila/admissao`
-* **Headers:** `X-Tenant-ID: <organizacao_id>`
+* **Content-Type:** `application/json` (sem header de tenant; plataforma única)
 * **Payload de Entrada (`AdmissaoRequest`):**
   ```json
   {
@@ -89,7 +89,7 @@
 
 - [x] **Domínio:** Entidade rica `Triagem` com cálculo de prioridade aberta ACR (`src/modules/triage/domain/classification.py`).
 - [x] **Hash TCLE:** Hash SHA-256 gerado e armazenado com timestamp UTC (`src/modules/triage/domain/classification.py`).
-- [x] **Aplicação:** `FilaService.admitir_paciente()` orquestra persistência atômica direta em `APTO_PARA_CHAMADA` e inserção no ZSET do Valkey `fila:{org}:aptos` (`src/modules/queue/application/services/fila_service.py`).
+- [x] **Aplicação:** `FilaService.admitir_paciente()` orquestra persistência atômica direta em `APTO_PARA_CHAMADA` e inserção no ZSET do Valkey `fila:aptos` (`src/modules/queue/application/services/fila_service.py`).
 - [x] **Apresentação:** Router fino `admissao_router.py` montado em `/api/v1/fila/admissao` com `AdmissaoResponse` expondo `tcle_hash` validado via `model_validate` (ADR-001).
 - [x] **Frontend (Fase 1 & TCLE):** `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx`, `frontend/src/features/onboarding/components/pain-scale-selector.tsx` (alvos de toque >= 44x44px em grid responsivo), `frontend/src/components/samu-emergency-modal.tsx` (safe area inset e saída acessível via Escape sem keyboard trap) e `frontend/src/features/onboarding/components/tcle-dialog.tsx` com cálculo de hash forense nativo Web Crypto API (`frontend/src/lib/validators.ts:calcularHashTcle`).
 - [x] **Frontend Hooks:** `frontend/src/features/onboarding/api/use-intake-fase1.ts` e `frontend/src/features/onboarding/api/use-admitir-paciente.ts`.

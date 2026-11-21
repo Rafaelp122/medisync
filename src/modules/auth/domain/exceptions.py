@@ -82,12 +82,12 @@ class TokenExpiradoError(UnauthorizedError):
 
 
 class PacienteNaoEncontradoError(NotFoundError):
-    """Raised when a patient record is not found within the tenant."""
+    """Raised when a patient record is not found in the platform."""
 
     title = "Paciente Não Encontrado"
     code = "PACIENTE_NAO_ENCONTRADO"
 
-    def __init__(self, detail: str = "Paciente não encontrado na organização.") -> None:
+    def __init__(self, detail: str = "Paciente não encontrado na plataforma.") -> None:
         super().__init__(detail, title=self.title, code=self.code)
 
 
@@ -176,14 +176,14 @@ class WebAuthnChallengeInvalidoError(UnauthorizedError):
 
 
 class PasskeyNaoEncontradaError(UnauthorizedError):
-    """Raised when presented WebAuthn credential is not bound to the organization."""
+    """Raised when presented WebAuthn credential is not found in the platform."""
 
     title = "Credencial Passkey Não Encontrada"
     code = "PASSKEY_NAO_ENCONTRADA"
 
     def __init__(
         self,
-        detail: str = "Credencial biométrica WebAuthn não localizada na organização.",
+        detail: str = "Credencial biométrica WebAuthn não localizada na plataforma.",
     ) -> None:
         super().__init__(detail, title=self.title, code=self.code)
 

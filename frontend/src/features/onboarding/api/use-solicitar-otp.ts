@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { requestOtpApiV1AuthPatientOtpRequestPost } from "@/api/generated/sdk.gen";
 import type {
@@ -29,7 +29,6 @@ export function useSolicitarOtp(
         const response = await requestOtpApiV1AuthPatientOtpRequestPost({
           client,
           body: payload,
-          headers: getTenantHeaders(),
           throwOnError: true,
         });
         return response.data;

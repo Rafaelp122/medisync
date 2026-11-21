@@ -9,7 +9,6 @@ from src.modules.triage.domain.models import Triagem
 
 
 def make_triagem(
-    organizacao_id: int = 1,
     atendimento_id: UUID | None = None,
     *,
     queixa_principal: str = "Febre alta e calafrios",
@@ -28,7 +27,6 @@ def make_triagem(
         else classificar_risco_clinico(queixa_principal, clean_sintomas, escala_dor)
     )
     return Triagem(
-        organizacao_id=organizacao_id,
         atendimento_id=atendimento_id or uuid7(),
         queixa_principal=queixa_principal,
         prioridade_calculada=calc_priority,

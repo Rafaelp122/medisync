@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation, useQueryClient } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { regularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPost } from "@/api/generated/sdk.gen";
 import type {
@@ -29,9 +29,7 @@ export function useRegularizarFila(
     ...options,
     mutationFn: async ({ atendimentoId, body, token }: RegularizarFilaParams) => {
       try {
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

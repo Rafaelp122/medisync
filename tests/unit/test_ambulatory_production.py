@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from src.core.errors import TenantInvalidoError
 from src.modules.ambulatory import (
     BpaProducaoDTO,
     CaraterAtendimento,
@@ -32,7 +31,6 @@ async def test_sus_adapter_instant_no_op_approval() -> None:
     adapter = SusEligibilityAdapter()
 
     req = RequisicaoElegibilidade(
-        organizacao_id=1,
         atendimento_id=uuid4(),
         paciente_id=uuid4(),
         cpf="12345678901",
@@ -66,7 +64,6 @@ async def test_elegibilidade_service_emits_failure_event_on_rejection() -> None:
     atend_id = uuid4()
     pac_id = uuid4()
     req = RequisicaoElegibilidade(
-        organizacao_id=1,
         atendimento_id=atend_id,
         paciente_id=pac_id,
     )
@@ -99,7 +96,6 @@ async def test_elegibilidade_service_does_not_notify_on_approval() -> None:
         notifier=notifier,
     )
     req = RequisicaoElegibilidade(
-        organizacao_id=1,
         atendimento_id=uuid4(),
         paciente_id=uuid4(),
     )
@@ -118,7 +114,6 @@ async def test_logging_elegibilidade_notifier(
     notifier = LoggingElegibilidadeNotifier()
     evento = ElegibilidadeFalhaEvent(
         atendimento_id=uuid4(),
-        organizacao_id=1,
         paciente_id=uuid4(),
         motivo="Documento inconsistente",
         status=StatusElegibilidade.REJEITADO,
@@ -128,27 +123,6 @@ async def test_logging_elegibilidade_notifier(
         await notifier.notificar_falha(evento)
 
     assert "Event ELEGIBILIDADE_FALHA" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_elegibilidade_service_tenant_invalido_raises() -> None:
-    service = ElegibilidadeService(
-        provider=FakeEligibilityProvider(
-            ResultadoElegibilidade(
-                aprovado=True,
-                status=StatusElegibilidade.APROVADO,
-                codigo_autorizacao="SUS-ISENTO",
-            )
-        )
-    )
-    req = RequisicaoElegibilidade(
-        organizacao_id=0,
-        atendimento_id=uuid4(),
-        paciente_id=uuid4(),
-    )
-    match_msg = "Identificador da organização '0' deve ser positivo"
-    with pytest.raises(TenantInvalidoError, match=match_msg):
-        await service.avaliar_elegibilidade(req)
 
 
 def test_consolidar_teleconsulta_command_and_bpa_dto() -> None:

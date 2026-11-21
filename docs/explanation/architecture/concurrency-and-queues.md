@@ -20,8 +20,8 @@ Em uma unidade de pronto-atendimento virtual com múltiplos médicos atendendo s
 
 ### 1. Estrutura de Dados e Indexação da Fila em Memória
 
-A fila é segregada por organização utilizando **Sorted Sets (ZSET)** do Valkey:
-- **Namespace da Chave**: `fila:{organizacao_id}:aptos`
+A fila é mantida em **Sorted Sets (ZSET)** do Valkey com namespace único de plataforma:
+- **Namespace da Chave**: `fila:aptos`
 - **Membro (Member)**: ID do atendimento (`atendimento_id` em formato UUIDv7).
 - **Pontuação (Score)**: Valor numérico inteiro de 64 bits calculado deterministicamente por prioridade clínica (níveis 1 a 5, onde menor valor numérico representa maior gravidade):
 
@@ -32,7 +32,7 @@ Quando múltiplos pacientes chegam no mesmo segundo e possuem a mesma gravidade 
 
 A busca do próximo atendimento opera em tempo logarítmico $\mathcal{O}(\log N)$:
 ```redis
-ZRANGE fila:{organizacao_id}:aptos 0 0
+ZRANGE fila:aptos 0 0
 ```
 
 ### 2. Alocação Atômica Médico-Paciente via Script Lua (RN02)
@@ -40,7 +40,7 @@ ZRANGE fila:{organizacao_id}:aptos 0 0
 Para garantir que a verificação de disponibilidade do médico, a reserva exclusiva do paciente e a remoção da fila ocorram em uma única etapa indivisível sem race conditions, executa-se o script Lua atômico via `EVALSHA`:
 
 ```lua
--- KEYS[1]: lock:{org}:medico:{medico_id} | KEYS[2]: lock:{org}:atendimento:{atendimento_id} | KEYS[3]: fila:{org}:aptos
+-- KEYS[1]: lock:medico:{medico_id} | KEYS[2]: lock:atendimento:{atendimento_id} | KEYS[3]: fila:aptos
 -- ARGV[1]: medico_id | ARGV[2]: atendimento_id | ARGV[3]: ttl_segundos (45s)
 -- Retorno: 1 (Sucesso: locks ativados e removido do ZSET) | 0 (Conflito: médico ocupado - HTTP 409)
 --         -1 (Indisponível: atendimento capturado concorrentemente - aciona retry em memória)
@@ -55,7 +55,7 @@ Notificações pub/sub baseadas em expiração de chave (`notify-keyspace-events
 
 ```python
 await arq_pool.enqueue_job(
-    "resolver_ring_timeout_task", organizacao_id=org_id,
+    "resolver_ring_timeout_task",
     atendimento_id=str(atendimento_id), medico_id=str(medico_id),
     _defer_by=timedelta(seconds=45), _job_id=f"ring_timeout:{atendimento_id}",
 )
@@ -65,14 +65,14 @@ No vencimento dos 45 segundos, o worker ARQ despacha a resolução delegando a t
 
 ```python
 action = await fila_service.resolver_ring_timeout(
-    organizacao_id=organizacao_id, atendimento_id=atend_uuid,
+    atendimento_id=atend_uuid,
     medico_id=med_uuid, notifier=notifier,
 )
 ```
 
 #### Transição de Locks
-1. **Fase de Toque (Ring - 45s)**: Protegida por `lock:{org}:medico:{medico_id}` com TTL de 45s.
-2. **Fase de Teleconsulta (`EM_ATENDIMENTO`)**: Ao atender, o lock é promovido para `lock:{org}:consulta_ativa:medico:{medico_id}` com renovação por heartbeat da sessão WebRTC.
+1. **Fase de Toque (Ring - 45s)**: Protegida por `lock:medico:{medico_id}` com TTL de 45s.
+2. **Fase de Teleconsulta (`EM_ATENDIMENTO`)**: Ao atender, o lock é promovido para `lock:consulta_ativa:medico:{medico_id}` com renovação por heartbeat da sessão WebRTC.
 3. **Conclusão Clínica**: O lock é removido explicitamente quando o médico finaliza o atendimento (`CONCLUIDO`).
 
 ### 4. Controle de Admissão e Backpressure Estocástico (RN05)

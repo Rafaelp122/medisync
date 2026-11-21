@@ -1,6 +1,6 @@
 """Integration tests for SQLAlchemy 2.0 AsyncEngine (Psycopg 3).
 
-Validates database connectivity, connection pooling, and RLS session listener.
+Validates database connectivity, connection pooling, and concurrent queries.
 """
 
 import asyncio
@@ -8,7 +8,6 @@ import socket
 
 import pytest
 from sqlalchemy import text
-from src.core.context import tenant_context
 from src.core.database import async_session_factory, engine, get_db_session
 
 
@@ -35,48 +34,22 @@ async def test_database_connection(check_postgres_running: None) -> None:
         assert result.scalar() == 1
 
 
-async def test_session_rls_injection_with_tenant(
+async def test_concurrent_sessions_pool_isolation(
     check_postgres_running: None,
 ) -> None:
-    """Verify that beginning a session transaction injects app.current_tenant_id."""
-    with tenant_context(4242):
+    """Verify that concurrent transactions across the pool execute isolated queries."""
+
+    async def run_query(value: int) -> int | None:
         async with async_session_factory() as session, session.begin():
-            result = await session.execute(
-                text("SELECT current_setting('app.current_tenant_id', true);")
-            )
-            assert result.scalar() == "4242"
+            await asyncio.sleep(0.01)
+            result = await session.execute(text("SELECT :val"), {"val": value})
+            scalar_val = result.scalar()
+            return int(scalar_val) if scalar_val is not None else None
 
+    values = [1001, 1002, 1003, 1004, 1005]
+    results = await asyncio.gather(*(run_query(val) for val in values))
 
-async def test_session_rls_cleared_without_tenant(
-    check_postgres_running: None,
-) -> None:
-    """Verify that a session transaction without tenant sets an empty string."""
-    async with async_session_factory() as session, session.begin():
-        result = await session.execute(
-            text("SELECT current_setting('app.current_tenant_id', true);")
-        )
-        assert result.scalar() == ""
-
-
-async def test_concurrent_sessions_rls_isolation(
-    check_postgres_running: None,
-) -> None:
-    """Verify that concurrent transactions across pool maintain isolated RLS."""
-
-    async def run_tenant_query(tenant_id: int) -> str | None:
-        with tenant_context(tenant_id):
-            async with async_session_factory() as session, session.begin():
-                await asyncio.sleep(0.01)
-                result = await session.execute(
-                    text("SELECT current_setting('app.current_tenant_id', true);")
-                )
-                scalar_val = result.scalar()
-                return str(scalar_val) if scalar_val is not None else None
-
-    tenant_ids = [1001, 1002, 1003, 1004, 1005]
-    results = await asyncio.gather(*(run_tenant_query(tid) for tid in tenant_ids))
-
-    assert results == [str(tid) for tid in tenant_ids]
+    assert results == values
 
 
 async def test_get_db_session_dependency(check_postgres_running: None) -> None:

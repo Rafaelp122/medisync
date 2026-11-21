@@ -4,12 +4,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 from fastapi import Request, Response
-from src.core.errors import ValidationError
 from src.modules.auth.presentation.helpers import (
     clear_refresh_token_cookie,
     extract_refresh_token,
     resolve_cookie_secure,
-    resolve_login_tenant_id,
     set_refresh_token_cookie,
 )
 
@@ -145,20 +143,6 @@ def test_resolve_cookie_secure_returns_false_when_http_and_no_forwarded() -> Non
     }
     request = Request(scope)
     assert resolve_cookie_secure(request) is False
-
-
-def test_resolve_login_tenant_id_interpolates_offending_value() -> None:
-    with pytest.raises(ValidationError) as exc_info:
-        resolve_login_tenant_id(-5, 10)
-    assert "'-5'" in exc_info.value.detail
-    assert "esperado valor inteiro positivo" in exc_info.value.detail
-
-
-def test_resolve_login_tenant_id_interpolates_missing_context_values() -> None:
-    with pytest.raises(ValidationError) as exc_info:
-        resolve_login_tenant_id(None, -2, multi_tenancy_enabled=True)
-    assert "body_org_id=None" in exc_info.value.detail
-    assert "context_tenant_id=-2" in exc_info.value.detail
 
 
 def test_resolve_cookie_secure_returns_false_on_http_regardless_of_debug(

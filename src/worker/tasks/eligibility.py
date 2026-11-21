@@ -6,7 +6,6 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from src.core.context import tenant_context
 from src.core.errors import NotFoundError
 from src.modules.ambulatory import (
     ElegibilidadeNotifierPort,
@@ -24,7 +23,6 @@ logger = logging.getLogger("medisync.worker.eligibility")
 async def _promover_atendimento_apto(
     valkey: Any,
     session: Any,
-    organizacao_id: int,
     atend_uuid: UUID,
     atendimento_id: str,
     codigo_autorizacao: str | None,
@@ -32,7 +30,6 @@ async def _promover_atendimento_apto(
     fila_service = build_fila_service_for_session(valkey=valkey, session=session)
     try:
         adm_result = await fila_service.admitir_atendimento_apto(
-            organizacao_id=organizacao_id,
             atendimento_id=atend_uuid,
             codigo_autorizacao=codigo_autorizacao,
         )
@@ -61,7 +58,6 @@ async def _executar_validacao_elegibilidade(
     *,
     session: Any,
     ctx: dict[str, Any],
-    organizacao_id: int,
     atend_uuid: UUID,
     atendimento_id: str,
     paciente_uuid: UUID,
@@ -75,7 +71,6 @@ async def _executar_validacao_elegibilidade(
         notifier=notifier,
     )
     req = RequisicaoElegibilidade(
-        organizacao_id=organizacao_id,
         atendimento_id=atend_uuid,
         paciente_id=paciente_uuid,
         cpf=cpf,
@@ -88,7 +83,6 @@ async def _executar_validacao_elegibilidade(
         return await _promover_atendimento_apto(
             valkey=valkey,
             session=session,
-            organizacao_id=organizacao_id,
             atend_uuid=atend_uuid,
             atendimento_id=atendimento_id,
             codigo_autorizacao=resultado.codigo_autorizacao,
@@ -110,7 +104,6 @@ async def _executar_validacao_elegibilidade(
 @monitored_task
 async def validar_elegibilidade_task(
     ctx: dict[str, Any],
-    organizacao_id: int,
     atendimento_id: str,
     paciente_id: str,
     cpf: str | None = None,
@@ -127,17 +120,15 @@ async def validar_elegibilidade_task(
     atend_uuid = UUID(atendimento_id)
     paciente_uuid = UUID(paciente_id)
 
-    with tenant_context(organizacao_id):
-        async with get_db_session_from_ctx(ctx) as session:
-            return await _executar_validacao_elegibilidade(
-                session=session,
-                ctx=ctx,
-                organizacao_id=organizacao_id,
-                atend_uuid=atend_uuid,
-                atendimento_id=atendimento_id,
-                paciente_uuid=paciente_uuid,
-                cpf=cpf,
-                cns=cns,
-                provider=provider,
-                notifier=notifier,
-            )
+    async with get_db_session_from_ctx(ctx) as session:
+        return await _executar_validacao_elegibilidade(
+            session=session,
+            ctx=ctx,
+            atend_uuid=atend_uuid,
+            atendimento_id=atendimento_id,
+            paciente_uuid=paciente_uuid,
+            cpf=cpf,
+            cns=cns,
+            provider=provider,
+            notifier=notifier,
+        )

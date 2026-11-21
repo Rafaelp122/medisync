@@ -224,7 +224,6 @@ class DependenteResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
     id: UUID
-    organizacao_id: int
     titular_id: UUID
     dependente_id: UUID
     grau_parentesco: str

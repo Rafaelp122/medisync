@@ -13,7 +13,6 @@ class TelemetryReaderPort(Protocol):
 
     async def obter_painel_telemetria(
         self,
-        organizacao_id: int,
         config: ConfiguracaoPlantao | None = None,
         data_inicio: datetime | None = None,
     ) -> PainelTelemetriaDTO:
@@ -22,22 +21,17 @@ class TelemetryReaderPort(Protocol):
 
     async def obter_tma_por_medico(
         self,
-        organizacao_id: int,
         data_inicio: datetime | None = None,
     ) -> tuple[MedicoTMADTO, ...]:
         """Obtain average attendance time aggregated per doctor."""
         ...
 
-    async def obter_contagem_fila(
-        self,
-        organizacao_id: int,
-    ) -> int:
+    async def obter_contagem_fila(self) -> int:
         """Obtain count of patients currently waiting in queue."""
         ...
 
     async def obter_medicos_ativos_count(
         self,
-        organizacao_id: int,
         data_inicio: datetime | None = None,
     ) -> int:
         """Obtain count of active medical doctors for the shift."""

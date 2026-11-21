@@ -1,41 +1,43 @@
 """Typed model factories for identity entities used across tests."""
 
 from datetime import date
-from typing import Any
 from uuid import UUID
 
 from src.core.uuid7 import uuid7
 from src.modules.identity.domain.models import (
+    ConfiguracaoUnidade,
     Dependente,
-    Organizacao,
     Paciente,
     Profissional,
 )
 
 
-def make_organizacao(
+def make_configuracao_unidade(
     *,
     cnpj: str = "12345678000195",
     razao_social: str = "Unidade Básica de Saúde Central",
     nome_fantasia: str = "UBS Central",
     modo_publico_sus: bool = True,
-    config_plantao: dict[str, Any] | None = None,
+    cnes: str | None = None,
+    tipo_unidade_sus: str = "UPA_DIGITAL_24H",
+    ibge_municipio: str | None = None,
     ativo: bool = True,
-    id: int | None = None,
-) -> Organizacao:
-    return Organizacao(
+    id: UUID | None = None,
+) -> ConfiguracaoUnidade:
+    return ConfiguracaoUnidade(
         cnpj=cnpj,
         razao_social=razao_social,
         nome_fantasia=nome_fantasia,
         modo_publico_sus=modo_publico_sus,
-        config_plantao=config_plantao,
+        cnes=cnes,
+        tipo_unidade_sus=tipo_unidade_sus,
+        ibge_municipio=ibge_municipio,
         ativo=ativo,
         id=id,
     )
 
 
 def make_profissional(
-    organizacao_id: int = 1,
     *,
     cpf: str = "11122233344",
     nome_completo: str = "Dr. Carlos Plantonista",
@@ -47,7 +49,6 @@ def make_profissional(
     id: UUID | None = None,
 ) -> Profissional:
     return Profissional(
-        organizacao_id=organizacao_id,
         cpf=cpf,
         nome_completo=nome_completo,
         email=email,
@@ -60,7 +61,6 @@ def make_profissional(
 
 
 def make_paciente(
-    organizacao_id: int = 1,
     *,
     cpf: str | None = "55566677788",
     cns: str | None = None,
@@ -72,7 +72,6 @@ def make_paciente(
     id: UUID | None = None,
 ) -> Paciente:
     return Paciente(
-        organizacao_id=organizacao_id,
         cpf=cpf,
         cns=cns,
         data_nascimento=data_nascimento or date(1985, 3, 15),
@@ -85,7 +84,6 @@ def make_paciente(
 
 
 def make_dependente(
-    organizacao_id: int = 1,
     titular_id: UUID | None = None,
     dependente_id: UUID | None = None,
     *,
@@ -93,7 +91,6 @@ def make_dependente(
     id: UUID | None = None,
 ) -> Dependente:
     return Dependente(
-        organizacao_id=organizacao_id,
         titular_id=titular_id or uuid7(),
         dependente_id=dependente_id or uuid7(),
         grau_parentesco=grau_parentesco,

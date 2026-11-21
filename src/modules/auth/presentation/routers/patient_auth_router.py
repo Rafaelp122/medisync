@@ -4,7 +4,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Request, status
 
-from src.core.dependencies import TenantDep
 from src.modules.auth.application.dtos import (
     IdentificarPacienteCommand,
     LoginPacienteSenhaCommand,
@@ -41,11 +40,10 @@ patient_auth_router = APIRouter(
 )
 async def request_otp(
     body: Annotated[SolicitarOtpRequest, Body()],
-    tenant_id: TenantDep,
     service: PatientAuthServiceDep,
 ) -> SolicitarOtpResponse:
     """Request an OTP verification code via SMS."""
-    result = await service.solicitar_otp(tenant_id, body)
+    result = await service.solicitar_otp(body)
     return SolicitarOtpResponse.model_validate(result)
 
 
@@ -60,11 +58,10 @@ async def request_otp(
 )
 async def verify_otp(
     body: Annotated[VerificarOtpRequest, Body()],
-    tenant_id: TenantDep,
     service: PatientAuthServiceDep,
 ) -> VerificarOtpResponse:
     """Verify OTP code and issue patient Bearer JWT token."""
-    result = await service.verificar_otp(tenant_id, body)
+    result = await service.verificar_otp(body)
     return VerificarOtpResponse.model_validate(result)
 
 
@@ -80,12 +77,10 @@ async def verify_otp(
 )
 async def post_auth_paciente_cadsus(
     body: Annotated[AutenticarCadsusRequest, Body()],
-    tenant_id: TenantDep,
     service: PatientAuthServiceDep,
 ) -> VerificarOtpResponse:
     """Authenticate patient via CADSUS / Gov.br civil registry lookup."""
     result = await service.autenticar_cadsus_govbr(
-        organizacao_id=tenant_id,
         cpf=body.cpf,
         data_nascimento=body.data_nascimento,
         cns=body.cns,
@@ -99,7 +94,7 @@ async def post_auth_paciente_cadsus(
     status_code=status.HTTP_201_CREATED,
     summary="Auto-cadastro do cidadão com disparo inicial de OTP",
     description=(
-        "Registra novo paciente na organização com aceite LGPD, credencial "
+        "Registra novo paciente na plataforma com aceite LGPD, credencial "
         "opcional (e-mail/senha Argon2id) e envio inicial de código OTP via SMS."
     ),
     operation_id="post_auth_patient_register",
@@ -107,13 +102,11 @@ async def post_auth_paciente_cadsus(
 async def register_patient(
     request: Request,
     body: Annotated[RegistrarPacienteRequest, Body()],
-    tenant_id: TenantDep,
     service: PatientAuthServiceDep,
 ) -> RegistrarPacienteResponse:
     """Register a new citizen patient and dispatch initial verification OTP."""
     client_ip = request.client.host if request.client else "127.0.0.1"
     cmd = RegistrarPacienteCommand(
-        organizacao_id=tenant_id,
         cpf=body.cpf,
         nome_completo=body.nome_completo,
         data_nascimento=body.data_nascimento,
@@ -140,13 +133,11 @@ async def register_patient(
 async def identify_patient(
     request: Request,
     body: Annotated[IdentificarPacienteRequest, Body()],
-    tenant_id: TenantDep,
     service: PatientAuthServiceDep,
 ) -> IdentificarPacienteResponse:
     """Identify available authentication methods for a patient identifier."""
     client_ip = request.client.host if request.client else "127.0.0.1"
     cmd = IdentificarPacienteCommand(
-        organizacao_id=tenant_id,
         identificador=body.identificador,
         client_ip=client_ip,
     )
@@ -167,13 +158,11 @@ async def identify_patient(
 async def login_patient_password(
     request: Request,
     body: Annotated[LoginPacienteSenhaRequest, Body()],
-    tenant_id: TenantDep,
     service: PatientAuthServiceDep,
 ) -> VerificarOtpResponse:
     """Authenticate patient with password fallback and issue patient JWT."""
     client_ip = request.client.host if request.client else "127.0.0.1"
     cmd = LoginPacienteSenhaCommand(
-        organizacao_id=tenant_id,
         identificador=body.identificador,
         senha=body.senha,
         client_ip=client_ip,

@@ -19,13 +19,12 @@ Para evitar paywall obstrutivo e desassistência clínica (CFM 2.314/2022 e RN-N
 O endpoint opera sob os seguintes pilares conceituais:
 1. **Preservação de Antiguidade ($T_0$ / NC-QUE-04):** Ao transicionar para `APTO_PARA_CHAMADA`, o cálculo do score no Valkey ZSET utiliza estritamente o timestamp original de acolhimento (`data_entrada_fila` ou `criado_em`), garantindo que o paciente recupere sua precedência justa frente a pacientes que chegaram depois.
 2. **Idempotência Estrita:** Se o worker assíncrono de elegibilidade aprovar o convênio no mesmo instante em que a contingência for acionada, a operação retorna status `already_promoted` com HTTP 200, sem erros, sem mutação redundante e sem duplicar o score no ZSET.
-3. **Proteção Anti-IDOR:** Acesso protegido por `PosseAtendimentoPathAuthDep`, exigindo que o solicitante seja o próprio paciente ou operador autorizado do mesmo tenant (`X-Tenant-ID`).
+3. **Proteção Anti-IDOR:** Acesso protegido por `PosseAtendimentoPathAuthDep`, exigindo que o solicitante seja o próprio paciente titular do atendimento (ou profissional autorizado).
 
 ### Contrato HTTP
 
 * **Método e Rota:** `POST /api/v1/fila/atendimentos/{atendimento_id}/regularizar`
 * **Headers:**
-  - `X-Tenant-ID: <int>` (Obrigatório)
   - `Authorization: Bearer <token_intake_ou_jwt>` (Obrigatório)
 * **Path Parameters:**
   - `atendimento_id: UUID` (Identificador do atendimento)
@@ -48,8 +47,8 @@ O endpoint opera sob os seguintes pilares conceituais:
 | :--- | :--- | :--- |
 | `200 OK` | — | Atendimento regularizado ou já previamente apto (idempotência). |
 | `401 Unauthorized` | `UNAUTHORIZED` | Token ausente, expirado ou com assinatura inválida. |
-| `403 Forbidden` | `FORBIDDEN` | Token sem posse sobre o atendimento (Anti-IDOR) ou tenant divergente. |
-| `404 Not Found` | `NOT_FOUND` | Atendimento não encontrado na organização informada. |
+| `403 Forbidden` | `FORBIDDEN` | Token sem posse sobre o atendimento (Anti-IDOR). |
+| `404 Not Found` | `NOT_FOUND` | Atendimento não encontrado. |
 | `409 Conflict` | `TRANSICAO_ESTADO_INVALIDA` | Atendimento finalizado ou em consulta (`EM_ATENDIMENTO`). |
 | `422 Unprocessable Entity` | `VALIDATION_ERROR` | Motivo ausente ou com menos de 3 caracteres. |
 

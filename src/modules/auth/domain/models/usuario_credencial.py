@@ -4,10 +4,8 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     String,
@@ -26,23 +24,15 @@ class UsuarioCredencial(Base):
     __tablename__ = "usuarios_credenciais"
     __table_args__ = (
         UniqueConstraint(
-            "organizacao_id",
             "identificador",
-            name="uq_usuarios_credenciais_org_identificador",
+            name="uq_usuarios_credenciais_identificador",
         ),
-        Index(
-            "idx_usuarios_credenciais_org_papel",
-            "organizacao_id",
-            "papel",
-        ),
+        Index("idx_usuarios_credenciais_papel", "papel"),
         Index("idx_usuarios_credenciais_usuario_id", "usuario_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
     )
     usuario_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     identificador: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -71,7 +61,6 @@ class UsuarioCredencial(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         usuario_id: UUID,
         identificador: str,
         senha_hash: str,
@@ -84,7 +73,6 @@ class UsuarioCredencial(Base):
         clean_ident = identificador.strip().lower()
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             usuario_id=usuario_id,
             identificador=clean_ident,
             senha_hash=senha_hash.strip(),

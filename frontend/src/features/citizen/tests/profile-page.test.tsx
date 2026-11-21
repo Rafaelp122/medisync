@@ -55,7 +55,6 @@ describe("ProfilePage (/perfil)", () => {
         return HttpResponse.json(
           {
             id: novo.id,
-            organizacao_id: 1,
             titular_id: novo.titular_id,
             dependente_id: novo.dependente_id,
             grau_parentesco: novo.grau_parentesco,

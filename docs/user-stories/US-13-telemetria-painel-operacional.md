@@ -52,11 +52,10 @@
 ## 3. Contrato de API
 
 * **Endpoint:** `GET /api/v1/telemetria/painel`
-* **Headers:** `Authorization: Bearer <jwt_admin_ou_medico>`, `X-Tenant-ID: <org_id>`
+* **Headers:** `Authorization: Bearer <jwt_gestor_ou_medico>`
 * **Resposta Esperada (`200 OK`):**
   ```json
   {
-    "organizacao_id": 1,
     "data_referencia": "2026-10-17",
     "total_atendimentos_dia": 42,
     "tme_geral_segundos": 412,
@@ -85,8 +84,8 @@
 - [x] **Read Model Desacoplado:** Leitor puro SQL com queries agregadas assíncronas (`src/modules/telemetry/infrastructure/telemetry_reader_sql.py`).
 - [x] **Cache Volátil no Valkey:** Caching de telemetria para garantir alta performance sem onerar o Postgres (`src/modules/telemetry/application/services/telemetry_service.py`).
 - [x] **Ajuste de TTL (NC-TEL-01):** Reduzir `_CACHE_TTL_SEGUNDOS` de 15s para 5s via injeção IoC (ADR-009) para cumprir RNF-10 e Meta SMART 5 (Resolvido na Issue #76).
-- [x] **Acesso Clínico ao Painel (NC-TEL-02):** Dependência `require_telemetry_view_auth` permitindo `Role.MEDICO`, `Role.GESTOR_UNIDADE` e `Role.ADMIN_GLOBAL` no `GET /painel`, mantendo `config-plantao` restrito à gestão (`src/modules/telemetry/presentation/dependencies.py`).
-- [x] **Isolamento RLS Multi-Tenant (NC-SEC-01):** Tabela `configuracoes_plantao` coberta na suíte de testes de segurança com PostgreSQL real (`tests/integration/test_rls_security.py`).
+- [x] **Acesso Clínico ao Painel (NC-TEL-02):** Dependência `require_telemetry_view_auth` permitindo `Role.MEDICO` e `Role.GESTOR_UNIDADE` no `GET /painel`, mantendo `config-plantao` restrito à gestão (`src/modules/telemetry/presentation/dependencies.py`).
+- [x] **Segurança e Singleton Operacional (NC-SEC-01 / ADR-013):** Tabela singleton `configuracoes_plantao` (`singleton_guard IS TRUE`) e controle RBAC sem bypass global validados na suíte de integração com PostgreSQL real (`tests/integration/test_migrations.py` e `tests/integration/test_telemetry_router.py`).
 - [x] **Apresentação:** Router fino `telemetry_router.py` montado em `/api/v1/telemetria/painel`.
 - [x] **Frontend Rota & Painel Gestor (Issue #141 / Issue #144):** Rota declarativa `/gestor` (`frontend/src/routes/gestor.tsx`) com guard `beforeLoad` validando sessão de gestor e reidratação silenciosa de access token via cookie HttpOnly, sem persistência de credenciais em Web Storage.
 - [x] **Testes Automatizados:**

@@ -57,7 +57,7 @@ Adotamos a **Opção 3: Padronização Pragmática de DTOs e Schemas com Pydanti
 
 1. **Entradas (Inputs / Requests)**:
    * **Cenário Direto (1:1)**: Se os dados necessários para o caso de uso vêm inteiramente do corpo da requisição JSON, o schema Pydantic (com `ConfigDict(frozen=True, str_strip_whitespace=True)`) é utilizado diretamente como tipo de entrada do serviço de aplicação. Proíbe-se a criação de DTO espelho duplicado.
-   * **Cenário de Enriquecimento (Commands)**: Se o caso de uso precisa combinar dados de múltiplas origens (Path Parameters, Headers HTTP de Tenant, Endereço IP do cliente e Body), define-se um `@dataclass(frozen=True)` nomeado com sufixo `Command` em `application/dtos.py`. O roteador compõe o `Command` e o envia ao serviço.
+   * **Cenário de Enriquecimento (Commands)**: Se o caso de uso precisa combinar dados de múltiplas origens (Path Parameters, identidade autenticada no token, endereço IP do cliente e Body), define-se um `@dataclass(frozen=True)` nomeado com sufixo `Command` em `application/dtos.py`. O roteador compõe o `Command` e o envia ao serviço.
 
 2. **Saídas (Outputs / Responses)**:
    * Todos os modelos Pydantic de resposta em `presentation/schemas.py` devem declarar `model_config = ConfigDict(from_attributes=True)`.

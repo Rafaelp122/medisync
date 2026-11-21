@@ -24,9 +24,9 @@ Atualmente o sistema concentra a lógica de alocação de chamadas no script can
 O script é disparado quando um médico plantonista solicita o atendimento do próximo paciente apto da fila ou atende uma chamada direcionada.
 
 #### Parâmetros de Chaves (`KEYS`)
-1. `KEYS[1]`: `lock:{org_id}:medico:{medico_id}` — Trava temporizada do profissional médico chamador.
-2. `KEYS[2]`: `lock:{org_id}:atendimento:{atendimento_id}` — Trava temporizada do paciente/atendimento pretendido.
-3. `KEYS[3]`: `fila:{org_id}:aptos` — Sorted Set (ZSET) da fila de pacientes aptos para atendimento clínico.
+1. `KEYS[1]`: `lock:medico:{medico_id}` — Trava temporizada do profissional médico chamador.
+2. `KEYS[2]`: `lock:atendimento:{atendimento_id}` — Trava temporizada do paciente/atendimento pretendido.
+3. `KEYS[3]`: `fila:aptos` — Sorted Set (ZSET) da fila de pacientes aptos para atendimento clínico.
 
 #### Parâmetros de Argumentos (`ARGV`)
 1. `ARGV[1]`: `medico_id` — Identificador UUID do médico que está iniciando a chamada.

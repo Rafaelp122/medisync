@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { chamarProximoPacienteApiV1FilaChamarProximoPost } from "@/api/generated/sdk.gen";
 import type { ChamarProximoResponse } from "@/api/generated/types.gen";
@@ -18,9 +18,7 @@ export function useChamarProximo(
   return useMutation<ChamarProximoResponse, ProblemDetailsError, ChamarProximoParams>({
     mutationFn: async ({ token }: ChamarProximoParams = {}) => {
       try {
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

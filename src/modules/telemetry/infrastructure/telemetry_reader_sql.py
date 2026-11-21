@@ -21,7 +21,6 @@ class SqlTelemetryReader(TelemetryReaderPort):
 
     async def obter_painel_telemetria(
         self,
-        organizacao_id: int,
         config: ConfiguracaoPlantao | None = None,
         data_inicio: datetime | None = None,
     ) -> PainelTelemetriaDTO:
@@ -118,15 +117,13 @@ class SqlTelemetryReader(TelemetryReaderPort):
                       )
                 ) AS total_dentro_sla
             FROM atendimentos
-            WHERE organizacao_id = :org_id
-              AND criado_em >= :data_inicio
+            WHERE criado_em >= :data_inicio
             """
         )
 
         res = await self._session.execute(
             query_agregados,
             {
-                "org_id": organizacao_id,
                 "data_inicio": dt_inicio,
                 "sla_1": sla_1,
                 "sla_2": sla_2,
@@ -169,14 +166,11 @@ class SqlTelemetryReader(TelemetryReaderPort):
         sla_conforme = sla_compliance >= 95.0
 
         # Concurrent metrics
-        medicos_tma = await self.obter_tma_por_medico(organizacao_id, dt_inicio)
-        total_fila = await self.obter_contagem_fila(organizacao_id)
-        medicos_ativos = await self.obter_medicos_ativos_count(
-            organizacao_id, dt_inicio
-        )
+        medicos_tma = await self.obter_tma_por_medico(dt_inicio)
+        total_fila = await self.obter_contagem_fila()
+        medicos_ativos = await self.obter_medicos_ativos_count(dt_inicio)
 
         return PainelTelemetriaDTO(
-            organizacao_id=organizacao_id,
             gerado_em=datetime.now(UTC),
             tme_medio_segundos=round(tme_medio, 2),
             tme_nivel_1_segundos=round(tme_nivel_1, 2),
@@ -197,7 +191,6 @@ class SqlTelemetryReader(TelemetryReaderPort):
 
     async def obter_tma_por_medico(
         self,
-        organizacao_id: int,
         data_inicio: datetime | None = None,
     ) -> tuple[MedicoTMADTO, ...]:
         dt_inicio = (
@@ -221,8 +214,7 @@ class SqlTelemetryReader(TelemetryReaderPort):
                 ), 0.0) AS tma_segundos
             FROM atendimentos a
             LEFT JOIN profissionais p ON a.medico_id = p.id
-            WHERE a.organizacao_id = :org_id
-              AND a.medico_id IS NOT NULL
+            WHERE a.medico_id IS NOT NULL
               AND a.chamada_iniciada_em IS NOT NULL
               AND a.chamada_finalizada_em IS NOT NULL
               AND a.status = 'CONCLUIDO'
@@ -234,7 +226,7 @@ class SqlTelemetryReader(TelemetryReaderPort):
 
         res = await self._session.execute(
             query,
-            {"org_id": organizacao_id, "data_inicio": dt_inicio},
+            {"data_inicio": dt_inicio},
         )
         rows = res.mappings().all()
 
@@ -253,25 +245,20 @@ class SqlTelemetryReader(TelemetryReaderPort):
 
         return tuple(resultado)
 
-    async def obter_contagem_fila(
-        self,
-        organizacao_id: int,
-    ) -> int:
+    async def obter_contagem_fila(self) -> int:
         query = text(
             """
             SELECT COUNT(*) AS total_fila
             FROM atendimentos
-            WHERE organizacao_id = :org_id
-              AND status IN ('APTO_PARA_CHAMADA', 'CHAMANDO_PACIENTE')
+            WHERE status IN ('APTO_PARA_CHAMADA', 'CHAMANDO_PACIENTE')
             """
         )
-        res = await self._session.execute(query, {"org_id": organizacao_id})
+        res = await self._session.execute(query)
         count_val = res.scalar()
         return int(count_val) if count_val is not None else 0
 
     async def obter_medicos_ativos_count(
         self,
-        organizacao_id: int,
         data_inicio: datetime | None = None,
     ) -> int:
         dt_inicio = (
@@ -283,14 +270,13 @@ class SqlTelemetryReader(TelemetryReaderPort):
             """
             SELECT COUNT(DISTINCT medico_id) AS medicos_ativos
             FROM atendimentos
-            WHERE organizacao_id = :org_id
-              AND medico_id IS NOT NULL
+            WHERE medico_id IS NOT NULL
               AND (status = 'EM_ATENDIMENTO' OR chamada_iniciada_em >= :data_inicio)
             """
         )
         res = await self._session.execute(
             query,
-            {"org_id": organizacao_id, "data_inicio": dt_inicio},
+            {"data_inicio": dt_inicio},
         )
         count_val = res.scalar()
         return int(count_val) if count_val is not None else 0

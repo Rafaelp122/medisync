@@ -23,14 +23,13 @@ class TestProducaoAmbulatorialModel:
         paciente_id = uuid4()
 
         producao = ProducaoAmbulatorial(
-            organizacao_id=1,
             atendimento_id=atendimento_id,
             profissional_id=profissional_id,
             paciente_id=paciente_id,
             cnes="1234567",
         )
 
-        assert producao.organizacao_id == 1
+        assert not hasattr(producao, "organizacao_id")
         assert producao.atendimento_id == atendimento_id
         assert producao.profissional_id == profissional_id
         assert producao.paciente_id == paciente_id
@@ -44,7 +43,6 @@ class TestProducaoAmbulatorialModel:
     def test_cnes_invalido_lanca_value_error(self) -> None:
         with pytest.raises(ValueError, match="CNES '' inválido"):
             ProducaoAmbulatorial(
-                organizacao_id=1,
                 atendimento_id=uuid4(),
                 profissional_id=uuid4(),
                 paciente_id=uuid4(),
@@ -55,7 +53,6 @@ class TestProducaoAmbulatorialModel:
             ValueError, match="inválido; esperado código numérico de até 7 dígitos"
         ):
             ProducaoAmbulatorial(
-                organizacao_id=1,
                 atendimento_id=uuid4(),
                 profissional_id=uuid4(),
                 paciente_id=uuid4(),
@@ -65,7 +62,6 @@ class TestProducaoAmbulatorialModel:
     def test_conversao_para_bpa_dto(self) -> None:
         atendimento_id = uuid4()
         producao = ProducaoAmbulatorial(
-            organizacao_id=1,
             atendimento_id=atendimento_id,
             profissional_id=uuid4(),
             paciente_id=uuid4(),
@@ -103,7 +99,7 @@ class TestProducaoAmbulatorialService:
             carater_atendimento="02",
         )
 
-        dto = await service.consolidar_teleconsulta(cmd, organizacao_id=10)
+        dto = await service.consolidar_teleconsulta(cmd)
 
         assert dto.atendimento_id == cmd.atendimento_id
         assert dto.cnes == "2000001"
@@ -112,13 +108,12 @@ class TestProducaoAmbulatorialService:
         assert fake_session.commits == 1
         assert len(fake_session.added) == 1
         assert isinstance(fake_session.added[0], ProducaoAmbulatorial)
-        assert fake_session.added[0].organizacao_id == 10
 
         # Validação do evento de auditoria append-only (ADR-007, ADR-012)
         assert len(fake_audit.events) == 1
         evento = fake_audit.events[0]
         assert evento["tipo_evento"] == "PRODUCAO_AMBULATORIAL_CONSOLIDADA"
-        assert evento["organizacao_id"] == 10
+        assert "organizacao_id" not in evento
         assert evento["atendimento_id"] == cmd.atendimento_id
         assert evento["ator_tipo"] == "SISTEMA"
         assert evento["ator_papel"] == "WORKER"
@@ -132,7 +127,6 @@ class TestProducaoAmbulatorialService:
     async def test_consolidar_teleconsulta_idempotente(self) -> None:
         atendimento_id = uuid4()
         existente = ProducaoAmbulatorial(
-            organizacao_id=10,
             atendimento_id=atendimento_id,
             profissional_id=uuid4(),
             paciente_id=uuid4(),
@@ -155,7 +149,7 @@ class TestProducaoAmbulatorialService:
             cnes="2000001",
         )
 
-        dto = await service.consolidar_teleconsulta(cmd, organizacao_id=10)
+        dto = await service.consolidar_teleconsulta(cmd)
 
         assert dto.atendimento_id == atendimento_id
         assert fake_session.commits == 0
@@ -183,7 +177,7 @@ class TestProducaoAmbulatorialService:
             paciente_data_nascimento="",  # ausente
         )
 
-        dto = await service.consolidar_teleconsulta(cmd, organizacao_id=10)
+        dto = await service.consolidar_teleconsulta(cmd)
 
         assert dto.atendimento_id == cmd.atendimento_id
         assert fake_session.commits == 1
@@ -199,7 +193,6 @@ class TestProducaoAmbulatorialService:
         from src.modules.ambulatory.application.dtos import ListaProducaoAmbulatorialDTO
 
         prod1 = ProducaoAmbulatorial(
-            organizacao_id=10,
             atendimento_id=uuid4(),
             profissional_id=uuid4(),
             paciente_id=uuid4(),
@@ -210,7 +203,6 @@ class TestProducaoAmbulatorialService:
         service = ProducaoAmbulatorialService(session=fake_session)  # pyright: ignore[reportArgumentType]
 
         res = await service.listar_producao_por_competencia(
-            organizacao_id=10,
             competencia="202611",
             page=1,
             size=10,
@@ -221,7 +213,6 @@ class TestProducaoAmbulatorialService:
         assert len(res.items) == 1
         assert res.items[0].atendimento_id == prod1.atendimento_id
         assert res.competencia == "202611"
-        assert res.organizacao_id == 10
 
     @pytest.mark.asyncio
     async def test_listar_producao_competencia_invalida_raises(self) -> None:
@@ -231,10 +222,7 @@ class TestProducaoAmbulatorialService:
         service = ProducaoAmbulatorialService(session=fake_session)  # pyright: ignore[reportArgumentType]
 
         with pytest.raises(CompetenciaInvalidaError):
-            await service.listar_producao_por_competencia(
-                organizacao_id=10,
-                competencia="202613",
-            )
+            await service.listar_producao_por_competencia(competencia="202613")
 
     @pytest.mark.asyncio
     async def test_gerar_arquivo_bpa_i_sucesso(self) -> None:
@@ -272,7 +260,7 @@ class TestProducaoAmbulatorialService:
 
         class FakeDirectory:
             async def buscar_detalhes_bpa_lote(
-                self, organizacao_id: int, competencia: str
+                self, competencia: str
             ) -> list[BpaRegistroDetalheDTO]:
                 return [registro]
 
@@ -282,10 +270,7 @@ class TestProducaoAmbulatorialService:
             bpa_directory=FakeDirectory(),  # pyright: ignore[reportArgumentType]
         )
 
-        dto = await service.gerar_arquivo_bpa_i(
-            organizacao_id=10,
-            competencia="202611",
-        )
+        dto = await service.gerar_arquivo_bpa_i(competencia="202611")
 
         assert isinstance(dto, BpaArquivoExportadoDTO)
         assert dto.total_registros == 1
@@ -304,7 +289,7 @@ class TestProducaoAmbulatorialService:
 
         class FakeEmptyDirectory:
             async def buscar_detalhes_bpa_lote(
-                self, organizacao_id: int, competencia: str
+                self, competencia: str
             ) -> list[BpaRegistroDetalheDTO]:
                 return []
 
@@ -315,12 +300,8 @@ class TestProducaoAmbulatorialService:
         )
 
         with pytest.raises(ProducaoNaoEncontradaError) as exc_info:
-            await service.gerar_arquivo_bpa_i(
-                organizacao_id=10,
-                competencia="202611",
-            )
+            await service.gerar_arquivo_bpa_i(competencia="202611")
         assert "202611" in str(exc_info.value)
-        assert "10" in str(exc_info.value)
 
 
 class TestAmbulatoryProducaoAdapter:
@@ -339,7 +320,6 @@ class TestAmbulatoryProducaoAdapter:
         pac_id = uuid4()
 
         await adapter.consolidar_teleconsulta(
-            organizacao_id=1,
             atendimento_id=atend_id,
             profissional_id=med_id,
             paciente_id=pac_id,
@@ -367,7 +347,6 @@ class TestAmbulatoryProducaoAdapter:
 
             async def obter_dados_verificacao(
                 self,
-                organizacao_id: int,
                 medico_id: object,
                 atendimento_id: object,
             ) -> DadosVerificacaoDirectory:
@@ -393,7 +372,6 @@ class TestAmbulatoryProducaoAdapter:
         pac_id = uuid4()
 
         await adapter.consolidar_teleconsulta(
-            organizacao_id=1,
             atendimento_id=atend_id,
             profissional_id=med_id,
             paciente_id=pac_id,
@@ -417,7 +395,6 @@ class TestAmbulatoryProducaoAdapter:
         pac_id = uuid4()
 
         await adapter.consolidar_teleconsulta(
-            organizacao_id=1,
             atendimento_id=atend_id,
             profissional_id=med_id,
             paciente_id=pac_id,
@@ -427,3 +404,66 @@ class TestAmbulatoryProducaoAdapter:
         assert fake_session.commits == 1
         assert len(fake_session.added) == 1
         assert fake_session.added[0].cnes == "0000000"
+
+
+@pytest.mark.asyncio
+async def test_sql_bpa_directory_consulta_configuracoes_unidade() -> None:
+    """SqlBpaDirectory uses configuracoes_unidade singleton without organizacao_id."""
+    from datetime import UTC, datetime
+    from typing import Any
+
+    from src.modules.ambulatory.infrastructure.adapters.sql_bpa_directory import (
+        SqlBpaDirectory,
+    )
+
+    executed_sql: list[tuple[str, Any]] = []
+
+    class _Mappings:
+        def all(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "producao_id": uuid4(),
+                    "atendimento_id": uuid4(),
+                    "profissional_id": uuid4(),
+                    "paciente_id": uuid4(),
+                    "cnes": "2695251",
+                    "codigo_sigtap": "03.01.01.025-0",
+                    "carater_atendimento": "02",
+                    "competencia": "202611",
+                    "consolidado_em": datetime.now(UTC),
+                    "paciente_nome": "JOANA DA SILVA",
+                    "paciente_cns": "700000000000001",
+                    "paciente_cpf": "12345678900",
+                    "paciente_data_nascimento": "19900101",
+                    "paciente_sexo": "F",
+                    "paciente_ibge": "355030",
+                    "medico_cns": "700000000000002",
+                    "medico_cbo": "225125",
+                    "org_nome": "UPA DIGITAL UNICA",
+                    "org_sigla": "MSYNC",
+                    "org_cnpj": "12345678000199",
+                    "idade": 36,
+                }
+            ]
+
+    class _MappingsRes:
+        def mappings(self) -> _Mappings:
+            return _Mappings()
+
+    class _Session(FakeAsyncSession):
+        async def execute(self, *args: Any, **kwargs: Any) -> Any:
+            executed_sql.append((str(args[0]), args[1] if len(args) > 1 else None))
+            return _MappingsRes()
+
+    directory = SqlBpaDirectory(session=_Session())  # pyright: ignore[reportArgumentType]
+    rows = await directory.buscar_detalhes_bpa_lote("202611")
+
+    assert len(rows) == 1
+    assert rows[0].org_nome == "UPA DIGITAL UNICA"
+    assert rows[0].org_cnpj == "12345678000199"
+    assert rows[0].cnes == "2695251"
+    sql_str, params = executed_sql[0]
+    assert "configuracoes_unidade" in sql_str
+    assert "organizacoes" not in sql_str
+    assert "organizacao_id" not in sql_str
+    assert params == {"competencia": "202611"}

@@ -2,8 +2,8 @@
 
 > Biblioteca canônica de especificações técnicas, contratos, dicionários de dados e padrões de engenharia do MediSync Express.
 
-## 1. Persistência & Isolamento de Dados
-- [Database Schema & Row-Level Security (RLS)](database/schema-and-rls.md) — Catálogo físico das 16 tabelas (15 multi-tenant com RLS), chaves primárias UUIDv7, índices B-Tree e políticas RLS de tenant.
+## 1. Persistência & Segurança de Dados
+- [Database Schema](database/schema.md) — Catálogo físico das 16 tabelas de plataforma única, chaves primárias UUIDv7 e invariantes estruturais de integridade.
 - [Catálogo de Eventos de Auditoria Clínica](audit/event-catalog.md) — Taxonomia dos 11 eventos auditáveis append-only sob ADR-007, CFM nº 2.314/2022 e LGPD.
 
 ## 2. Cache, Concorrência & Atomicidade
@@ -26,7 +26,7 @@
 - [Component Guidelines & Decomposição](frontend/component-guidelines.md) — Arquitetura de componentes, limiar de 300 linhas, compound components e memoização WebRTC.
 
 ## 5. Ambiente & Infraestrutura de CI/CD
-- [Environment Variables](environment/variables.md) — As 25 variáveis de ambiente, validações Pydantic e perfis de execução.
+- [Environment Variables](environment/variables.md) — As 28 variáveis de ambiente, validações Pydantic e perfis de execução.
 - [CI Pipeline & Docker Specification](ci-cd/pipeline.md) — Pipeline do GitHub Actions, multi-stage Dockerfile e servidor Granian ASGI.
 
 ## Verificação

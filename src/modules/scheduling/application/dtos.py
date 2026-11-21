@@ -20,7 +20,6 @@ class SlotDisponivelDTO:
 class CriarDisponibilidadeCommand:
     """Command para cadastro de janela semanal de disponibilidade."""
 
-    organizacao_id: int
     profissional_id: UUID
     especialidade: str
     dia_semana: int
@@ -33,7 +32,6 @@ class CriarDisponibilidadeCommand:
 class AgendarConsultaCommand:
     """Command para agendamento de consulta pelo paciente autenticado."""
 
-    organizacao_id: int
     paciente_id: UUID
     profissional_id: UUID
     especialidade: str

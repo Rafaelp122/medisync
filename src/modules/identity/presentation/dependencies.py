@@ -11,7 +11,6 @@ from src.core.authz.revocation import is_token_revoked
 from src.core.authz.roles import Role
 from src.core.authz.token import decode_access_token
 from src.core.config import get_settings
-from src.core.dependencies import TenantDep
 from src.core.errors import ForbiddenError, TokenRevogadoError, UnauthorizedError
 from src.core.security import verify_intake_token
 from src.modules.identity.presentation.schemas import Fase2Request
@@ -20,7 +19,6 @@ from src.modules.identity.presentation.schemas import Fase2Request
 def _validar_intake_token(
     token: str,
     expected_paciente_id: UUID,
-    tenant_id: int,
     tipo_paciente: str = "paciente",
 ) -> None:
     """Validate 2-part HMAC provisional intake token claims."""
@@ -38,22 +36,14 @@ def _validar_intake_token(
             f"esperado '{expected_paciente_id}')."
         )
 
-    token_org_id = int(claims.get("organizacao_id", 0))
-    if token_org_id != tenant_id:
-        raise ForbiddenError(
-            f"Acesso negado: o token pertence à organização {token_org_id}, "
-            f"mas o contexto solicitado é da organização {tenant_id}."
-        )
-
 
 async def _validar_jwt_token(
     token: str,
     expected_paciente_id: UUID,
-    tenant_id: int,
     acao_permissao: str,
     tipo_paciente: str = "paciente",
 ) -> None:
-    """Validate 3-part corporate or patient JWT access token claims."""
+    """Validate 3-part corporate or patient JWT access token claims (Anti-IDOR)."""
     user = decode_access_token(token)
 
     if await is_token_revoked(user.token_id):
@@ -61,13 +51,7 @@ async def _validar_jwt_token(
             f"Token de acesso com id '{user.token_id}' revogado. Realize novo login."
         )
 
-    if user.papel != Role.ADMIN_GLOBAL and user.organizacao_id != tenant_id:
-        raise ForbiddenError(
-            f"Acesso negado: o token pertence à organização {user.organizacao_id}, "
-            f"mas o contexto solicitado é da organização {tenant_id}."
-        )
-
-    if user.papel in (Role.ADMIN_GLOBAL, Role.GESTOR_UNIDADE):
+    if user.papel == Role.GESTOR_UNIDADE:
         return
 
     if user.papel != Role.PACIENTE:
@@ -85,7 +69,6 @@ async def _validar_jwt_token(
 
 async def validar_intake_fase2(
     body: Fase2Request,
-    tenant_id: TenantDep,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None,
         Security(http_bearer_scheme),
@@ -99,7 +82,7 @@ async def validar_intake_fase2(
     Raises:
         UnauthorizedError: If token is missing, expired, or malformed (401).
         TokenRevogadoError: If access token has been revoked (401).
-        ForbiddenError: If token belongs to another patient or organization (403).
+        ForbiddenError: If token belongs to another patient (403).
     """
     token: str | None = (
         credentials.credentials.strip()
@@ -111,19 +94,19 @@ async def validar_intake_fase2(
 
     if not token:
         raise UnauthorizedError(
-            "Token de acolhimento não fornecido. Envie o token no cabeçalho "
-            "Authorization: Bearer <token> ou no corpo da requisição."
+            "Token de acolhimento não fornecido "
+            f"(recebido credentials={credentials is not None!r}, "
+            f"body_token={body.token is not None!r}; envie no cabeçalho "
+            "Authorization: Bearer <token> ou no corpo da requisição)."
         )
 
     token_parts = token.split(".")
     if len(token_parts) == 2:
-        _validar_intake_token(token, body.paciente_id, tenant_id)
+        _validar_intake_token(token, body.paciente_id)
         return
 
     if len(token_parts) == 3:
-        await _validar_jwt_token(
-            token, body.paciente_id, tenant_id, "onboarding de paciente"
-        )
+        await _validar_jwt_token(token, body.paciente_id, "onboarding de paciente")
         return
 
     raise UnauthorizedError(
@@ -134,7 +117,6 @@ async def validar_intake_fase2(
 
 async def validar_posse_titular(
     id: Annotated[UUID, Path(description="ID do paciente titular")],
-    tenant_id: TenantDep,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None,
         Security(http_bearer_scheme),
@@ -149,30 +131,29 @@ async def validar_posse_titular(
         UnauthorizedError: If header is missing, malformed, or token is
             invalid/expired (401).
         TokenRevogadoError: If access token has been revoked (401).
-        ForbiddenError: If caller lacks possession of the titular record
-            or belongs to another organization (403).
+        ForbiddenError: If caller lacks possession of the titular record (403).
     """
     if not credentials or not credentials.credentials:
         raise UnauthorizedError(
-            "Credencial de acesso não fornecida. Envie o token no cabeçalho "
-            "Authorization: Bearer <token>."
+            f"Credencial de acesso não fornecida (recebido={credentials!r}; "
+            "envie o token no cabeçalho Authorization: Bearer <token>)."
         )
 
     raw_token = credentials.credentials.strip()
     if not raw_token:
         raise UnauthorizedError(
-            "Credencial de acesso não fornecida. Envie o token no cabeçalho "
-            "Authorization: Bearer <token>."
+            f"Credencial de acesso não fornecida (recebido={raw_token!r}; "
+            "envie o token no cabeçalho Authorization: Bearer <token>)."
         )
 
     token_parts = raw_token.split(".")
     if len(token_parts) == 2:
-        _validar_intake_token(raw_token, id, tenant_id, tipo_paciente="titular")
+        _validar_intake_token(raw_token, id, tipo_paciente="titular")
         return
 
     if len(token_parts) == 3:
         await _validar_jwt_token(
-            raw_token, id, tenant_id, "gerenciar dependentes", tipo_paciente="titular"
+            raw_token, id, "gerenciar dependentes", tipo_paciente="titular"
         )
         return
 

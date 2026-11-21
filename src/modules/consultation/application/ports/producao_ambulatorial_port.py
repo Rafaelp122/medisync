@@ -16,7 +16,6 @@ class ProducaoAmbulatorialPort(Protocol):
     async def consolidar_teleconsulta(
         self,
         *,
-        organizacao_id: int,
         atendimento_id: UUID,
         profissional_id: UUID,
         paciente_id: UUID,

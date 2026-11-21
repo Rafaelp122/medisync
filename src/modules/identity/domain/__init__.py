@@ -4,28 +4,28 @@ from src.modules.identity.domain.exceptions import (
     DependenteAutoReferenciaError,
     IdentificacaoObrigatoriaError,
     PacienteNaoEncontradoError,
-    TenantInvalidoError,
     TokenAcolhimentoInvalidoError,
     VinculoDependenteExistenteError,
 )
 from src.modules.identity.domain.models import (
+    ConfiguracaoUnidade,
     Dependente,
-    Organizacao,
     Paciente,
+    PacientePasskey,
     PapelProfissional,
     Profissional,
 )
 
 __all__ = [
+    "ConfiguracaoUnidade",
     "Dependente",
     "DependenteAutoReferenciaError",
     "IdentificacaoObrigatoriaError",
-    "Organizacao",
     "Paciente",
     "PacienteNaoEncontradoError",
+    "PacientePasskey",
     "PapelProfissional",
     "Profissional",
-    "TenantInvalidoError",
     "TokenAcolhimentoInvalidoError",
     "VinculoDependenteExistenteError",
 ]

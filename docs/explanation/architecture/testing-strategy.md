@@ -6,7 +6,7 @@
 
 ## 1. Visão Geral e Filosofia
 
-No MediSync Express, os testes garantem conformidade clínica (CFM 2.314/2022, Portaria 344/98), robustez em alta concorrência médica (ADR-002) e isolamento multi-tenant estrito (RLS no PostgreSQL).
+No MediSync Express, os testes garantem conformidade clínica (CFM 2.314/2022, Portaria 344/98), robustez em alta concorrência médica (ADR-002) e controle horizontal Anti-IDOR por titularidade (ADR-013).
 
 A estratégia de testes adota dois pilares fundamentais:
 1. **Pirâmide Segregada Fail-Fast:** A validação rápida deve ocorrer sem I/O e sem infraestrutura de contêineres, falhando em poucos segundos antes de qualquer teste pesado de integração.
@@ -20,7 +20,7 @@ A estratégia de testes adota dois pilares fundamentais:
         / \
        /   \
       /  I  \    Testes de Integração (tests/integration/)
-     /------- \   - PostgreSQL 17 com RLS ativo
+     /------- \   - PostgreSQL 17 real (migrações, Anti-IDOR, auditoria)
     /    A    \   - Valkey 8.0 (Lua scripts atômicos)
    / ----------\  - MinIO S3 & LiveKit
   /      U      \ Testes Unitários & Arquiteturais (tests/unit/ & tests/architecture/)
@@ -39,7 +39,7 @@ A estratégia de testes adota dois pilares fundamentais:
 * **Execução:** `just test-integration`
 * **Dependências:** PostgreSQL (`localhost:5433`), Valkey (`localhost:6380`), MinIO e LiveKit rodando saudáveis.
 * **Escopo:**
-  * Políticas de segurança Row-Level Security (RLS) e troca de papéis (`SET LOCAL ROLE medisync_app`).
+  * Checagens de esquema consolidado (`test_migrations.py`), unicidade global, integridade referencial, trigger append-only e bloqueio Anti-IDOR.
   * Concorrência real de 50 médicos concorrendo por pacientes via Lua scripts atômicos.
   * Tarefas do worker ARQ (expiração de ring timeout em 45s, reconciliação pelo sweeper).
   * Fluxo HTTP ponta a ponta via `AsyncClient` contra a aplicação FastAPI real.
@@ -51,12 +51,12 @@ A estratégia de testes adota dois pilares fundamentais:
 ### O Problema do DDL Destrutivo em Execuções Concorrentes
 No passado, fixtures tentavam isolar testes executando `DROP SCHEMA public CASCADE;` ou chamadas ad-hoc de `Base.metadata.create_all`. Em execuções paralelas ou consecutivas, isso causava:
 * Destruição de tabelas enquanto outros workers estavam rodando (`psycopg.errors.UndefinedTable`).
-* Eliminação de roles DCL e grants de RLS necessários para a role `medisync_app`.
+* Remoção de privilégios e estado necessários às transações de teste.
 
 ### O Padrão Canônico: `TRUNCATE TABLE ... CASCADE`
 No MediSync, a infraestrutura de banco de teste é gerenciada canonicamente:
 1. **Migrações via Alembic:** O schema é provisionado uma única vez até a revisão head (`just migrate`).
-2. **Limpeza Declarativa e Rápida:** As fixtures utilizam `clean_database_tables()` ou `clean_database_and_valkey()`, que executam um único comando `TRUNCATE TABLE ... CASCADE` nas tabelas de domínio, preservando a estrutura de tabelas, índices, triggers de RLS e concessões DCL intactas.
+2. **Limpeza Declarativa e Rápida:** As fixtures utilizam `clean_database_tables()` ou `clean_database_and_valkey()`, que executam um único comando `TRUNCATE TABLE ... CASCADE` nas tabelas de domínio, preservando a estrutura de tabelas, índices e triggers de auditoria intactos.
 3. **Limpeza de Valkey por Namespace:** Chaves voláteis de teste (`fila:*`, `lock:*`, `plantao:*`, etc.) são limpas via `clean_valkey_keys()` sem afetar outras chaves persistidas.
 
 ---

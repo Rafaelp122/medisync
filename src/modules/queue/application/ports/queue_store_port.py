@@ -15,7 +15,6 @@ class AtendimentoSnapshotDTO:
     """Immutable snapshot of attendance state for cross-module readers."""
 
     id: UUID
-    organizacao_id: int
     paciente_id: UUID
     medico_id: UUID | None
     status: str
@@ -31,7 +30,6 @@ class AtendimentoHistoricoQueueDTO:
     """Immutable attendance history entry for cross-module history readers."""
 
     atendimento_id: UUID
-    organizacao_id: int
     paciente_id: UUID
     status: str
     prioridade_clinica: int
@@ -56,7 +54,6 @@ class QueueStorePort(Protocol):
 
     async def admitir_atendimento_apto(
         self,
-        organizacao_id: int,
         atendimento_id: UUID,
         codigo_autorizacao: str | None = None,
     ) -> AdmissaoAptoResult:
@@ -68,7 +65,6 @@ class QueueStorePort(Protocol):
 
     async def resolver_ring_timeout(
         self,
-        organizacao_id: int,
         atendimento_id: UUID,
         medico_id: UUID,
         notifier: PacienteAusenteNotifierPort | None = None,
@@ -100,7 +96,6 @@ class QueueStorePort(Protocol):
 
     async def reconciliar_fila_orfaos(
         self,
-        organizacao_id: int,
         cutoff_em: datetime,
     ) -> tuple[int, list[str]]:
         """Find orphan APTO attendances missing in Valkey and reinject them.
@@ -118,7 +113,6 @@ class QueueStorePort(Protocol):
 
     async def listar_historico_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> list[AtendimentoHistoricoQueueDTO]:
         """List patient attendance history entries ordered newest first."""

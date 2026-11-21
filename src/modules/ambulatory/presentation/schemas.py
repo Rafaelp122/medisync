@@ -30,6 +30,5 @@ class ListaProducaoAmbulatorialResponse(BaseModel):
     )
     total: int = Field(description="Total de registros na competência")
     competencia: str = Field(description="Competência de referência no formato YYYYMM")
-    organizacao_id: int = Field(description="Identificador do tenant municipal")
     page: int = Field(description="Página atual")
     size: int = Field(description="Tamanho da página")

@@ -47,6 +47,7 @@ from src.modules.queue.application.ports.triage_port import (
     TriageQueixaReaderPort,
 )
 from src.modules.queue.application.services.alocacao_service import (
+    FILA_APTOS_KEY,
     AlocacaoChamadaService,
 )
 from src.modules.queue.application.services.controle_admissao_service import (
@@ -105,17 +106,17 @@ class FilaService:
 
     @property
     def controle_admissao(self) -> ControleAdmissaoService:
-        """Provide admission control service."""
+        """Retorna serviço de controle de admissão estocástica (RN05)."""
         return self._controle_admissao
 
     @property
     def arq_pool(self) -> ArqRedis | None:
-        """Provide ARQ pool connection if configured."""
+        """Retorna pool ARQ configurado para jobs assíncronos (ADR-004)."""
         return self._arq_pool
 
     @property
     def triage_port(self) -> TriagePort | None:
-        """Provide clinical triage port if configured."""
+        """Retorna porta de triagem clínica configurada (ADR-001)."""
         return self._triage_port
 
     async def admitir_paciente(
@@ -128,22 +129,15 @@ class FilaService:
 
         Regras: docs/explanation/domains/queue-domain.md
         """
-        if command.organizacao_id <= 0:
-            raise ValidationError(
-                "organizacao_id deve ser positivo (> 0); "
-                f"recebido '{command.organizacao_id}'."
-            )
-
         if self._triage_port is None:
             raise RuntimeError(
                 "TriagePort não configurado no FilaService para admissão "
-                f"na organização {command.organizacao_id}."
+                f"do paciente '{command.paciente_id}'."
             )
 
         # 1. Clinical risk assessment and SAMU 192 safeguard
         # via TriagePort (RN01, RN04, RN07)
         triage_eval = await self._triage_port.avaliar_risco(
-            organizacao_id=command.organizacao_id,
             queixa_principal=command.queixa_principal,
             sintomas=command.sintomas,
             escala_dor=command.escala_dor,
@@ -153,12 +147,9 @@ class FilaService:
         )
 
         # 2. Stochastic backpressure evaluation (RN05)
-        pacientes_aguardando = await self.obter_tamanho_fila(command.organizacao_id)
-        total_admissoes_hoje = await self._controle_admissao.obter_admissoes_hoje(
-            command.organizacao_id
-        )
+        pacientes_aguardando = await self.obter_tamanho_fila()
+        total_admissoes_hoje = await self._controle_admissao.obter_admissoes_hoje()
         avaliacao_cmd = AvaliarAdmissaoCommand(
-            organizacao_id=command.organizacao_id,
             medicos_ativos=command.medicos_ativos,
             tempo_restante_segundos=command.tempo_restante_segundos,
             pacientes_aguardando=pacientes_aguardando,
@@ -178,7 +169,6 @@ class FilaService:
         # 3. Atomic persistence of Atendimento + Triagem aggregate
         now = datetime.now(UTC)
         atendimento = Atendimento(
-            organizacao_id=command.organizacao_id,
             paciente_id=command.paciente_id,
             prioridade_clinica=triage_eval.prioridade_clinica,
             tcle_hash=triage_eval.tcle_hash,
@@ -189,7 +179,6 @@ class FilaService:
         await self._db_session.flush()
 
         triagem_id = await self._triage_port.registrar_triagem(
-            organizacao_id=command.organizacao_id,
             atendimento_id=atendimento.id,
             queixa_principal=command.queixa_principal,
             sintomas=command.sintomas,
@@ -200,7 +189,6 @@ class FilaService:
 
         if self._audit_trail is not None:
             await self._audit_trail.record_event(
-                organizacao_id=command.organizacao_id,
                 atendimento_id=atendimento.id,
                 ator_tipo=AtorTipo.PACIENTE,
                 ator_papel=AtorPapel.PACIENTE,
@@ -220,17 +208,16 @@ class FilaService:
         await self._db_session.refresh(atendimento)
 
         # Increment daily admission quota atomically in Valkey (RN05 / NC-QUE-01)
-        await self._controle_admissao.incrementar_admissoes_hoje(command.organizacao_id)
+        await self._controle_admissao.incrementar_admissoes_hoje()
 
         # 4. Immediate ingestion into virtual queue ZSET (ADR-012, RN01)
         score = calcular_score(triage_eval.prioridade_clinica, now)
-        k_fila = f"fila:{command.organizacao_id}:aptos"
-        await self._valkey.zadd(k_fila, {str(atendimento.id): score})  # pyright: ignore[reportUnknownMemberType]
+        await self._valkey.zadd(FILA_APTOS_KEY, {str(atendimento.id): score})  # pyright: ignore[reportUnknownMemberType]
 
         logger.info(
             "Patient %s admitted directly to SUS queue %s (status=%s, score=%d)",
             command.paciente_id,
-            k_fila,
+            FILA_APTOS_KEY,
             atendimento.status,
             score,
         )
@@ -238,7 +225,6 @@ class FilaService:
         return AdmissaoAtendimentoResult(
             atendimento_id=atendimento.id,
             triagem_id=triagem_id,
-            organizacao_id=command.organizacao_id,
             paciente_id=command.paciente_id,
             status_atendimento=str(atendimento.status),
             prioridade_clinica=triage_eval.prioridade_clinica,
@@ -251,29 +237,30 @@ class FilaService:
         self,
         command: IngressarFilaCommand,
     ) -> IngressarFilaResult:
-        """Ingests an attendance into the organization's virtual queue."""
-        k_fila = f"fila:{command.organizacao_id}:aptos"
+        """Insere atendimento apto na fila virtual ordenada por score 64-bit (RN01).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         score = calcular_score(
             command.prioridade_clinica,
             command.data_entrada_fila,
         )
         atendimento_id_str = str(command.atendimento_id)
 
-        await self._valkey.zadd(k_fila, {atendimento_id_str: score})  # pyright: ignore[reportUnknownMemberType]
-        rank = await self._valkey.zrank(k_fila, atendimento_id_str)  # pyright: ignore[reportUnknownMemberType]
+        await self._valkey.zadd(FILA_APTOS_KEY, {atendimento_id_str: score})  # pyright: ignore[reportUnknownMemberType]
+        rank = await self._valkey.zrank(FILA_APTOS_KEY, atendimento_id_str)  # pyright: ignore[reportUnknownMemberType]
         posicao = (rank + 1) if isinstance(rank, int) else 1
 
         logger.info(
             "Attendance %s ingested into queue %s with score=%d (pos=%d)",
             atendimento_id_str,
-            k_fila,
+            FILA_APTOS_KEY,
             score,
             posicao,
         )
 
         return IngressarFilaResult(
             atendimento_id=command.atendimento_id,
-            organizacao_id=command.organizacao_id,
             score=score,
             posicao=posicao,
         )
@@ -282,11 +269,13 @@ class FilaService:
         self,
         command: IngressarFilaComBackpressureCommand,
     ) -> IngressarFilaResult:
-        """Admits patient with stochastic backpressure check (RN05)."""
-        pacientes_aguardando = await self.obter_tamanho_fila(command.organizacao_id)
+        """Admite paciente na fila aplicando verificação de backpressure (RN05).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
+        pacientes_aguardando = await self.obter_tamanho_fila()
 
         avaliacao_cmd = AvaliarAdmissaoCommand(
-            organizacao_id=command.organizacao_id,
             medicos_ativos=command.medicos_ativos,
             tempo_restante_segundos=command.tempo_restante_segundos,
             pacientes_aguardando=pacientes_aguardando,
@@ -305,7 +294,6 @@ class FilaService:
             )
 
         ing_cmd = IngressarFilaCommand(
-            organizacao_id=command.organizacao_id,
             atendimento_id=command.atendimento_id,
             prioridade_clinica=command.prioridade_clinica,
             data_entrada_fila=command.data_entrada_fila,
@@ -321,10 +309,9 @@ class FilaService:
         if self._alocacao_service is None:
             raise RuntimeError(
                 "AlocacaoChamadaService não configurado para aquisição de "
-                f"pacientes na organização '{command.organizacao_id}'."
+                f"pacientes pelo médico '{command.medico_id}'."
             )
         alocar_cmd = AlocarChamadaCommand(
-            organizacao_id=command.organizacao_id,
             medico_id=command.medico_id,
             atendimento_id=candidate_uuid,
             ttl_segundos=command.ttl_segundos,
@@ -341,15 +328,13 @@ class FilaService:
         Regras: docs/explanation/domains/queue-domain.md
         História: docs/user-stories/US-07-alocacao-chamada-medica.md
         """
-        k_fila = f"fila:{command.organizacao_id}:aptos"
-
         for attempt in range(command.max_retries):
             # Query top element in ZSET (O(log N))
-            raw_elements = await self._valkey.zrange(k_fila, 0, 0)  # pyright: ignore[reportUnknownMemberType]
+            raw_elements = await self._valkey.zrange(FILA_APTOS_KEY, 0, 0)  # pyright: ignore[reportUnknownMemberType]
             if len(raw_elements) == 0:
                 logger.info(
                     "Queue %s is empty, no patient available for doctor %s",
-                    k_fila,
+                    FILA_APTOS_KEY,
                     command.medico_id,
                 )
                 return None
@@ -390,44 +375,43 @@ class FilaService:
         logger.error(msg)
         raise AtendimentoNaoDisponivelError(msg)
 
-    async def remover_da_fila(
-        self,
-        organizacao_id: int,
-        atendimento_id: UUID,
-    ) -> bool:
-        """Removes an attendance from the queue if present."""
-        k_fila = f"fila:{organizacao_id}:aptos"
-        removed = await self._valkey.zrem(k_fila, str(atendimento_id))  # pyright: ignore[reportUnknownMemberType]
+    async def remover_da_fila(self, atendimento_id: UUID) -> bool:
+        """Remove atendimento da fila virtual ZSET se presente (RN01).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
+        removed = await self._valkey.zrem(FILA_APTOS_KEY, str(atendimento_id))  # pyright: ignore[reportUnknownMemberType]
         return bool(int(removed) > 0)
 
-    async def obter_posicao_fila(
-        self,
-        organizacao_id: int,
-        atendimento_id: UUID,
-    ) -> int | None:
-        """Returns 1-based position of attendance in queue, or None if not present."""
-        k_fila = f"fila:{organizacao_id}:aptos"
-        rank = await self._valkey.zrank(k_fila, str(atendimento_id))  # pyright: ignore[reportUnknownMemberType]
+    async def obter_posicao_fila(self, atendimento_id: UUID) -> int | None:
+        """Retorna posição 1-based do atendimento na fila ou None se ausente (RN01).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
+        rank = await self._valkey.zrank(FILA_APTOS_KEY, str(atendimento_id))  # pyright: ignore[reportUnknownMemberType]
         if isinstance(rank, int):
             return rank + 1
         return None
 
-    async def obter_tamanho_fila(self, organizacao_id: int) -> int:
-        """Returns the total number of waiting patients in the queue."""
-        k_fila = f"fila:{organizacao_id}:aptos"
-        card = await self._valkey.zcard(k_fila)  # pyright: ignore[reportUnknownMemberType]
+    async def obter_tamanho_fila(self) -> int:
+        """Retorna o número total de pacientes aguardando na fila virtual (RN05).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
+        card = await self._valkey.zcard(FILA_APTOS_KEY)  # pyright: ignore[reportUnknownMemberType]
         return card
 
     async def listar_fila(
         self,
-        organizacao_id: int,
         offset: int = 0,
         limit: int = 50,
     ) -> list[str]:
-        """Lists attendance IDs in queue sorted by priority and arrival time."""
-        k_fila = f"fila:{organizacao_id}:aptos"
+        """Lista IDs de atendimento na fila ordenados por prioridade e chegada (RN01).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         end = offset + limit - 1 if limit > 0 else -1
-        raw_elements = await self._valkey.zrange(k_fila, offset, end)  # pyright: ignore[reportUnknownMemberType]
+        raw_elements = await self._valkey.zrange(FILA_APTOS_KEY, offset, end)  # pyright: ignore[reportUnknownMemberType]
         result: list[str] = []
         for elem in raw_elements:
             if isinstance(elem, bytes):
@@ -438,17 +422,16 @@ class FilaService:
 
     async def admitir_atendimento_apto(
         self,
-        organizacao_id: int,
         atendimento_id: UUID,
         codigo_autorizacao: str | None = None,
     ) -> AdmissaoAptoResult:
-        """Promote attendance to APTO_PARA_CHAMADA in DB and ingest into queue."""
+        """Promove atendimento para APTO_PARA_CHAMADA e insere na fila ZSET (RN03).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         atendimento = await self._db_session.get(Atendimento, atendimento_id)
-        if atendimento is None or atendimento.organizacao_id != organizacao_id:
-            raise NotFoundError(
-                f"Atendimento '{atendimento_id}' não encontrado na "
-                f"organização {organizacao_id}."
-            )
+        if atendimento is None:
+            raise NotFoundError(f"Atendimento '{atendimento_id}' não encontrado.")
 
         if (
             atendimento.status
@@ -467,7 +450,6 @@ class FilaService:
             if codigo_autorizacao is not None:
                 payload["codigo_autorizacao"] = codigo_autorizacao
             await self._audit_trail.record_event(
-                organizacao_id=organizacao_id,
                 atendimento_id=atendimento_id,
                 ator_tipo=AtorTipo.SISTEMA,
                 ator_papel=AtorPapel.WORKER_ARQ,
@@ -483,38 +465,39 @@ class FilaService:
 
         ts_base = atendimento.data_entrada_fila or atendimento.criado_em
         score = calcular_score(atendimento.prioridade_clinica, ts_base)
-        k_fila = f"fila:{organizacao_id}:aptos"
-        await self._valkey.zadd(k_fila, {str(atendimento_id): score})  # pyright: ignore[reportUnknownMemberType]
+        await self._valkey.zadd(FILA_APTOS_KEY, {str(atendimento_id): score})  # pyright: ignore[reportUnknownMemberType]
         logger.info(
             "Attendance %s promoted to APTO and ingested into %s with score=%d",
             atendimento_id,
-            k_fila,
+            FILA_APTOS_KEY,
             score,
         )
         return AdmissaoAptoResult(promovido=True, status="aprovado", score=score)
 
     async def resolver_ring_timeout(
         self,
-        organizacao_id: int,
         atendimento_id: UUID,
         medico_id: UUID,
         notifier: PacienteAusenteNotifierPort | None = None,
     ) -> str:
-        """Deterministic 45s ring timeout resolution (RN02)."""
+        """Resolve deterministicamente timeout de toque de 45s (RN02, ADR-002).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        Decisões: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
+        """
         atend_id_str = str(atendimento_id)
         med_id_str = str(medico_id)
-        k_medico_ring = f"lock:{organizacao_id}:medico:{med_id_str}"
-        k_atend_ring = f"lock:{organizacao_id}:atendimento:{atend_id_str}"
-        k_medico_consulta = f"lock:{organizacao_id}:consulta_ativa:medico:{med_id_str}"
+        k_medico_ring = f"lock:medico:{med_id_str}"
+        k_atend_ring = f"lock:atendimento:{atend_id_str}"
+        k_medico_consulta = f"lock:consulta_ativa:medico:{med_id_str}"
 
         atendimento = await self._db_session.get(
             Atendimento, atendimento_id, with_for_update=True
         )
-        if atendimento is None or atendimento.organizacao_id != organizacao_id:
+        if atendimento is None:
             logger.warning(
-                "Ring timeout task: attendance %s not found in org=%d",
+                "Ring timeout task: attendance %s not found",
                 atendimento_id,
-                organizacao_id,
             )
             return "not_found"
 
@@ -524,7 +507,6 @@ class FilaService:
             atendimento.registrar_ausencia_paciente()
             if self._audit_trail is not None:
                 await self._audit_trail.record_event(
-                    organizacao_id=organizacao_id,
                     atendimento_id=atendimento_id,
                     ator_tipo=AtorTipo.SISTEMA,
                     ator_papel=AtorPapel.WORKER_ARQ,
@@ -545,7 +527,6 @@ class FilaService:
             dispatch_notifier = notifier or LoggingPacienteAusenteNotifier()
             event = PacienteAusenteEvent(
                 atendimento_id=atendimento.id,
-                organizacao_id=organizacao_id,
                 medico_id=medico_id,
                 paciente_id=atendimento.paciente_id,
                 tempo_toque_segundos=45,
@@ -581,10 +562,10 @@ class FilaService:
         self,
         atendimento_id: UUID,
     ) -> None:
-        """Transition attendance in CHAMANDO_PACIENTE to EM_ATENDIMENTO.
+        """Transiciona para EM_ATENDIMENTO e promove lock ativo (RN02, RN03).
 
-        Commits DB session, and atomically promotes Valkey doctor ring lock
-        to active consultation (7200s). Idempotent if already in EM_ATENDIMENTO.
+        Idempotente quando já se encontra em EM_ATENDIMENTO.
+        Regras: docs/explanation/domains/queue-domain.md
         """
         atendimento = await self._db_session.get(
             Atendimento, atendimento_id, with_for_update=True
@@ -595,8 +576,7 @@ class FilaService:
         if atendimento.status == StatusAtendimento.EM_ATENDIMENTO.value:
             if atendimento.medico_id is not None:
                 k_medico_consulta = (
-                    f"lock:{atendimento.organizacao_id}:consulta_ativa:medico:"
-                    f"{atendimento.medico_id}"
+                    f"lock:consulta_ativa:medico:{atendimento.medico_id}"
                 )
                 await self._valkey.set(k_medico_consulta, str(atendimento.id), ex=7200)
             return
@@ -611,7 +591,6 @@ class FilaService:
         atendimento.atender_chamada()
         if self._audit_trail is not None:
             await self._audit_trail.record_event(
-                organizacao_id=atendimento.organizacao_id,
                 atendimento_id=atendimento.id,
                 ator_tipo=AtorTipo.PACIENTE,
                 ator_papel=AtorPapel.PACIENTE,
@@ -627,16 +606,9 @@ class FilaService:
         await self._db_session.commit()
 
         if atendimento.medico_id is not None:
-            k_medico_ring = (
-                f"lock:{atendimento.organizacao_id}:medico:{atendimento.medico_id}"
-            )
-            k_atend_ring = (
-                f"lock:{atendimento.organizacao_id}:atendimento:{atendimento.id}"
-            )
-            k_medico_consulta = (
-                f"lock:{atendimento.organizacao_id}:consulta_ativa:medico:"
-                f"{atendimento.medico_id}"
-            )
+            k_medico_ring = f"lock:medico:{atendimento.medico_id}"
+            k_atend_ring = f"lock:atendimento:{atendimento.id}"
+            k_medico_consulta = f"lock:consulta_ativa:medico:{atendimento.medico_id}"
             async with self._valkey.pipeline(transaction=True) as pipe:
                 pipe.delete(k_medico_ring)
                 pipe.delete(k_atend_ring)
@@ -647,7 +619,10 @@ class FilaService:
         self,
         atendimento_id: UUID,
     ) -> None:
-        """Transition attendance in EM_ATENDIMENTO to CONCLUIDO and persist."""
+        """Transiciona atendimento em EM_ATENDIMENTO para CONCLUIDO (RN03).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         atendimento = await self._db_session.get(Atendimento, atendimento_id)
         if atendimento is None:
             raise NotFoundError(f"Atendimento '{atendimento_id}' não encontrado.")
@@ -658,13 +633,12 @@ class FilaService:
 
     async def _medico_tem_bloqueio_ativo(
         self,
-        organizacao_id: int,
         medico_id: UUID,
         atendimento_id_str: str,
     ) -> bool:
         med_id_str = str(medico_id)
-        k_medico_ring = f"lock:{organizacao_id}:medico:{med_id_str}"
-        k_medico_active = f"lock:{organizacao_id}:consulta_ativa:medico:{med_id_str}"
+        k_medico_ring = f"lock:medico:{med_id_str}"
+        k_medico_active = f"lock:consulta_ativa:medico:{med_id_str}"
         med_ring_val = await self._valkey.get(k_medico_ring)  # pyright: ignore[reportUnknownMemberType]
         med_active_val = await self._valkey.get(k_medico_active)  # pyright: ignore[reportUnknownMemberType]
         return (
@@ -677,7 +651,6 @@ class FilaService:
     async def _reconciliar_item_orfao(
         self,
         atend: Atendimento,
-        organizacao_id: int,
         k_fila: str,
     ) -> str | None:
         atend_id_str = str(atend.id)
@@ -690,7 +663,7 @@ class FilaService:
             return None
 
         # 2. Check if active ring lock exists
-        k_atend_ring = f"lock:{organizacao_id}:atendimento:{atend_id_str}"
+        k_atend_ring = f"lock:atendimento:{atend_id_str}"
         has_ring_lock = bool(
             await self._valkey.exists(k_atend_ring)  # pyright: ignore[reportUnknownMemberType]
         )
@@ -699,7 +672,7 @@ class FilaService:
 
         # 3. Check if active consultation lock exists for assigned doctor
         if atend.medico_id is not None and await self._medico_tem_bloqueio_ativo(
-            organizacao_id, atend.medico_id, atend_id_str
+            atend.medico_id, atend_id_str
         ):
             return None
 
@@ -717,7 +690,6 @@ class FilaService:
 
     async def reconciliar_fila_orfaos(
         self,
-        organizacao_id: int,
         cutoff_em: datetime,
     ) -> tuple[int, list[str]]:
         """Reinsere atendimentos APTO ausentes no Valkey ZSET (RN01, RN02).
@@ -725,11 +697,9 @@ class FilaService:
         Regras: docs/explanation/domains/queue-domain.md
         ADR: docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md
         """
-        k_fila = f"fila:{organizacao_id}:aptos"
         stmt = (
             select(Atendimento)
             .where(
-                Atendimento.organizacao_id == organizacao_id,
                 Atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA.value,
                 Atendimento.atualizado_em <= cutoff_em,
             )
@@ -743,8 +713,7 @@ class FilaService:
         for atend in candidates:
             reconciled_id = await self._reconciliar_item_orfao(
                 atend=atend,
-                organizacao_id=organizacao_id,
-                k_fila=k_fila,
+                k_fila=FILA_APTOS_KEY,
             )
             if reconciled_id is not None:
                 reconciled_ids.append(reconciled_id)
@@ -755,7 +724,10 @@ class FilaService:
         self,
         atendimento_id: UUID,
     ) -> AtendimentoSnapshotDTO | None:
-        """Fetch attendance snapshot by ID using chainable ORM select."""
+        """Retorna snapshot imutável do atendimento por ID sem vazar ORM (ADR-001).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         stmt = select(Atendimento).where(Atendimento.id == atendimento_id)
         res = await self._db_session.execute(stmt)
         atend = res.scalar_one_or_none()
@@ -763,7 +735,6 @@ class FilaService:
             return None
         return AtendimentoSnapshotDTO(
             id=atend.id,
-            organizacao_id=atend.organizacao_id,
             paciente_id=atend.paciente_id,
             medico_id=atend.medico_id,
             status=atend.status,
@@ -776,29 +747,22 @@ class FilaService:
 
     async def listar_historico_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> list[AtendimentoHistoricoQueueDTO]:
         """Lista histórico de atendimentos do paciente via ORM e TriagePort (RF-07).
 
-        Isola leitura por tenant/paciente e enriquece queixa principal quando
+        Isola leitura por paciente e enriquece queixa principal quando
         triage_port satisfaz TriageQueixaReaderPort.
         Regras: docs/explanation/domains/queue-domain.md
         """
         stmt = (
             select(Atendimento)
-            .where(
-                Atendimento.organizacao_id == organizacao_id,
-                Atendimento.paciente_id == paciente_id,
-            )
+            .where(Atendimento.paciente_id == paciente_id)
             .order_by(Atendimento.criado_em.desc(), Atendimento.id.desc())
         )
         res = await self._db_session.execute(stmt)
         atendimentos = [
-            atend
-            for atend in res.scalars().all()
-            if atend.organizacao_id == organizacao_id
-            and atend.paciente_id == paciente_id
+            atend for atend in res.scalars().all() if atend.paciente_id == paciente_id
         ]
         if not atendimentos:
             return []
@@ -806,14 +770,12 @@ class FilaService:
         queixas: dict[UUID, str | None] = {}
         if isinstance(self._triage_port, TriageQueixaReaderPort):
             queixas = await self._triage_port.obter_queixas_por_atendimentos(
-                organizacao_id=organizacao_id,
                 atendimento_ids=[atend.id for atend in atendimentos],
             )
 
         return [
             AtendimentoHistoricoQueueDTO(
                 atendimento_id=atend.id,
-                organizacao_id=int(atend.organizacao_id),
                 paciente_id=atend.paciente_id,
                 status=str(atend.status).strip().upper(),
                 prioridade_clinica=int(atend.prioridade_clinica),
@@ -827,18 +789,17 @@ class FilaService:
 
     async def obter_posicao_e_estimativa(
         self,
-        organizacao_id: int,
         atendimento_id: UUID,
     ) -> PosicaoFilaResult:
-        """Returns real-time queue position and estimated wait time in seconds."""
-        atendimento = await self._db_session.get(Atendimento, atendimento_id)
-        if atendimento is None or atendimento.organizacao_id != organizacao_id:
-            raise NotFoundError(
-                f"Atendimento '{atendimento_id}' não encontrado na "
-                f"organização {organizacao_id}."
-            )
+        """Retorna posição ordinal em tempo real e tempo de espera estimado (RN01).
 
-        total_aguardando = await self.obter_tamanho_fila(organizacao_id)
+        Regras: docs/explanation/domains/queue-domain.md
+        """
+        atendimento = await self._db_session.get(Atendimento, atendimento_id)
+        if atendimento is None:
+            raise NotFoundError(f"Atendimento '{atendimento_id}' não encontrado.")
+
+        total_aguardando = await self.obter_tamanho_fila()
         status_atual = str(atendimento.status)
 
         if atendimento.is_finalizado:
@@ -862,10 +823,8 @@ class FilaService:
                 tempo_estimado_segundos=0,
             )
 
-        posicao = await self.obter_posicao_fila(organizacao_id, atendimento_id)
-        medicos_ativos = await self._controle_admissao.obter_medicos_ativos_count(
-            organizacao_id
-        )
+        posicao = await self.obter_posicao_fila(atendimento_id)
+        medicos_ativos = await self._controle_admissao.obter_medicos_ativos_count()
         medicos_div = max(medicos_ativos, 1)
 
         tempo_estimado: int | None = None
@@ -883,31 +842,28 @@ class FilaService:
 
     async def cancelar_atendimento_paciente(
         self,
-        organizacao_id: int,
         atendimento_id: UUID,
         motivo: str | None = None,
     ) -> CancelarAtendimentoResult:
-        """Cancels an attendance voluntary by the patient (RN06)."""
+        """Cancela atendimento voluntariamente pelo paciente na fila (RN06).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
         atendimento = await self._db_session.get(Atendimento, atendimento_id)
-        if atendimento is None or atendimento.organizacao_id != organizacao_id:
-            raise NotFoundError(
-                f"Atendimento '{atendimento_id}' não encontrado na "
-                f"organização {organizacao_id}."
-            )
+        if atendimento is None:
+            raise NotFoundError(f"Atendimento '{atendimento_id}' não encontrado.")
 
         estado_anterior = str(atendimento.status)
         atendimento.cancelar_pelo_paciente(motivo)
-        await self.remover_da_fila(organizacao_id, atendimento_id)
+        await self.remover_da_fila(atendimento_id)
         if atendimento.medico_id and self._alocacao_service is not None:
             await self._alocacao_service.liberar_locks(
-                organizacao_id=organizacao_id,
                 medico_id=atendimento.medico_id,
                 atendimento_id=atendimento_id,
             )
 
         if self._audit_trail is not None:
             await self._audit_trail.record_event(
-                organizacao_id=organizacao_id,
                 atendimento_id=atendimento_id,
                 ator_tipo=AtorTipo.PACIENTE,
                 ator_papel=AtorPapel.PACIENTE,
@@ -924,9 +880,8 @@ class FilaService:
 
         now = atendimento.atualizado_em or datetime.now(UTC)
         logger.info(
-            "Attendance %s cancelled by patient in org %d (motivo=%s)",
+            "Attendance %s cancelled by patient (motivo=%s)",
             atendimento_id,
-            organizacao_id,
             motivo,
         )
         return CancelarAtendimentoResult(
@@ -953,10 +908,9 @@ class FilaService:
             )
 
         atendimento = await self._db_session.get(Atendimento, command.atendimento_id)
-        if atendimento is None or atendimento.organizacao_id != command.organizacao_id:
+        if atendimento is None:
             raise NotFoundError(
-                f"Atendimento '{command.atendimento_id}' não encontrado na "
-                f"organização {command.organizacao_id}."
+                f"Atendimento '{command.atendimento_id}' não encontrado."
             )
 
         if (
@@ -971,7 +925,6 @@ class FilaService:
             )
 
         triage_eval = await self._triage_port.avaliar_risco(
-            organizacao_id=command.organizacao_id,
             queixa_principal=command.queixa_adicional
             or "Piora de sintomas na fila virtual",
             sintomas=command.novos_sintomas,
@@ -984,16 +937,14 @@ class FilaService:
         if triage_eval.alerta_samu_disparado or triage_eval.prioridade_clinica == 1:
             estado_anterior = str(atendimento.status)
             atendimento.cancelar_pelo_paciente("ENCAMINHADO_SAMU_PIORA_CLINICA")
-            await self.remover_da_fila(command.organizacao_id, command.atendimento_id)
+            await self.remover_da_fila(command.atendimento_id)
             if atendimento.medico_id and self._alocacao_service is not None:
                 await self._alocacao_service.liberar_locks(
-                    organizacao_id=command.organizacao_id,
                     medico_id=atendimento.medico_id,
                     atendimento_id=command.atendimento_id,
                 )
             if self._audit_trail is not None:
                 await self._audit_trail.record_event(
-                    organizacao_id=command.organizacao_id,
                     atendimento_id=command.atendimento_id,
                     ator_tipo=AtorTipo.PACIENTE,
                     ator_papel=AtorPapel.PACIENTE,
@@ -1044,15 +995,14 @@ class FilaService:
         if atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA.value:
             ts_base = atendimento.data_entrada_fila or atendimento.criado_em
             score = calcular_score(nova_prioridade, ts_base)
-            k_fila = f"fila:{command.organizacao_id}:aptos"
-            await self._valkey.zadd(k_fila, {str(command.atendimento_id): score})  # pyright: ignore[reportUnknownMemberType]
-            nova_pos = await self.obter_posicao_fila(
-                command.organizacao_id, command.atendimento_id
+            mapping = {str(command.atendimento_id): score}
+            await self._valkey.zadd(  # pyright: ignore[reportUnknownMemberType]
+                FILA_APTOS_KEY, mapping
             )
+            nova_pos = await self.obter_posicao_fila(command.atendimento_id)
 
         if self._audit_trail is not None:
             await self._audit_trail.record_event(
-                organizacao_id=command.organizacao_id,
                 atendimento_id=command.atendimento_id,
                 ator_tipo=AtorTipo.PACIENTE,
                 ator_papel=AtorPapel.PACIENTE,
@@ -1102,11 +1052,8 @@ class FilaService:
             )
 
         atendimento = await self._db_session.get(Atendimento, cmd.atendimento_id)
-        if atendimento is None or atendimento.organizacao_id != cmd.organizacao_id:
-            raise NotFoundError(
-                f"Atendimento '{cmd.atendimento_id}' não encontrado na "
-                f"organização {cmd.organizacao_id}."
-            )
+        if atendimento is None:
+            raise NotFoundError(f"Atendimento '{cmd.atendimento_id}' não encontrado.")
 
         if atendimento.is_finalizado or atendimento.status not in (
             StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value,
@@ -1139,7 +1086,6 @@ class FilaService:
         atendimento.promover_para_apto()
         if self._audit_trail is not None:
             await self._audit_trail.record_event(
-                organizacao_id=cmd.organizacao_id,
                 atendimento_id=atendimento.id,
                 ator_tipo=AtorTipo.SISTEMA,
                 ator_papel=AtorPapel.SISTEMA,
@@ -1159,15 +1105,14 @@ class FilaService:
         ts_promovido = atendimento.data_entrada_fila or atendimento.criado_em
         score_promovido = calcular_score(atendimento.prioridade_clinica, ts_promovido)
 
-        k_fila = f"fila:{cmd.organizacao_id}:aptos"
-        await self._valkey.zadd(k_fila, {str(atendimento.id): score_promovido})  # pyright: ignore[reportUnknownMemberType]
+        await self._valkey.zadd(FILA_APTOS_KEY, {str(atendimento.id): score_promovido})  # pyright: ignore[reportUnknownMemberType]
 
         logger.info(
             "Attendance %s regularized (contingency=%s) and promoted to "
             "APTO in %s with score=%d",
             atendimento.id,
             cmd.tipo_contingencia,
-            k_fila,
+            FILA_APTOS_KEY,
             score_promovido,
         )
 

@@ -7,11 +7,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from src.core.authz.token import create_access_token
 from src.core.config import get_settings
 from src.core.errors import NotFoundError
 from src.core.security import create_intake_token
 from src.main import create_app
-from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
 from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoResult,
     CancelarAtendimentoResult,
@@ -27,16 +27,13 @@ from src.modules.queue.composition import (
 from src.modules.queue.domain.exceptions import TransicaoEstadoInvalidaError
 
 
-def _make_intake_token(paciente_id: UUID, org_id: int) -> str:
+def _make_intake_token(paciente_id: UUID) -> str:
     settings = get_settings()
-    return create_intake_token(paciente_id, org_id, settings.SECRET_KEY)
+    return create_intake_token(paciente_id, settings.SECRET_KEY)
 
 
-def _make_jwt_token(user_id: UUID, org_id: int, papel: str = "PACIENTE") -> str:
-    service = JWTTokenService(secret_key=get_settings().JWT_SECRET_KEY)
-    return service.gerar_tokens(
-        usuario_id=user_id, organizacao_id=org_id, papel=papel
-    ).access_token
+def _make_jwt_token(user_id: UUID, papel: str = "PACIENTE") -> str:
+    return create_access_token(usuario_id=user_id, papel=papel)
 
 
 @pytest.mark.asyncio
@@ -45,7 +42,6 @@ async def test_obter_posicao_sucesso_com_token_intake() -> None:
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
-    org_id = 42
 
     mock_service = MagicMock(spec=FilaService)
     mock_service.obter_posicao_e_estimativa = AsyncMock(
@@ -63,15 +59,12 @@ async def test_obter_posicao_sucesso_com_token_intake() -> None:
     app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
 
     try:
-        token = _make_intake_token(paciente_id, org_id)
+        token = _make_intake_token(paciente_id)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get(
                 f"/api/v1/fila/posicao/{atendimento_id}",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
             )
             assert resp.status_code == 200
             data = cast("dict[str, object]", resp.json())
@@ -80,7 +73,6 @@ async def test_obter_posicao_sucesso_com_token_intake() -> None:
             assert data["total_aguardando"] == 5
             assert data["tempo_estimado_segundos"] == 1800
             mock_service.obter_posicao_e_estimativa.assert_awaited_once_with(
-                organizacao_id=org_id,
                 atendimento_id=atendimento_id,
             )
     finally:
@@ -93,21 +85,17 @@ async def test_obter_posicao_rejeitada_sem_posse_idor() -> None:
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
-    org_id = 42
 
     mock_checker = AsyncMock(return_value=False)
     app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
 
     try:
-        token = _make_intake_token(paciente_id, org_id)
+        token = _make_intake_token(paciente_id)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get(
                 f"/api/v1/fila/posicao/{atendimento_id}",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
             )
             assert resp.status_code == 403
             data = cast("dict[str, object]", resp.json())
@@ -122,7 +110,6 @@ async def test_obter_posicao_nao_encontrado_retorna_404() -> None:
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
-    org_id = 42
 
     mock_service = MagicMock(spec=FilaService)
     mock_service.obter_posicao_e_estimativa = AsyncMock(
@@ -134,15 +121,12 @@ async def test_obter_posicao_nao_encontrado_retorna_404() -> None:
     app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
 
     try:
-        token = _make_intake_token(paciente_id, org_id)
+        token = _make_intake_token(paciente_id)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get(
                 f"/api/v1/fila/posicao/{atendimento_id}",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
             )
             assert resp.status_code == 404
             data = cast("dict[str, object]", resp.json())
@@ -157,7 +141,6 @@ async def test_cancelar_atendimento_sucesso() -> None:
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
-    org_id = 42
 
     now = datetime.now(UTC)
     mock_service = MagicMock(spec=FilaService)
@@ -175,15 +158,12 @@ async def test_cancelar_atendimento_sucesso() -> None:
     app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
 
     try:
-        token = _make_jwt_token(paciente_id, org_id, papel="PACIENTE")
+        token = _make_jwt_token(paciente_id, papel="PACIENTE")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 f"/api/v1/fila/cancelar/{atendimento_id}",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
                 json={"motivo": "Melhora espontânea dos sintomas"},
             )
             assert resp.status_code == 200
@@ -192,7 +172,6 @@ async def test_cancelar_atendimento_sucesso() -> None:
             assert data["status"] == "CANCELADO"
             assert data["motivo"] == "Melhora espontânea dos sintomas"
             mock_service.cancelar_atendimento_paciente.assert_awaited_once_with(
-                organizacao_id=org_id,
                 atendimento_id=atendimento_id,
                 motivo="Melhora espontânea dos sintomas",
             )
@@ -206,7 +185,6 @@ async def test_comunicar_piora_clinica_reclassificacao_sucesso() -> None:
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
-    org_id = 42
 
     mock_service = MagicMock(spec=FilaService)
     mock_service.processar_piora_clinica = AsyncMock(
@@ -225,15 +203,12 @@ async def test_comunicar_piora_clinica_reclassificacao_sucesso() -> None:
     app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
 
     try:
-        token = _make_jwt_token(paciente_id, org_id, papel="PACIENTE")
+        token = _make_jwt_token(paciente_id, papel="PACIENTE")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/api/v1/fila/piora",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
                 json={
                     "atendimento_id": str(atendimento_id),
                     "novos_sintomas": ["dor no peito irradiando para o braço"],
@@ -260,7 +235,6 @@ async def test_comunicar_piora_clinica_emergencia_samu() -> None:
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
-    org_id = 42
 
     mock_service = MagicMock(spec=FilaService)
     mock_service.processar_piora_clinica = AsyncMock(
@@ -284,15 +258,12 @@ async def test_comunicar_piora_clinica_emergencia_samu() -> None:
     app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
 
     try:
-        token = _make_intake_token(paciente_id, org_id)
+        token = _make_intake_token(paciente_id)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/api/v1/fila/piora",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
                 json={
                     "atendimento_id": str(atendimento_id),
                     "novos_sintomas": ["perda de consciência", "dispneia severa"],
@@ -323,14 +294,12 @@ async def test_admissao_paciente_unificada_no_fila_router() -> None:
     paciente_id = uuid4()
     atendimento_id = uuid4()
     triagem_id = uuid4()
-    org_id = 42
 
     mock_service = MagicMock(spec=FilaService)
     mock_service.admitir_paciente = AsyncMock(
         return_value=AdmissaoAtendimentoResult(
             atendimento_id=atendimento_id,
             triagem_id=triagem_id,
-            organizacao_id=org_id,
             paciente_id=paciente_id,
             status_atendimento="TRIADO_AGUARDANDO_ELEGIBILIDADE",
             prioridade_clinica=3,
@@ -341,15 +310,12 @@ async def test_admissao_paciente_unificada_no_fila_router() -> None:
     app.dependency_overrides[get_fila_service] = lambda: mock_service
 
     try:
-        token = _make_intake_token(paciente_id, org_id)
+        token = _make_intake_token(paciente_id)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/api/v1/fila/admissao",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
                 json={
                     "paciente_id": str(paciente_id),
                     "queixa_principal": "Febre e tosse",
@@ -374,7 +340,6 @@ async def test_post_regularizar_sucesso_com_token_intake() -> None:
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
-    org_id = 42
 
     mock_service = MagicMock(spec=FilaService)
     mock_service.regularizar_atendimento = AsyncMock(
@@ -393,15 +358,12 @@ async def test_post_regularizar_sucesso_com_token_intake() -> None:
     app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
 
     try:
-        token = _make_intake_token(paciente_id, org_id)
+        token = _make_intake_token(paciente_id)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 f"/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
                 json={
                     "motivo": "Gateway da operadora fora do ar",
                     "tipo_contingencia": "CONTINGENCIA_ASSISTENCIAL",
@@ -426,7 +388,6 @@ async def test_post_regularizar_sucesso_com_jwt_paciente() -> None:
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
-    org_id = 42
 
     mock_service = MagicMock(spec=FilaService)
     mock_service.regularizar_atendimento = AsyncMock(
@@ -445,15 +406,12 @@ async def test_post_regularizar_sucesso_com_jwt_paciente() -> None:
     app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
 
     try:
-        token = _make_jwt_token(paciente_id, org_id, papel="PACIENTE")
+        token = _make_jwt_token(paciente_id, papel="PACIENTE")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 f"/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
                 json={
                     "motivo": "Gateway da operadora fora do ar",
                     "tipo_contingencia": "CONTINGENCIA_ASSISTENCIAL",
@@ -476,21 +434,17 @@ async def test_post_regularizar_bloqueio_anti_idor_sem_posse() -> None:
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
-    org_id = 42
 
     mock_checker = AsyncMock(return_value=False)
     app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
 
     try:
-        token = _make_intake_token(paciente_id, org_id)
+        token = _make_intake_token(paciente_id)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 f"/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
                 json={
                     "motivo": "Gateway da operadora fora do ar",
                     "tipo_contingencia": "CONTINGENCIA_ASSISTENCIAL",
@@ -508,16 +462,12 @@ async def test_post_regularizar_sem_autenticacao_retorna_401() -> None:
     """Verifica retorno 401 Unauthorized na ausência de cabeçalho de autenticação."""
     app = create_app()
     atendimento_id = uuid4()
-    org_id = 42
 
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 f"/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                },
                 json={
                     "motivo": "Gateway da operadora fora do ar",
                     "tipo_contingencia": "CONTINGENCIA_ASSISTENCIAL",
@@ -536,7 +486,6 @@ async def test_post_regularizar_conflito_estado_retorna_409() -> None:
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
-    org_id = 42
 
     mock_service = MagicMock(spec=FilaService)
     mock_service.regularizar_atendimento = AsyncMock(
@@ -550,15 +499,12 @@ async def test_post_regularizar_conflito_estado_retorna_409() -> None:
     app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
 
     try:
-        token = _make_intake_token(paciente_id, org_id)
+        token = _make_intake_token(paciente_id)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 f"/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
                 json={
                     "motivo": "Gateway da operadora fora do ar",
                     "tipo_contingencia": "CONTINGENCIA_ASSISTENCIAL",
@@ -579,21 +525,17 @@ async def test_post_regularizar_payload_invalido_retorna_422() -> None:
     app = create_app()
     paciente_id = uuid4()
     atendimento_id = uuid4()
-    org_id = 42
 
     mock_checker = AsyncMock(return_value=True)
     app.dependency_overrides[get_patient_queue_ownership_checker] = lambda: mock_checker
 
     try:
-        token = _make_intake_token(paciente_id, org_id)
+        token = _make_intake_token(paciente_id)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 f"/api/v1/fila/atendimentos/{atendimento_id}/regularizar",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
                 json={"motivo": "ab"},
             )
             assert resp.status_code == 422

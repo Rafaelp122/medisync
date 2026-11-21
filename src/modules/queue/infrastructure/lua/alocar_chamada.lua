@@ -1,7 +1,7 @@
--- Script de Alocação Atômica Médico-Paciente (ADR-002)
--- KEYS[1]: lock:{org_id}:medico:{medico_id}
--- KEYS[2]: lock:{org_id}:atendimento:{atendimento_id}
--- KEYS[3]: fila:{org_id}:aptos
+-- Script de Alocação Atômica Médico-Paciente (ADR-002 / ADR-013)
+-- KEYS[1]: lock:medico:{medico_id}
+-- KEYS[2]: lock:atendimento:{atendimento_id}
+-- KEYS[3]: fila:aptos
 -- ARGV[1]: medico_id
 -- ARGV[2]: atendimento_id
 -- ARGV[3]: ttl_segundos (padrão: 45)

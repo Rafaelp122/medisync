@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     DateTime,
     ForeignKey,
     Index,
@@ -29,7 +28,6 @@ class ProducaoAmbulatorial(Base):
     __tablename__ = "producoes_ambulatoriais"
     __table_args__ = (
         Index("idx_producao_atendimento", "atendimento_id"),
-        Index("idx_producao_org", "organizacao_id"),
         Index("idx_producao_competencia", "competencia"),
         UniqueConstraint(
             "atendimento_id", name="uq_producoes_ambulatoriais_atendimento_id"
@@ -38,9 +36,6 @@ class ProducaoAmbulatorial(Base):
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
     )
     atendimento_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -77,7 +72,6 @@ class ProducaoAmbulatorial(Base):
     def __init__(
         self,
         *,
-        organizacao_id: int,
         atendimento_id: UUID,
         profissional_id: UUID,
         paciente_id: UUID,
@@ -104,7 +98,6 @@ class ProducaoAmbulatorial(Base):
 
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             atendimento_id=atendimento_id,
             profissional_id=profissional_id,
             paciente_id=paciente_id,

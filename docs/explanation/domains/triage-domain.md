@@ -18,7 +18,7 @@ Escopo termina na decisão. Fila, chamada e consulta pertencem a outros domínio
 - **RN04 — Nível 1 bloqueia PA Virtual e dispara SAMU 192 (Parecer CREMESP nº 278.262/2023).** De-Manchesterização via checklist eliminatório de Red Flags (rebaixamento de consciência, dor torácica aguda, dispneia em repouso, convulsão ativa); `disparar_alerta_samu` marca flag + `self._notifier` emite instrução 192 e impede admissão virtual. [Fonte](../product-specification.md) (RN04)
 - **RN07 — TCLE vinculado por hash, acolhimento ágil <45s.** `calcular_hash_tcle` (SHA-256) amarra termo aceito ao prontuário, append-only UTC. [Fonte](../product-specification.md) (RN07)
 
-Guardiões: `__init__` rejeita `organizacao_id <= 0`, queixa vazia, prioridade fora de 1–5, dor fora de 0–10 (`TriagemInvalidaError`) e valida rigorosamente a coerência clínica da prioridade contra `classificar_risco_clinico(queixa, sintomas, escala_dor)`.
+Guardiões: `__init__` rejeita queixa vazia, prioridade fora de 1–5, dor fora de 0–10 (`TriagemInvalidaError`) e valida rigorosamente a coerência clínica da prioridade contra `classificar_risco_clinico(queixa, sintomas, escala_dor)`.
 
 Sinais Nível 1 vencem tudo: conjunto `SINAIS_ALARME_NIVEL_1` ou palavra-chave na queixa normalizada força retorno 1 antes de avaliar dor.
 
@@ -49,7 +49,7 @@ stateDiagram-v2
 
 - Consome nada. Nenhuma dependência síncrona de outro módulo. Entradas são primitivas (queixa, sintomas, dor, texto TCLE).
 - Expõe classificação via dado para queue. `ResultadoTriagemDTO` carrega `prioridade_clinica`, `tcle_hash`, `admissao_bloqueada`, `alerta_samu_disparado`. Queue ordena sem importar triage.
-- Persiste em tabela `triagens` (1:1 com `atendimentos`, `ON DELETE RESTRICT`, `organizacao_id` + RLS). [Modelo](../architecture/data-model.md)
+- Persiste em tabela `triagens` (1:1 com `atendimentos`, `ON DELETE RESTRICT`). [Modelo](../architecture/data-model.md)
 - Notifica via porta abstrata. `EmergencyNotifierPort.notificar_emergencia_samu` recebe `EmergencyAlertDTO` imutável. Infraestrutura concreta pluga sem tocar domínio.
 - Falha de emergência via exceção de domínio `EmergenciaCriticaSamuError`, convertida na borda em resposta de bloqueio.
 
@@ -99,7 +99,7 @@ Sem corrigir código. Divergência entre doc e guardião real exige atualizar do
 ## 8. Ver também
 
 - [Product Specification](../product-specification.md) — RN01, RN04, RN07 contratuais
-- [Data Model](../architecture/data-model.md) — tabela `triagens`, RLS por `organizacao_id`
+- [Data Model](../architecture/data-model.md) — tabela `triagens` com unicidade 1:1 por atendimento
 - [Concurrency and Queues](../architecture/concurrency-and-queues.md) — como queue consome prioridade via dado
 - [ambulatory domain](./ambulatory-domain.md) — produção ambulatorial SUS e qualificação cadastral
 - [ADR-012: Transição 100% SUS](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md)

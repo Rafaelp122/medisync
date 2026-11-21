@@ -15,7 +15,6 @@ import { renderWithProviders } from "@/test/utils";
 import { PainelGestor } from "../components/painel-gestor";
 
 const mockPainelData: PainelTelemetriaResponse = {
-  organizacao_id: 1,
   gerado_em: "2026-11-02T12:00:00Z",
   tme_medio_segundos: 450,
   tme_nivel_1_segundos: 60,
@@ -43,7 +42,6 @@ const mockPainelData: PainelTelemetriaResponse = {
 
 const mockConfigData: ConfigPlantaoResponse = {
   id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b01",
-  organizacao_id: 1,
   medicos_ativos_planejados: 2,
   alpha_backpressure: "1.0",
   cota_diaria_maxima: 50,
@@ -71,7 +69,6 @@ describe("PainelGestor Integration Tests (RF-10, US-13, ACR SUS, RN06)", () => {
           items: [],
           total: 0,
           competencia: "202611",
-          organizacao_id: 1,
           page: 1,
           size: 50,
         },
@@ -236,7 +233,6 @@ describe("PainelGestor Integration Tests (RF-10, US-13, ACR SUS, RN06)", () => {
           ],
           total: 1,
           competencia: "202611",
-          organizacao_id: 1,
           page: 1,
           size: 50,
         },

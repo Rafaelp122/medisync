@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -66,12 +65,11 @@ class Atendimento(Base):
             "prioridade_clinica BETWEEN 1 AND 5",
             name="chk_atendimento_prioridade",
         ),
-        Index("idx_atendimentos_org_status", "organizacao_id", "status"),
-        Index("idx_atendimentos_org_paciente", "organizacao_id", "paciente_id"),
+        Index("idx_atendimentos_status", "status"),
+        Index("idx_atendimentos_paciente", "paciente_id"),
         Index("idx_atendimentos_medico", "medico_id"),
         Index(
             "idx_atendimentos_fila",
-            "organizacao_id",
             "status",
             "prioridade_clinica",
             "data_entrada_fila",
@@ -80,9 +78,6 @@ class Atendimento(Base):
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
     )
     paciente_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -128,7 +123,6 @@ class Atendimento(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
         *,
         medico_id: UUID | None = None,
@@ -144,12 +138,6 @@ class Atendimento(Base):
         atualizado_em: datetime | None = None,
         id: UUID | None = None,
     ) -> None:
-        if organizacao_id <= 0:
-            raise ValidationError(
-                f"organizacao_id '{organizacao_id}' inválido; "
-                "deve ser um identificador positivo > 0."
-            )
-
         prioridade_int = int(prioridade_clinica)
         if prioridade_int < 1 or prioridade_int > 5:
             raise ValidationError(
@@ -165,7 +153,6 @@ class Atendimento(Base):
 
         super_kwargs: dict[str, object] = {
             "id": id or uuid7(),
-            "organizacao_id": organizacao_id,
             "paciente_id": paciente_id,
             "medico_id": medico_id,
             "status": status_str,
@@ -352,6 +339,7 @@ class Atendimento(Base):
 
     @property
     def is_em_fila(self) -> bool:
+        """Indica se o atendimento encontra-se em fila pré-chamada (RN03)."""
         return self.status in (
             StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
             StatusAtendimento.APTO_PARA_CHAMADA,
@@ -359,18 +347,22 @@ class Atendimento(Base):
 
     @property
     def is_apto_para_chamada(self) -> bool:
+        """Indica se o atendimento está apto para alocação médica (RN03)."""
         return self.status == StatusAtendimento.APTO_PARA_CHAMADA
 
     @property
     def is_chamando(self) -> bool:
+        """Indica se o atendimento está tocando para o paciente (RN02, RN03)."""
         return self.status == StatusAtendimento.CHAMANDO_PACIENTE
 
     @property
     def is_em_atendimento(self) -> bool:
+        """Indica se a teleconsulta clínica está em andamento (RN03)."""
         return self.status == StatusAtendimento.EM_ATENDIMENTO
 
     @property
     def is_ativo(self) -> bool:
+        """Indica se o atendimento não atingiu estado terminal (RN03)."""
         return self.status in (
             StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
             StatusAtendimento.APTO_PARA_CHAMADA,
@@ -380,16 +372,19 @@ class Atendimento(Base):
 
     @property
     def is_finalizado(self) -> bool:
+        """Indica se o atendimento atingiu estado terminal (RN03)."""
         return self.status in TERMINAL_STATUSES
 
     @property
     def tempo_espera_segundos(self) -> float | None:
+        """Retorna duração em segundos entre entrada na fila e chamada (RN03)."""
         if self.data_entrada_fila and self.chamada_iniciada_em:
             return (self.chamada_iniciada_em - self.data_entrada_fila).total_seconds()
         return None
 
     @property
     def duracao_chamada_segundos(self) -> float | None:
+        """Retorna duração total em segundos da chamada/consulta (RN03)."""
         if self.chamada_iniciada_em and self.chamada_finalizada_em:
             return (
                 self.chamada_finalizada_em - self.chamada_iniciada_em

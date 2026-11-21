@@ -45,7 +45,6 @@ describe("HistoryPage (/historico)", () => {
         body: [
           {
             id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b21",
-            organizacao_id: 1,
             paciente_id: MOCK_CITIZEN_SESSION.pacienteId,
             profissional_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b88",
             especialidade: "PSICOLOGIA",
@@ -59,7 +58,6 @@ describe("HistoryPage (/historico)", () => {
           },
           {
             id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b22",
-            organizacao_id: 1,
             paciente_id: MOCK_CITIZEN_SESSION.pacienteId,
             profissional_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b88",
             especialidade: "NUTRICAO",
@@ -73,7 +71,6 @@ describe("HistoryPage (/historico)", () => {
           },
           {
             id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b23",
-            organizacao_id: 1,
             paciente_id: MOCK_CITIZEN_SESSION.pacienteId,
             profissional_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b88",
             especialidade: "PSICOLOGIA",

@@ -54,7 +54,6 @@ def fake_audit_trail() -> FakeAuditTrail:
 async def test_salvar_evolucao_soap_records_evolucao_audit_event(
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     atend_id = uuid7()
     med_id = uuid7()
 
@@ -65,7 +64,6 @@ async def test_salvar_evolucao_soap_records_evolucao_audit_event(
     )
 
     cmd = RegistrarEvolucaoSOAPCommand(
-        organizacao_id=org_id,
         atendimento_id=atend_id,
         medico_id=med_id,
         anamnese="Paciente com tosse seca há 3 dias",
@@ -79,7 +77,6 @@ async def test_salvar_evolucao_soap_records_evolucao_audit_event(
     events = fake_audit_trail.get_events_by_type("EVOLUCAO_SOAP_REGISTRADA")
     assert len(events) == 1
     evt = events[0]
-    assert evt["organizacao_id"] == org_id
     assert evt["atendimento_id"] == atend_id
     assert evt["ator_tipo"] == AtorTipo.PROFISSIONAL.value
     assert evt["ator_papel"] == AtorPapel.MEDICO.value
@@ -92,13 +89,11 @@ async def test_salvar_evolucao_soap_records_evolucao_audit_event(
 async def test_emitir_documento_records_documento_emitido_audit_event(
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     atend_id = uuid7()
     med_id = uuid7()
 
     added: list[Any] = []
     evolucao = EvolucaoClinica(
-        organizacao_id=org_id,
         atendimento_id=atend_id,
         medico_id=med_id,
         anamnese="Anamnese teste",
@@ -119,7 +114,6 @@ async def test_emitir_documento_records_documento_emitido_audit_event(
     )
 
     cmd = EmitirDocumentoClinicoCommand(
-        organizacao_id=org_id,
         atendimento_id=atend_id,
         medico_id=med_id,
         tipo_documento="RECEITA_SIMPLES",
@@ -138,7 +132,6 @@ async def test_emitir_documento_records_documento_emitido_audit_event(
     events = fake_audit_trail.get_events_by_type("DOCUMENTO_CLINICO_EMITIDO")
     assert len(events) == 1
     evt = events[0]
-    assert evt["organizacao_id"] == org_id
     assert evt["atendimento_id"] == atend_id
     assert evt["ator_tipo"] == AtorTipo.PROFISSIONAL.value
     assert evt["ator_papel"] == AtorPapel.MEDICO.value
@@ -152,18 +145,16 @@ async def test_emitir_documento_records_documento_emitido_audit_event(
 async def test_assinar_documento_records_documento_assinado_audit_event(
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     atend_id = uuid7()
     med_id = uuid7()
     doc_id = uuid7()
 
     doc = DocumentoClinico(
         id=doc_id,
-        organizacao_id=org_id,
         atendimento_id=atend_id,
         medico_id=med_id,
         tipo_documento="RECEITA_SIMPLES",
-        chave_s3=f"orgs/{org_id}/consultations/{atend_id}/documents/{doc_id}.pdf",
+        chave_s3=f"consultations/{atend_id}/documents/{doc_id}.pdf",
         sha256_hash="0" * 64,
     )
 
@@ -200,7 +191,6 @@ async def test_assinar_documento_records_documento_assinado_audit_event(
     events = fake_audit_trail.get_events_by_type("DOCUMENTO_CLINICO_ASSINADO")
     assert len(events) == 1
     evt = events[0]
-    assert evt["organizacao_id"] == org_id
     assert evt["atendimento_id"] == atend_id
     assert evt["ator_tipo"] == AtorTipo.PROFISSIONAL.value
     assert evt["ator_papel"] == AtorPapel.MEDICO.value
@@ -214,14 +204,12 @@ async def test_assinar_documento_records_documento_assinado_audit_event(
 async def test_finalizar_consulta_records_consulta_finalizada_audit_event(
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     atend_id = uuid7()
     med_id = uuid7()
     evolucao_id = uuid7()
 
     evolucao = EvolucaoClinica(
         id=evolucao_id,
-        organizacao_id=org_id,
         atendimento_id=atend_id,
         medico_id=med_id,
         anamnese="Anamnese teste",
@@ -255,7 +243,6 @@ async def test_finalizar_consulta_records_consulta_finalizada_audit_event(
     )
 
     cmd = FinalizarConsultaCommand(
-        organizacao_id=org_id,
         atendimento_id=atend_id,
         medico_id=med_id,
     )
@@ -266,7 +253,6 @@ async def test_finalizar_consulta_records_consulta_finalizada_audit_event(
     events = fake_audit_trail.get_events_by_type("CONSULTA_FINALIZADA")
     assert len(events) == 1
     evt = events[0]
-    assert evt["organizacao_id"] == org_id
     assert evt["atendimento_id"] == atend_id
     assert evt["ator_tipo"] == AtorTipo.PROFISSIONAL.value
     assert evt["ator_papel"] == AtorPapel.MEDICO.value

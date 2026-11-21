@@ -62,13 +62,11 @@ class ProducaoAmbulatorialService:
     async def consolidar_teleconsulta(
         self,
         cmd: ConsolidarTeleconsultaCommand,
-        *,
-        organizacao_id: int,
     ) -> BpaProducaoDTO:
         """Consolida atendimento médico finalizado para faturamento BPA-I no SUS.
 
-        Regras: docs/user-stories/US-11-liquidacao-fechamento-contabil.md e
-        docs/explanation/domains/ambulatory-domain.md.
+        Regras: docs/user-stories/US-11-liquidacao-fechamento-contabil.md,
+        docs/explanation/domains/ambulatory-domain.md e ADR-013.
         Garante idempotência caso o atendimento já tenha sido consolidado.
         """
         # 1. Checagem de idempotência
@@ -82,7 +80,6 @@ class ProducaoAmbulatorialService:
 
         # 2. Criação da produção ambulatorial
         producao = ProducaoAmbulatorial(
-            organizacao_id=organizacao_id,
             atendimento_id=cmd.atendimento_id,
             profissional_id=cmd.profissional_id,
             paciente_id=cmd.paciente_id,
@@ -104,7 +101,6 @@ class ProducaoAmbulatorialService:
                 not tem_identificacao or not tem_nascimento
             ):
                 await self._audit_trail.record_event(
-                    organizacao_id=organizacao_id,
                     tipo_evento="PRODUCAO_PENDENCIA_CADASTRAL",
                     ator_tipo="SISTEMA",
                     ator_papel="WORKER",
@@ -120,7 +116,6 @@ class ProducaoAmbulatorialService:
                 )
 
             await self._audit_trail.record_event(
-                organizacao_id=organizacao_id,
                 tipo_evento="PRODUCAO_AMBULATORIAL_CONSOLIDADA",
                 ator_tipo="SISTEMA",
                 ator_papel="WORKER",
@@ -143,25 +138,21 @@ class ProducaoAmbulatorialService:
     async def listar_producao_por_competencia(
         self,
         *,
-        organizacao_id: int,
         competencia: str,
         page: int = 1,
         size: int = 50,
     ) -> ListaProducaoAmbulatorialDTO:
         """Lista registros de produção ambulatorial consolidada por competência.
 
-        Regras: docs/user-stories/US-11-liquidacao-fechamento-contabil.md e
-        docs/explanation/domains/ambulatory-domain.md.
+        Regras: docs/user-stories/US-11-liquidacao-fechamento-contabil.md,
+        docs/explanation/domains/ambulatory-domain.md e ADR-013.
         """
         comp_validada = validar_competencia(competencia)
 
         count_stmt = (
             select(func.count())
             .select_from(ProducaoAmbulatorial)
-            .where(
-                ProducaoAmbulatorial.organizacao_id == organizacao_id,
-                ProducaoAmbulatorial.competencia == comp_validada,
-            )
+            .where(ProducaoAmbulatorial.competencia == comp_validada)
         )
         total_res = await self._session.execute(count_stmt)
         total = total_res.scalar_one_or_none() or 0
@@ -169,10 +160,7 @@ class ProducaoAmbulatorialService:
         offset = max(page - 1, 0) * size
         stmt = (
             select(ProducaoAmbulatorial)
-            .where(
-                ProducaoAmbulatorial.organizacao_id == organizacao_id,
-                ProducaoAmbulatorial.competencia == comp_validada,
-            )
+            .where(ProducaoAmbulatorial.competencia == comp_validada)
             .order_by(ProducaoAmbulatorial.consolidado_em.desc())
             .offset(offset)
             .limit(size)
@@ -185,7 +173,6 @@ class ProducaoAmbulatorialService:
             items=items,
             total=total,
             competencia=comp_validada,
-            organizacao_id=organizacao_id,
             page=page,
             size=size,
         )
@@ -193,13 +180,12 @@ class ProducaoAmbulatorialService:
     async def gerar_arquivo_bpa_i(
         self,
         *,
-        organizacao_id: int,
         competencia: str,
     ) -> BpaArquivoExportadoDTO:
         """Gera o arquivo magnético posicional BPA-I para exportação ao SIA-SUS/DATASUS.
 
-        Regras: docs/user-stories/US-11-liquidacao-fechamento-contabil.md e
-        docs/explanation/domains/ambulatory-domain.md.
+        Regras: docs/user-stories/US-11-liquidacao-fechamento-contabil.md,
+        docs/explanation/domains/ambulatory-domain.md e ADR-013.
         """
         comp_validada = validar_competencia(competencia)
 
@@ -209,21 +195,14 @@ class ProducaoAmbulatorialService:
             )
 
         registros = await self._bpa_directory.buscar_detalhes_bpa_lote(
-            organizacao_id=organizacao_id,
             competencia=comp_validada,
         )
 
         if not registros:
-            raise ProducaoNaoEncontradaError(
-                competencia=comp_validada,
-                organizacao_id=organizacao_id,
-            )
+            raise ProducaoNaoEncontradaError(competencia=comp_validada)
 
         # Auditoria de pendência cadastral em lote (US-11 Cenário 2)
-        await self._auditar_pendencias_cadastrais_lote(
-            organizacao_id=organizacao_id,
-            registros=registros,
-        )
+        await self._auditar_pendencias_cadastrais_lote(registros=registros)
 
         primeiro = registros[0]
         header = BpaHeaderData(
@@ -277,7 +256,6 @@ class ProducaoAmbulatorialService:
     async def _auditar_pendencias_cadastrais_lote(
         self,
         *,
-        organizacao_id: int,
         registros: Sequence[BpaRegistroDetalheDTO],
     ) -> None:
         """Registra auditoria para itens de lote com cadastro incompleto."""
@@ -295,7 +273,6 @@ class ProducaoAmbulatorialService:
             )
             if invalido:
                 await self._audit_trail.record_event(
-                    organizacao_id=organizacao_id,
                     tipo_evento="PRODUCAO_PENDENCIA_CADASTRAL",
                     ator_tipo="SISTEMA",
                     ator_papel="WORKER",

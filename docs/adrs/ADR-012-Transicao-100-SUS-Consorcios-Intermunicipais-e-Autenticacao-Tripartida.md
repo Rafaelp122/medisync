@@ -2,10 +2,10 @@
 
 | Metadado | Detalhe |
 | :--- | :--- |
-| **Status** | Aprovado |
+| **Status** | Aprovado (§4.2 revisado pela [ADR-013](ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md)) |
 | **Data** | 2026-11-02 |
 | **Decisores** | Time de Arquitetura & Engenharia |
-| **Referência** | [Business Vision](../explanation/business-vision.md), [Product Specification](../explanation/product-specification.md), [Overview](../explanation/architecture/overview.md) |
+| **Referência** | [ADR-013](ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md), [Business Vision](../explanation/business-vision.md), [Product Specification](../explanation/product-specification.md), [Overview](../explanation/architecture/overview.md) |
 
 ---
 
@@ -54,11 +54,8 @@ Adotamos a **Opção 3: Transição Integral para 100% SUS Público com Suporte 
 ### 4.1 Transição 100% SUS e Universalidade
 A plataforma assume como princípio petre o Art. 196 da Constituição Federal e a Portaria GM/MS nº 3.232/2024. Fica vedada qualquer cobrança, taxa ou validação de elegibilidade financeira privada. O acesso à esteira de acolhimento e teleconsulta é universal, gratuito e irrestrito.
 
-### 4.2 Consórcios Públicos Intermunicipais, Single-Tenant Opcional e Isolamento via Postgres RLS
-A arquitetura multi-tenant lógica (ADR-003) passa a atender formalmente à estrutura dos Consórcios Públicos de Saúde (Lei Federal nº 11.107/2005), com flexibilidade para prefeituras isoladas:
-* Uma instância compartilhada (`MULTI_TENANCY_ENABLED=True`) atende ao consórcio regional; cada município consorciado opera como uma `organizacao_id` segregada sob **Row-Level Security (RLS)** ativo no PostgreSQL 17;
-* Implantações municipais dedicadas podem operar em modo single-tenant (`MULTI_TENANCY_ENABLED=False` e `DEFAULT_TENANT_ID` explícito), removendo a exigência de seleção manual de organização na interface do cidadão enquanto preservam o RLS ativo;
-* A escala médica de plantão é centralizada e compartilhada regionalmente, otimizando o gasto público e respeitando o teto de 54% da LRF de cada prefeitura consorciada.
+### 4.2 Evolução da Topologia Federativa para Plataforma Única (Revisado pela ADR-013)
+> **Nota de Evolução ([ADR-013](ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md)):** Na concepção inicial desta ADR, previu-se suporte multi-tenant lógico sob RLS (antiga ADR-003). Posteriormente, a [ADR-013](ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md) consolidou o sistema em **plataforma única**, removendo `organizacoes`, `organizacao_id`, `MULTI_TENANCY_ENABLED`, `DEFAULT_TENANT_ID` e políticas RLS, substituídos pela tabela singleton `configuracoes_unidade` e pelos papéis corporativos simplificados (`GESTOR_UNIDADE`, `MEDICO`, `FATURAMENTO`, `PACIENTE`).
 
 ### 4.3 Renomeação Arquitetural: de `billing` para `ambulatory`
 O módulo `billing` é descontinuado e substituído pelo módulo **`ambulatory` (Produção Ambulatorial SUS)**:
@@ -83,7 +80,7 @@ flowchart TD
 
 1. **Cidadão / Paciente (IAM Híbrido do Cidadão)**: Encerra-se a antiga tela tripartida única (`/login` / `TripartiteAuthCard`), segregando o acesso do cidadão em `/entrar` (`PatientHybridAuthCard`) e `/cadastro` (`PatientRegisterForm` com e-mail obrigatório, aceite LGPD, senha Argon2id opcional — ou marcador `!UNUSABLE:` quando omitida — e disparo inicial de OTP). Combina OTP SMS, Passkeys FIDO2/WebAuthn, desambiguação CADSUS e integração Gov.br condicionada à feature flag `GOVBR_OIDC_ENABLED` (default `false`), habilitando acesso contínuo ao portal fechado (`/home`), `/triagem` autenticada, `/historico`, `/receitas`, `/perfil` e `/agendar`.
 2. **Médico Plantonista (`/interno/login`)**: Credenciais isoladas no portal interno (`StaffAuthCard`, sem vínculo com `/` ou `/entrar`), com CRM + Estado + Senha criptografada via Argon2id + Segundo Fator de Autenticação Obrigatório (**MFA/TOTP**) + Assinatura Digital ICP-Brasil em Nuvem via PSC (OAuth2 PAdES sob ADR-006). O endpoint `/api/v1/auth/login` rejeita explicitamente credenciais `Role.PACIENTE`.
-3. **Gestor / Regulador Municipal (`/interno/login`)**: Email institucional autenticado + Senha Argon2id + **MFA/TOTP obrigatório** no mesmo portal corporativo isolado, com controle de acesso baseado em papéis hierárquicos (RBAC: `GESTOR_CONSORCIO`, `REGULADOR_MUNICIPAL`, `AUDITOR_PRODUCAO`).
+3. **Gestor Operacional da Unidade (`/interno/login`)**: Email institucional autenticado + Senha Argon2id + **MFA/TOTP obrigatório** (`GESTOR_UNIDADE`) e perfil administrativo de consolidação (`FATURAMENTO`) no mesmo portal corporativo isolado (conforme revisão de RBAC da [ADR-013](ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md)).
 
 ### 4.5 Atendimento eMulti Agendado (Portaria GM/MS nº 635/2023)
 Além da esteira de pronto-atendimento virtual sob demanda espontânea (PA Digital 24/7), a plataforma contempla o atendimento programado por equipes multiprofissionais **eMulti** (`/agendar`):
@@ -98,13 +95,13 @@ Além da esteira de pronto-atendimento virtual sob demanda espontânea (PA Digit
 * **Redução Significativa de Complexidade**: Poda completa de adapters TISS/TUSS, gateways privados e tabelas de planos de saúde, reduzindo a base de código e a superfície de ataque.
 * **Eliminação de Glosas**: A produção ambulatorial SUS baseia-se em regras determinísticas de validação cadastral (CPF, CNS, CNES, SIGTAP e CBO), eliminando o risco financeiro de glosas de convênios privados.
 * **Ganhos de Escala Federativa**: Pequenos municípios conseguem fornecer atendimento médico 24/7 de alta qualidade rateando custos via Consórcio Intermunicipal dentro dos limites da LRF.
-* **Admissão SUS Direta & Eliminação de Latência Fictícia**: O acolhimento com TCLE persiste o atendimento diretamente em `APTO_PARA_CHAMADA` com inserção atômica no ZSET `fila:{org}:aptos`. Expurgou-se o agendamento desnecessário de tarefas em worker assíncrono para validação de elegibilidade, eliminando a latência fictícia no ingresso da fila e reduzindo I/O inútil no Valkey.
+* **Admissão SUS Direta & Eliminação de Latência Fictícia**: O acolhimento com TCLE persiste o atendimento diretamente em `APTO_PARA_CHAMADA` com inserção atômica no ZSET `fila:aptos`. Expurgou-se o agendamento desnecessário de tarefas em worker assíncrono para validação de elegibilidade, eliminando a latência fictícia no ingresso da fila e reduzindo I/O inútil no Valkey.
 * **Segurança Jurídica e Clínica Reforçada**:
   * **CREMESP nº 278.262/2023**: Triagem aberta desvinculada de royalties de Manchester, focada em detecção rápida de *Red Flags* e acionamento pré-hospitalar imediato (SAMU 192).
   * **CFM nº 2.454/2026**: Diretrizes de governança de inteligência artificial em saúde (supervisão humana obrigatória *Human-in-the-Loop*, diff forense de alterações e não-repúdio de atos médicos).
   * **RDC Anvisa nº 1.000/2025**: Rastreabilidade e conformidade com requisitos de software médico seguro e auditável.
 
 ### Riscos Mitigados
-* **Risco de Vazamento Cruzado entre Municípios Consorciados**: Mitigado pelo isolamento em banco com PostgreSQL RLS (ADR-003) forçado em 100% das tabelas.
-* **Risco de Invasão de Painel Médico**: Mitigado pela obrigatoriedade de MFA/TOTP para médicos e gestores.
+* **Risco de Acoplamento e Vazamento Horizontal**: Originalmente endereçado com isolamento RLS (antiga ADR-003); no modelo vigente de plataforma única ([ADR-013](ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md)), mitigado via RBAC de 4 papéis sem bypass global (`ADMIN_GLOBAL` removido) e checagem horizontal estrita Anti-IDOR por titularidade.
+* **Risco de Invasão de Painel Médico**: Mitigado pela obrigatoriedade de MFA/TOTP para médicos e gestores (`ROLES_REQUIRING_MFA`).
 

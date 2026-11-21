@@ -49,7 +49,6 @@ def _make_resumo_com_inicio(
     inicio = now - timedelta(seconds=segundos_atras)
     return AtendimentoResumoDTO(
         atendimento_id=atendimento_id,
-        organizacao_id=1,
         medico_id=uuid4(),
         status="EM_ATENDIMENTO",
         tcle_hash="b" * 64,
@@ -89,7 +88,6 @@ async def test_emissao_atestado_inferior_180s_sem_justificativa_bloqueada() -> N
 
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=1,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.ATESTADO_MEDICO,
         justificativa_tempo_inferior=None,
@@ -106,7 +104,6 @@ async def test_emissao_atestado_inferior_180s_sem_justificativa_bloqueada() -> N
     events = fake_audit.get_events_by_type("TRAVA_TEMPORAL_ATESTADO_VIOLADA")
     assert len(events) == 1
     evt = events[0]
-    assert evt["organizacao_id"] == 1
     assert evt["atendimento_id"] == atendimento_id
     assert evt["ator_tipo"] == AtorTipo.PROFISSIONAL.value
     assert evt["ator_papel"] == AtorPapel.MEDICO.value
@@ -132,7 +129,6 @@ async def test_emissao_atestado_inferior_180s_com_justificativa_curta_bloqueada(
 
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=1,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.ATESTADO_MEDICO,
         justificativa_tempo_inferior="urgente rápido",  # 14 chars
@@ -153,7 +149,6 @@ async def test_emissao_atestado_inferior_180s_com_justificativa_curta_bloqueada(
 
 def _make_evolucao_verificada(atendimento_id: UUID, medico_id: UUID) -> EvolucaoClinica:
     return EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atendimento_id,
         medico_id=medico_id,
         anamnese="Anamnese clinica.",
@@ -188,7 +183,6 @@ async def test_emissao_atestado_inferior_180s_com_justificativa_valida_permitida
     )
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=1,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.ATESTADO_MEDICO,
         justificativa_tempo_inferior=justificativa,
@@ -202,7 +196,6 @@ async def test_emissao_atestado_inferior_180s_com_justificativa_valida_permitida
     events = fake_audit.get_events_by_type("TRAVA_TEMPORAL_ATESTADO_VIOLADA")
     assert len(events) == 1
     evt = events[0]
-    assert evt["organizacao_id"] == 1
     assert evt["atendimento_id"] == atendimento_id
     assert evt["ator_tipo"] == AtorTipo.PROFISSIONAL.value
     assert evt["ator_papel"] == AtorPapel.MEDICO.value
@@ -233,7 +226,6 @@ async def test_emissao_atestado_superior_180s_sem_justificativa_permitida() -> N
 
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=1,
         medico_id=medico_id,
         tipo_documento=TipoDocumentoClinico.ATESTADO_MEDICO,
         justificativa_tempo_inferior=None,
@@ -267,7 +259,6 @@ async def test_emissao_receita_inferior_180s_nao_aciona_trava() -> None:
 
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
-        organizacao_id=1,
         medico_id=medico_id,
         tipo_documento="RECEITA_SIMPLES",
         itens=[

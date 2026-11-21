@@ -2,7 +2,6 @@
 
 import logging
 
-from src.core.errors import TenantInvalidoError
 from src.modules.ambulatory.application.dtos import (
     RequisicaoElegibilidade,
     ResultadoElegibilidade,
@@ -20,7 +19,7 @@ class ElegibilidadeService:
     """Orquestra avaliação de cobertura e qualificação SUS com notificação assíncrona.
 
     Regras: RN03 (Elegibilidade concorrente em background), RF-02, RF-05, RT-01.
-    Decisões: ADR-012.
+    Decisões: ADR-012 e ADR-013.
     Documentação: docs/explanation/domains/ambulatory-domain.md e
     docs/adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md
     """
@@ -38,15 +37,9 @@ class ElegibilidadeService:
     ) -> ResultadoElegibilidade:
         """Avalia cobertura junto ao provedor e dispara alerta à espera se reprovado.
 
-        Regras: RN03 (Elegibilidade concorrente), RF-02, RF-05, ADR-012.
+        Regras: RN03 (Elegibilidade concorrente), RF-02, RF-05, ADR-012 e ADR-013.
         Documentação: docs/explanation/domains/ambulatory-domain.md
         """
-        if requisicao.organizacao_id <= 0:
-            raise TenantInvalidoError(
-                f"Identificador da organização '{requisicao.organizacao_id}' deve "
-                "ser positivo; esperado valor > 0."
-            )
-
         resultado = await self._provider.verificar_elegibilidade(requisicao)
 
         if not resultado.aprovado:
@@ -56,7 +49,6 @@ class ElegibilidadeService:
             )
             evento = ElegibilidadeFalhaEvent(
                 atendimento_id=requisicao.atendimento_id,
-                organizacao_id=requisicao.organizacao_id,
                 paciente_id=requisicao.paciente_id,
                 motivo=motivo_falha,
                 status=resultado.status,

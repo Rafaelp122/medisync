@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, status
 
-from src.core.dependencies import TenantDep
 from src.modules.queue.application.dtos import AdquirirProximoPacienteCommand
 from src.modules.queue.composition import FilaServiceDep
 from src.modules.queue.presentation.dependencies import MedicoPlantaoAuthDep
@@ -26,15 +25,11 @@ alocacao_router = APIRouter(
     ),
 )
 async def chamar_proximo_paciente(
-    tenant_id: TenantDep,
     medico: MedicoPlantaoAuthDep,
     fila_service: FilaServiceDep,
 ) -> ChamarProximoResponse:
     """Execute atomic acquisition and allocation of next patient in queue."""
-    cmd = AdquirirProximoPacienteCommand(
-        organizacao_id=tenant_id,
-        medico_id=medico.usuario_id,
-    )
+    cmd = AdquirirProximoPacienteCommand(medico_id=medico.usuario_id)
     result = await fila_service.adquirir_proximo_paciente(cmd)
     if result is None:
         return ChamarProximoResponse(

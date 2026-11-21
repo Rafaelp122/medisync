@@ -24,7 +24,6 @@ def test_admissao_response_model_validate_com_tcle_hash() -> None:
     result = AdmissaoAtendimentoResult(
         atendimento_id=uuid4(),
         triagem_id=uuid4(),
-        organizacao_id=1,
         paciente_id=uuid4(),
         status_atendimento="TRIADO_AGUARDANDO_ELEGIBILIDADE",
         prioridade_clinica=3,

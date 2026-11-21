@@ -65,7 +65,6 @@ async def test_admitir_paciente_records_admissao_audit_event(
     fake_valkey: FakeValkey,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     paciente_id = uuid4()
     tcle_hash = "f" * 64
 
@@ -87,7 +86,6 @@ async def test_admitir_paciente_records_admissao_audit_event(
     )
 
     cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=org_id,
         paciente_id=paciente_id,
         queixa_principal="Dor de garganta leve",
         sintomas=["dor_garganta", "febre_baixa"],
@@ -102,7 +100,6 @@ async def test_admitir_paciente_records_admissao_audit_event(
     events = fake_audit_trail.get_events_by_type("ADMISSAO_PACIENTE")
     assert len(events) == 1
     evt = events[0]
-    assert evt["organizacao_id"] == org_id
     assert evt["ator_tipo"] == AtorTipo.PACIENTE.value
     assert evt["ator_papel"] == AtorPapel.PACIENTE.value
     assert evt["ator_id"] == paciente_id
@@ -116,7 +113,6 @@ async def test_admitir_paciente_propaga_ip_origem_para_auditoria(
     fake_valkey: FakeValkey,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     paciente_id = uuid4()
     tcle_hash = "e" * 64
 
@@ -138,7 +134,6 @@ async def test_admitir_paciente_propaga_ip_origem_para_auditoria(
     )
 
     cmd = AdmissaoAtendimentoCommand(
-        organizacao_id=org_id,
         paciente_id=paciente_id,
         queixa_principal="Odinofagia",
         sintomas=["odinofagia"],
@@ -160,12 +155,10 @@ async def test_admitir_atendimento_apto_records_elegibilidade_confirmada_audit_e
     fake_valkey: FakeValkey,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     atendimento_id = uuid4()
     paciente_id = uuid4()
     atendimento = Atendimento(
         id=atendimento_id,
-        organizacao_id=org_id,
         paciente_id=paciente_id,
         status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -179,13 +172,12 @@ async def test_admitir_atendimento_apto_records_elegibilidade_confirmada_audit_e
         audit_trail=fake_audit_trail,
     )
 
-    res = await fila_service.admitir_atendimento_apto(org_id, atendimento_id)
+    res = await fila_service.admitir_atendimento_apto(atendimento_id)
     assert res.promovido is True
 
     events = fake_audit_trail.get_events_by_type("ELEGIBILIDADE_CONFIRMADA")
     assert len(events) == 1
     evt = events[0]
-    assert evt["organizacao_id"] == org_id
     assert evt["atendimento_id"] == atendimento_id
     assert evt["ator_tipo"] == AtorTipo.SISTEMA.value
     assert evt["ator_papel"] == AtorPapel.WORKER_ARQ.value
@@ -204,12 +196,10 @@ async def test_admitir_atendimento_apto_records_codigo_autorizacao_in_audit_payl
     fake_valkey: FakeValkey,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     atendimento_id = uuid4()
     paciente_id = uuid4()
     atendimento = Atendimento(
         id=atendimento_id,
-        organizacao_id=org_id,
         paciente_id=paciente_id,
         status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -224,7 +214,7 @@ async def test_admitir_atendimento_apto_records_codigo_autorizacao_in_audit_payl
     )
 
     res = await fila_service.admitir_atendimento_apto(
-        org_id, atendimento_id, codigo_autorizacao="SUS-ISENTO"
+        atendimento_id, codigo_autorizacao="SUS-ISENTO"
     )
     assert res.promovido is True
 
@@ -240,12 +230,10 @@ async def test_alocar_chamada_records_chamada_iniciada_audit_event(
     fake_valkey: FakeValkey,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     atendimento_id = uuid4()
     medico_id = uuid4()
     atendimento = Atendimento(
         id=atendimento_id,
-        organizacao_id=org_id,
         paciente_id=uuid4(),
         status=StatusAtendimento.APTO_PARA_CHAMADA,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -263,7 +251,6 @@ async def test_alocar_chamada_records_chamada_iniciada_audit_event(
     )
 
     cmd = AlocarChamadaCommand(
-        organizacao_id=org_id,
         medico_id=medico_id,
         atendimento_id=atendimento_id,
         ttl_segundos=45,
@@ -274,7 +261,6 @@ async def test_alocar_chamada_records_chamada_iniciada_audit_event(
     events = fake_audit_trail.get_events_by_type("CHAMADA_INICIADA")
     assert len(events) == 1
     evt = events[0]
-    assert evt["organizacao_id"] == org_id
     assert evt["atendimento_id"] == atendimento_id
     assert evt["ator_tipo"] == AtorTipo.PROFISSIONAL.value
     assert evt["ator_papel"] == AtorPapel.MEDICO.value
@@ -289,13 +275,11 @@ async def test_atender_chamada_records_chamada_atendida_audit_event(
     fake_valkey: FakeValkey,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     atendimento_id = uuid4()
     paciente_id = uuid4()
     medico_id = uuid4()
     atendimento = Atendimento(
         id=atendimento_id,
-        organizacao_id=org_id,
         paciente_id=paciente_id,
         medico_id=medico_id,
         status=StatusAtendimento.CHAMANDO_PACIENTE,
@@ -329,12 +313,10 @@ async def test_resolver_ring_timeout_records_timeout_no_show_audit_event(
     fake_valkey: FakeValkey,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     atendimento_id = uuid4()
     medico_id = uuid4()
     atendimento = Atendimento(
         id=atendimento_id,
-        organizacao_id=org_id,
         paciente_id=uuid4(),
         medico_id=medico_id,
         status=StatusAtendimento.CHAMANDO_PACIENTE,
@@ -349,7 +331,7 @@ async def test_resolver_ring_timeout_records_timeout_no_show_audit_event(
         audit_trail=fake_audit_trail,
     )
 
-    res = await fila_service.resolver_ring_timeout(org_id, atendimento_id, medico_id)
+    res = await fila_service.resolver_ring_timeout(atendimento_id, medico_id)
     assert res == "no_show_recorded"
 
     assert atendimento.status == StatusAtendimento.PACIENTE_AUSENTE.value
@@ -367,12 +349,10 @@ async def test_cancelar_atendimento_paciente_records_cancelamento_audit_event(
     fake_valkey: FakeValkey,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     atendimento_id = uuid4()
     paciente_id = uuid4()
     atendimento = Atendimento(
         id=atendimento_id,
-        organizacao_id=org_id,
         paciente_id=paciente_id,
         status=StatusAtendimento.APTO_PARA_CHAMADA,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -387,7 +367,7 @@ async def test_cancelar_atendimento_paciente_records_cancelamento_audit_event(
     )
 
     await fila_service.cancelar_atendimento_paciente(
-        org_id, atendimento_id, motivo="Desistência voluntária"
+        atendimento_id, motivo="Desistência voluntária"
     )
     assert atendimento.status == StatusAtendimento.CANCELADO_PACIENTE.value
 
@@ -405,12 +385,10 @@ async def test_processar_piora_clinica_samu_records_deterioracao_audit_event(
     fake_valkey: FakeValkey,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
-    org_id = 1
     atendimento_id = uuid4()
     paciente_id = uuid4()
     atendimento = Atendimento(
         id=atendimento_id,
-        organizacao_id=org_id,
         paciente_id=paciente_id,
         status=StatusAtendimento.APTO_PARA_CHAMADA,
         prioridade_clinica=PrioridadeClinica.POUCO_URGENTE,
@@ -436,7 +414,6 @@ async def test_processar_piora_clinica_samu_records_deterioracao_audit_event(
     )
 
     cmd = PioraClinicaCommand(
-        organizacao_id=org_id,
         atendimento_id=atendimento_id,
         queixa_adicional="Dor no peito irradiando para o braço",
         novos_sintomas=["dor_toracica", "sudorese"],

@@ -18,7 +18,7 @@ from src.core.config import get_settings
 from src.core.security import create_intake_token
 from src.modules.identity.domain.models.passkey import PacientePasskey
 
-from tests.factories.identity import make_organizacao, make_paciente
+from tests.factories.identity import make_paciente
 from tests.factories.queue import make_atendimento
 from tests.helpers import auth_headers
 
@@ -134,13 +134,7 @@ async def test_webauthn_register_and_login_full_lifecycle_with_hmac_and_replay_g
     async_client: AsyncClient,
 ) -> None:
     """Validate register (HMAC) -> DB/audit -> 1-tap login -> active attendance."""
-    org = make_organizacao(cnpj="88776655000101")
-    db_session.add(org)
-    await db_session.commit()
-    await db_session.refresh(org)
-
     paciente = make_paciente(
-        organizacao_id=org.id,
         cpf="98765432109",
         telefone="11991234567",
         nome_completo="Ana Carolina WebAuthn",
@@ -150,7 +144,6 @@ async def test_webauthn_register_and_login_full_lifecycle_with_hmac_and_replay_g
     await db_session.refresh(paciente)
 
     atendimento = make_atendimento(
-        organizacao_id=org.id,
         paciente_id=paciente.id,
         status="APTO_PARA_CHAMADA",
     )
@@ -160,14 +153,9 @@ async def test_webauthn_register_and_login_full_lifecycle_with_hmac_and_replay_g
 
     intake_token = create_intake_token(
         paciente_id=paciente.id,
-        organizacao_id=org.id,
         secret_key=get_settings().SECRET_KEY,
     )
-    tenant_headers = {"X-Tenant-ID": str(org.id)}
-    patient_headers = {
-        **tenant_headers,
-        "Authorization": f"Bearer {intake_token}",
-    }
+    patient_headers = {"Authorization": f"Bearer {intake_token}"}
 
     # 1. Register options via 2-part HMAC intake token
     opt_resp = await async_client.post(
@@ -217,7 +205,6 @@ async def test_webauthn_register_and_login_full_lifecycle_with_hmac_and_replay_g
         )
     ).scalar_one_or_none()
     assert db_passkey is not None
-    assert db_passkey.organizacao_id == org.id
     assert db_passkey.paciente_id == paciente.id
     expected_der = private_key.public_key().public_bytes(
         serialization.Encoding.DER,
@@ -228,7 +215,6 @@ async def test_webauthn_register_and_login_full_lifecycle_with_hmac_and_replay_g
     # 3. Authenticate options (anonymous 1-tap discoverable)
     auth_opt_resp = await async_client.post(
         "/api/v1/auth/patient/webauthn/authenticate/options",
-        headers=tenant_headers,
         json={"paciente_id": str(paciente.id)},
     )
     assert auth_opt_resp.status_code == 200
@@ -252,7 +238,6 @@ async def test_webauthn_register_and_login_full_lifecycle_with_hmac_and_replay_g
     }
     auth_verify_resp = await async_client.post(
         "/api/v1/auth/patient/webauthn/authenticate/verify",
-        headers=tenant_headers,
         json=assertion_payload,
     )
     assert auth_verify_resp.status_code == 200
@@ -262,12 +247,10 @@ async def test_webauthn_register_and_login_full_lifecycle_with_hmac_and_replay_g
     assert login_data["atendimento_id"] == str(atendimento.id)
     user_claims = decode_access_token(str(login_data["access_token"]))
     assert user_claims.usuario_id == paciente.id
-    assert user_claims.organizacao_id == org.id
 
     # 5. Challenge replay must be atomically blocked (GETDEL) -> 401
     replay_resp = await async_client.post(
         "/api/v1/auth/patient/webauthn/authenticate/verify",
-        headers=tenant_headers,
         json=assertion_payload,
     )
     assert replay_resp.status_code == 401
@@ -292,53 +275,34 @@ async def test_webauthn_register_and_login_full_lifecycle_with_hmac_and_replay_g
 
 
 @pytest.mark.asyncio
-async def test_webauthn_cross_tenant_blocked_on_hmac_and_jwt(
+async def test_webauthn_register_rbac_and_token_validation(
     db_session: AsyncSession,
     async_client: AsyncClient,
 ) -> None:
-    """Reject cross-tenant X-Tenant-ID on /register/options for HMAC and JWT."""
-    org_a = make_organizacao(cnpj="11122233000144")
-    org_b = make_organizacao(cnpj="11122233000255")
-    db_session.add_all([org_a, org_b])
+    """Reject non-patient roles and missing/tampered tokens on /register/options."""
+    paciente = make_paciente(cpf="12312312301")
+    db_session.add(paciente)
     await db_session.commit()
-    await db_session.refresh(org_a)
-    await db_session.refresh(org_b)
+    await db_session.refresh(paciente)
 
-    paciente_a = make_paciente(organizacao_id=org_a.id, cpf="12312312301")
-    db_session.add(paciente_a)
-    await db_session.commit()
-    await db_session.refresh(paciente_a)
-
-    intake_a = create_intake_token(
-        paciente_id=paciente_a.id,
-        organizacao_id=org_a.id,
-        secret_key=get_settings().SECRET_KEY,
+    # 1. Missing Authorization header -> 401
+    resp_unauth = await async_client.post(
+        "/api/v1/auth/patient/webauthn/register/options"
     )
-    resp_hmac_cross = await async_client.post(
+    assert resp_unauth.status_code == 401
+
+    # 2. Corporate non-patient JWT -> 403 Forbidden
+    medico_headers = auth_headers("MEDICO", paciente.id)
+    resp_forbidden = await async_client.post(
         "/api/v1/auth/patient/webauthn/register/options",
-        headers={
-            "X-Tenant-ID": str(org_b.id),
-            "Authorization": f"Bearer {intake_a}",
-        },
+        headers=medico_headers,
     )
-    assert resp_hmac_cross.status_code == 403
+    assert resp_forbidden.status_code == 403
 
-    jwt_a = auth_headers("PACIENTE", org_a.id, paciente_a.id)
-    resp_jwt_cross = await async_client.post(
-        "/api/v1/auth/patient/webauthn/register/options",
-        headers={
-            "X-Tenant-ID": str(org_b.id),
-            **jwt_a,
-        },
-    )
-    assert resp_jwt_cross.status_code == 403
-
-    # Matching tenant with Patient JWT succeeds
+    # 3. Valid Patient JWT succeeds -> 200
+    jwt_paciente = auth_headers("PACIENTE", paciente.id)
     resp_jwt_ok = await async_client.post(
         "/api/v1/auth/patient/webauthn/register/options",
-        headers={
-            "X-Tenant-ID": str(org_a.id),
-            **jwt_a,
-        },
+        headers=jwt_paciente,
     )
     assert resp_jwt_ok.status_code == 200

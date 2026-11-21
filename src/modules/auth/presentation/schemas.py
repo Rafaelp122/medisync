@@ -29,12 +29,6 @@ class LoginRequest(BaseModel):
         max_length=128,
         description="Senha em texto puro",
     )
-    organizacao_id: int | None = Field(
-        default=None,
-        description=(
-            "ID da organização (se omitido, resolvido via cabeçalho X-Tenant-ID)"
-        ),
-    )
 
 
 class TokenResponse(BaseModel):
@@ -136,7 +130,6 @@ class UsuarioPerfilResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
     usuario_id: UUID
-    organizacao_id: int
     identificador: str
     papel: str
     ativo: bool

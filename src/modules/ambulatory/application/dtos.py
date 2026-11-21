@@ -14,7 +14,6 @@ from src.modules.ambulatory.domain.enums import StatusElegibilidade
 class RequisicaoElegibilidade:
     """Payload de entrada imutável para validação de elegibilidade e cadastro SUS."""
 
-    organizacao_id: int
     atendimento_id: UUID
     paciente_id: UUID
     cpf: str | None = None
@@ -76,7 +75,6 @@ class ListaProducaoAmbulatorialDTO:
     items: list[BpaProducaoDTO]
     total: int
     competencia: str
-    organizacao_id: int
     page: int
     size: int
 

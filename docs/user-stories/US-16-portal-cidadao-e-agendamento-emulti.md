@@ -61,15 +61,15 @@
 * **Portal Longitudinal do Cidadão (`consultation`):**
   * `GET /api/v1/consultations/me/historico`, `GET /api/v1/consultations/me/documentos`, `GET /api/v1/consultations/me/documents/{documento_id}/pdf` (`PacienteAutenticadoDep` + Anti-IDOR).
 * **Agenda eMulti (`scheduling`):**
-  * `GET /api/v1/scheduling/especialidades` e `GET /api/v1/scheduling/slots` (`TenantDep`).
-  * `POST /api/v1/scheduling/agendamentos`, `GET /api/v1/scheduling/agendamentos/me`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/cancelar` (`Role.PACIENTE` + `TenantDep`).
-  * `POST /api/v1/scheduling/disponibilidades`, `GET /api/v1/scheduling/agenda/dia`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/iniciar` (`Role.MEDICO` + `TenantDep`).
+  * `GET /api/v1/scheduling/especialidades` e `GET /api/v1/scheduling/slots` (consulta pública da unidade).
+  * `POST /api/v1/scheduling/agendamentos`, `GET /api/v1/scheduling/agendamentos/me`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/cancelar` (`Role.PACIENTE`).
+  * `POST /api/v1/scheduling/disponibilidades`, `GET /api/v1/scheduling/agenda/dia`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/iniciar` (`Role.MEDICO`).
 
 ---
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Domínio & Persistência `scheduling`:** `src/modules/scheduling/domain/models.py`, `src/modules/scheduling/domain/exceptions.py`, `src/modules/scheduling/infrastructure/adapters/sql_scheduling_repository.py`, `migrations/versions/0015_scheduling_tables.py` (GiST `excl_agendamento_slot_ativo` + RLS).
+- [x] **Domínio & Persistência `scheduling`:** `src/modules/scheduling/domain/models.py`, `src/modules/scheduling/domain/exceptions.py`, `src/modules/scheduling/infrastructure/adapters/sql_scheduling_repository.py`, `migrations/versions/0001_initial_schema.py` (GiST `excl_agendamento_slot_ativo` sem RLS).
 - [x] **Serviços & Portas:** `src/modules/scheduling/application/services/scheduling_service.py:SchedulingService`, `AttendanceLookupPort` (`src/modules/scheduling/composition.py`), `PatientAuthService` (`src/modules/auth/application/services/patient_auth_service.py`), `IdentityWriterPort`/`SqlIdentityWriter` (`src/modules/identity/infrastructure/identity_writer_sql.py`) e `HistoricoAtendimentoReaderPort`/`QueueStoreAtendimentoReaderAdapter` (`src/modules/consultation/composition.py`).
 - [x] **Routers Finos:** `src/modules/scheduling/presentation/routers/scheduling_router.py`, `src/modules/auth/presentation/routers/patient_auth_router.py`, `src/modules/consultation/presentation/routers/consultation_router.py`.
 - [x] **Frontend Rotas & Features:** `/`, `/entrar`, `/cadastro`, `/interno/login`, `/home`, `/agendar`, `/historico`, `/receitas`, `/perfil`, `/validar/$token` em `frontend/src/routes/`, `frontend/src/features/auth/`, `frontend/src/features/citizen/`, `frontend/src/features/scheduling/` e `frontend/src/features/landing/`.

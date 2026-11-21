@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.authz.roles import Role
 from src.core.authz.token import create_access_token
-from src.core.errors import ConflictError, TenantInvalidoError, ValidationError
+from src.core.errors import ConflictError, ValidationError
 from src.core.privacy import mascarar_cns, mascarar_cpf
 from src.core.uuid7 import uuid7
 from src.modules.auth.application.dtos import (
@@ -99,7 +99,7 @@ def _mascarar_telefone(clean_telefone: str) -> str:
 class PatientAuthService:
     """Autenticação híbrida de pacientes (OTP SMS, CADSUS/Gov.br, senha Argon2id).
 
-    Regras: RN-AUT-02, RN-AUT-03, RN-AUT-04, RN-AUT-09, ADR-012, RF-01.
+    Regras: RN-AUT-02, RN-AUT-03, RN-AUT-04, RN-AUT-09, ADR-012, ADR-013, RF-01.
     Documentação: docs/explanation/domains/auth-domain.md e
     docs/adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md
     """
@@ -143,13 +143,10 @@ class PatientAuthService:
         self._memory_otp: dict[str, dict[str, Any]] = {}
         self._memory_ratelimit: dict[str, list[float]] = {}
 
-    async def _resolve_active_attendance(
-        self, organizacao_id: int, paciente_id: UUID
-    ) -> UUID | None:
+    async def _resolve_active_attendance(self, paciente_id: UUID) -> UUID | None:
         if self._active_attendance is None:
             return None
         return await self._active_attendance.buscar_atendimento_ativo_paciente(
-            organizacao_id=organizacao_id,
             paciente_id=paciente_id,
         )
 
@@ -244,14 +241,13 @@ class PatientAuthService:
         self,
         *,
         namespace: str,
-        organizacao_id: int,
         client_ip: str,
         max_requests: int,
         window_seconds: int,
         action_label: str,
     ) -> None:
         clean_ip = client_ip.strip() or "127.0.0.1"
-        ip_key = f"ratelimit:{namespace}:ip:{organizacao_id}:{clean_ip}"
+        ip_key = f"ratelimit:{namespace}:ip:{clean_ip}"
         retry_after = await self._check_sliding_window(
             key=ip_key,
             max_requests=max_requests,
@@ -259,9 +255,8 @@ class PatientAuthService:
         )
         if retry_after > 0:
             raise IdentificacaoRateLimitExcedidoError(
-                f"Limite de solicitações de {action_label} excedido na "
-                f"organização '{organizacao_id}'. "
-                f"Tente novamente em {retry_after}s.",
+                f"Limite de solicitações de {action_label} excedido para "
+                f"IP '{clean_ip}'. Tente novamente em {retry_after}s.",
                 retry_after_segundos=retry_after,
             )
 
@@ -286,13 +281,11 @@ class PatientAuthService:
         clean_telefone: str,
         code_hash: str,
         paciente_id: UUID,
-        organizacao_id: int,
     ) -> None:
         """Store OTP state with 5-minute TTL."""
         data = {
             "code_hash": code_hash,
             "paciente_id": str(paciente_id),
-            "organizacao_id": organizacao_id,
             "attempts": 0,
             "expires_at": time.time() + OTP_TTL_SECONDS,
         }
@@ -383,16 +376,14 @@ class PatientAuthService:
 
     async def solicitar_otp(
         self,
-        organizacao_id: int,
         dados: SolicitarOtpInputDTO,
     ) -> SolicitarOtpOutputDTO:
         """Emite código OTP de 6 dígitos com rate limiting por telefone (janela 15m).
 
-        Regras: RN-AUT-03, RN-AUT-04, ADR-012, RF-01.
+        Regras: RN-AUT-03, RN-AUT-04, ADR-012, ADR-013, RF-01.
         Documentação: docs/explanation/domains/auth-domain.md
         """
         reader = self._require_identity_reader()
-        self._validate_tenant(organizacao_id)
 
         clean_telefone = validate_telefone(dados.telefone)
         clean_cpf = validate_cpf(dados.cpf) if dados.cpf else None
@@ -400,9 +391,8 @@ class PatientAuthService:
         # 1. Enforce rate limiting before reading DB or generating OTP
         await self._enforce_otp_rate_limit(clean_telefone)
 
-        # 2. Look up patient record within organization via IdentityReaderPort
+        # 2. Look up patient record via IdentityReaderPort
         paciente = await reader.buscar_paciente_por_telefone(
-            organizacao_id=organizacao_id,
             telefone=clean_telefone,
             cpf=clean_cpf,
         )
@@ -422,7 +412,6 @@ class PatientAuthService:
             clean_telefone=clean_telefone,
             code_hash=code_hash,
             paciente_id=paciente.id,
-            organizacao_id=organizacao_id,
         )
 
         # 5. Dispatch OTP via SMS port
@@ -439,16 +428,13 @@ class PatientAuthService:
 
     async def verificar_otp(
         self,
-        organizacao_id: int,
         dados: VerificarOtpInputDTO,
     ) -> VerificarOtpOutputDTO:
         """Valida OTP em tempo constante e emite JWT de paciente (Role.PACIENTE).
 
-        Regras: RN-AUT-03, RN-AUT-04, ADR-012, RF-01.
+        Regras: RN-AUT-03, RN-AUT-04, ADR-012, ADR-013, RF-01.
         Documentação: docs/explanation/domains/auth-domain.md
         """
-        self._validate_tenant(organizacao_id)
-
         clean_telefone = validate_telefone(dados.telefone)
         tel_mask = _mascarar_telefone(clean_telefone)
         codigo = dados.codigo.strip()
@@ -462,14 +448,6 @@ class PatientAuthService:
         if stored is None:
             raise OtpInvalidoOuExpiradoError(
                 f"Código OTP incorreto ou expirado para o telefone '{tel_mask}'."
-            )
-
-        stored_org_id = int(stored.get("organizacao_id", 0))
-        if stored_org_id != organizacao_id:
-            raise OtpInvalidoOuExpiradoError(
-                f"Código OTP incorreto ou expirado: pertence à organização "
-                f"'{stored_org_id}', mas a requisição é da organização "
-                f"'{organizacao_id}'."
             )
 
         # 2. Check failed attempts count to mitigate brute-force guessing
@@ -510,12 +488,9 @@ class PatientAuthService:
 
         # 5. Issue lightweight JWT access token with Role.PACIENTE
         paciente_id = UUID(str(stored["paciente_id"]))
-        atendimento_id = await self._resolve_active_attendance(
-            organizacao_id, paciente_id
-        )
+        atendimento_id = await self._resolve_active_attendance(paciente_id)
         token = create_access_token(
             usuario_id=paciente_id,
-            organizacao_id=organizacao_id,
             papel=Role.PACIENTE.value,
             secret_key=self._secret_key,
             algorithm=self._algorithm,
@@ -533,7 +508,6 @@ class PatientAuthService:
 
     async def autenticar_cadsus_govbr(
         self,
-        organizacao_id: int,
         cpf: str | None = None,
         data_nascimento: date | None = None,
         cns: str | None = None,
@@ -541,11 +515,10 @@ class PatientAuthService:
     ) -> VerificarOtpOutputDTO:
         """Autenticação sem senha via CADSUS/Gov.br por desambiguação de dados civis.
 
-        Regras: RN-AUT-09, ADR-012, RF-01, CFM nº 2.314/2022 e
+        Regras: RN-AUT-09, ADR-012, ADR-013, RF-01, CFM nº 2.314/2022 e
         docs/explanation/domains/auth-domain.md.
         """
         reader = self._require_identity_reader()
-        self._validate_tenant(organizacao_id)
 
         clean_cpf = validate_cpf(cpf) if cpf else None
         clean_cns = cns.strip() if cns and cns.strip() else None
@@ -558,7 +531,6 @@ class PatientAuthService:
             )
 
         paciente = await reader.buscar_paciente_cadsus(
-            organizacao_id=organizacao_id,
             cpf=clean_cpf,
             data_nascimento=data_nascimento,
             cns=clean_cns,
@@ -570,12 +542,11 @@ class PatientAuthService:
             raise PacienteNaoEncontradoError(
                 "Paciente com dados civis informados "
                 f"(CPF: {cpf_masked}, CNS: {cns_masked}) "
-                f"não encontrado na organização '{organizacao_id}'."
+                "não encontrado na plataforma."
             )
 
         token = create_access_token(
             usuario_id=paciente.id,
-            organizacao_id=organizacao_id,
             papel=Role.PACIENTE.value,
             secret_key=self._secret_key,
             algorithm=self._algorithm,
@@ -589,13 +560,6 @@ class PatientAuthService:
             paciente_id=paciente.id,
             role=Role.PACIENTE.value,
         )
-
-    def _validate_tenant(self, organizacao_id: int) -> None:
-        if organizacao_id <= 0:
-            raise TenantInvalidoError(
-                f"Identificador da organização '{organizacao_id}' deve ser "
-                "positivo; esperado valor > 0."
-            )
 
     def _require_identity_reader(self) -> IdentityReaderPort:
         if self._identity_reader is None:
@@ -684,19 +648,15 @@ class PatientAuthService:
     async def _validate_and_build_credential_spec(
         self,
         *,
-        organizacao_id: int,
         clean_email: str,
         clean_senha: str | None,
     ) -> tuple[str, str]:
         cred_repo = self._require_credential_repo()
-        if await cred_repo.existe_identificador(organizacao_id, clean_email):
+        if await cred_repo.existe_identificador(clean_email):
             if clean_senha is not None:
                 hasher = self._require_password_hasher()
                 await asyncio.to_thread(hasher.dummy_verify)
-            logger.warning(
-                "Conflito de identificador no cadastro de paciente (org_id=%s).",
-                organizacao_id,
-            )
+            logger.warning("Conflito de identificador no cadastro de paciente.")
             raise ConflictError(
                 "Não foi possível concluir o cadastro com os dados informados. "
                 "Caso já possua conta, utilize a opção Entrar."
@@ -710,11 +670,10 @@ class PatientAuthService:
         return clean_email, senha_hash
 
     async def _dispatch_initial_otp(
-        self, organizacao_id: int, clean_telefone: str, clean_cpf: str
+        self, clean_telefone: str, clean_cpf: str
     ) -> tuple[bool, int, str | None]:
         try:
             otp_out = await self.solicitar_otp(
-                organizacao_id=organizacao_id,
                 dados=SolicitarOtpInputDTO(telefone=clean_telefone, cpf=clean_cpf),
             )
             return True, otp_out.expira_em_segundos, otp_out.codigo_debug
@@ -727,17 +686,15 @@ class PatientAuthService:
     ) -> RegistrarPacienteOutputDTO:
         """Registra novo paciente (cidadão) com e-mail obrigatório e envia OTP inicial.
 
-        Regras: RN-AUT-09, ADR-012, RF-01, LGPD Art. 11 e
+        Regras: RN-AUT-09, ADR-012, ADR-013, RF-01, LGPD Art. 11 e
         docs/explanation/domains/auth-domain.md.
         """
-        self._validate_tenant(command.organizacao_id)
         session = self._require_session()
         writer = self._require_identity_writer()
         cred_repo = self._require_credential_repo()
 
         await self._enforce_ip_rate_limit(
             namespace="patient_reg",
-            organizacao_id=command.organizacao_id,
             client_ip=command.client_ip,
             max_requests=REGISTER_MAX_REQUESTS_PER_IP,
             window_seconds=REGISTER_RATE_LIMIT_WINDOW,
@@ -753,13 +710,11 @@ class PatientAuthService:
         ) = self._validate_registration_payload(command)
 
         identificador, senha_hash = await self._validate_and_build_credential_spec(
-            organizacao_id=command.organizacao_id,
             clean_email=clean_email,
             clean_senha=clean_senha,
         )
 
         paciente = await writer.criar_paciente(
-            organizacao_id=command.organizacao_id,
             cpf=clean_cpf,
             nome_completo=clean_nome,
             data_nascimento=command.data_nascimento,
@@ -768,7 +723,6 @@ class PatientAuthService:
 
         await cred_repo.criar_credencial(
             UsuarioCredencial(
-                organizacao_id=command.organizacao_id,
                 usuario_id=paciente.id,
                 identificador=identificador,
                 senha_hash=senha_hash,
@@ -781,7 +735,6 @@ class PatientAuthService:
         await session.commit()
 
         otp_enviado, expira_em, codigo_debug = await self._dispatch_initial_otp(
-            organizacao_id=command.organizacao_id,
             clean_telefone=clean_telefone,
             clean_cpf=clean_cpf,
         )
@@ -795,18 +748,17 @@ class PatientAuthService:
 
     async def _enforce_identify_rate_limit(
         self,
-        organizacao_id: int,
         client_ip: str,
         normalized_ident: str,
     ) -> None:
         ident_hash = _hash_pii_key(normalized_ident)
         checks = (
             (
-                f"ratelimit:identify:ip:{organizacao_id}:{client_ip}",
+                f"ratelimit:identify:ip:{client_ip}",
                 IDENTIFY_MAX_REQUESTS_PER_IP,
             ),
             (
-                f"ratelimit:identify:id:{organizacao_id}:{ident_hash}",
+                f"ratelimit:identify:id:{ident_hash}",
                 IDENTIFY_MAX_REQUESTS_PER_IDENT,
             ),
         )
@@ -818,9 +770,8 @@ class PatientAuthService:
             )
             if retry_after > 0:
                 raise IdentificacaoRateLimitExcedidoError(
-                    f"Limite de solicitações de identificação excedido na "
-                    f"organização '{organizacao_id}'. "
-                    f"Tente novamente em {retry_after}s.",
+                    f"Limite de solicitações de identificação excedido para "
+                    f"IP '{client_ip}'. Tente novamente em {retry_after}s.",
                     retry_after_segundos=retry_after,
                 )
 
@@ -848,19 +799,16 @@ class PatientAuthService:
 
     async def _resolve_patient_and_credential(
         self,
-        organizacao_id: int,
         clean_cpf: str | None,
         clean_email: str | None,
     ) -> tuple[PacienteAuthLookupDTO | None, UsuarioCredencial | None]:
         reader = self._require_identity_reader()
         if clean_cpf is not None:
-            paciente = await reader.buscar_paciente_cadsus(
-                organizacao_id=organizacao_id, cpf=clean_cpf
-            )
+            paciente = await reader.buscar_paciente_cadsus(cpf=clean_cpf)
             cred = None
             if paciente is not None and self._credential_repo is not None:
                 cred = await self._credential_repo.buscar_por_usuario_id(
-                    organizacao_id, paciente.id, Role.PACIENTE.value
+                    paciente.id, Role.PACIENTE.value
                 )
             return paciente, cred
 
@@ -868,16 +816,15 @@ class PatientAuthService:
             return None, None
 
         cred = await self._credential_repo.buscar_por_identificador(
-            organizacao_id, clean_email, Role.PACIENTE.value
+            clean_email, Role.PACIENTE.value
         )
         if cred is None:
             return None, None
-        paciente = await reader.buscar_paciente_por_id(organizacao_id, cred.usuario_id)
+        paciente = await reader.buscar_paciente_por_id(cred.usuario_id)
         return paciente, cred
 
     async def _collect_patient_methods(
         self,
-        organizacao_id: int,
         paciente: PacienteAuthLookupDTO,
         cred: UsuarioCredencial | None,
     ) -> list[Literal["otp", "senha", "passkey", "govbr"]]:
@@ -891,7 +838,7 @@ class PatientAuthService:
             and not cred.senha_hash.startswith(UNUSABLE_CREDENTIAL_MARKER)
         ):
             metodos.append("senha")
-        passkeys = await reader.listar_passkeys_paciente(organizacao_id, paciente.id)
+        passkeys = await reader.listar_passkeys_paciente(paciente.id)
         if passkeys:
             metodos.append("passkey")
         if self._govbr_oidc_enabled:
@@ -904,20 +851,17 @@ class PatientAuthService:
     ) -> IdentificarPacienteOutputDTO:
         """Identifica métodos de autenticação disponíveis sem vazar PII ou enumeração.
 
-        Regras: RN-AUT-09 (Anti-Enumeração), ADR-012, RF-01 e
+        Regras: RN-AUT-09 (Anti-Enumeração), ADR-012, ADR-013, RF-01 e
         docs/explanation/domains/auth-domain.md.
         """
-        self._validate_tenant(command.organizacao_id)
         _ = self._require_identity_reader()
         clean_cpf, clean_email = self._parse_patient_identifier(command.identificador)
         normalized_key = clean_cpf if clean_cpf is not None else str(clean_email)
 
-        await self._enforce_identify_rate_limit(
-            command.organizacao_id, command.client_ip, normalized_key
-        )
+        await self._enforce_identify_rate_limit(command.client_ip, normalized_key)
 
         paciente, cred = await self._resolve_patient_and_credential(
-            command.organizacao_id, clean_cpf, clean_email
+            clean_cpf, clean_email
         )
         if paciente is None:
             metodos_absent: list[Literal["otp", "senha", "passkey", "govbr"]] = (
@@ -930,9 +874,7 @@ class PatientAuthService:
                 govbr_habilitado=self._govbr_oidc_enabled,
             )
 
-        metodos = await self._collect_patient_methods(
-            command.organizacao_id, paciente, cred
-        )
+        metodos = await self._collect_patient_methods(paciente, cred)
         tel_mask = _mascarar_telefone(paciente.telefone) if paciente.telefone else None
         return IdentificarPacienteOutputDTO(
             possui_conta=True,
@@ -942,27 +884,23 @@ class PatientAuthService:
         )
 
     async def _resolve_credential_for_password_login(
-        self, organizacao_id: int, raw_identificador: str
+        self, raw_identificador: str
     ) -> UsuarioCredencial | None:
         cred_repo = self._require_credential_repo()
         cleaned = raw_identificador.strip()
         if "@" in cleaned:
             return await cred_repo.buscar_por_identificador(
-                organizacao_id, cleaned.lower(), Role.PACIENTE.value
+                cleaned.lower(), Role.PACIENTE.value
             )
 
         clean_cpf = validate_cpf(cleaned)
         if self._identity_reader is None:
             return None
 
-        paciente = await self._identity_reader.buscar_paciente_cadsus(
-            organizacao_id=organizacao_id, cpf=clean_cpf
-        )
+        paciente = await self._identity_reader.buscar_paciente_cadsus(cpf=clean_cpf)
         if paciente is None:
             return None
-        return await cred_repo.buscar_por_usuario_id(
-            organizacao_id, paciente.id, Role.PACIENTE.value
-        )
+        return await cred_repo.buscar_por_usuario_id(paciente.id, Role.PACIENTE.value)
 
     async def _verify_patient_password_or_lockout(
         self, cred: UsuarioCredencial, senha: str
@@ -988,26 +926,22 @@ class PatientAuthService:
     ) -> VerificarOtpOutputDTO:
         """Autentica paciente via senha Argon2id com lockout sem exigir MFA TOTP.
 
-        Regras: RN-AUT-02 (Lockout), RN-AUT-09, ADR-012, RF-01 e
+        Regras: RN-AUT-02 (Lockout), RN-AUT-09, ADR-012, ADR-013, RF-01 e
         docs/explanation/domains/auth-domain.md.
         """
-        self._validate_tenant(command.organizacao_id)
         session = self._require_session()
         _ = self._require_credential_repo()
         hasher = self._require_password_hasher()
 
         await self._enforce_ip_rate_limit(
             namespace="patient_pwd",
-            organizacao_id=command.organizacao_id,
             client_ip=command.client_ip,
             max_requests=PASSWORD_MAX_FAILURES * 3,
             window_seconds=OTP_RATE_LIMIT_WINDOW,
             action_label="autenticação",
         )
 
-        cred = await self._resolve_credential_for_password_login(
-            command.organizacao_id, command.identificador
-        )
+        cred = await self._resolve_credential_for_password_login(command.identificador)
         if cred is None or cred.senha_hash.startswith(UNUSABLE_CREDENTIAL_MARKER):
             await asyncio.to_thread(hasher.dummy_verify)
             raise CredenciaisInvalidasError()
@@ -1028,12 +962,9 @@ class PatientAuthService:
             raise CredenciaisInvalidasError()
 
         paciente_id = cred.usuario_id
-        atendimento_id = await self._resolve_active_attendance(
-            command.organizacao_id, paciente_id
-        )
+        atendimento_id = await self._resolve_active_attendance(paciente_id)
         token = create_access_token(
             usuario_id=paciente_id,
-            organizacao_id=command.organizacao_id,
             papel=Role.PACIENTE.value,
             secret_key=self._secret_key,
             algorithm=self._algorithm,

@@ -1,6 +1,6 @@
 # Identity Domain
 
-> Cadastro em duas fases com acolhimento ágil (<45s) e enriquecimento regulatório (CFM 1.821/2007), dependentes pediátricos, profissionais médicos com CRM/UF e isolamento multitenant estrito via RLS.
+> Cadastro em duas fases com acolhimento ágil (<45s) e enriquecimento regulatório (CFM 1.821/2007), dependentes pediátricos, profissionais médicos com CRM/UF e metadados singleton da unidade SUS.
 
 ## 1. Contexto
 
@@ -14,23 +14,23 @@ A entidade `Dependente` estabelece a vinculação legal entre paciente titular e
 
 A entidade `Profissional` gerencia o corpo clínico e administrativo, impondo a obrigatoriedade e conformidade regulatória de CRM e UF para médicos (Resolução CFM 2.314/2022).
 
-A entidade `Organizacao` modela a raiz de tenant (municípios públicos no SUS ou instituições privadas).
+A entidade `ConfiguracaoUnidade` (`configuracoes_unidade`) modela o registro singleton da unidade de saúde na plataforma única (CNES, CNPJ, razão social, nome fantasia e código IBGE via `singleton_guard`).
 
-O suporte a token polimórfico na camada de apresentação aceita tanto tokens provisórios de intake HMAC-SHA256 (2 partes) quanto tokens JWT corporativos/OTP (3 partes), validando posse e integridade do tenant.
+O suporte a token polimórfico na camada de apresentação aceita tanto tokens provisórios de intake HMAC-SHA256 (2 partes) quanto tokens JWT corporativos/OTP (3 partes), validando estritamente a titularidade Anti-IDOR do solicitante.
 
-Vocabulário ubíquo: `Paciente`, `Dependente`, `Profissional`, `Organizacao`, `nome_social`, `onboarding_fase1`, `onboarding_fase2`, `intake_token`, `grau_parentesco`, `outorga_tcle`, `is_pediatrico`, `clean_digits`, `alergias`.
+Vocabulário ubíquo: `Paciente`, `Dependente`, `Profissional`, `ConfiguracaoUnidade`, `nome_social`, `onboarding_fase1`, `onboarding_fase2`, `intake_token`, `grau_parentesco`, `outorga_tcle`, `is_pediatrico`, `clean_digits`, `alergias`.
 
-Multitenancy estrito: todas as tabelas contêm chave estrangeira `organizacao_id` e políticas ativas de Row-Level Security (RLS) no PostgreSQL.
+Plataforma única: cadastros civis e profissionais operam com unicidade global sem coluna `organizacao_id` e sem RLS.
 
 ## 2. Regras
 
-- **RN-IDE-01 — Documento primário mandatório do paciente (CPF ou CNS).** `Paciente` exige ao menos um documento nacional válido (`chk_documento_paciente_obrigatorio`). CPF requer exatamente 11 dígitos numéricos e CNS 15 dígitos. Índices parciais únicos por tenant (`uq_paciente_org_cpf`, `uq_paciente_org_cns`) bloqueiam duplicidades. [Fonte](../product-specification.md) (RF-01)
+- **RN-IDE-01 — Documento primário mandatório do paciente (CPF ou CNS).** `Paciente` exige ao menos um documento nacional válido (`chk_documento_paciente_obrigatorio`). CPF requer exatamente 11 dígitos numéricos e CNS 15 dígitos. Índices parciais únicos globais (`uq_paciente_cpf`, `uq_paciente_cns`) bloqueiam duplicidades. [Fonte](../product-specification.md) (RF-01)
 - **RN-IDE-02 — Onboarding em 2 fases: acolhimento ágil e enriquecimento CFM.** Fase 1 prioriza velocidade de entrada (<45s) e emite `intake_token`; Fase 2 adiciona nome da mãe, sexo biológico, endereço completo com CEP e histórico de alergias medicamentosas em JSONB, cumprindo a Resolução CFM 1.821/2007 para prontuário eletrônico e salvaguarda SAMU 192. [Fonte](../product-specification.md) (RF-01)
 - **RN-IDE-03 — Dignidade e soberania do Nome Social (CFM 1.821/2007).** `nome_social` é opcional no cadastro, porém soberano na identificação visual em chamadas de painel, prontuários e documentos médicos emitidos quando preenchido pelo paciente. [Fonte](../product-specification.md) (RF-01)
-- **RN-IDE-04 — CRM e UF obrigatórios para médicos (CFM 2.314/2022).** A entidade `Profissional` normaliza o papel em maiúsculas (`papel.strip().upper()`), valida pertencimento aos papéis canônicos permitidos e rejeita instanciação de `MEDICO` sem `crm` e `crm_uf` (exatamente 2 letras). [Fonte](../product-specification.md) (RF-01)
+- **RN-IDE-04 — CRM e UF obrigatórios para médicos (CFM 2.314/2022).** A entidade `Profissional` normaliza o papel em maiúsculas (`papel.strip().upper()`), valida pertencimento a `PapelProfissional` (`GESTOR_UNIDADE`, `MEDICO`, `FATURAMENTO`) e rejeita instanciação de `MEDICO` sem `crm` e `crm_uf` (exatamente 2 letras). [Fonte](../product-specification.md) (RF-01)
 - **RN-IDE-05 — Vinculação de dependentes e vedação de auto-dependência.** `Dependente` conecta `titular_id` a `dependente_id` sob constraint de unicidade (`uq_dependente_vinculo`). É expressamente vedado vincular um paciente como dependente de si mesmo (`titular_id != dependente_id`). Pacientes menores de idade (`is_pediatrico() == True`) dependem da outorga de TCLE do titular legal. [Fonte](../product-specification.md) (RF-01)
-- **RN-IDE-06 — Isolamento Multitenant estrito via RLS.** Pacientes, dependentes e profissionais são particionados por `organizacao_id`, com isolamento garantido no banco de dados via PostgreSQL Row-Level Security. [Fonte](../architecture/data-model.md)
-- **RN-IDE-07 — Autenticação de intake por token polimórfico.** Dependências de autorização na apresentação inspecionam o formato do token (`len(parts) == 2` para HMAC provisório ou `3` para JWT corporativo), validando se o portador detém a posse do registro do paciente titular e pertence ao tenant solicitado. [Fonte](../product-specification.md) (RF-01)
+- **RN-IDE-06 — Configuração singleton da unidade (`ConfiguracaoUnidade`).** Metadados institucionais residem na tabela singleton `configuracoes_unidade` (PK UUIDv7 com `singleton_guard IS TRUE`). [Fonte](../architecture/data-model.md)
+- **RN-IDE-07 — Autenticação de intake por token polimórfico e Anti-IDOR.** Dependências de autorização na apresentação inspecionam o formato do token (`len(parts) == 2` para HMAC provisório ou `3` para JWT), validando estritamente se o portador detém a titularidade sobre o `paciente_id` solicitado, sem bypass administrativo. [Fonte](../product-specification.md) (RF-01)
 
 Guardiões: `Paciente` e `Profissional` utilizam `clean_digits` para higienizar pontuações e traços de documentos e telefones antes de persistir; `Paciente.completar_fase_2(...)` encapsula todas as mutações e validações regulatórias da Fase 2 (nome da mãe, sexo biológico 'M'/'F', UF com 2 caracteres, CEP de 8 dígitos e deduplicação de alergias); `is_pediatrico` calcula a idade dinamicamente com base na data de nascimento e data atual.
 
@@ -59,7 +59,7 @@ flowchart TD
     CheckPed -->|Menor de 18 anos| LegalRep[Exige outorga de TCLE pelo Titular]
     CheckPed -->|Maior de idade| Vinculo[Vincula com grau_parentesco]
     LegalRep --> Vinculo
-    Vinculo --> Persist[Persiste na tabela dependentes com RLS]
+    Vinculo --> Persist[Persiste na tabela dependentes com UUIDv7]
     Persist --> Resposta[DependenteResponse HTTP 201]
 ```
 
@@ -67,7 +67,7 @@ flowchart TD
 
 - Consumo por Triagem e Fila: `queue` e `triage` consomem dados do paciente e validam o token provisório de intake emitido por `identity`.
 - Leitura e escrita desacopladas via porta: `IdentityReaderPort` (`src/modules/identity/infrastructure/identity_reader_sql.py`) expõe métodos de leitura de pacientes, diretório e passkeys; `IdentityWriterPort` (`src/modules/identity/application/ports/identity_writer_port.py`) é implementada por `SqlIdentityWriter` (`src/modules/identity/infrastructure/identity_writer_sql.py`) e exportada por `build_identity_writer_sql_for_session` em `src/modules/identity/composition.py` para auto-cadastro de cidadãos pelo módulo `auth`. `SqlIdentityWriter.criar_paciente` executa apenas `flush()` (preservando a posse da transação no service chamador conforme ADR-001 §6) e traduz `IntegrityError` (`23505` em `ConflictError` anti-enumeração, `23503` em `NotFoundError`).
-- Biometria FIDO2/WebAuthn: `PacientePasskey` (`src/modules/identity/domain/models/passkey.py`) armazena chaves públicas de Passkeys vinculadas ao paciente e organização com RLS ativo.
+- Biometria FIDO2/WebAuthn: `PacientePasskey` (`src/modules/identity/domain/models/passkey.py`) armazena chaves públicas de Passkeys vinculadas ao paciente na tabela `paciente_passkeys`.
 - Gestão de Onboarding: `OnboardingService` orquestra as etapas de Fase 1 e Fase 2, gerando o token assinado HMAC via `src/core/security.py`.
 - Gestão de Dependentes: `DependenteService` gerencia vínculos de tutela e parentesco, garantindo integridade relacional.
 - Rotas REST finas: `onboarding_router.py` e `pacientes_router.py` delegam regras de negócio a `OnboardingServiceDep` e `DependenteServiceDep`.
@@ -76,7 +76,7 @@ flowchart TD
 
 - Sanitização de dígitos no domínio: o helper `clean_digits` assegura que CPF, CNS, telefone e CEP sejam armazenados de forma limpa, prevenindo falhas de matching causadas por máscaras de formatação distintas no frontend.
 - Histórico de alergias em JSONB: o modelo `Paciente` encapsula `alergias` como lista JSONB no Postgres, expondo métodos ricos (`adicionar_alergia`, `remover_alergia`, `tem_alergia`) com busca case-insensitive.
-- Token de acolhimento stateless: o `intake_token` HMAC-SHA256 carrega claims assinadas criptograficamente (`paciente_id`, `organizacao_id`, `telefone`), dispensando consultas prévias ao banco durante o fluxo rápido de triagem.
+- Token de acolhimento stateless: o `intake_token` HMAC-SHA256 carrega claims assinadas criptograficamente (`paciente_id`, `telefone`), dispensando consultas prévias ao banco durante o fluxo rápido de triagem.
 - Cálculo de menoridade sem dependência externa: o método `is_pediatrico()` computa idade considerando ano, mês e dia relativos a `date.today()`, suportando casos de anos bissextos com precisão legal.
 
 ## 6. Onde no código
@@ -84,7 +84,7 @@ flowchart TD
 - `src/modules/identity/domain/models/paciente.py`
 - `src/modules/identity/domain/models/dependente.py`
 - `src/modules/identity/domain/models/profissional.py`
-- `src/modules/identity/domain/models/organizacao.py`
+- `src/modules/identity/domain/models/configuracao_unidade.py`
 - `src/modules/identity/domain/models/passkey.py`
 - `src/modules/identity/domain/models/_helpers.py`
 - `src/modules/identity/domain/exceptions.py`
@@ -103,8 +103,6 @@ flowchart TD
 - `src/modules/identity/composition.py`
 - `src/core/security.py`
 - `migrations/versions/0001_initial_schema.py`
-- `migrations/versions/0005_paciente_nome_social.py`
-- `migrations/versions/0014_passkeys_and_liveness.py`
 
 Prova viva:
 
@@ -135,6 +133,6 @@ Sem corrigir código. Divergência entre documentação e invariantes do modelo 
 ## 8. Ver também
 
 - [Product Specification](../product-specification.md) — RF-01 identificação e onboarding bifásico
-- [Data Model](../architecture/data-model.md) — tabelas `pacientes`, `profissionais`, `dependentes` e `organizacoes`
+- [Data Model](../architecture/data-model.md) — tabelas `pacientes`, `profissionais`, `dependentes` e `configuracoes_unidade`
 - [Auth Domain](./auth-domain.md) — credenciais corporativas e autenticação OTP de pacientes
 - [Domains Index](./index.md) — catálogo geral dos domínios da aplicação

@@ -48,14 +48,12 @@ async def test_validar_elegibilidade_sus_promotes_attendance_and_enqueues_valkey
     None
 ):
     """Under SUS, attendance is promoted to APTO_PARA_CHAMADA and ingested in ZSET."""
-    org_id = 1
     atend_id = uuid4()
     paciente_id = uuid4()
     now = datetime.now(UTC)
 
     atendimento = Atendimento(
         id=atend_id,
-        organizacao_id=org_id,
         paciente_id=paciente_id,
         status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -70,7 +68,6 @@ async def test_validar_elegibilidade_sus_promotes_attendance_and_enqueues_valkey
 
     result = await validar_elegibilidade_task(
         ctx,
-        organizacao_id=org_id,
         atendimento_id=str(atend_id),
         paciente_id=str(paciente_id),
     )
@@ -80,7 +77,7 @@ async def test_validar_elegibilidade_sus_promotes_attendance_and_enqueues_valkey
     assert result["codigo_autorizacao"] == "SUS-ISENTO"
     assert atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA.value
     assert session.commits == 1
-    score = await valkey.zscore(f"fila:{org_id}:aptos", str(atend_id))
+    score = await valkey.zscore("fila:aptos", str(atend_id))
     assert score == result["score"]
 
 
@@ -89,14 +86,12 @@ async def test_validar_elegibilidade_falha_preserves_status_and_notifies() -> No
     """When SUS verification fails, status is preserved and notifier is alerted
     (RF-05).
     """
-    org_id = 1
     atend_id = uuid4()
     paciente_id = uuid4()
     now = datetime.now(UTC)
 
     atendimento = Atendimento(
         id=atend_id,
-        organizacao_id=org_id,
         paciente_id=paciente_id,
         status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -119,7 +114,6 @@ async def test_validar_elegibilidade_falha_preserves_status_and_notifies() -> No
 
     result = await validar_elegibilidade_task(
         ctx,
-        organizacao_id=org_id,
         atendimento_id=str(atend_id),
         paciente_id=str(paciente_id),
         provider=provider,
@@ -132,20 +126,18 @@ async def test_validar_elegibilidade_falha_preserves_status_and_notifies() -> No
     assert atendimento.status == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
     assert session.commits == 0
     assert len(notifier.eventos_falha) == 1
-    assert await valkey.zscore(f"fila:{org_id}:aptos", str(atend_id)) is None
+    assert await valkey.zscore("fila:aptos", str(atend_id)) is None
 
 
 @pytest.mark.asyncio
 async def test_validar_elegibilidade_timeout_preserves_status() -> None:
     """When timeout occurs (15s), attendance is preserved without promotion."""
-    org_id = 1
     atend_id = uuid4()
     paciente_id = uuid4()
     now = datetime.now(UTC)
 
     atendimento = Atendimento(
         id=atend_id,
-        organizacao_id=org_id,
         paciente_id=paciente_id,
         status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -168,7 +160,6 @@ async def test_validar_elegibilidade_timeout_preserves_status() -> None:
 
     result = await validar_elegibilidade_task(
         ctx,
-        organizacao_id=org_id,
         atendimento_id=str(atend_id),
         paciente_id=str(paciente_id),
         provider=provider,
@@ -180,20 +171,18 @@ async def test_validar_elegibilidade_timeout_preserves_status() -> None:
     assert atendimento.status == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
     assert session.commits == 0
     assert len(notifier.eventos_falha) == 1
-    assert await valkey.zscore(f"fila:{org_id}:aptos", str(atend_id)) is None
+    assert await valkey.zscore("fila:aptos", str(atend_id)) is None
 
 
 @pytest.mark.asyncio
 async def test_validar_elegibilidade_already_promoted() -> None:
     """If attendance was already promoted to APTO_PARA_CHAMADA, skip promotion."""
-    org_id = 1
     atend_id = uuid4()
     paciente_id = uuid4()
     now = datetime.now(UTC)
 
     atendimento = Atendimento(
         id=atend_id,
-        organizacao_id=org_id,
         paciente_id=paciente_id,
         status=StatusAtendimento.APTO_PARA_CHAMADA,
         prioridade_clinica=PrioridadeClinica.URGENTE,
@@ -208,7 +197,6 @@ async def test_validar_elegibilidade_already_promoted() -> None:
 
     result = await validar_elegibilidade_task(
         ctx,
-        organizacao_id=org_id,
         atendimento_id=str(atend_id),
         paciente_id=str(paciente_id),
     )
@@ -221,7 +209,6 @@ async def test_validar_elegibilidade_already_promoted() -> None:
 @pytest.mark.asyncio
 async def test_validar_elegibilidade_not_found_returns_safe_status() -> None:
     """If attendance is not found in database, returns safe not_found response."""
-    org_id = 1
     atend_id = uuid4()
     paciente_id = uuid4()
 
@@ -231,7 +218,6 @@ async def test_validar_elegibilidade_not_found_returns_safe_status() -> None:
 
     result = await validar_elegibilidade_task(
         ctx,
-        organizacao_id=org_id,
         atendimento_id=str(atend_id),
         paciente_id=str(paciente_id),
     )

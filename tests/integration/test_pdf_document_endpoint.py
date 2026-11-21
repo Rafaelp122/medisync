@@ -22,14 +22,11 @@ async def test_obter_documento_pdf_endpoint(
     """Validate PDF generation and download endpoint returns compliant PDF/A."""
     cenario = await seed_clinical_scenario(
         db_session,
-        org_cnpj="44444444000102",
+        unidade_cnpj="44444444000102",
         paciente_cpf="55555555501",
         medico_cpf="66666666601",
     )
-    async_client.headers["X-Tenant-ID"] = str(cenario.organizacao.id)
-    async_client.headers.update(
-        auth_headers(Role.MEDICO, cenario.organizacao.id, cenario.medico.id)
-    )
+    async_client.headers.update(auth_headers(Role.MEDICO, cenario.medico.id))
     client = async_client
 
     soap_resp = await client.post(

@@ -18,8 +18,6 @@ logger = logging.getLogger("medisync.auth.credentials")
 
 def _translate_credential_integrity_error(
     exc: IntegrityError,
-    *,
-    organizacao_id: int,
 ) -> ConflictError | NotFoundError | ValidationError:
     """Translate PostgreSQL IntegrityError SQLSTATE into accurate domain error."""
     orig = exc.orig
@@ -28,8 +26,7 @@ def _translate_credential_integrity_error(
 
     if sqlstate == "23505":
         logger.warning(
-            "Conflito de credencial ao persistir conta (org_id=%s, constraint=%s).",
-            organizacao_id,
+            "Conflito de credencial ao persistir conta (constraint=%s).",
             constraint,
         )
         return ConflictError(
@@ -39,20 +36,16 @@ def _translate_credential_integrity_error(
 
     if sqlstate == "23503":
         logger.error(
-            "Chave estrangeira ausente ao persistir credencial "
-            "(org_id=%s, constraint=%s).",
-            organizacao_id,
+            "Chave estrangeira ausente ao persistir credencial (constraint=%s).",
             constraint,
         )
         return NotFoundError(
-            f"Unidade de atendimento '{organizacao_id}' não localizada "
-            "para realizar o cadastro."
+            f"Referência associada ao cadastro de credencial não localizada "
+            f"(constraint={constraint!r})."
         )
 
     logger.exception(
-        "Erro de integridade ao persistir credencial "
-        "(org_id=%s, sqlstate=%s, constraint=%s).",
-        organizacao_id,
+        "Erro de integridade ao persistir credencial (sqlstate=%s, constraint=%s).",
         sqlstate,
         constraint,
     )
@@ -70,13 +63,11 @@ class SqlPatientCredentialRepository(PatientCredentialRepositoryPort):
 
     async def buscar_por_identificador(
         self,
-        organizacao_id: int,
         identificador: str,
         papel: str,
     ) -> UsuarioCredencial | None:
-        """Query UsuarioCredencial by tenant, normalized identifier, and role."""
+        """Query UsuarioCredencial by normalized identifier and role."""
         stmt = select(UsuarioCredencial).where(
-            UsuarioCredencial.organizacao_id == organizacao_id,
             UsuarioCredencial.identificador == identificador.strip().lower(),
             UsuarioCredencial.papel == papel.strip().upper(),
         )
@@ -84,13 +75,11 @@ class SqlPatientCredentialRepository(PatientCredentialRepositoryPort):
 
     async def buscar_por_usuario_id(
         self,
-        organizacao_id: int,
         usuario_id: UUID,
         papel: str,
     ) -> UsuarioCredencial | None:
-        """Query UsuarioCredencial by tenant, user UUID, and role."""
+        """Query UsuarioCredencial by user UUID and role."""
         stmt = select(UsuarioCredencial).where(
-            UsuarioCredencial.organizacao_id == organizacao_id,
             UsuarioCredencial.usuario_id == usuario_id,
             UsuarioCredencial.papel == papel.strip().upper(),
         )
@@ -98,12 +87,10 @@ class SqlPatientCredentialRepository(PatientCredentialRepositoryPort):
 
     async def existe_identificador(
         self,
-        organizacao_id: int,
         identificador: str,
     ) -> bool:
-        """Return True if identifier already exists in the organization."""
+        """Return True if identifier already exists in the platform."""
         stmt = select(UsuarioCredencial.id).where(
-            UsuarioCredencial.organizacao_id == organizacao_id,
             UsuarioCredencial.identificador == identificador.strip().lower(),
         )
         return (await self._session.execute(stmt)).scalar_one_or_none() is not None
@@ -117,8 +104,5 @@ class SqlPatientCredentialRepository(PatientCredentialRepositoryPort):
         try:
             await self._session.flush()
         except IntegrityError as exc:
-            raise _translate_credential_integrity_error(
-                exc,
-                organizacao_id=credencial.organizacao_id,
-            ) from exc
+            raise _translate_credential_integrity_error(exc) from exc
         return credencial

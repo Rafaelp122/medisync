@@ -11,7 +11,6 @@ from uuid import UUID
 class IdentityDirectoryDTO:
     """Consolidated identity directory data for clinical documents and verification."""
 
-    organizacao_id: int
     organizacao_nome: str
     organizacao_cnpj: str | None
     medico_id: UUID
@@ -34,9 +33,6 @@ class PacienteAuthLookupDTO(Protocol):
     def id(self) -> UUID: ...
 
     @property
-    def organizacao_id(self) -> int: ...
-
-    @property
     def telefone(self) -> str: ...
 
     @property
@@ -54,7 +50,6 @@ class PacienteAuthLookupData:
     """Concrete immutable representation of patient lookup data."""
 
     id: UUID
-    organizacao_id: int
     telefone: str
     cpf: str | None
     nome_completo: str
@@ -66,9 +61,6 @@ class PacientePasskeyDTO(Protocol):
 
     @property
     def id(self) -> UUID: ...
-
-    @property
-    def organizacao_id(self) -> int: ...
 
     @property
     def paciente_id(self) -> UUID: ...
@@ -91,7 +83,6 @@ class PacientePasskeyData:
     """Concrete immutable representation of a registered patient passkey."""
 
     id: UUID
-    organizacao_id: int
     paciente_id: UUID
     credential_id: str
     public_key: str
@@ -105,33 +96,26 @@ class IdentityReaderPort(Protocol):
 
     async def obter_dados_diretorio(
         self,
-        organizacao_id: int,
         medico_id: UUID,
         paciente_id: UUID,
     ) -> IdentityDirectoryDTO:
-        """Fetch verified organization, doctor and patient details."""
+        """Fetch verified unit configuration, doctor and patient details."""
         ...
 
-    async def obter_modo_sus(self, organizacao_id: int) -> bool:
-        """Check whether the organization operates in public SUS mode."""
-        ...
-
-    async def listar_organizacoes_ativas(self) -> list[int]:
-        """List primary keys of all active organizations."""
+    async def obter_modo_sus(self) -> bool:
+        """Check whether the platform operates in public SUS mode."""
         ...
 
     async def buscar_paciente_por_telefone(
         self,
-        organizacao_id: int,
         telefone: str,
         cpf: str | None = None,
     ) -> PacienteAuthLookupDTO | None:
-        """Look up patient authentication record by organization and phone."""
+        """Look up patient authentication record by phone."""
         ...
 
     async def buscar_paciente_cadsus(
         self,
-        organizacao_id: int,
         cpf: str | None = None,
         data_nascimento: date | None = None,
         cns: str | None = None,
@@ -142,15 +126,13 @@ class IdentityReaderPort(Protocol):
 
     async def buscar_paciente_por_id(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> PacienteAuthLookupDTO | None:
-        """Look up patient authentication record by organization and patient ID."""
+        """Look up patient authentication record by patient ID."""
         ...
 
     async def registrar_passkey_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
         credential_id: str,
         public_key: str,
@@ -162,23 +144,20 @@ class IdentityReaderPort(Protocol):
 
     async def buscar_passkey_por_credencial(
         self,
-        organizacao_id: int,
         credential_id: str,
     ) -> PacientePasskeyDTO | None:
-        """Look up a registered WebAuthn passkey by tenant and credential ID."""
+        """Look up a registered WebAuthn passkey by credential ID."""
         ...
 
     async def listar_passkeys_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> Sequence[PacientePasskeyDTO]:
-        """List all registered WebAuthn passkeys for a patient within a tenant."""
+        """List all registered WebAuthn passkeys for a patient."""
         ...
 
     async def atualizar_sign_count_passkey(
         self,
-        organizacao_id: int,
         credential_id: str,
         novo_sign_count: int,
     ) -> PacientePasskeyDTO:

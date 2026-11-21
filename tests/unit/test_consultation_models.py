@@ -19,7 +19,6 @@ def test_consultation_exceptions_hierarchy_and_attributes() -> None:
     assert isinstance(err_presc, ValidationError)
     assert err_presc.status_code == 422
     assert err_presc.code == "PRESCRICAO_FISICA_OBRIGATORIA"
-    # Alias compatibility check
     assert PrescricaoFisicaObrigatoriaException is PrescricaoFisicaObrigatoriaError
 
     err_fin = ConsultaFinalizadaError(
@@ -88,7 +87,6 @@ def test_validar_substancia_proibida_listas_a_e_b(medicamento_proibido: str) -> 
         "Amlodipino 5mg",
         "Omeprazol 20mg",
         "Metformina 850mg",
-        # Lista C1 (Permitidos digitalmente via RECEITA_CONTROLE_ESPECIAL_C1)
         "Cloridrato de Sertralina 50mg",
         "Fluoxetina 20mg",
         "Oxalato de Escitalopram 10mg",
@@ -101,7 +99,6 @@ def test_validar_substancia_proibida_listas_a_e_b(medicamento_proibido: str) -> 
     ],
 )
 def test_validar_substancia_permitida(medicamento_permitido: str) -> None:
-    # Não deve levantar exceção
     validar_substancia_permitida_telemedicina(medicamento_permitido)
 
 
@@ -111,7 +108,6 @@ def test_criar_evolucao_clinica_sucesso() -> None:
     atend_id = uuid7()
     med_id = uuid7()
     evolucao = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=atend_id,
         medico_id=med_id,
         anamnese="Paciente relata dor de garganta e febre moderada há 2 dias.",
@@ -120,7 +116,7 @@ def test_criar_evolucao_clinica_sucesso() -> None:
         conduta="Prescrito sintomáticos, repouso e hidratação oral abundante.",
     )
     assert evolucao.id is not None
-    assert evolucao.organizacao_id == 1
+    assert not hasattr(evolucao, "organizacao_id")
     assert evolucao.atendimento_id == atend_id
     assert evolucao.medico_id == med_id
     assert evolucao.anamnese.startswith("Paciente relata")
@@ -137,40 +133,24 @@ def test_evolucao_clinica_validacoes_obrigatorias() -> None:
     atend_id = uuid7()
     med_id = uuid7()
 
-    # organizacao_id inválido
-    with pytest.raises(ConsultaInvalidaError, match="organizacao_id"):
-        EvolucaoClinica(
-            organizacao_id=0,
-            atendimento_id=atend_id,
-            medico_id=med_id,
-            anamnese="Queixa",
-            conduta="Conduta",
-        )
-
-    # anamnese vazia
     with pytest.raises(ConsultaInvalidaError, match="Anamnese"):
         EvolucaoClinica(
-            organizacao_id=1,
             atendimento_id=atend_id,
             medico_id=med_id,
             anamnese="   ",
             conduta="Conduta",
         )
 
-    # conduta vazia
     with pytest.raises(ConsultaInvalidaError, match="Conduta"):
         EvolucaoClinica(
-            organizacao_id=1,
             atendimento_id=atend_id,
             medico_id=med_id,
             anamnese="Anamnese válida",
             conduta="   ",
         )
 
-    # CID-10 inválido
     with pytest.raises(ConsultaInvalidaError, match="CID-10"):
         EvolucaoClinica(
-            organizacao_id=1,
             atendimento_id=atend_id,
             medico_id=med_id,
             anamnese="Anamnese válida",
@@ -183,7 +163,6 @@ def test_evolucao_clinica_bloqueio_exclusao_consulta_finalizada() -> None:
     from src.modules.consultation.domain.models import EvolucaoClinica
 
     evolucao = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=uuid7(),
         medico_id=uuid7(),
         anamnese="Paciente com tosse seca persistente.",
@@ -191,15 +170,12 @@ def test_evolucao_clinica_bloqueio_exclusao_consulta_finalizada() -> None:
         cid10_principal="R05",
     )
 
-    # Status em andamento permite exclusão (se necessário antes de assinar)
     evolucao.validar_pode_excluir(status_atendimento="EM_ATENDIMENTO")
 
-    # Status terminais bloqueiam exclusão
     for status_terminal in ["CONCLUIDO", "PACIENTE_AUSENTE", "CANCELADO_PACIENTE"]:
         with pytest.raises(ConsultaFinalizadaError, match="finalizada"):
             evolucao.validar_pode_excluir(status_atendimento=status_terminal)
 
-    # Bloqueio explícito por marcar_finalizado
     evolucao.marcar_finalizado()
     assert evolucao.is_finalizado is True
     with pytest.raises(ConsultaFinalizadaError, match="finalizada"):
@@ -215,15 +191,15 @@ def test_criar_documento_clinico_e_itens_sucesso() -> None:
 
     doc_id = uuid7()
     doc = DocumentoClinico(
-        organizacao_id=1,
         atendimento_id=uuid7(),
         medico_id=uuid7(),
         tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
-        chave_s3="s3://medisync-docs/1/atendimentos/123/receita.pdf",
+        chave_s3="consultations/123/documents/receita.pdf",
         sha256_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         id=doc_id,
     )
     assert doc.id == doc_id
+    assert not hasattr(doc, "organizacao_id")
     assert doc.tipo_documento == TipoDocumentoClinico.RECEITA_SIMPLES
     assert doc.sha256_hash is not None
     assert doc.sha256_hash.islower()
@@ -232,7 +208,6 @@ def test_criar_documento_clinico_e_itens_sucesso() -> None:
     assert len(doc.itens) == 0
 
     item = DocumentoItem(
-        organizacao_id=1,
         documento_id=doc.id,
         medicamento="Dipirona 500mg",
         dosagem="1 comprimido",
@@ -240,10 +215,10 @@ def test_criar_documento_clinico_e_itens_sucesso() -> None:
         duracao="5 dias",
         controle_especial=False,
     )
+    assert not hasattr(item, "organizacao_id")
     doc.adicionar_item(item)
     assert len(doc.itens) == 1
     assert doc.itens[0].medicamento == "Dipirona 500mg"
-    assert doc.itens[0].organizacao_id == 1
 
 
 def test_documento_clinico_validacoes_sha256_e_campos() -> None:
@@ -256,21 +231,8 @@ def test_documento_clinico_validacoes_sha256_e_campos() -> None:
     atend_id = uuid7()
     med_id = uuid7()
 
-    # organizacao_id inválido
-    with pytest.raises(ConsultaInvalidaError, match="organizacao_id"):
-        DocumentoClinico(
-            organizacao_id=0,
-            atendimento_id=atend_id,
-            medico_id=med_id,
-            tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
-            chave_s3="s3://bucket/doc.pdf",
-            sha256_hash=valid_sha,
-        )
-
-    # chave_s3 vazia
     with pytest.raises(ConsultaInvalidaError, match="chave_s3"):
         DocumentoClinico(
-            organizacao_id=1,
             atendimento_id=atend_id,
             medico_id=med_id,
             tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
@@ -278,10 +240,8 @@ def test_documento_clinico_validacoes_sha256_e_campos() -> None:
             sha256_hash=valid_sha,
         )
 
-    # sha256 tamanho != 64
     with pytest.raises(ConsultaInvalidaError, match="SHA-256"):
         DocumentoClinico(
-            organizacao_id=1,
             atendimento_id=atend_id,
             medico_id=med_id,
             tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
@@ -289,10 +249,8 @@ def test_documento_clinico_validacoes_sha256_e_campos() -> None:
             sha256_hash="abc",
         )
 
-    # sha256 não hexadecimal
     with pytest.raises(ConsultaInvalidaError, match="SHA-256"):
         DocumentoClinico(
-            organizacao_id=1,
             atendimento_id=atend_id,
             medico_id=med_id,
             tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
@@ -301,7 +259,7 @@ def test_documento_clinico_validacoes_sha256_e_campos() -> None:
         )
 
 
-def test_documento_item_validacoes_e_multi_tenant() -> None:
+def test_documento_item_validacoes_portaria_344() -> None:
     from src.modules.consultation.domain.models import (
         DocumentoClinico,
         DocumentoItem,
@@ -311,7 +269,6 @@ def test_documento_item_validacoes_e_multi_tenant() -> None:
     doc_id = uuid7()
     valid_sha = "b" * 64
     doc = DocumentoClinico(
-        organizacao_id=1,
         atendimento_id=uuid7(),
         medico_id=uuid7(),
         tipo_documento=TipoDocumentoClinico.RECEITA_CONTROLE_ESPECIAL_C1,
@@ -320,30 +277,15 @@ def test_documento_item_validacoes_e_multi_tenant() -> None:
         id=doc_id,
     )
 
-    # Criar item com organizacao_id diferente do documento
-    item_cross_tenant = DocumentoItem(
-        organizacao_id=2,  # Org 2 diferente da Org 1 do doc!
-        documento_id=doc.id,
-        medicamento="Sertralina 50mg",
-        dosagem="1 comp",
-        posologia="1x ao dia pela manhã",
-    )
-    with pytest.raises(ConsultaInvalidaError, match=r"multi-tenant|organizacao_id"):
-        doc.adicionar_item(item_cross_tenant)
-
-    # Tentativa de criar item com substância proibida Lista B (Clonazepam)
     with pytest.raises(PrescricaoFisicaObrigatoriaError):
         DocumentoItem(
-            organizacao_id=1,
             documento_id=doc.id,
             medicamento="Clonazepam 2mg",
             dosagem="1 comp",
             posologia="À noite",
         )
 
-    # Item válido para Lista C1 no documento C1 ganha controle_especial=True
     item_c1 = DocumentoItem(
-        organizacao_id=1,
         documento_id=doc.id,
         medicamento="Cloridrato de Sertralina 50mg",
         dosagem="50mg",
@@ -362,7 +304,6 @@ def test_documento_clinico_bloqueio_exclusao_consulta_finalizada() -> None:
     )
 
     doc = DocumentoClinico(
-        organizacao_id=1,
         atendimento_id=uuid7(),
         medico_id=uuid7(),
         tipo_documento=TipoDocumentoClinico.ATESTADO_MEDICO,
@@ -370,15 +311,12 @@ def test_documento_clinico_bloqueio_exclusao_consulta_finalizada() -> None:
         sha256_hash="c" * 64,
     )
 
-    # Status em andamento permite exclusão
     doc.validar_pode_excluir(status_atendimento="EM_ATENDIMENTO")
 
-    # Status terminais bloqueiam
     for status_terminal in ["CONCLUIDO", "PACIENTE_AUSENTE", "CANCELADO_PACIENTE"]:
         with pytest.raises(ConsultaFinalizadaError, match="finalizada"):
             doc.validar_pode_excluir(status_atendimento=status_terminal)
 
-    # Bloqueio explícito por marcar_finalizado
     doc.marcar_finalizado()
     assert doc.is_finalizado is True
     with pytest.raises(ConsultaFinalizadaError, match="finalizada"):
@@ -390,7 +328,6 @@ def test_documento_clinico_tipo_invalido() -> None:
 
     with pytest.raises(ConsultaInvalidaError, match="Tipo de documento"):
         DocumentoClinico(
-            organizacao_id=1,
             atendimento_id=uuid7(),
             medico_id=uuid7(),
             tipo_documento="TIPO_INVENTADO",
@@ -404,18 +341,8 @@ def test_documento_item_validacoes_campos_obrigatorios() -> None:
 
     doc_id = uuid7()
 
-    with pytest.raises(ConsultaInvalidaError, match="organizacao_id"):
-        DocumentoItem(
-            organizacao_id=0,
-            documento_id=doc_id,
-            medicamento="Dipirona",
-            dosagem="500mg",
-            posologia="6/6h",
-        )
-
     with pytest.raises(ConsultaInvalidaError, match="medicamento"):
         DocumentoItem(
-            organizacao_id=1,
             documento_id=doc_id,
             medicamento="   ",
             dosagem="500mg",
@@ -424,7 +351,6 @@ def test_documento_item_validacoes_campos_obrigatorios() -> None:
 
     with pytest.raises(ConsultaInvalidaError, match="Dosagem"):
         DocumentoItem(
-            organizacao_id=1,
             documento_id=doc_id,
             medicamento="Dipirona",
             dosagem="   ",
@@ -433,7 +359,6 @@ def test_documento_item_validacoes_campos_obrigatorios() -> None:
 
     with pytest.raises(ConsultaInvalidaError, match="Posologia"):
         DocumentoItem(
-            organizacao_id=1,
             documento_id=doc_id,
             medicamento="Dipirona",
             dosagem="500mg",
@@ -453,32 +378,26 @@ def test_before_delete_listeners_bloqueiam_quando_finalizado() -> None:
     )
 
     evolucao = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=uuid7(),
         medico_id=uuid7(),
         anamnese="Anamnese",
         conduta="Conduta",
     )
-    # Não finalizado: hook não deve disparar exceção
     impedir_exclusao_evolucao_finalizada(None, None, evolucao)
 
-    # Finalizado: hook bloqueia
     evolucao.marcar_finalizado()
     with pytest.raises(ConsultaFinalizadaError, match="finalizada"):
         impedir_exclusao_evolucao_finalizada(None, None, evolucao)
 
     doc = DocumentoClinico(
-        organizacao_id=1,
         atendimento_id=uuid7(),
         medico_id=uuid7(),
         tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
         chave_s3="s3://bucket/doc.pdf",
         sha256_hash="e" * 64,
     )
-    # Não finalizado: hook não deve disparar exceção
     impedir_exclusao_documento_finalizado(None, None, doc)
 
-    # Finalizado: hook bloqueia
     doc.marcar_finalizado()
     with pytest.raises(ConsultaFinalizadaError, match="finalizada"):
         impedir_exclusao_documento_finalizado(None, None, doc)
@@ -492,7 +411,6 @@ def test_documento_clinico_rascunho_e_registro_assinatura() -> None:
     )
 
     doc = DocumentoClinico(
-        organizacao_id=1,
         atendimento_id=uuid7(),
         medico_id=uuid7(),
         tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
@@ -504,28 +422,22 @@ def test_documento_clinico_rascunho_e_registro_assinatura() -> None:
     assert doc.finalizado_em is None
     assert doc.is_finalizado is False
 
-    # Assinatura válida
     valid_hash = "a" * 64
     doc.registrar_assinatura(valid_hash)
     assert doc.sha256_hash == valid_hash
     assert doc.assinado_em is not None
 
-    # Hash inválido
     with pytest.raises(ConsultaInvalidaError, match="Hash SHA-256 inválido"):
         doc.registrar_assinatura("curto_invalido")
 
-    # Marcar finalizado congela o documento
     doc.marcar_finalizado()
     assert doc.is_finalizado is True
     assert doc.finalizado_em is not None
 
-    # Bloqueia nova assinatura
     with pytest.raises(ConsultaFinalizadaError, match="já finalizado"):
         doc.registrar_assinatura("b" * 64)
 
-    # Bloqueia adição de novos itens
     item = DocumentoItem(
-        organizacao_id=1,
         documento_id=doc.id,
         medicamento="Paracetamol 750mg",
         dosagem="1 cp",
@@ -539,7 +451,6 @@ def test_evolucao_clinica_atualizar_soap_sucesso_e_validacoes() -> None:
     from src.modules.consultation.domain.models import EvolucaoClinica
 
     evolucao = EvolucaoClinica(
-        organizacao_id=1,
         atendimento_id=uuid7(),
         medico_id=uuid7(),
         anamnese="Anamnese inicial",
@@ -559,7 +470,6 @@ def test_evolucao_clinica_atualizar_soap_sucesso_e_validacoes() -> None:
     assert evolucao.cid10_principal == "J02.9"
     assert evolucao.registrado_em >= ts_original
 
-    # Validações de entrada em atualizar_soap
     with pytest.raises(ConsultaInvalidaError, match="Anamnese clínica é obrigatória"):
         evolucao.atualizar_soap(anamnese="   ", conduta="Ok")
 
@@ -569,7 +479,6 @@ def test_evolucao_clinica_atualizar_soap_sucesso_e_validacoes() -> None:
     with pytest.raises(ConsultaInvalidaError, match="Código CID-10 inválido"):
         evolucao.atualizar_soap(anamnese="Ok", conduta="Ok", cid10_principal="999")
 
-    # Bloqueia atualização após finalização
     evolucao.marcar_finalizado()
     assert evolucao.is_finalizado is True
     assert evolucao.finalizado_em is not None

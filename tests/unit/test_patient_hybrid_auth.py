@@ -16,7 +16,6 @@ from src.core.config import CommonSettings
 from src.core.errors import (
     ConflictError,
     NotFoundError,
-    TenantInvalidoError,
     ValidationError,
 )
 from src.modules.auth.application.dtos import (
@@ -82,7 +81,6 @@ async def test_registrar_paciente_passwordless_envia_otp() -> None:
     service, reader, _, cred_repo, _, sms, session = _build_service()
 
     dados = RegistrarPacienteCommand(
-        organizacao_id=1,
         cpf="111.444.777-35",
         nome_completo="Maria da Silva",
         data_nascimento=date(1990, 5, 15),
@@ -100,7 +98,9 @@ async def test_registrar_paciente_passwordless_envia_otp() -> None:
     assert session.commits == 1
     assert len(sms.sent_otps) == 1
     assert sms.sent_otps[0]["telefone"] == "11987654321"
-    cred = await cred_repo.buscar_por_identificador(1, "maria.silva@example.com")
+    cred = await cred_repo.buscar_por_identificador(
+        "maria.silva@example.com", Role.PACIENTE.value
+    )
     assert cred is not None
     assert cred.senha_hash.startswith("!UNUSABLE:")
     assert reader.pacientes is not None and len(reader.pacientes) == 1
@@ -111,7 +111,6 @@ async def test_registrar_paciente_com_email_e_senha_cria_credencial() -> None:
     service, _, _, cred_repo, _, sms, session = _build_service()
 
     dados = RegistrarPacienteCommand(
-        organizacao_id=1,
         cpf="11144477735",
         nome_completo="João Pedro",
         data_nascimento=date(1988, 3, 10),
@@ -125,7 +124,9 @@ async def test_registrar_paciente_com_email_e_senha_cria_credencial() -> None:
     assert out.otp_enviado is True
     assert session.commits == 1
     assert len(sms.sent_otps) == 1
-    cred = await cred_repo.buscar_por_identificador(1, "joao.pedro@example.com")
+    cred = await cred_repo.buscar_por_identificador(
+        "joao.pedro@example.com", Role.PACIENTE.value
+    )
     assert cred is not None
     assert cred.usuario_id == out.paciente_id
     assert cred.papel == Role.PACIENTE.value
@@ -140,7 +141,6 @@ async def test_registrar_paciente_validacoes_obrigatorias() -> None:
     with pytest.raises(ValidationError, match="aceite_privacidade=False"):
         await service.registrar_paciente(
             RegistrarPacienteCommand(
-                organizacao_id=1,
                 cpf="11144477735",
                 nome_completo="Maria",
                 data_nascimento=date(1990, 1, 1),
@@ -153,7 +153,6 @@ async def test_registrar_paciente_validacoes_obrigatorias() -> None:
     with pytest.raises(ValidationError, match="inválido"):
         await service.registrar_paciente(
             RegistrarPacienteCommand(
-                organizacao_id=1,
                 cpf="11144477735",
                 nome_completo="Maria",
                 data_nascimento=date(1990, 1, 1),
@@ -166,7 +165,6 @@ async def test_registrar_paciente_validacoes_obrigatorias() -> None:
     with pytest.raises(ValidationError, match="mínimo de 8 caracteres"):
         await service.registrar_paciente(
             RegistrarPacienteCommand(
-                organizacao_id=1,
                 cpf="11144477735",
                 nome_completo="Maria",
                 data_nascimento=date(1990, 1, 1),
@@ -183,7 +181,6 @@ async def test_registrar_paciente_duplicado_mascara_cpf_em_conflict() -> None:
     service, _, _, _, _, _, _ = _build_service()
 
     dados = RegistrarPacienteCommand(
-        organizacao_id=1,
         cpf="11144477735",
         nome_completo="Maria Silva",
         data_nascimento=date(1990, 1, 1),
@@ -199,7 +196,6 @@ async def test_registrar_paciente_duplicado_mascara_cpf_em_conflict() -> None:
     with pytest.raises(ConflictError) as exc_info:
         await service.registrar_paciente(
             RegistrarPacienteCommand(
-                organizacao_id=1,
                 cpf="11144477735",
                 nome_completo="Maria Silva",
                 data_nascimento=date(1990, 1, 1),
@@ -221,7 +217,6 @@ async def test_identificar_paciente_por_cpf_e_email_sem_vazar_pii() -> None:
 
     reg = await service.registrar_paciente(
         RegistrarPacienteCommand(
-            organizacao_id=1,
             cpf="11144477735",
             nome_completo="Ana Clara Souza",
             data_nascimento=date(1992, 7, 20),
@@ -232,7 +227,6 @@ async def test_identificar_paciente_por_cpf_e_email_sem_vazar_pii() -> None:
         ),
     )
     await reader.registrar_passkey_paciente(
-        organizacao_id=1,
         paciente_id=reg.paciente_id,
         credential_id="cred-1",
         public_key="pk",
@@ -240,7 +234,6 @@ async def test_identificar_paciente_por_cpf_e_email_sem_vazar_pii() -> None:
 
     by_cpf = await service.identificar_paciente(
         IdentificarPacienteCommand(
-            organizacao_id=1,
             identificador="111.444.777-35",
             client_ip="10.0.0.1",
         )
@@ -252,7 +245,6 @@ async def test_identificar_paciente_por_cpf_e_email_sem_vazar_pii() -> None:
 
     by_email = await service.identificar_paciente(
         IdentificarPacienteCommand(
-            organizacao_id=1,
             identificador="ANA@EXAMPLE.COM",
             client_ip="10.0.0.1",
         )
@@ -263,7 +255,6 @@ async def test_identificar_paciente_por_cpf_e_email_sem_vazar_pii() -> None:
 
     not_found = await service.identificar_paciente(
         IdentificarPacienteCommand(
-            organizacao_id=1,
             identificador="52998224725",
             client_ip="10.0.0.1",
         )
@@ -280,7 +271,6 @@ async def test_identificar_paciente_rate_limit_por_ip() -> None:
     for idx in range(15):
         await service.identificar_paciente(
             IdentificarPacienteCommand(
-                organizacao_id=1,
                 identificador=f"user{idx}@example.com",
                 client_ip="192.168.1.50",
             )
@@ -289,7 +279,6 @@ async def test_identificar_paciente_rate_limit_por_ip() -> None:
     with pytest.raises(IdentificacaoRateLimitExcedidoError) as exc_info:
         await service.identificar_paciente(
             IdentificarPacienteCommand(
-                organizacao_id=1,
                 identificador="extra@example.com",
                 client_ip="192.168.1.50",
             )
@@ -303,7 +292,6 @@ async def test_login_paciente_senha_sucesso_sem_mfa_e_lockout_apos_5_falhas() ->
 
     reg = await service.registrar_paciente(
         RegistrarPacienteCommand(
-            organizacao_id=1,
             cpf="11144477735",
             nome_completo="Carlos Lima",
             data_nascimento=date(1985, 2, 10),
@@ -314,10 +302,8 @@ async def test_login_paciente_senha_sucesso_sem_mfa_e_lockout_apos_5_falhas() ->
         ),
     )
 
-    # Login por email
     auth_ok = await service.autenticar_paciente_senha(
         LoginPacienteSenhaCommand(
-            organizacao_id=1,
             identificador="carlos@example.com",
             senha="SenhaCorreta123",
         ),
@@ -328,22 +314,18 @@ async def test_login_paciente_senha_sucesso_sem_mfa_e_lockout_apos_5_falhas() ->
     assert claims.usuario_id == reg.paciente_id
     assert claims.papel == Role.PACIENTE.value
 
-    # Login por CPF usando a mesma credencial vinculada ao paciente
     auth_cpf = await service.autenticar_paciente_senha(
         LoginPacienteSenhaCommand(
-            organizacao_id=1,
             identificador="111.444.777-35",
             senha="SenhaCorreta123",
         ),
     )
     assert auth_cpf.paciente_id == reg.paciente_id
 
-    # 4 falhas -> CredenciaisInvalidasError; 5a falha -> ContaBloqueadaError
     for _ in range(4):
         with pytest.raises(CredenciaisInvalidasError):
             await service.autenticar_paciente_senha(
                 LoginPacienteSenhaCommand(
-                    organizacao_id=1,
                     identificador="carlos@example.com",
                     senha="Errada",
                 ),
@@ -352,44 +334,39 @@ async def test_login_paciente_senha_sucesso_sem_mfa_e_lockout_apos_5_falhas() ->
     with pytest.raises(ContaBloqueadaError):
         await service.autenticar_paciente_senha(
             LoginPacienteSenhaCommand(
-                organizacao_id=1,
                 identificador="carlos@example.com",
                 senha="Errada",
             ),
         )
 
-    # Mesmo com senha correta, segue bloqueada (com dummy_verify)
     prev_dummy_locked = hasher.dummy_calls
     with pytest.raises(ContaBloqueadaError):
         await service.autenticar_paciente_senha(
             LoginPacienteSenhaCommand(
-                organizacao_id=1,
                 identificador="carlos@example.com",
                 senha="SenhaCorreta123",
             ),
         )
     assert hasher.dummy_calls == prev_dummy_locked + 1
 
-    # Conta inexistente executa dummy_verify
     prev_dummy = hasher.dummy_calls
     with pytest.raises(CredenciaisInvalidasError):
         await service.autenticar_paciente_senha(
             LoginPacienteSenhaCommand(
-                organizacao_id=1,
                 identificador="naoexiste@example.com",
                 senha="123",
             ),
         )
     assert hasher.dummy_calls == prev_dummy + 1
 
-    # Conta desativada -> ContaDesativadaError
-    cred = await cred_repo.buscar_por_identificador(1, "carlos@example.com")
+    cred = await cred_repo.buscar_por_identificador(
+        "carlos@example.com", Role.PACIENTE.value
+    )
     assert cred is not None
     cred.desativar()
     with pytest.raises(ContaDesativadaError):
         await service.autenticar_paciente_senha(
             LoginPacienteSenhaCommand(
-                organizacao_id=1,
                 identificador="carlos@example.com",
                 senha="SenhaCorreta123",
             ),
@@ -410,48 +387,11 @@ def test_obter_capacidades_metodos() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tenant_invalido_nos_novos_metodos() -> None:
-    service, _, _, _, _, _, _ = _build_service()
-
-    with pytest.raises(TenantInvalidoError):
-        await service.registrar_paciente(
-            RegistrarPacienteCommand(
-                organizacao_id=0,
-                cpf="11144477735",
-                nome_completo="Maria",
-                data_nascimento=date(1990, 1, 1),
-                telefone="11987654321",
-                email="maria@example.com",
-                aceite_privacidade=True,
-            ),
-        )
-
-    with pytest.raises(TenantInvalidoError):
-        await service.identificar_paciente(
-            IdentificarPacienteCommand(
-                organizacao_id=0,
-                identificador="maria@example.com",
-            )
-        )
-
-    with pytest.raises(TenantInvalidoError):
-        await service.autenticar_paciente_senha(
-            LoginPacienteSenhaCommand(
-                organizacao_id=0,
-                identificador="maria@example.com",
-                senha="123",
-            ),
-        )
-
-
-@pytest.mark.asyncio
 async def test_registrar_apenas_email_ou_apenas_senha() -> None:
     service, reader, _, cred_repo, hasher, _, _ = _build_service()
 
-    # 1. Apenas email (sem senha): cria credencial sem senha usavel
     reg_email = await service.registrar_paciente(
         RegistrarPacienteCommand(
-            organizacao_id=1,
             cpf="11144477735",
             nome_completo="Paciente Sem Senha",
             data_nascimento=date(1991, 4, 1),
@@ -460,13 +400,14 @@ async def test_registrar_apenas_email_ou_apenas_senha() -> None:
             email="sem.senha@example.com",
         ),
     )
-    cred_email = await cred_repo.buscar_por_identificador(1, "sem.senha@example.com")
+    cred_email = await cred_repo.buscar_por_identificador(
+        "sem.senha@example.com", Role.PACIENTE.value
+    )
     assert cred_email is not None
     assert cred_email.usuario_id == reg_email.paciente_id
 
     id_email = await service.identificar_paciente(
         IdentificarPacienteCommand(
-            organizacao_id=1,
             identificador="sem.senha@example.com",
             client_ip="10.0.0.2",
         )
@@ -478,17 +419,14 @@ async def test_registrar_apenas_email_ou_apenas_senha() -> None:
     with pytest.raises(CredenciaisInvalidasError):
         await service.autenticar_paciente_senha(
             LoginPacienteSenhaCommand(
-                organizacao_id=1,
                 identificador="sem.senha@example.com",
                 senha="QualquerSenha123",
             ),
         )
     assert hasher.dummy_calls == prev_dummy + 1
 
-    # 2. Com email + senha: cria credencial utilizável e login por CPF ou e-mail
     reg_cpf = await service.registrar_paciente(
         RegistrarPacienteCommand(
-            organizacao_id=1,
             cpf="52998224725",
             nome_completo="Paciente Com Senha",
             data_nascimento=date(1989, 8, 22),
@@ -498,13 +436,14 @@ async def test_registrar_apenas_email_ou_apenas_senha() -> None:
             senha="MinhaSenha99",
         ),
     )
-    cred_cpf = await cred_repo.buscar_por_identificador(1, "paciente.senha@example.com")
+    cred_cpf = await cred_repo.buscar_por_identificador(
+        "paciente.senha@example.com", Role.PACIENTE.value
+    )
     assert cred_cpf is not None
     assert cred_cpf.usuario_id == reg_cpf.paciente_id
 
     id_cpf = await service.identificar_paciente(
         IdentificarPacienteCommand(
-            organizacao_id=1,
             identificador="52998224725",
             client_ip="10.0.0.3",
         )
@@ -512,12 +451,10 @@ async def test_registrar_apenas_email_ou_apenas_senha() -> None:
     assert id_cpf.possui_conta is True
     assert set(id_cpf.metodos_disponiveis) == {"otp", "senha"}
 
-    # 3. Email duplicado para outro CPF falha antes de persistir novo Paciente
     before_count = len(reader.pacientes or [])
     with pytest.raises(ConflictError):
         await service.registrar_paciente(
             RegistrarPacienteCommand(
-                organizacao_id=1,
                 cpf="39053344705",
                 nome_completo="Outro Paciente",
                 data_nascimento=date(1995, 1, 1),
@@ -528,11 +465,9 @@ async def test_registrar_apenas_email_ou_apenas_senha() -> None:
         )
     assert len(reader.pacientes or []) == before_count
 
-    # 4. expose_debug_otp=False oculta codigo_debug (simulando produção)
     service_prod, _, _, _, _, _, _ = _build_service(expose_debug_otp=False)
     out_prod = await service_prod.registrar_paciente(
         RegistrarPacienteCommand(
-            organizacao_id=1,
             cpf="39053344705",
             nome_completo="Paciente Prod",
             data_nascimento=date(1995, 1, 1),
@@ -556,9 +491,6 @@ async def test_patient_hybrid_http_router_endpoints_asgi() -> None:
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            headers = {"X-Tenant-ID": "1"}
-
-            # 1. GET /api/v1/auth/patient/methods
             resp_methods = await client.get("/api/v1/auth/patient/methods")
             assert resp_methods.status_code == 200
             assert resp_methods.json() == {
@@ -568,7 +500,6 @@ async def test_patient_hybrid_http_router_endpoints_asgi() -> None:
                 "password_fallback_enabled": True,
             }
 
-            # 2. POST /api/v1/auth/patient/register
             resp_reg = await client.post(
                 "/api/v1/auth/patient/register",
                 json={
@@ -580,7 +511,6 @@ async def test_patient_hybrid_http_router_endpoints_asgi() -> None:
                     "email": "helena@example.com",
                     "senha": "SenhaValida123",
                 },
-                headers=headers,
             )
             assert resp_reg.status_code == 201
             reg_body = resp_reg.json()
@@ -590,11 +520,9 @@ async def test_patient_hybrid_http_router_endpoints_asgi() -> None:
             assert reg_body["codigo_debug"] is not None
             assert len(reg_body["codigo_debug"]) == 6
 
-            # 3. POST /api/v1/auth/patient/identify
             resp_id = await client.post(
                 "/api/v1/auth/patient/identify",
                 json={"identificador": "helena@example.com"},
-                headers=headers,
             )
             assert resp_id.status_code == 200
             id_body = resp_id.json()
@@ -602,14 +530,12 @@ async def test_patient_hybrid_http_router_endpoints_asgi() -> None:
             assert id_body["govbr_habilitado"] is True
             assert set(id_body["metodos_disponiveis"]) == {"otp", "senha", "govbr"}
 
-            # 4. POST /api/v1/auth/patient/login-password
             resp_pwd = await client.post(
                 "/api/v1/auth/patient/login-password",
                 json={
                     "identificador": "helena@example.com",
                     "senha": "SenhaValida123",
                 },
-                headers=headers,
             )
             assert resp_pwd.status_code == 200
             pwd_body = resp_pwd.json()
@@ -622,9 +548,6 @@ async def test_patient_hybrid_http_router_endpoints_asgi() -> None:
 
 def test_identity_writer_integrity_error_classification() -> None:
     """FK violation (23503) must NOT falsely report duplicate CPF ConflictError."""
-    from types import SimpleNamespace
-
-    from sqlalchemy.exc import IntegrityError
     from src.modules.identity.infrastructure.identity_writer_sql import (
         _translate_patient_integrity_error,  # pyright: ignore[reportPrivateUsage]
     )
@@ -634,27 +557,23 @@ def test_identity_writer_integrity_error_classification() -> None:
         {},
         SimpleNamespace(
             sqlstate="23503",
-            diag=SimpleNamespace(constraint_name="fk_pacientes_organizacao_id"),
+            diag=SimpleNamespace(constraint_name="fk_pacientes_ref"),
         ),  # type: ignore[arg-type]
     )
-    fk_err = _translate_patient_integrity_error(
-        fk_exc, cpf="11144477735", organizacao_id=1
-    )
+    fk_err = _translate_patient_integrity_error(fk_exc, cpf="11144477735")
     assert isinstance(fk_err, NotFoundError)
     assert "cpf" not in fk_err.detail.lower()
-    assert "'1'" in fk_err.detail
+    assert "fk_pacientes_ref" in fk_err.detail
 
     uniq_exc = IntegrityError(
         "INSERT INTO pacientes",
         {},
         SimpleNamespace(
             sqlstate="23505",
-            diag=SimpleNamespace(constraint_name="uq_paciente_org_cpf"),
+            diag=SimpleNamespace(constraint_name="uq_paciente_cpf"),
         ),  # type: ignore[arg-type]
     )
-    uniq_err = _translate_patient_integrity_error(
-        uniq_exc, cpf="11144477735", organizacao_id=1
-    )
+    uniq_err = _translate_patient_integrity_error(uniq_exc, cpf="11144477735")
     assert isinstance(uniq_err, ConflictError)
     assert "11144477735" not in uniq_err.detail
     assert "111.***.***-35" not in uniq_err.detail
@@ -666,9 +585,7 @@ def test_identity_writer_integrity_error_classification() -> None:
         {},
         SimpleNamespace(sqlstate="23514", diag=SimpleNamespace(constraint_name="chk")),  # type: ignore[arg-type]
     )
-    other_err = _translate_patient_integrity_error(
-        other_exc, cpf="11144477735", organizacao_id=1
-    )
+    other_err = _translate_patient_integrity_error(other_exc, cpf="11144477735")
     assert isinstance(other_err, ValidationError)
 
 
@@ -687,7 +604,6 @@ async def test_registrar_e_login_exigem_session_nao_nula() -> None:
     with pytest.raises(ValueError, match="AsyncSession"):
         await service.registrar_paciente(
             RegistrarPacienteCommand(
-                organizacao_id=1,
                 cpf="11144477735",
                 nome_completo="Maria",
                 data_nascimento=date(1990, 1, 1),
@@ -700,7 +616,6 @@ async def test_registrar_e_login_exigem_session_nao_nula() -> None:
     with pytest.raises(ValueError, match="AsyncSession"):
         await service.autenticar_paciente_senha(
             LoginPacienteSenhaCommand(
-                organizacao_id=1,
                 identificador="maria@example.com",
                 senha="Senha123",
             )
@@ -716,7 +631,6 @@ async def test_registrar_paciente_rate_limit_por_ip_antes_duplicidade_e_hash() -
         with pytest.raises(ValidationError):
             await service.registrar_paciente(
                 RegistrarPacienteCommand(
-                    organizacao_id=1,
                     cpf="11144477735",
                     nome_completo=f"User {idx}",
                     data_nascimento=date(1990, 1, 1),
@@ -732,7 +646,6 @@ async def test_registrar_paciente_rate_limit_por_ip_antes_duplicidade_e_hash() -
     with pytest.raises(IdentificacaoRateLimitExcedidoError) as exc_info:
         await service.registrar_paciente(
             RegistrarPacienteCommand(
-                organizacao_id=1,
                 cpf="11144477735",
                 nome_completo="Bloqueado",
                 data_nascimento=date(1990, 1, 1),
@@ -758,7 +671,6 @@ async def test_registrar_paciente_conflito_com_senha_executa_dummy_verify() -> N
 
     await service.registrar_paciente(
         RegistrarPacienteCommand(
-            organizacao_id=1,
             cpf="11144477735",
             nome_completo="Maria Silva",
             data_nascimento=date(1990, 1, 1),
@@ -773,7 +685,6 @@ async def test_registrar_paciente_conflito_com_senha_executa_dummy_verify() -> N
     with pytest.raises(ConflictError):
         await service.registrar_paciente(
             RegistrarPacienteCommand(
-                organizacao_id=1,
                 cpf="52998224725",
                 nome_completo="Outra Pessoa",
                 data_nascimento=date(1991, 2, 2),
@@ -793,7 +704,6 @@ async def test_login_paciente_nao_reseta_rate_limit_ip_e_retorna_429() -> None:
 
     await service.registrar_paciente(
         RegistrarPacienteCommand(
-            organizacao_id=1,
             cpf="11144477735",
             nome_completo="Carlos Lima",
             data_nascimento=date(1985, 2, 10),
@@ -804,22 +714,18 @@ async def test_login_paciente_nao_reseta_rate_limit_ip_e_retorna_429() -> None:
         )
     )
 
-    # 14 tentativas falhas de contas inexistentes no mesmo IP
     for idx in range(14):
         with pytest.raises(CredenciaisInvalidasError):
             await service.autenticar_paciente_senha(
                 LoginPacienteSenhaCommand(
-                    organizacao_id=1,
                     identificador=f"inexistente{idx}@example.com",
                     senha="Errada",
                     client_ip="198.51.100.7",
                 )
             )
 
-    # 15a tentativa: login valido NAO reseta janela do IP
     ok = await service.autenticar_paciente_senha(
         LoginPacienteSenhaCommand(
-            organizacao_id=1,
             identificador="carlos.rl@example.com",
             senha="SenhaCorreta123",
             client_ip="198.51.100.7",
@@ -827,11 +733,9 @@ async def test_login_paciente_nao_reseta_rate_limit_ip_e_retorna_429() -> None:
     )
     assert ok.access_token
 
-    # 16a tentativa no mesmo IP deve ser bloqueada com 429 e Retry-After
     with pytest.raises(IdentificacaoRateLimitExcedidoError) as exc_info:
         await service.autenticar_paciente_senha(
             LoginPacienteSenhaCommand(
-                organizacao_id=1,
                 identificador="carlos.rl@example.com",
                 senha="SenhaCorreta123",
                 client_ip="198.51.100.7",
@@ -849,7 +753,6 @@ async def test_login_paciente_helper_nao_commita_e_falha_commita_no_service() ->
 
     await service.registrar_paciente(
         RegistrarPacienteCommand(
-            organizacao_id=1,
             cpf="11144477735",
             nome_completo="Ana Paula",
             data_nascimento=date(1990, 5, 10),
@@ -859,7 +762,9 @@ async def test_login_paciente_helper_nao_commita_e_falha_commita_no_service() ->
             senha="SenhaCorreta123",
         )
     )
-    cred = await cred_repo.buscar_por_identificador(1, "ana.commit@example.com")
+    cred = await cred_repo.buscar_por_identificador(
+        "ana.commit@example.com", Role.PACIENTE.value
+    )
     assert cred is not None
 
     commits_before_helper = session.commits
@@ -867,26 +772,22 @@ async def test_login_paciente_helper_nao_commita_e_falha_commita_no_service() ->
     assert outcome == "invalid"
     assert session.commits == commits_before_helper
 
-    # Reset falhas para testar fluxo completo no metodo publico
     cred.falhas_login_consecutivas = 0
     cred.bloqueado_ate = None
     with pytest.raises(CredenciaisInvalidasError):
         await service.autenticar_paciente_senha(
             LoginPacienteSenhaCommand(
-                organizacao_id=1,
                 identificador="ana.commit@example.com",
                 senha="Errada",
             )
         )
     assert session.commits == commits_before_helper + 1
 
-    # Bloqueado explicitamente executa dummy_verify
     cred.bloqueado_ate = datetime.now(UTC) + timedelta(minutes=10)
     prev_dummy = service._password_hasher.dummy_calls  # type: ignore[union-attr]  # pyright: ignore[reportPrivateUsage,reportAttributeAccessIssue]
     with pytest.raises(ContaBloqueadaError):
         await service.autenticar_paciente_senha(
             LoginPacienteSenhaCommand(
-                organizacao_id=1,
                 identificador="ana.commit@example.com",
                 senha="SenhaCorreta123",
             )
@@ -901,7 +802,6 @@ async def test_login_paciente_cpf_validacao_e_sem_query_duplicada() -> None:
 
     await service.registrar_paciente(
         RegistrarPacienteCommand(
-            organizacao_id=1,
             cpf="111.444.777-35",
             nome_completo="Pedro CPF",
             data_nascimento=date(1988, 7, 15),
@@ -916,7 +816,6 @@ async def test_login_paciente_cpf_validacao_e_sem_query_duplicada() -> None:
     with pytest.raises(ValidationError):
         await service.autenticar_paciente_senha(
             LoginPacienteSenhaCommand(
-                organizacao_id=1,
                 identificador="12345678900",
                 senha="SenhaCorreta123",
             )
@@ -926,7 +825,6 @@ async def test_login_paciente_cpf_validacao_e_sem_query_duplicada() -> None:
     ident_lookups_before = len(cred_repo.identificador_lookups)
     res = await service.autenticar_paciente_senha(
         LoginPacienteSenhaCommand(
-            organizacao_id=1,
             identificador="111.444.777-35",
             senha="SenhaCorreta123",
         )
@@ -947,11 +845,11 @@ def test_patient_credential_repository_integrity_error_classification() -> None:
         SimpleNamespace(
             sqlstate="23505",
             diag=SimpleNamespace(
-                constraint_name="uq_usuarios_credenciais_org_identificador"
+                constraint_name="uq_usuarios_credenciais_identificador"
             ),
         ),  # type: ignore[arg-type]
     )
-    uniq_err = _translate_credential_integrity_error(uniq_exc, organizacao_id=7)
+    uniq_err = _translate_credential_integrity_error(uniq_exc)
     assert isinstance(uniq_err, ConflictError)
     assert "entrar" in uniq_err.detail.lower()
 
@@ -960,19 +858,19 @@ def test_patient_credential_repository_integrity_error_classification() -> None:
         {},
         SimpleNamespace(
             sqlstate="23503",
-            diag=SimpleNamespace(constraint_name="fk_credenciais_org"),
+            diag=SimpleNamespace(constraint_name="fk_credenciais_ref"),
         ),  # type: ignore[arg-type]
     )
-    fk_err = _translate_credential_integrity_error(fk_exc, organizacao_id=7)
+    fk_err = _translate_credential_integrity_error(fk_exc)
     assert isinstance(fk_err, NotFoundError)
-    assert "'7'" in fk_err.detail
+    assert "fk_credenciais_ref" in fk_err.detail
 
     other_exc = IntegrityError(
         "INSERT INTO usuarios_credenciais",
         {},
         SimpleNamespace(sqlstate="23514", diag=SimpleNamespace(constraint_name="chk")),  # type: ignore[arg-type]
     )
-    other_err = _translate_credential_integrity_error(other_exc, organizacao_id=7)
+    other_err = _translate_credential_integrity_error(other_exc)
     assert isinstance(other_err, ValidationError)
     assert "23514" in other_err.detail
 
@@ -994,7 +892,6 @@ async def test_identity_writer_normalizes_cpf_before_precheck() -> None:
     session = _CapturingSession()
     writer = SqlIdentityWriter(session=cast("AsyncSession", session))
     created = await writer.criar_paciente(
-        organizacao_id=1,
         cpf="111.444.777-35",
         nome_completo="Paciente Normalizado",
         data_nascimento=date(1990, 1, 1),

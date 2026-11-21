@@ -7,7 +7,6 @@ import pytest
 from src.core.authz.roles import Role
 from src.core.authz.token import decode_access_token
 from src.core.config import get_settings
-from src.core.errors import TenantInvalidoError
 from src.core.uuid7 import uuid7
 from src.modules.auth.application.dtos import (
     SolicitarOtpInputDTO,
@@ -44,12 +43,10 @@ def fake_identity_reader() -> FakeIdentityReader:
 
 def _make_mock_paciente(
     paciente_id: UUID | None = None,
-    org_id: int = 1,
     telefone: str = "11987654321",
 ) -> PacienteAuthLookupData:
     return PacienteAuthLookupData(
         id=paciente_id or uuid7(),
-        organizacao_id=org_id,
         telefone=telefone,
         cpf="11144477735",
         nome_completo="Carlos Teste",
@@ -70,11 +67,10 @@ async def test_solicitar_otp_sucesso(
     )
 
     dados = SolicitarOtpInputDTO(telefone="11987654321")
-    output = await service.solicitar_otp(organizacao_id=1, dados=dados)
+    output = await service.solicitar_otp(dados=dados)
 
     assert output.mensagem == "Código de verificação enviado com sucesso."
     assert output.expira_em_segundos == 300
-    # In dev/test with DEBUG=True settings, codigo_debug should be populated
     settings = get_settings()
     if settings.DEBUG:
         assert output.codigo_debug is not None
@@ -86,7 +82,6 @@ async def test_solicitar_otp_sucesso(
     assert len(fake_sms.sent_otps[0]["codigo"]) == 6
     assert len(fake_identity_reader.lookups) == 1
     assert fake_identity_reader.lookups[0] == {
-        "organizacao_id": 1,
         "telefone": "11987654321",
         "cpf": None,
     }
@@ -106,7 +101,7 @@ async def test_solicitar_otp_sucesso_com_prefixo_internacional_e164(
     )
 
     dados = SolicitarOtpInputDTO(telefone="+5511987654321")
-    output = await service.solicitar_otp(organizacao_id=1, dados=dados)
+    output = await service.solicitar_otp(dados=dados)
 
     assert output.mensagem == "Código de verificação enviado com sucesso."
     assert len(fake_sms.sent_otps) == 1
@@ -126,7 +121,7 @@ async def test_solicitar_otp_paciente_nao_encontrado(
     )
 
     dados = SolicitarOtpInputDTO(telefone="11987654321")
-    output = await service.solicitar_otp(organizacao_id=1, dados=dados)
+    output = await service.solicitar_otp(dados=dados)
 
     assert output.mensagem == "Código de verificação enviado com sucesso."
     assert output.expira_em_segundos == 300
@@ -149,14 +144,12 @@ async def test_solicitar_otp_rate_limit_excedido(
 
     dados = SolicitarOtpInputDTO(telefone="11987654321")
 
-    # 3 requests must succeed
     for _ in range(3):
-        res = await service.solicitar_otp(organizacao_id=1, dados=dados)
+        res = await service.solicitar_otp(dados=dados)
         assert res.expira_em_segundos == 300
 
-    # 4th request must be rejected with 429
     with pytest.raises(OtpRateLimitExcedidoError) as exc_info:
-        await service.solicitar_otp(organizacao_id=1, dados=dados)
+        await service.solicitar_otp(dados=dados)
 
     assert exc_info.value.status_code == 429
     assert exc_info.value.code == "OTP_RATE_LIMIT_EXCEEDED"
@@ -176,32 +169,28 @@ async def test_verificar_otp_sucesso_emite_jwt(
         expose_debug_otp=True,
     )
 
-    # 1. Request OTP
     req_dados = SolicitarOtpInputDTO(telefone="11987654321")
-    await service.solicitar_otp(organizacao_id=10, dados=req_dados)
+    await service.solicitar_otp(dados=req_dados)
 
     codigo_enviado = fake_sms.sent_otps[0]["codigo"]
 
-    # 2. Verify OTP
     verify_dados = VerificarOtpInputDTO(telefone="11987654321", codigo=codigo_enviado)
-    output = await service.verificar_otp(organizacao_id=10, dados=verify_dados)
+    output = await service.verificar_otp(dados=verify_dados)
 
     assert output.paciente_id == paciente_id
     assert output.token_type == "bearer"
     assert output.access_token is not None
     assert output.role == "PACIENTE"
 
-    # 3. Decode issued JWT
     user = decode_access_token(output.access_token)
     assert user.usuario_id == paciente_id
-    assert user.organizacao_id == 10
+    assert not hasattr(user, "organizacao_id")
     assert user.papel == Role.PACIENTE.value
     assert user.has_permission("patient:queue_track")
     assert user.has_permission("patient:doc_view")
 
-    # 4. Immediate replay must fail (one-time use)
     with pytest.raises(OtpInvalidoOuExpiradoError):
-        await service.verificar_otp(organizacao_id=10, dados=verify_dados)
+        await service.verificar_otp(dados=verify_dados)
 
 
 @pytest.mark.asyncio
@@ -218,11 +207,11 @@ async def test_verificar_otp_codigo_incorreto(
     )
 
     req_dados = SolicitarOtpInputDTO(telefone="11987654321")
-    await service.solicitar_otp(organizacao_id=1, dados=req_dados)
+    await service.solicitar_otp(dados=req_dados)
 
     verify_dados = VerificarOtpInputDTO(telefone="11987654321", codigo="000000")
     with pytest.raises(OtpInvalidoOuExpiradoError) as exc_info:
-        await service.verificar_otp(organizacao_id=1, dados=verify_dados)
+        await service.verificar_otp(dados=verify_dados)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.code == "OTP_INVALIDO"
@@ -244,31 +233,25 @@ async def test_verificar_otp_bloqueio_por_forca_bruta(
     )
 
     req_dados = SolicitarOtpInputDTO(telefone="11987654321")
-    await service.solicitar_otp(organizacao_id=1, dados=req_dados)
+    await service.solicitar_otp(dados=req_dados)
     codigo_correto = fake_sms.sent_otps[0]["codigo"]
 
-    # Tentativa 1: falha com 401 e 2 restantes
     with pytest.raises(OtpInvalidoOuExpiradoError) as exc_info1:
         await service.verificar_otp(
-            organizacao_id=1,
             dados=VerificarOtpInputDTO(telefone="11987654321", codigo="999999"),
         )
     assert exc_info1.value.status_code == 401
     assert "Restam 2 tentativa(s)" in exc_info1.value.detail
 
-    # Tentativa 2: falha com 401 e 1 restante
     with pytest.raises(OtpInvalidoOuExpiradoError) as exc_info2:
         await service.verificar_otp(
-            organizacao_id=1,
             dados=VerificarOtpInputDTO(telefone="11987654321", codigo="999999"),
         )
     assert exc_info2.value.status_code == 401
     assert "Restam 1 tentativa(s)" in exc_info2.value.detail
 
-    # Tentativa 3: falha com 429 OtpTentativasExcedidasError (bloqueio por força bruta)
     with pytest.raises(OtpTentativasExcedidasError) as exc_info3:
         await service.verificar_otp(
-            organizacao_id=1,
             dados=VerificarOtpInputDTO(telefone="11987654321", codigo="999999"),
         )
     assert exc_info3.value.status_code == 429
@@ -276,33 +259,11 @@ async def test_verificar_otp_bloqueio_por_forca_bruta(
     assert exc_info3.value.headers == {"Retry-After": "900"}
     assert "1198****4321" in exc_info3.value.detail
 
-    # Tentativa 4: código correto ou incorreto falha com 401
-    # (OTP foi invalidado e removido)
     with pytest.raises(OtpInvalidoOuExpiradoError) as exc_info4:
         await service.verificar_otp(
-            organizacao_id=1,
             dados=VerificarOtpInputDTO(telefone="11987654321", codigo=codigo_correto),
         )
     assert exc_info4.value.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_tenant_invalido_rejeitado(
-    fake_identity_reader: FakeIdentityReader,
-) -> None:
-    service = PatientAuthService(identity_reader=fake_identity_reader)
-
-    with pytest.raises(TenantInvalidoError):
-        await service.solicitar_otp(
-            organizacao_id=0,
-            dados=SolicitarOtpInputDTO(telefone="11987654321"),
-        )
-
-    with pytest.raises(TenantInvalidoError):
-        await service.verificar_otp(
-            organizacao_id=-1,
-            dados=VerificarOtpInputDTO(telefone="11987654321", codigo="123456"),
-        )
 
 
 @pytest.mark.asyncio
@@ -311,7 +272,6 @@ async def test_sem_identity_reader_raises_value_error() -> None:
 
     with pytest.raises(ValueError, match="IdentityReaderPort não configurado"):
         await service.solicitar_otp(
-            organizacao_id=1,
             dados=SolicitarOtpInputDTO(telefone="11987654321"),
         )
 
@@ -332,10 +292,8 @@ async def test_autenticar_cadsus_mascaramento_cpf_cns_no_erro(
     fake_identity_reader.paciente = None
     service = PatientAuthService(identity_reader=fake_identity_reader)
 
-    # 1. Test error with CPF and CNS masks PII in exception detail
     with pytest.raises(PacienteNaoEncontradoError) as exc_info:
         await service.autenticar_cadsus_govbr(
-            organizacao_id=1,
             cpf="11144477735",
             cns="898001234567890",
         )
@@ -345,12 +303,8 @@ async def test_autenticar_cadsus_mascaramento_cpf_cns_no_erro(
     assert "11144477735" not in err_msg
     assert "898001234567890" not in err_msg
 
-    # 2. Test error with only CPF masks CPF and marks CNS as N/A
     with pytest.raises(PacienteNaoEncontradoError) as exc_info2:
-        await service.autenticar_cadsus_govbr(
-            organizacao_id=1,
-            cpf="11144477735",
-        )
+        await service.autenticar_cadsus_govbr(cpf="11144477735")
     err_msg2 = str(exc_info2.value.detail)
     assert "111.***.***-35" in err_msg2
     assert "CNS: N/A" in err_msg2
@@ -362,7 +316,6 @@ async def test_autenticar_cadsus_desambiguacao_nome_mae(
 ) -> None:
     paciente_carlos = PacienteAuthLookupData(
         id=uuid7(),
-        organizacao_id=1,
         telefone="11987654321",
         cpf="11144477735",
         nome_completo="Carlos Silva",
@@ -372,7 +325,6 @@ async def test_autenticar_cadsus_desambiguacao_nome_mae(
     service = PatientAuthService(identity_reader=fake_identity_reader)
 
     res = await service.autenticar_cadsus_govbr(
-        organizacao_id=1,
         cpf="11144477735",
         data_nascimento=date(1990, 5, 15),
         nome_mae="Maria Aparecida da Silva",
@@ -388,7 +340,6 @@ async def test_autenticar_cadsus_filtro_por_nome_mae_com_multiplos_pacientes(
 ) -> None:
     p1 = PacienteAuthLookupData(
         id=uuid7(),
-        organizacao_id=1,
         telefone="11987654321",
         cpf="11144477735",
         nome_completo="Carlos Silva",
@@ -396,7 +347,6 @@ async def test_autenticar_cadsus_filtro_por_nome_mae_com_multiplos_pacientes(
     )
     p2 = PacienteAuthLookupData(
         id=uuid7(),
-        organizacao_id=1,
         telefone="11987654322",
         cpf="11144477735",
         nome_completo="Carlos Silva",
@@ -406,7 +356,6 @@ async def test_autenticar_cadsus_filtro_por_nome_mae_com_multiplos_pacientes(
     service = PatientAuthService(identity_reader=fake_identity_reader)
 
     res = await service.autenticar_cadsus_govbr(
-        organizacao_id=1,
         cpf="11144477735",
         nome_mae="maria aparecida da silva",
     )
@@ -428,9 +377,9 @@ async def test_verificar_otp_sucesso_retorna_atendimento_ativo_quando_existente(
 
     class _FakeLookup(ActiveAttendanceLookupPort):
         async def buscar_atendimento_ativo_paciente(
-            self, organizacao_id: int, paciente_id: UUID
+            self, paciente_id: UUID
         ) -> UUID | None:
-            if organizacao_id == 1 and paciente_id == paciente.id:
+            if paciente_id == paciente.id:
                 return atendimento_ativo_id
             return None
 
@@ -441,12 +390,10 @@ async def test_verificar_otp_sucesso_retorna_atendimento_ativo_quando_existente(
         expose_debug_otp=True,
     )
     req_out = await service.solicitar_otp(
-        organizacao_id=1,
         dados=SolicitarOtpInputDTO(telefone="11987654321"),
     )
     assert req_out.codigo_debug is not None
     ver_out = await service.verificar_otp(
-        organizacao_id=1,
         dados=VerificarOtpInputDTO(
             telefone="11987654321",
             codigo=req_out.codigo_debug,
@@ -462,7 +409,6 @@ async def test_autenticar_cadsus_sem_cpf_e_sem_cns_interpola_valores_ofensivos(
     service = PatientAuthService(identity_reader=fake_identity_reader)
     with pytest.raises(PacienteNaoEncontradoError, match="recebido cpf=None"):
         await service.autenticar_cadsus_govbr(
-            organizacao_id=1,
             cpf=None,
             cns="   ",
         )
@@ -481,7 +427,6 @@ async def test_patient_auth_service_default_oculta_codigo_debug(
     )
 
     output = await service.solicitar_otp(
-        organizacao_id=1,
         dados=SolicitarOtpInputDTO(telefone="11987654321"),
     )
     assert output.codigo_debug is None
@@ -506,10 +451,10 @@ async def test_solicitar_otp_usa_auth_rate_limiter_port_quando_injetado(
 
     dados = SolicitarOtpInputDTO(telefone="11987654321")
     for _ in range(3):
-        await service.solicitar_otp(organizacao_id=1, dados=dados)
+        await service.solicitar_otp(dados=dados)
 
     with pytest.raises(OtpRateLimitExcedidoError) as exc_info:
-        await service.solicitar_otp(organizacao_id=1, dados=dados)
+        await service.solicitar_otp(dados=dados)
 
     assert exc_info.value.status_code == 429
     assert exc_info.value.headers is not None
@@ -603,12 +548,10 @@ async def test_valkey_sliding_window_hashes_pii_and_uses_window_seconds(
     )
 
     await service.solicitar_otp(
-        organizacao_id=1,
         dados=SolicitarOtpInputDTO(telefone="11987654321"),
     )
     await service.identificar_paciente(
         IdentificarPacienteCommand(
-            organizacao_id=1,
             identificador="paciente.sigiloso@example.com",
             client_ip="10.1.2.3",
         )
@@ -619,7 +562,6 @@ async def test_valkey_sliding_window_hashes_pii_and_uses_window_seconds(
         assert "11987654321" not in key
         assert "paciente.sigiloso@example.com" not in key
 
-    # Validate _calculate_valkey_retry_after uses the provided window_seconds (e.g. 120)
     custom_key = "ratelimit:custom:test"
     now = time.time()
     valkey.zsets[custom_key] = {"entry-1": now - 10}

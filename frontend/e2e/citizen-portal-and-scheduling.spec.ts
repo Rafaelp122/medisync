@@ -90,7 +90,6 @@ async function setupCitizenApiMocks(page: Page) {
       const reqBody = route.request().postDataJSON() as Record<string, unknown>;
       const novo = {
         id: MOCK_AGENDAMENTO_ID,
-        organizacao_id: 1,
         paciente_id: MOCK_PACIENTE_ID,
         profissional_id: reqBody.profissional_id ?? MOCK_PROFISSIONAL_ID,
         especialidade: reqBody.especialidade ?? "PSICOLOGIA",
@@ -168,7 +167,6 @@ async function setupCitizenApiMocks(page: Page) {
       const reqBody = route.request().postDataJSON() as Record<string, unknown>;
       const criado = {
         id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b6666",
-        organizacao_id: 1,
         titular_id: MOCK_PACIENTE_ID,
         dependente_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b6667",
         grau_parentesco: reqBody.grau_parentesco ?? "FILHO",

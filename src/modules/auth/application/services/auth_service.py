@@ -70,24 +70,22 @@ class AuthService:
     ) -> UsuarioCredencial:
         """Provisiona credenciais com hash seguro Argon2id e identificador canônico.
 
-        Regras: RN-AUT-01 (auth-domain.md), ADR-007, RF-01.
+        Regras: RN-AUT-01 (docs/explanation/domains/auth-domain.md), ADR-013, RF-01.
         Raises: ConflictError.
         """
         clean_ident = command.identificador.strip().lower()
         stmt = select(UsuarioCredencial).where(
-            UsuarioCredencial.organizacao_id == command.organizacao_id,
             UsuarioCredencial.identificador == clean_ident,
         )
         res = await self._session.execute(stmt)
         existing = res.scalar_one_or_none()
         if existing is not None:
             raise ConflictError(
-                f"Identificador '{clean_ident}' já cadastrado na organização."
+                f"Identificador '{clean_ident}' já cadastrado na plataforma."
             )
 
         senha_hash = self._hasher.hash(command.senha_pura)
         cred = UsuarioCredencial(
-            organizacao_id=command.organizacao_id,
             usuario_id=command.usuario_id,
             identificador=clean_ident,
             senha_hash=senha_hash,
@@ -101,12 +99,12 @@ class AuthService:
         """Autentica com rate limiting anti-brute force e checagem constant-time.
 
         Regras: RN-AUT-01, RN-AUT-02 (docs/explanation/domains/auth-domain.md),
-        ADR-012, RF-01.
+        ADR-013, RF-01.
         Raises: ContaBloqueadaError, CredenciaisInvalidasError.
         """
         clean_ident = command.identificador.strip().lower()
         ip_key = f"ip:{command.client_ip}"
-        account_key = f"acc:{command.organizacao_id}:{clean_ident}"
+        account_key = f"acc:{clean_ident}"
 
         # 1. Rate limiter check (anti-brute force / credential stuffing)
         ip_check = await self._rate_limiter.verificar_e_incrementar(
@@ -133,7 +131,6 @@ class AuthService:
 
         # 2. Database lookup
         stmt = select(UsuarioCredencial).where(
-            UsuarioCredencial.organizacao_id == command.organizacao_id,
             UsuarioCredencial.identificador == clean_ident,
         )
         res = await self._session.execute(stmt)
@@ -182,19 +179,8 @@ class AuthService:
         if cred.papel in ROLES_REQUIRING_MFA:
             temp_token = self._token_service.gerar_mfa_token(
                 usuario_id=cred.usuario_id,
-                organizacao_id=cred.organizacao_id,
                 papel=cred.papel,
             )
-            if cred.mfa_ativo:
-                return TokenPairDTO(
-                    access_token=temp_token,
-                    refresh_token="",
-                    token_type="bearer",  # noqa: S106
-                    expires_in=300,
-                    refresh_expires_in=0,
-                    mfa_requerido=True,
-                    mfa_setup_requerido=False,
-                )
             return TokenPairDTO(
                 access_token=temp_token,
                 refresh_token="",
@@ -202,19 +188,16 @@ class AuthService:
                 expires_in=300,
                 refresh_expires_in=0,
                 mfa_requerido=True,
-                mfa_setup_requerido=True,
+                mfa_setup_requerido=not cred.mfa_ativo,
             )
 
         # 9. Issue JWT token pair
         return self._token_service.gerar_tokens(
             usuario_id=cred.usuario_id,
-            organizacao_id=cred.organizacao_id,
             papel=cred.papel,
         )
 
-    async def gerar_mfa_secret(
-        self, usuario_id: UUID, organizacao_id: int | None = None
-    ) -> MfaSetupDTO:
+    async def gerar_mfa_secret(self, usuario_id: UUID) -> MfaSetupDTO:
         """Gera chave secreta Base32 e URI para app autenticador (TOTP).
 
         Regras: ADR-007 (MFA), RF-01 e docs/explanation/domains/auth-domain.md.
@@ -222,8 +205,6 @@ class AuthService:
         stmt = select(UsuarioCredencial).where(
             UsuarioCredencial.usuario_id == usuario_id
         )
-        if organizacao_id is not None:
-            stmt = stmt.where(UsuarioCredencial.organizacao_id == organizacao_id)
         res = await self._session.execute(stmt)
         cred = res.scalar_one_or_none()
         if cred is None:
@@ -237,9 +218,7 @@ class AuthService:
         await self._session.commit()
         return MfaSetupDTO(secret=secret, uri=uri)
 
-    async def ativar_mfa(
-        self, usuario_id: UUID, organizacao_id: int | None = None, codigo: str = ""
-    ) -> bool:
+    async def ativar_mfa(self, usuario_id: UUID, codigo: str = "") -> bool:
         """Valida o primeiro código TOTP de 6 dígitos e ativa o MFA para a conta.
 
         Regras: ADR-007, RF-01 e docs/explanation/domains/auth-domain.md.
@@ -247,8 +226,6 @@ class AuthService:
         stmt = select(UsuarioCredencial).where(
             UsuarioCredencial.usuario_id == usuario_id
         )
-        if organizacao_id is not None:
-            stmt = stmt.where(UsuarioCredencial.organizacao_id == organizacao_id)
         res = await self._session.execute(stmt)
         cred = res.scalar_one_or_none()
         if cred is None:
@@ -279,7 +256,7 @@ class AuthService:
         Regras: ADR-007, RF-01 e docs/explanation/domains/auth-domain.md.
         """
         payload = self._token_service.validar_mfa_token(temp_token)
-        cred = await self.obter_usuario_por_id(payload.sub, payload.org_id)
+        cred = await self.obter_usuario_por_id(payload.sub)
         if cred is None or not cred.ativo or cred.is_bloqueado() or not cred.mfa_secret:
             raise CredenciaisInvalidasError(
                 f"Sessão temporária para usuário '{payload.sub}' ou credencial "
@@ -295,14 +272,13 @@ class AuthService:
 
         return self._token_service.gerar_tokens(
             usuario_id=cred.usuario_id,
-            organizacao_id=cred.organizacao_id,
             papel=cred.papel,
         )
 
     async def rotacionar_refresh_token(self, refresh_token: str) -> TokenPairDTO:
         """Rotaciona refresh token de uso único com revogação distribuída imediata.
 
-        Regras: RN-AUT-05 (auth-domain.md), ADR-007, RF-01.
+        Regras: RN-AUT-05 (docs/explanation/domains/auth-domain.md), ADR-013, RF-01.
         Raises: TokenRevogadoError, CredenciaisInvalidasError.
         """
         payload: TokenPayloadDTO = self._token_service.validar_refresh_token(
@@ -312,7 +288,8 @@ class AuthService:
         # Check revocation
         if await self._revocation.is_revogado(payload.jti):
             raise TokenRevogadoError(
-                "O token de atualização apresentado já foi utilizado ou revogado."
+                f"O token de atualização (jti={payload.jti}) apresentado já foi "
+                "utilizado ou revogado."
             )
 
         # Mark old token as revoked (one-time use rotation) with dynamic remaining TTL
@@ -322,7 +299,6 @@ class AuthService:
 
         # Validate user account is still valid and active in database
         stmt = select(UsuarioCredencial).where(
-            UsuarioCredencial.organizacao_id == payload.org_id,
             UsuarioCredencial.usuario_id == payload.sub,
         )
         res = await self._session.execute(stmt)
@@ -336,24 +312,25 @@ class AuthService:
             or cred.is_bloqueado()
         ):
             raise CredenciaisInvalidasError(
-                "Sessão expirada ou conta indisponível para renovação."
+                f"Sessão expirada ou conta indisponível para usuário '{payload.sub}'."
             )
 
         return self._token_service.gerar_tokens(
             usuario_id=cred.usuario_id,
-            organizacao_id=cred.organizacao_id,
             papel=cred.papel,
         )
 
     async def validar_access_token(self, token: str) -> TokenPayloadDTO:
         """Valida assinatura do access token JWT e consulta blacklist de revogação.
 
-        Regras: RN-AUT-05 (auth-domain.md), ADR-007, RF-01.
+        Regras: RN-AUT-05 (docs/explanation/domains/auth-domain.md), ADR-013, RF-01.
         Raises: TokenRevogadoError, TokenInvalidoError.
         """
         payload = self._token_service.validar_access_token(token)
         if await self._revocation.is_revogado(payload.jti):
-            raise TokenRevogadoError("O token de acesso apresentado foi revogado.")
+            raise TokenRevogadoError(
+                f"O token de acesso (jti={payload.jti}) apresentado foi revogado."
+            )
         return payload
 
     async def revogar_sessao(
@@ -361,7 +338,7 @@ class AuthService:
     ) -> None:
         """Revoga tokens de refresh e access na blacklist distribuída Valkey.
 
-        Regras: RN-AUT-05 (auth-domain.md), ADR-007, RF-01.
+        Regras: RN-AUT-05 (docs/explanation/domains/auth-domain.md), ADR-013, RF-01.
         """
         now = datetime.now(UTC)
         with contextlib.suppress(Exception):
@@ -377,15 +354,12 @@ class AuthService:
                     acc_payload.jti, exp_segundos=acc_remaining
                 )
 
-    async def obter_usuario_por_id(
-        self, usuario_id: UUID, organizacao_id: int
-    ) -> UsuarioCredencial | None:
-        """Recupera entidade de credenciais respeitando o isolamento multi-tenant.
+    async def obter_usuario_por_id(self, usuario_id: UUID) -> UsuarioCredencial | None:
+        """Recupera entidade de credenciais do usuário autenticado na plataforma.
 
-        Regras: RN-AUT-01 (auth-domain.md), ADR-001, RF-01.
+        Regras: RN-AUT-01 (docs/explanation/domains/auth-domain.md), ADR-013, RF-01.
         """
         stmt = select(UsuarioCredencial).where(
-            UsuarioCredencial.organizacao_id == organizacao_id,
             UsuarioCredencial.usuario_id == usuario_id,
         )
         res = await self._session.execute(stmt)

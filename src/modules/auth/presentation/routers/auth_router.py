@@ -4,14 +4,12 @@ from fastapi import APIRouter, Body, Request, Response, Security, status
 from fastapi.security import HTTPAuthorizationCredentials
 
 from src.core.authz import CurrentUserDep, http_bearer_scheme
-from src.core.dependencies import OptionalTenantDep
 from src.core.errors import NotFoundError, TokenInvalidoError
 from src.modules.auth.application.dtos import LoginCommand
 from src.modules.auth.composition import AuthServiceDep
 from src.modules.auth.presentation.helpers import (
     clear_refresh_token_cookie,
     extract_refresh_token,
-    resolve_login_tenant_id,
     set_refresh_token_cookie,
 )
 from src.modules.auth.presentation.schemas import (
@@ -38,19 +36,15 @@ async def login(
     response: Response,
     body: Annotated[LoginRequest, Body()],
     service: AuthServiceDep,
-    context_tenant_id: OptionalTenantDep,
 ) -> TokenResponse:
     """Autentica o usuário corporativo emitindo par de tokens de acesso e atualização.
 
-    Regras: RN-AUT-01, RN-AUT-05, RN-AUT-08, OWASP ASVS v4.0 (V3.5.2).
+    Regras: RN-AUT-01, RN-AUT-05, RN-AUT-08, ADR-013, OWASP ASVS v4.0 (V3.5.2).
     Documentação: docs/explanation/domains/auth-domain.md
     """
-    org_id = resolve_login_tenant_id(body.organizacao_id, context_tenant_id)
-
     client_ip = request.client.host if request.client else "127.0.0.1"
 
     command = LoginCommand(
-        organizacao_id=org_id,
         identificador=body.identificador,
         senha=body.senha,
         client_ip=client_ip,
@@ -72,7 +66,7 @@ async def mfa_setup(
     service: AuthServiceDep,
 ) -> MfaSetupResponse:
     """Gera o segredo Base32 e URI otpauth:// para MFA no app do usuário."""
-    setup_dto = await service.gerar_mfa_secret(user.usuario_id, user.organizacao_id)
+    setup_dto = await service.gerar_mfa_secret(user.usuario_id)
     return MfaSetupResponse.model_validate(setup_dto)
 
 
@@ -87,7 +81,7 @@ async def mfa_activate(
     service: AuthServiceDep,
 ) -> MfaAtivarResponse:
     """Valida o primeiro código TOTP de 6 dígitos e ativa o segundo fator."""
-    await service.ativar_mfa(user.usuario_id, user.organizacao_id, body.codigo)
+    await service.ativar_mfa(user.usuario_id, body.codigo)
     return MfaAtivarResponse()
 
 
@@ -133,7 +127,7 @@ async def refresh_token(
     if not token:
         raise TokenInvalidoError(
             "Token de atualização (refresh token) não informado via cookie "
-            "ou corpo da requisição."
+            f"ou corpo da requisição (recebido: {token!r})."
         )
     tokens = await service.rotacionar_refresh_token(token)
     set_refresh_token_cookie(response, tokens.refresh_token, request=request)
@@ -179,7 +173,7 @@ async def me(
     service: AuthServiceDep,
 ) -> UsuarioPerfilResponse:
     """Retorna perfil do usuário ativo a partir do principal central validado."""
-    cred = await service.obter_usuario_por_id(user.usuario_id, user.organizacao_id)
+    cred = await service.obter_usuario_por_id(user.usuario_id)
     if cred is None:
         raise NotFoundError(
             f"Registro de credencial do usuário '{user.usuario_id}' não encontrado."

@@ -488,7 +488,6 @@ class FakeAuditTrail:
     async def record_event(
         self,
         *,
-        organizacao_id: int,
         ator_tipo: AtorTipo | str,
         ator_papel: AtorPapel | str,
         tipo_evento: str,
@@ -512,7 +511,6 @@ class FakeAuditTrail:
         self.events.append(
             {
                 "id": event_id,
-                "organizacao_id": organizacao_id,
                 "atendimento_id": atendimento_id,
                 "ator_tipo": tipo_str,
                 "ator_papel": papel_str,
@@ -566,12 +564,14 @@ class FakeAtendimentoReader(AtendimentoReaderPort):
         if self.resumo is not None and self.resumo.atendimento_id == atendimento_id:
             self.resumo = AtendimentoResumoDTO(
                 atendimento_id=self.resumo.atendimento_id,
-                organizacao_id=self.resumo.organizacao_id,
                 medico_id=self.resumo.medico_id,
                 paciente_id=self.resumo.paciente_id,
                 status="EM_ATENDIMENTO",
                 tcle_hash=self.resumo.tcle_hash,
                 is_terminal=self.resumo.is_terminal,
+                chamada_iniciada_em=self.resumo.chamada_iniciada_em,
+                criado_em=self.resumo.criado_em,
+                exige_liveness_controle_especial=self.resumo.exige_liveness_controle_especial,
             )
 
 
@@ -584,27 +584,23 @@ class FakeIdentityReader(IdentityReaderPort):
         pacientes: Sequence[PacienteAuthLookupDTO] | None = None,
         diretorio: IdentityDirectoryDTO | None = None,
         modo_sus: bool = False,
-        organizacoes_ativas: list[int] | None = None,
     ) -> None:
         self.paciente: PacienteAuthLookupDTO | None = paciente
         self.pacientes: Sequence[PacienteAuthLookupDTO] | None = pacientes
         self.diretorio = diretorio
         self.modo_sus = modo_sus
-        self.organizacoes_ativas = organizacoes_ativas or []
         self.lookups: list[dict[str, object]] = []
-        self.passkeys: dict[tuple[int, str], PacientePasskeyData] = {}
+        self.passkeys: dict[str, PacientePasskeyData] = {}
 
     async def obter_dados_diretorio(
         self,
-        organizacao_id: int,
         medico_id: UUID,
         paciente_id: UUID,
     ) -> IdentityDirectoryDTO:
         if self.diretorio is not None:
             return self.diretorio
         return IdentityDirectoryDTO(
-            organizacao_id=organizacao_id,
-            organizacao_nome="Org Teste",
+            organizacao_nome="Unidade Teste",
             organizacao_cnpj=None,
             medico_id=medico_id,
             medico_nome="Dr. Teste",
@@ -617,39 +613,29 @@ class FakeIdentityReader(IdentityReaderPort):
             paciente_endereco=None,
         )
 
-    async def obter_modo_sus(self, organizacao_id: int) -> bool:
+    async def obter_modo_sus(self) -> bool:
         return self.modo_sus
-
-    async def listar_organizacoes_ativas(self) -> list[int]:
-        return list(self.organizacoes_ativas)
 
     async def buscar_paciente_por_telefone(
         self,
-        organizacao_id: int,
         telefone: str,
         cpf: str | None = None,
     ) -> PacienteAuthLookupDTO | None:
         self.lookups.append(
             {
-                "organizacao_id": organizacao_id,
                 "telefone": telefone,
                 "cpf": cpf,
             }
         )
         if self.pacientes is not None:
             for p in self.pacientes:
-                if (
-                    p.organizacao_id == organizacao_id
-                    and p.telefone == telefone
-                    and (cpf is None or p.cpf == cpf)
-                ):
+                if p.telefone == telefone and (cpf is None or p.cpf == cpf):
                     return p
             return None
         return self.paciente
 
     async def buscar_paciente_cadsus(
         self,
-        organizacao_id: int,
         cpf: str | None = None,
         data_nascimento: date | None = None,
         cns: str | None = None,
@@ -657,7 +643,6 @@ class FakeIdentityReader(IdentityReaderPort):
     ) -> PacienteAuthLookupDTO | None:
         self.lookups.append(
             {
-                "organizacao_id": organizacao_id,
                 "cpf": cpf,
                 "data_nascimento": data_nascimento,
                 "cns": cns,
@@ -666,8 +651,6 @@ class FakeIdentityReader(IdentityReaderPort):
         )
         if self.pacientes is not None:
             for p in self.pacientes:
-                if p.organizacao_id != organizacao_id:
-                    continue
                 if cpf is not None and p.cpf != cpf:
                     continue
                 if cns is not None and getattr(p, "cns", None) != cns:
@@ -689,12 +672,11 @@ class FakeIdentityReader(IdentityReaderPort):
 
     async def buscar_paciente_por_id(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> PacienteAuthLookupDTO | None:
         if self.pacientes is not None:
             for p in self.pacientes:
-                if p.organizacao_id == organizacao_id and p.id == paciente_id:
+                if p.id == paciente_id:
                     return p
             return None
         if self.paciente is not None and self.paciente.id == paciente_id:
@@ -703,72 +685,58 @@ class FakeIdentityReader(IdentityReaderPort):
 
     async def registrar_passkey_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
         credential_id: str,
         public_key: str,
         sign_count: int = 0,
         device_name: str | None = None,
     ) -> PacientePasskeyDTO:
-        if (organizacao_id, credential_id) in self.passkeys:
-            from src.core.errors import ConflictError
-
+        if credential_id in self.passkeys:
             raise ConflictError(
-                f"Credencial WebAuthn '{credential_id}' já registrada "
-                f"na organização '{organizacao_id}'."
+                f"Credencial WebAuthn '{credential_id}' já registrada na plataforma."
             )
         record = PacientePasskeyData(
             id=uuid7(),
-            organizacao_id=organizacao_id,
             paciente_id=paciente_id,
             credential_id=credential_id,
             public_key=public_key,
             sign_count=sign_count,
             device_name=device_name,
         )
-        self.passkeys[(organizacao_id, credential_id)] = record
+        self.passkeys[credential_id] = record
         return record
 
     async def buscar_passkey_por_credencial(
         self,
-        organizacao_id: int,
         credential_id: str,
     ) -> PacientePasskeyDTO | None:
-        return self.passkeys.get((organizacao_id, credential_id))
+        return self.passkeys.get(credential_id)
 
     async def listar_passkeys_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> Sequence[PacientePasskeyDTO]:
-        return [
-            p
-            for p in self.passkeys.values()
-            if p.organizacao_id == organizacao_id and p.paciente_id == paciente_id
-        ]
+        return [p for p in self.passkeys.values() if p.paciente_id == paciente_id]
 
     async def atualizar_sign_count_passkey(
         self,
-        organizacao_id: int,
         credential_id: str,
         novo_sign_count: int,
     ) -> PacientePasskeyDTO:
-        existing = self.passkeys.get((organizacao_id, credential_id))
+        existing = self.passkeys.get(credential_id)
         if existing is None:
             raise ValueError(
-                f"Credencial Passkey '{credential_id}' não encontrada na "
-                f"organização '{organizacao_id}'."
+                f"Credencial Passkey '{credential_id}' não encontrada na plataforma."
             )
         updated = PacientePasskeyData(
             id=existing.id,
-            organizacao_id=existing.organizacao_id,
             paciente_id=existing.paciente_id,
             credential_id=existing.credential_id,
             public_key=existing.public_key,
             sign_count=max(existing.sign_count, novo_sign_count),
             device_name=existing.device_name,
         )
-        self.passkeys[(organizacao_id, credential_id)] = updated
+        self.passkeys[credential_id] = updated
         return updated
 
 
@@ -782,7 +750,6 @@ class FakeProducaoAmbulatorialPort(ProducaoAmbulatorialPort):
     async def consolidar_teleconsulta(
         self,
         *,
-        organizacao_id: int,
         atendimento_id: UUID,
         profissional_id: UUID,
         paciente_id: UUID,
@@ -794,7 +761,6 @@ class FakeProducaoAmbulatorialPort(ProducaoAmbulatorialPort):
             raise self.error
         self.consolidacoes.append(
             {
-                "organizacao_id": organizacao_id,
                 "atendimento_id": atendimento_id,
                 "profissional_id": profissional_id,
                 "paciente_id": paciente_id,
@@ -820,7 +786,6 @@ class FakeTriagePort(TriagePort):
 
     async def avaliar_risco(
         self,
-        organizacao_id: int,
         queixa_principal: str,
         sintomas: list[str],
         escala_dor: int = 0,
@@ -832,7 +797,6 @@ class FakeTriagePort(TriagePort):
     ) -> TriageEvaluationDTO:
         self.avaliacoes.append(
             {
-                "organizacao_id": organizacao_id,
                 "queixa_principal": queixa_principal,
                 "sintomas": sintomas,
                 "escala_dor": escala_dor,
@@ -846,7 +810,6 @@ class FakeTriagePort(TriagePort):
 
     async def registrar_triagem(
         self,
-        organizacao_id: int,
         atendimento_id: UUID,
         queixa_principal: str,
         sintomas: list[str],
@@ -856,7 +819,6 @@ class FakeTriagePort(TriagePort):
     ) -> UUID:
         self.triagens_registradas.append(
             {
-                "organizacao_id": organizacao_id,
                 "atendimento_id": atendimento_id,
                 "queixa_principal": queixa_principal,
                 "sintomas": sintomas,
@@ -928,7 +890,6 @@ class FakeIdentityWriter(IdentityWriterPort):
     async def criar_paciente(
         self,
         *,
-        organizacao_id: int,
         cpf: str,
         nome_completo: str,
         data_nascimento: date,
@@ -937,7 +898,7 @@ class FakeIdentityWriter(IdentityWriterPort):
         clean_cpf = re.sub(r"\D", "", cpf)
         items = list(self._reader.pacientes or [])
         for existing in items:
-            if existing.organizacao_id == organizacao_id and existing.cpf == clean_cpf:
+            if existing.cpf == clean_cpf:
                 raise ConflictError(
                     "Não foi possível concluir o cadastro com os dados informados. "
                     "Caso já possua conta, utilize a opção Entrar."
@@ -945,7 +906,6 @@ class FakeIdentityWriter(IdentityWriterPort):
 
         created = PacienteAuthLookupData(
             id=uuid7(),
-            organizacao_id=organizacao_id,
             telefone=telefone,
             cpf=clean_cpf,
             nome_completo=nome_completo,
@@ -960,51 +920,44 @@ class FakePatientCredentialRepository(PatientCredentialRepositoryPort):
     """Canonical in-memory PatientCredentialRepositoryPort double."""
 
     def __init__(self) -> None:
-        self.by_key: dict[tuple[int, str], UsuarioCredencial] = {}
-        self.identificador_lookups: list[tuple[int, str, str]] = []
-        self.existe_calls: list[tuple[int, str]] = []
+        self.by_key: dict[str, UsuarioCredencial] = {}
+        self.identificador_lookups: list[tuple[str, str]] = []
+        self.existe_calls: list[str] = []
 
     async def buscar_por_identificador(
         self,
-        organizacao_id: int,
         identificador: str,
         papel: str = Role.PACIENTE.value,
     ) -> UsuarioCredencial | None:
-        self.identificador_lookups.append((organizacao_id, identificador, papel))
-        cred = self.by_key.get((organizacao_id, identificador.strip().lower()))
+        self.identificador_lookups.append((identificador, papel))
+        cred = self.by_key.get(identificador.strip().lower())
         if cred is None or cred.papel != papel.strip().upper():
             return None
         return cred
 
     async def buscar_por_usuario_id(
         self,
-        organizacao_id: int,
         usuario_id: UUID,
         papel: str = Role.PACIENTE.value,
     ) -> UsuarioCredencial | None:
         target_papel = papel.strip().upper()
         for cred in self.by_key.values():
-            if (
-                cred.organizacao_id == organizacao_id
-                and cred.usuario_id == usuario_id
-                and cred.papel == target_papel
-            ):
+            if cred.usuario_id == usuario_id and cred.papel == target_papel:
                 return cred
         return None
 
     async def existe_identificador(
         self,
-        organizacao_id: int,
         identificador: str,
     ) -> bool:
-        self.existe_calls.append((organizacao_id, identificador))
-        return (organizacao_id, identificador.strip().lower()) in self.by_key
+        self.existe_calls.append(identificador)
+        return identificador.strip().lower() in self.by_key
 
     async def criar_credencial(
         self,
         credencial: UsuarioCredencial,
     ) -> UsuarioCredencial:
-        key = (credencial.organizacao_id, credencial.identificador)
+        key = credencial.identificador
         if key in self.by_key:
             raise ConflictError(
                 "Não foi possível concluir o cadastro com os dados informados. "
@@ -1024,20 +977,16 @@ class FakeSchedulingRepository(SchedulingRepositoryPort):
 
     async def listar_disponibilidades_ativas(
         self,
-        organizacao_id: int,
         especialidade: str,
     ) -> Sequence[AgendaDisponibilidade]:
         return [
             d
             for d in self.disponibilidades
-            if d.organizacao_id == organizacao_id
-            and d.especialidade == especialidade
-            and d.ativo
+            if d.especialidade == especialidade and d.ativo
         ]
 
     async def listar_agendamentos_ocupados(
         self,
-        organizacao_id: int,
         inicio: datetime,
         fim: datetime,
     ) -> Sequence[Agendamento]:
@@ -1045,15 +994,11 @@ class FakeSchedulingRepository(SchedulingRepositoryPort):
         return [
             a
             for a in self.agendamentos
-            if a.organizacao_id == organizacao_id
-            and a.status not in inativos
-            and a.slot_inicio < fim
-            and a.slot_fim > inicio
+            if a.status not in inativos and a.slot_inicio < fim and a.slot_fim > inicio
         ]
 
     async def buscar_agendamento_conflitante(
         self,
-        organizacao_id: int,
         profissional_id: UUID,
         slot_inicio: datetime,
         slot_fim: datetime,
@@ -1061,8 +1006,7 @@ class FakeSchedulingRepository(SchedulingRepositoryPort):
         inativos = {StatusAgendamento.CANCELADO.value, StatusAgendamento.FALTA.value}
         for a in self.agendamentos:
             if (
-                a.organizacao_id == organizacao_id
-                and a.profissional_id == profissional_id
+                a.profissional_id == profissional_id
                 and a.status not in inativos
                 and a.slot_inicio < slot_fim
                 and a.slot_fim > slot_inicio
@@ -1072,7 +1016,6 @@ class FakeSchedulingRepository(SchedulingRepositoryPort):
 
     async def buscar_disponibilidade_profissional(
         self,
-        organizacao_id: int,
         profissional_id: UUID,
         especialidade: str | None,
         dia_semana: int,
@@ -1080,8 +1023,7 @@ class FakeSchedulingRepository(SchedulingRepositoryPort):
         return [
             d
             for d in self.disponibilidades
-            if d.organizacao_id == organizacao_id
-            and d.profissional_id == profissional_id
+            if d.profissional_id == profissional_id
             and (especialidade is None or d.especialidade == especialidade)
             and d.dia_semana == dia_semana
             and d.ativo
@@ -1089,31 +1031,24 @@ class FakeSchedulingRepository(SchedulingRepositoryPort):
 
     async def buscar_agendamento_por_id(
         self,
-        organizacao_id: int,
         agendamento_id: UUID,
         for_update: bool = False,
     ) -> Agendamento | None:
         self.last_for_update = for_update
         for a in self.agendamentos:
-            if a.organizacao_id == organizacao_id and a.id == agendamento_id:
+            if a.id == agendamento_id:
                 return a
         return None
 
     async def listar_agendamentos_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> Sequence[Agendamento]:
-        itens = [
-            a
-            for a in self.agendamentos
-            if a.organizacao_id == organizacao_id and a.paciente_id == paciente_id
-        ]
+        itens = [a for a in self.agendamentos if a.paciente_id == paciente_id]
         return sorted(itens, key=lambda a: a.slot_inicio)
 
     async def listar_agendamentos_profissional(
         self,
-        organizacao_id: int,
         profissional_id: UUID,
         inicio: datetime,
         fim: datetime,
@@ -1121,8 +1056,7 @@ class FakeSchedulingRepository(SchedulingRepositoryPort):
         itens = [
             a
             for a in self.agendamentos
-            if a.organizacao_id == organizacao_id
-            and a.profissional_id == profissional_id
+            if a.profissional_id == profissional_id
             and a.slot_inicio >= inicio
             and a.slot_inicio < fim
         ]

@@ -6,7 +6,7 @@
 
 O domínio de Autenticação gerencia a identificação e o ciclo de sessões para os diferentes perfis do sistema através de fluxos estritamente segregados entre equipe corporativa e cidadãos:
 
-Profissionais de saúde e colaboradores corporativos (médicos, gestores, administradores globais e faturamento) autenticam-se em `/api/v1/auth/login` com credenciais estáticas persistidas na tabela `usuarios_credenciais`. O hash de senhas utiliza Argon2id através de `PasswordHasherPort`. A proteção contra timing attacks e enumeração de contas executa `dummy_verify` em tempo constante para identificadores inexistentes, inativos ou pertencentes a pacientes (`Role.PACIENTE` é explicitamente rejeitado no login corporativo).
+Profissionais de saúde e colaboradores corporativos (médicos, gestores de unidade e faturamento) autenticam-se em `/api/v1/auth/login` com credenciais estáticas persistidas na tabela `usuarios_credenciais`. O hash de senhas utiliza Argon2id através de `PasswordHasherPort`. A proteção contra timing attacks e enumeração de contas executa `dummy_verify` em tempo constante para identificadores inexistentes, inativos ou pertencentes a pacientes (`Role.PACIENTE` é explicitamente rejeitado no login corporativo).
 
 Pacientes e acolhidos utilizam o fluxo híbrido do cidadão (`/api/v1/auth/patient/*`): ingresso e reconexão sem senha via código OTP de 6 dígitos enviado por SMS (`secrets.randbelow(1_000_000)`, validade de 5 minutos / 300s), autenticação biométrica FIDO2/WebAuthn (`Passkeys`), desambiguação civil CADSUS/Gov.br (`/cadsus`), auto-cadastro com e-mail obrigatório (`/register`) e senha Argon2id opcional (`/login-password`, sem MFA TOTP). Quando a senha é omitida no auto-cadastro, `UsuarioCredencial` recebe marcador não-autenticável (`!UNUSABLE:<hex>`).
 
@@ -16,7 +16,7 @@ A revogação de tokens é distribuída e imediata: a rotação de refresh token
 
 Vocabulário ubíquo: `UsuarioCredencial`, `senha_hash`, `UNUSABLE_CREDENTIAL_MARKER` (`!UNUSABLE:`), `Argon2id`, `dummy_verify`, `lockout`, `OTP SMS`, `WebAuthn Passkeys`, `CADSUS`, `refresh_token`, `jti`, `TokenRevocationPort`, `ValkeyTokenRevocation`, `IdentityWriterPort`.
 
-Multitenancy estrito: credenciais corporativas são isoladas por `organizacao_id` e identificador (`UniqueConstraint("organizacao_id", "identificador")`), protegidas por Row-Level Security (RLS).
+Plataforma única: credenciais corporativas e de cidadãos mantêm unicidade global por identificador (`UniqueConstraint("identificador", name="uq_usuarios_credenciais_identificador")`), sem partição por `organizacao_id`.
 
 ## 2. Regras
 
@@ -82,7 +82,7 @@ flowchart TD
 
 ## 4. Relações
 
-- Persistência corporativa: tabela `usuarios_credenciais` particionada por `organizacao_id` com constraints de unicidade (`uq_usuarios_credenciais_org_identificador`).
+- Persistência corporativa: tabela `usuarios_credenciais` com constraint global de unicidade (`uq_usuarios_credenciais_identificador`).
 - Provedor de criptografia: `PasswordHasherPort` abstrai a biblioteca Argon2id (`Argon2PasswordHasher`).
 - Provedor de tokens: `TokenServicePort` emite e valida access tokens e refresh tokens com UUIDs de rastreio (`jti`).
 - Revogação distribuída: `TokenRevocationPort` implementada por `ValkeyTokenRevocation` (`auth:revoked:{jti}`).
@@ -133,8 +133,7 @@ flowchart TD
 - `frontend/src/lib/auth-token.ts`
 - `frontend/src/lib/session-storage.ts`
 - `frontend/src/api/client.ts`
-- `migrations/versions/0003_auth_credentials.py`
-- `migrations/versions/0014_passkeys_and_liveness.py`
+- `migrations/versions/0001_initial_schema.py`
 - `tests/unit/test_patient_hybrid_auth.py`
 - `tests/unit/test_patient_webauthn_service.py`
 
@@ -166,6 +165,6 @@ Sem corrigir código. Divergência entre documentação e invariantes do modelo 
 ## 8. Ver também
 
 - [Product Specification](../product-specification.md) — RF-01 autenticação e segurança de acesso
-- [Data Model](../architecture/data-model.md) — tabela `usuarios_credenciais` e isolamento RLS
+- [Data Model](../architecture/data-model.md) — tabela `usuarios_credenciais` e unicidade global
 - [Identity Domain](./identity-domain.md) — vínculo com cadastros de profissionais e pacientes
 - [Domains Index](./index.md) — catálogo geral dos domínios da aplicação

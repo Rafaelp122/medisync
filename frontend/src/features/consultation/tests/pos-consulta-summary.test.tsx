@@ -14,7 +14,6 @@ const mockDocumentos: DocumentoClinicoResponse[] = [
   {
     id: MOCK_DOC_ID,
     atendimento_id: MOCK_ATENDIMENTO_ID,
-    organizacao_id: 1,
     medico_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e",
     tipo_documento: "RECEITA_SIMPLES",
     chave_s3: "consultas/doc-123.pdf",

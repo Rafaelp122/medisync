@@ -15,7 +15,6 @@ from src.modules.telemetry.presentation.dependencies import (
 def _make_user(papel: Role | str) -> AuthenticatedUser:
     return AuthenticatedUser(
         usuario_id=uuid4(),
-        organizacao_id=1,
         papel=str(papel.value if isinstance(papel, Role) else papel),
         token_id=uuid4(),
         raw_token="fake.jwt.token",
@@ -25,12 +24,12 @@ def _make_user(papel: Role | str) -> AuthenticatedUser:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "papel",
-    [Role.MEDICO, Role.GESTOR_UNIDADE, Role.ADMIN_GLOBAL],
+    [Role.MEDICO, Role.GESTOR_UNIDADE],
 )
 async def test_require_telemetry_view_auth_sucesso_papeis_permitidos(
     papel: Role,
 ) -> None:
-    """Validate that MEDICO, GESTOR_UNIDADE, and ADMIN_GLOBAL pass view auth."""
+    """Validate that MEDICO and GESTOR_UNIDADE pass view auth."""
     user = _make_user(papel)
     authorized_user = await require_telemetry_view_auth(user)
     assert authorized_user == user
@@ -69,18 +68,18 @@ async def test_require_telemetry_view_auth_proibido_ofensivo(
     msg = str(exc_info.value)
     assert papel_proibido.value in msg
     assert "esperados" in msg
-    assert "ADMIN_GLOBAL" in msg or "MEDICO" in msg
+    assert "GESTOR_UNIDADE" in msg or "MEDICO" in msg
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "papel",
-    [Role.GESTOR_UNIDADE, Role.ADMIN_GLOBAL],
+    [Role.GESTOR_UNIDADE],
 )
-async def test_require_telemetry_config_auth_sucesso_gestor_admin(
+async def test_require_telemetry_config_auth_sucesso_gestor(
     papel: Role,
 ) -> None:
-    """Validate that GESTOR_UNIDADE and ADMIN_GLOBAL pass config auth."""
+    """Validate that GESTOR_UNIDADE passes config auth."""
     user = _make_user(papel)
     authorized_user = await require_telemetry_config_auth(user)
     assert authorized_user == user

@@ -81,14 +81,6 @@ describe("api/errors.ts", () => {
       expect(humanized.retryable).toBe(true);
     });
 
-    it("deve tratar erro de TENANT_INVALIDO", () => {
-      const errTenant = { code: "TENANT_INVALIDO", detail: "Tenant não informado" };
-      const humanized = getHumanizedErrorMessage(errTenant);
-
-      expect(humanized.title).toBe("Identificação da unidade de saúde");
-      expect(humanized.retryable).toBe(true);
-    });
-
     it("deve tratar erro de validação 422 como não recuperável automaticamente", () => {
       const err422 = {
         status: 422,

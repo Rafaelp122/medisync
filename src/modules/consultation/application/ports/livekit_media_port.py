@@ -4,12 +4,12 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 
-def build_room_name(organizacao_id: int | UUID, atendimento_id: UUID) -> str:
+def build_room_name(atendimento_id: UUID) -> str:
     """Build the canonical LiveKit room name.
 
-    Convention: org_{organizacao_id}_atend_{atendimento_id}
+    Convention: atend_{atendimento_id}
     """
-    return f"org_{organizacao_id}_atend_{atendimento_id}"
+    return f"atend_{atendimento_id}"
 
 
 def build_participant_identity(

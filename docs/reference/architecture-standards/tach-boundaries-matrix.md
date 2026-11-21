@@ -43,7 +43,7 @@ A separação modular segue o princípio *Inside-Out* estrito (Stage B), onde ca
 | `src.modules.consultation.infrastructure` | `src.core`, `consultation.application`, `consultation.domain` | Adaptadores PyHanko, S3 MinIO e ReportLab. |
 | `src.modules.consultation.composition` | `src.core`, `consultation.*`, `identity.app/comp`, `queue.app/comp`, `ambulatory.app/comp` | Consome dados de profissional/paciente, fila e consolidação ambulatorial SUS via composition root de ambulatory. |
 | `src.modules.consultation.presentation` | `src.core`, `consultation.application`, `consultation.composition` | Routers finos de PEP, documentos e teleconsulta. |
-| `src.modules.identity.domain` | `src.core` | Isolado. Modelos de organizações, profissionais e pacientes. |
+| `src.modules.identity.domain` | `src.core` | Isolado. Modelos de configuração da unidade, profissionais e pacientes. |
 | `src.modules.identity.application` | `src.core`, `identity.domain` | Define portas de busca de pacientes e profissionais. |
 | `src.modules.identity.infrastructure` | `src.core`, `identity.application`, `identity.domain` | Repositórios SQLAlchemy e adaptadores SMS. |
 | `src.modules.identity.composition` | `src.core`, `identity.application`, `identity.domain`, `identity.infrastructure` | Expõe `IdentityReaderPort` para outros módulos. |
@@ -59,7 +59,7 @@ A separação modular segue o princípio *Inside-Out* estrito (Stage B), onde ca
 | `src.modules.triage.composition` | `src.core`, `triage.application`, `triage.domain`, `triage.infrastructure` | Expõe serviço de triagem para a fila. |
 | `src.modules.scheduling.domain` | `src.core` | Isolado. Agregados `AgendaDisponibilidade` e `Agendamento`, enums e exceções eMulti. |
 | `src.modules.scheduling.application` | `src.core`, `scheduling.domain` | Orquestra geração de slots, reservas e portas `SchedulingRepositoryPort` / `AttendanceLookupPort`. |
-| `src.modules.scheduling.infrastructure` | `src.core`, `scheduling.application`, `scheduling.domain` | `SqlSchedulingRepository` assíncrono com `for_update=True` e consultas por tenant. |
+| `src.modules.scheduling.infrastructure` | `src.core`, `scheduling.application`, `scheduling.domain` | `SqlSchedulingRepository` assíncrono com `for_update=True` e checagens de conflito temporal. |
 | `src.modules.scheduling.composition` | `src.core`, `scheduling.*`, `queue.application`, `queue.composition` | Adapta `QueueStorePort` para `AttendanceLookupPort` e injeta `SchedulingServiceDep`. |
 | `src.modules.scheduling.presentation` | `src.core`, `scheduling.application`, `scheduling.composition` | Router fino `/api/v1/scheduling` (`scheduling_router.py`), schemas e dependências RBAC. |
 | `src.modules.telemetry.domain` | `src.core` | Isolado. Modelos de telemetria, painel e plantão. |

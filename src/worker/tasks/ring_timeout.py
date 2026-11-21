@@ -4,7 +4,6 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from src.core.context import tenant_context
 from src.modules.queue.application.ports import (
     PacienteAusenteNotifierPort,
 )
@@ -18,7 +17,6 @@ logger = logging.getLogger("medisync.worker.ring_timeout")
 @monitored_task
 async def resolver_ring_timeout_task(
     ctx: dict[str, Any],
-    organizacao_id: int,
     atendimento_id: str,
     medico_id: str,
     notifier: PacienteAusenteNotifierPort | None = None,
@@ -32,23 +30,19 @@ async def resolver_ring_timeout_task(
     atend_uuid = UUID(atendimento_id)
     med_uuid = UUID(medico_id)
 
-    with tenant_context(organizacao_id):
-        async with get_db_session_from_ctx(ctx) as session:
-            fila_service = build_fila_service_for_session(
-                valkey=valkey, session=session
-            )
-            action = await fila_service.resolver_ring_timeout(
-                organizacao_id=organizacao_id,
-                atendimento_id=atend_uuid,
-                medico_id=med_uuid,
-                notifier=notifier,
-            )
+    async with get_db_session_from_ctx(ctx) as session:
+        fila_service = build_fila_service_for_session(valkey=valkey, session=session)
+        action = await fila_service.resolver_ring_timeout(
+            atendimento_id=atend_uuid,
+            medico_id=med_uuid,
+            notifier=notifier,
+        )
 
-            if action == "not_found":
-                return {"status": "not_found", "action": "ignored"}
+        if action == "not_found":
+            return {"status": "not_found", "action": "ignored"}
 
-            return {
-                "status": "resolved",
-                "action": action,
-                "atendimento_id": atendimento_id,
-            }
+        return {
+            "status": "resolved",
+            "action": action,
+            "atendimento_id": atendimento_id,
+        }

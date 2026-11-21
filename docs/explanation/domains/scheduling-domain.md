@@ -8,7 +8,7 @@ O domínio de Agendamento (`scheduling`) orquestra consultas programadas das equ
 
 Vocabulário ubíquo: `EspecialidadeAgenda` (`PSICOLOGIA`, `NUTRICAO`), `AgendaDisponibilidade` (janela semanal em horário UTC), `Agendamento`, `StatusAgendamento`, `SlotDisponivelDTO`, `excl_agendamento_slot_ativo` (exclusão temporal GiST), `AttendanceLookupPort`.
 
-Multitenancy estrito: `agenda_disponibilidades` e `agendamentos` carregam `organizacao_id` (`ON DELETE RESTRICT`) com `FORCE ROW LEVEL SECURITY` e políticas `tenant_isolation_*`. Todas as datas operam normalizadas em UTC (`normalizar_utc`).
+Plataforma única: `agenda_disponibilidades` e `agendamentos` operam com FKs diretas para `profissionais`, `pacientes` e `atendimentos`, sem `organizacao_id` nem RLS. Todas as datas operam normalizadas em UTC (`normalizar_utc`).
 
 ## 2. Regras
 
@@ -16,9 +16,9 @@ Multitenancy estrito: `agenda_disponibilidades` e `agendamentos` carregam `organ
 - **RN-SCH-02 — Janelas semanais e detecção de sobreposição.** `AgendaDisponibilidade` exige `dia_semana` entre `0` (segunda) e `6` (domingo), horários naive UTC com `hora_fim > hora_inicio` e `duracao_minutos` entre `15` e `120`. `cadastrar_disponibilidade` impede janelas ativas sobrepostas (`sobrepoe`) para o mesmo profissional e dia com `SlotIndisponivelError` (HTTP 409).
 - **RN-SCH-03 — Validação de grade estrita, passado e anti-double-booking.** `agendar_consulta` bloqueia `slot_inicio < now(UTC)` (`ValidationError`), exige janela ativa cobrindo o intervalo exato (`AgendaDisponibilidade.cobre_slot`) e consulta `buscar_agendamento_conflitante` antes de gravar. No banco, `uq_agendamento_slot_ativo` e `excl_agendamento_slot_ativo` (`USING gist` com `tstzrange(slot_inicio, slot_fim, '[)')` e `where status NOT IN ('CANCELADO', 'FALTA')`) garantem atomicidade concorrente, traduzindo SQLSTATE `23505`/`23P01` em `SlotIndisponivelError`.
 - **RN-SCH-04 — Ciclo de estados ativo com transições guardadas.** `StatusAgendamento` declara seis estados (`AGENDADO`, `CONFIRMADO`, `EM_ATENDIMENTO`, `CONCLUIDO`, `CANCELADO`, `FALTA`). No ciclo ativo implementado, agendamentos nascem em `AGENDADO` e transicionam via `iniciar_atendimento()` para `EM_ATENDIMENTO` ou via `cancelar()` para `CANCELADO` (admitindo `AGENDADO` ou `CONFIRMADO` como origem válida); saltos ilegais disparam `TransicaoAgendamentoInvalidaError` (HTTP 409).
-- **RN-SCH-05 — Anti-IDOR, RBAC e leitura com lock (`for_update=True`).** Rotas públicas do tenant (`GET /especialidades`, `GET /slots`) exigem apenas `TenantDep` e limitam consultas a janelas de até `_MAX_JANELA_SLOTS_DIAS` (`31` dias). Operações do paciente exigem `Role.PACIENTE` (`PacienteSchedulingAuthDep`) extraindo `paciente_id` do JWT; operações de agenda exigem `Role.MEDICO` (`ProfissionalSchedulingAuthDep`). Mutações carregam registro via `buscar_agendamento_por_id(..., for_update=True)` antes de transicionar.
+- **RN-SCH-05 — Anti-IDOR, RBAC e leitura com lock (`for_update=True`).** Rotas públicas do catálogo (`GET /especialidades`, `GET /slots`) dispensam credencial de paciente e limitam consultas a janelas de até `_MAX_JANELA_SLOTS_DIAS` (`31` dias). Operações do paciente exigem `Role.PACIENTE` (`PacienteSchedulingAuthDep`) extraindo `paciente_id` do JWT; operações de agenda exigem `Role.MEDICO` (`ProfissionalSchedulingAuthDep`). Mutações carregam registro via `buscar_agendamento_por_id(..., for_update=True)` antes de transicionar.
 
-Guardiões: `Agendamento.__init__` valida `organizacao_id > 0`, `slot_fim > slot_inicio` e `observacoes <= 500` caracteres; `_validar_atendimento_vinculado` valida titularidade de `paciente_id`, `organizacao_id` e `medico_id` via `AttendanceLookupPort` antes de vincular `atendimento_id`.
+Guardiões: `Agendamento.__init__` valida `slot_fim > slot_inicio` e `observacoes <= 500` caracteres; `_validar_atendimento_vinculado` valida titularidade de `paciente_id` e `medico_id` via `AttendanceLookupPort` antes de vincular `atendimento_id`.
 
 ## 3. Máquina de estados
 
@@ -37,7 +37,7 @@ O método privado `_transicionar` valida pertencimento ao conjunto de origens pe
 
 ## 4. Relações
 
-- **Referências relacionais (FKs `RESTRICT`):** `agenda_disponibilidades` referencia `organizacoes.id` e `profissionais.id`; `agendamentos` referencia `organizacoes.id`, `pacientes.id`, `profissionais.id` e `atendimentos.id` (nullable, índice único parcial `uq_agendamento_atendimento_id`). [Schema](../../reference/database/schema-and-rls.md)
+- **Referências relacionais (FKs `RESTRICT`):** `agenda_disponibilidades` referencia `profissionais.id`; `agendamentos` referencia `pacientes.id`, `profissionais.id` e `atendimentos.id` (nullable, índice único parcial `uq_agendamento_atendimento_id`). [Schema](../../reference/database/schema.md)
 - **Integração cross-module desacoplada:** `AttendanceLookupPort` (`src/modules/scheduling/application/ports/attendance_lookup_port.py`) é adaptada em `src/modules/scheduling/composition.py:QueueStoreAttendanceLookupAdapter` sobre `QueueStorePort.buscar_atendimento`, respeitando fronteiras Tach sem importar modelos de `queue`.
 - **Persistência e apresentação fina:** `SchedulingRepositoryPort` é implementada por `SqlSchedulingRepository`; `scheduling_router.py` agrega rotas sob `/api/v1/scheduling` delegando a `SchedulingServiceDep` (`composition.py`).
 - **Frontend Feature-Driven:** `frontend/src/features/scheduling/` consome contratos `@/api/generated` em `/agendar` (`ScheduleAppointmentPage`) e na aba de agenda de `/medico` (`ProfessionalSchedulePanel`).
@@ -61,7 +61,7 @@ O método privado `_transicionar` valida pertencimento ao conjunto de origens pe
 - `src/modules/scheduling/presentation/schemas.py`
 - `src/modules/scheduling/presentation/dependencies.py`
 - `src/modules/scheduling/presentation/routers/scheduling_router.py`
-- `migrations/versions/0015_scheduling_tables.py`
+- `migrations/versions/0001_initial_schema.py`
 - `frontend/src/features/scheduling/pages/schedule-appointment-page.tsx`
 - `frontend/src/features/scheduling/components/professional-schedule-panel.tsx`
 
@@ -93,7 +93,7 @@ uv run pytest tests/unit/test_scheduling_models.py tests/unit/test_scheduling_se
 
 - [Product Specification](../product-specification.md) — suporte eMulti (RT-01) e universalidade SUS
 - [ADR-012](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md) — atendimento agendado multiprofissional eMulti
-- [Database Schema & RLS](../../reference/database/schema-and-rls.md) — tabelas `agenda_disponibilidades` e `agendamentos`
+- [Database Schema](../../reference/database/schema.md) — tabelas `agenda_disponibilidades` e `agendamentos`
 - [US-16 Portal do Cidadão e Agendamento eMulti](../../user-stories/US-16-portal-cidadao-e-agendamento-emulti.md) — critérios BDD e interface
 - [Queue Domain](./queue-domain.md) — fila imediata de pronto-atendimento por demanda espontânea
 - [Domains Index](./index.md) — catálogo geral dos domínios da aplicação

@@ -2,7 +2,6 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 const MOCK_PAINEL_TELEMETRIA = {
-  organizacao_id: 1,
   gerado_em: "2026-11-15T12:00:00Z",
   tme_medio_segundos: 450,
   tme_nivel_1_segundos: 60,
@@ -30,7 +29,6 @@ const MOCK_PAINEL_TELEMETRIA = {
 
 const MOCK_CONFIG_PLANTAO = {
   id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b01",
-  organizacao_id: 1,
   medicos_ativos_planejados: 2,
   alpha_backpressure: "1.25",
   cota_diaria_maxima: 300,
@@ -128,7 +126,6 @@ test.describe("Portais Corporativos (/interno/login, /medico e /gestor)", () => 
           ],
           total: 1,
           competencia: "202611",
-          organizacao_id: 1,
           page: 1,
           size: 50,
         }),

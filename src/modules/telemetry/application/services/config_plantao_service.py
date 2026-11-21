@@ -25,15 +25,15 @@ class ConfigPlantaoService:
         self._cache = cache
         self._session = session
 
-    async def obter_configuracao(self, organizacao_id: int) -> ConfiguracaoPlantao:
-        """Recupera configuração ativa do plantão ou cria padrões do tenant.
+    async def obter_configuracao(self) -> ConfiguracaoPlantao:
+        """Recupera configuração ativa do plantão ou cria padrões da plataforma.
 
-        Garante parametrização de SLAs, TMA e limites operacionais.
+        Garante parametrização de SLAs, TMA e limites operacionais (ADR-013).
         Regras: docs/explanation/domains/telemetry-domain.md.
         """
-        config = await self._repo.obter_por_organizacao(organizacao_id)
+        config = await self._repo.obter_atual()
         if config is None:
-            config = ConfiguracaoPlantao(organizacao_id=organizacao_id)
+            config = ConfiguracaoPlantao()
             await self._repo.salvar(config)
             await self._session.commit()
 
@@ -44,13 +44,12 @@ class ConfigPlantaoService:
     ) -> ConfiguracaoPlantao:
         """Cria ou atualiza configuração do plantão, persistindo e invalidando cache.
 
-        Valida parâmetros de alpha backpressure, TMA e ring tolerance do domínio.
+        Valida parâmetros de alpha backpressure, TMA e ring tolerance (ADR-013).
         Regras: docs/explanation/domains/telemetry-domain.md.
         """
-        config = await self._repo.obter_por_organizacao(command.organizacao_id)
+        config = await self._repo.obter_atual()
         if config is None:
             config = ConfiguracaoPlantao(
-                organizacao_id=command.organizacao_id,
                 medicos_ativos_planejados=command.medicos_ativos_planejados,
                 alpha_backpressure=command.alpha_backpressure,
                 cota_diaria_maxima=command.cota_diaria_maxima,
@@ -82,7 +81,7 @@ class ConfigPlantaoService:
             )
             await self._repo.salvar(config)
 
-        await self._cache.invalidar_painel(command.organizacao_id)
+        await self._cache.invalidar_painel()
         await self._session.commit()
 
         return config

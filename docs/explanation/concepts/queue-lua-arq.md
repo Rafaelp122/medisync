@@ -50,7 +50,7 @@ vem antes.
 Ingestão mora em
 `src/modules/queue/application/services/fila_service.py`.
 Método `ingressar_fila` calcula o score e grava com
-`zadd` na chave `fila:{org}:aptos`, depois lê
+`zadd` na chave `fila:aptos`, depois lê
 `zrank` para devolver a posição. Dicionário canônico de
 chaves e TTLs em [Valkey Keys Dictionary](../../reference/valkey/keys-dictionary.md)
 (`docs/reference/valkey/keys-dictionary.md`). Reentrada após
@@ -116,7 +116,7 @@ Busca de prova:
 
 Logo após alocar, o service agenda a tarefa com
 `enqueue_job` para `resolver_ring_timeout_task`,
-passando organização, atendimento e médico, com
+passando atendimento e médico, com
 `_defer_by` igual ao ttl do comando e id de job
 `ring_timeout:{atendimento_id}` para deduplicar.
 Catálogo formal de tarefas em
@@ -165,9 +165,8 @@ timestamp originais.
 
 Agendamento em `src/worker/settings.py`: função
 registrada no worker mais cron por minuto
-(`reconciliar_fila_orphans_cron`). Escopo por
-organização sob contexto de tenant, então
-reconciliação nunca cruza tenant.
+(`reconciliar_fila_orphans_cron`). Varre toda a fila
+única da plataforma (`fila:aptos`) e reconstrói órfãos reais.
 
 Busca de prova:
 

@@ -34,22 +34,20 @@ from src.modules.consultation.presentation.routers.consultation_router import (
 )
 
 
-def _make_doctor(user_id: UUID | None = None, org_id: int = 1) -> AuthenticatedUser:
+def _make_doctor(user_id: UUID | None = None) -> AuthenticatedUser:
     uid = user_id if user_id is not None else uuid4()
     return AuthenticatedUser(
         usuario_id=uid,
-        organizacao_id=org_id,
         papel=Role.MEDICO,
         token_id=uuid4(),
         raw_token="fake-jwt-token",
     )
 
 
-def _make_patient(user_id: UUID | None = None, org_id: int = 2) -> AuthenticatedUser:
+def _make_patient(user_id: UUID | None = None) -> AuthenticatedUser:
     uid = user_id if user_id is not None else uuid4()
     return AuthenticatedUser(
         usuario_id=uid,
-        organizacao_id=org_id,
         papel=Role.PACIENTE,
         token_id=uuid4(),
         raw_token="fake-patient-jwt",
@@ -99,7 +97,6 @@ async def test_obter_documento_pdf_route_uses_pep_service() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(
             f"/api/v1/consultations/{atend_id}/documents/{doc_id}/pdf",
-            headers={"X-Tenant-ID": "1"},
         )
 
     assert resp.status_code == 200
@@ -143,7 +140,6 @@ async def test_assinar_documento_route_uses_pep_service() -> None:
                 "provider": "psc-cloud",
                 "certificate_alias": "cert-1",
             },
-            headers={"X-Tenant-ID": "1"},
         )
 
     assert resp.status_code == 200
@@ -172,7 +168,7 @@ async def test_patient_portal_routes_delegate_to_pep_service() -> None:
     )
 
     app = create_app()
-    patient = _make_patient(org_id=2)
+    patient = _make_patient()
     atend_id = uuid4()
     doc_id = uuid4()
     now = datetime.now(UTC)
@@ -220,14 +216,12 @@ async def test_patient_portal_routes_delegate_to_pep_service() -> None:
     assert r_hist.status_code == 200
     assert r_hist.json()[0]["atendimento_id"] == str(atend_id)
     mock_pep.listar_historico_paciente.assert_awaited_once_with(
-        organizacao_id=2,
         paciente_id=patient.usuario_id,
     )
 
     assert r_docs.status_code == 200
     assert r_docs.json()[0]["documento_id"] == str(doc_id)
     mock_pep.listar_documentos_paciente.assert_awaited_once_with(
-        organizacao_id=2,
         paciente_id=patient.usuario_id,
     )
 
@@ -235,7 +229,6 @@ async def test_patient_portal_routes_delegate_to_pep_service() -> None:
     assert r_pdf.content == b"%PDF-patient%"
     mock_pep.compilar_pdf_para_paciente.assert_awaited_once_with(
         documento_id=doc_id,
-        organizacao_id=2,
         paciente_id=patient.usuario_id,
     )
 

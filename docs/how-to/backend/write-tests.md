@@ -90,7 +90,7 @@ rg -n "clean_database_tables|clean_valkey_keys" tests/helpers.py
 
 ## 4. O que NUNCA fazer em testes
 
-1. **Nunca use `DROP SCHEMA public CASCADE;`:** Isso destrói a infraestrutura de outros testes concorrentes e remove grants da role `medisync_app`.
+1. **Nunca use `DROP SCHEMA public CASCADE;`:** Isso destrói a infraestrutura de outros testes concorrentes e remove funções/triggers provisionadas no banco.
 2. **Nunca use `Base.metadata.create_all` em testes:** O schema deve ser provisionado canonicamente via migrações do Alembic (`just migrate`).
 3. **Nunca copie blocos de 30 linhas de `session.add(...)`:** Use `seed_clinical_scenario(session)` ou as fábricas de persistência de `tests/factories/scenarios.py`.
 4. **Nunca instancie `ASGITransport(app=app)` manualmente:** Use a fixture `async_client` ou `authed_client_factory` de `tests/conftest.py`.

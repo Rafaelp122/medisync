@@ -37,12 +37,10 @@ async def test_sql_audit_trail_adapter_records_event_in_session() -> None:
     session = FakeAsyncSession()
     adapter = SqlAuditTrailAdapter(cast("AsyncSession", session))
 
-    org_id = 1
     atendimento_id = uuid7()
     medico_id = uuid7()
 
     event_id = await adapter.record_event(
-        organizacao_id=org_id,
         atendimento_id=atendimento_id,
         ator_tipo=AtorTipo.PROFISSIONAL,
         ator_papel=AtorPapel.MEDICO,
@@ -58,7 +56,6 @@ async def test_sql_audit_trail_adapter_records_event_in_session() -> None:
     event = session.added[0]
     assert isinstance(event, AuditEvent)
     assert event.id == event_id
-    assert event.organizacao_id == org_id
     assert event.atendimento_id == atendimento_id
     assert event.ator_tipo == AtorTipo.PROFISSIONAL
     assert event.ator_papel == AtorPapel.MEDICO
@@ -73,12 +70,10 @@ async def test_sql_audit_trail_adapter_records_event_in_session() -> None:
 async def test_fake_audit_trail_satisfies_protocol_and_records_in_memory() -> None:
     fake: AuditTrailPort = FakeAuditTrail()
 
-    org_id = 2
     atendimento_id = uuid7()
     paciente_id = uuid7()
 
     event_id = await fake.record_event(
-        organizacao_id=org_id,
         atendimento_id=atendimento_id,
         ator_tipo="PACIENTE",
         ator_papel="PACIENTE",
@@ -94,6 +89,7 @@ async def test_fake_audit_trail_satisfies_protocol_and_records_in_memory() -> No
     assert len(fake.events) == 1
     record = fake.events[0]
     assert record["id"] == event_id
+    assert "organizacao_id" not in record
     assert record["tipo_evento"] == "ADMISSAO_PACIENTE"
     assert record["tcle_hash"] == "a" * 64
 

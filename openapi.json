@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MediSync Express",
-    "version": "0.17.0"
+    "version": "0.18.0"
   },
   "paths": {
     "/healthz": {
@@ -33,7 +33,7 @@
           "Authentication & Sessions (OWASP)"
         ],
         "summary": "Autentica\u00e7\u00e3o com Argon2id e emiss\u00e3o de JWT (Anti-Brute Force)",
-        "description": "Autentica o usu\u00e1rio corporativo emitindo par de tokens de acesso e atualiza\u00e7\u00e3o.\n\nRegras: RN-AUT-01, RN-AUT-05, RN-AUT-08, OWASP ASVS v4.0 (V3.5.2).\nDocumenta\u00e7\u00e3o: docs/explanation/domains/auth-domain.md",
+        "description": "Autentica o usu\u00e1rio corporativo emitindo par de tokens de acesso e atualiza\u00e7\u00e3o.\n\nRegras: RN-AUT-01, RN-AUT-05, RN-AUT-08, ADR-013, OWASP ASVS v4.0 (V3.5.2).\nDocumenta\u00e7\u00e3o: docs/explanation/domains/auth-domain.md",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -440,7 +440,7 @@
           "Auth Paciente"
         ],
         "summary": "Auto-cadastro do cidad\u00e3o com disparo inicial de OTP",
-        "description": "Registra novo paciente na organiza\u00e7\u00e3o com aceite LGPD, credencial opcional (e-mail/senha Argon2id) e envio inicial de c\u00f3digo OTP via SMS.",
+        "description": "Registra novo paciente na plataforma com aceite LGPD, credencial opcional (e-mail/senha Argon2id) e envio inicial de c\u00f3digo OTP via SMS.",
         "operationId": "post_auth_patient_register",
         "requestBody": {
           "content": {
@@ -901,7 +901,7 @@
           "Pacientes"
         ],
         "summary": "Listar dependentes do titular",
-        "description": "Recupera a lista de todos os dependentes vinculados ao paciente titular na organiza\u00e7\u00e3o.",
+        "description": "Recupera a lista de todos os dependentes vinculados ao paciente titular autenticado.",
         "operationId": "listar_dependentes_api_v1_pacientes__id__dependentes_get",
         "security": [
           {
@@ -956,7 +956,7 @@
           "Fila"
         ],
         "summary": "Admiss\u00e3o cl\u00ednica e triagem no PA Virtual",
-        "description": "Classifica o risco cl\u00ednico pelo Protocolo Manchester/ACR, valida TCLE e backpressure estoc\u00e1stico, e persiste atomicamente atendimento e triagem. Requer credencial de autentica\u00e7\u00e3o v\u00e1lida (token provis\u00f3rio de acolhimento ou token de acesso) com posse sobre o paciente_id e organiza\u00e7\u00e3o para prevenir inje\u00e7\u00e3o an\u00f4nima (Anti-IDOR).",
+        "description": "Classifica o risco cl\u00ednico pelo Protocolo Manchester/ACR, valida TCLE e backpressure estoc\u00e1stico, e persiste atomicamente atendimento e triagem. Requer credencial de autentica\u00e7\u00e3o v\u00e1lida (token provis\u00f3rio de acolhimento ou token de acesso) com posse sobre o paciente_id para prevenir inje\u00e7\u00e3o an\u00f4nima (Anti-IDOR).",
         "operationId": "admitir_paciente_api_v1_fila_admissao_post",
         "requestBody": {
           "content": {
@@ -1417,7 +1417,7 @@
             }
           },
           "403": {
-            "description": "Documento pertence a outro paciente ou organiza\u00e7\u00e3o"
+            "description": "Documento pertence a outro paciente"
           },
           "404": {
             "description": "Documento n\u00e3o encontrado"
@@ -1559,7 +1559,7 @@
           "teleconsulta-pep"
         ],
         "summary": "Acesso ao prontu\u00e1rio m\u00e9dico protegido por RBAC e ABAC cl\u00ednico",
-        "description": "Retorna o prontu\u00e1rio eletr\u00f4nico mediante verifica\u00e7\u00e3o em 3 camadas:\n1. Camada 1 (Macro RBAC): papel MEDICO.\n2. Camada 2 (RLS): isolamento de tenant.\n3. Camada 3 (ABAC Cl\u00ednico): m\u00e9dico assistente + TCLE assinado + status ativo.",
+        "description": "Retorna o prontu\u00e1rio eletr\u00f4nico mediante verifica\u00e7\u00e3o em 2 camadas:\n1. Camada 1 (Macro RBAC): papel MEDICO.\n2. Camada 2 (ABAC Cl\u00ednico): m\u00e9dico assistente + TCLE assinado + status ativo.",
         "operationId": "obter_prontuario_protegido_api_v1_consultations__atendimento_id__prontuario_get",
         "security": [
           {
@@ -1881,16 +1881,6 @@
             "description": "Identificador \u00fanico do atendimento"
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FinalizarConsultaRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2316,7 +2306,7 @@
           "Telemetria"
         ],
         "summary": "Consulta parametriza\u00e7\u00e3o de pol\u00edticas do plant\u00e3o (RF-09)",
-        "description": "Consulta os par\u00e2metros ativos do plant\u00e3o para a organiza\u00e7\u00e3o (m\u00e9dicos planejados, fator alpha, cota di\u00e1ria, TMA padr\u00e3o e metas de SLA). Se inexistente, inicializa e persiste a configura\u00e7\u00e3o default.",
+        "description": "Consulta os par\u00e2metros ativos do plant\u00e3o da plataforma (m\u00e9dicos planejados, fator alpha, cota di\u00e1ria, TMA padr\u00e3o e metas de SLA). Se inexistente, inicializa e persiste a configura\u00e7\u00e3o default.",
         "operationId": "obter_configuracao_plantao_api_v1_telemetria_config_plantao_get",
         "responses": {
           "200": {
@@ -2341,7 +2331,7 @@
           "Telemetria"
         ],
         "summary": "Atualiza parametriza\u00e7\u00e3o de pol\u00edticas do plant\u00e3o (RF-09)",
-        "description": "Atualiza as pol\u00edticas e metas de SLA do plant\u00e3o para a organiza\u00e7\u00e3o, validando limites e invariantes de dom\u00ednio, invalidando o cache do painel e persistindo as altera\u00e7\u00f5es atomicamente.",
+        "description": "Atualiza as pol\u00edticas e metas de SLA do plant\u00e3o da plataforma, validando limites e invariantes de dom\u00ednio, invalidando o cache do painel e persistindo as altera\u00e7\u00f5es atomicamente.",
         "operationId": "atualizar_configuracao_plantao_api_v1_telemetria_config_plantao_put",
         "requestBody": {
           "content": {
@@ -3068,10 +3058,6 @@
             "format": "uuid",
             "title": "Triagem Id"
           },
-          "organizacao_id": {
-            "type": "integer",
-            "title": "Organizacao Id"
-          },
           "paciente_id": {
             "type": "string",
             "format": "uuid",
@@ -3117,7 +3103,6 @@
         "required": [
           "atendimento_id",
           "triagem_id",
-          "organizacao_id",
           "paciente_id",
           "status_atendimento",
           "prioridade_clinica",
@@ -3132,10 +3117,6 @@
             "type": "string",
             "format": "uuid",
             "title": "Id"
-          },
-          "organizacao_id": {
-            "type": "integer",
-            "title": "Organizacao Id"
           },
           "paciente_id": {
             "type": "string",
@@ -3202,7 +3183,6 @@
         "type": "object",
         "required": [
           "id",
-          "organizacao_id",
           "paciente_id",
           "profissional_id",
           "especialidade",
@@ -3677,10 +3657,6 @@
             "format": "uuid",
             "title": "Id"
           },
-          "organizacao_id": {
-            "type": "integer",
-            "title": "Organizacao Id"
-          },
           "medicos_ativos_planejados": {
             "type": "integer",
             "title": "Medicos Ativos Planejados"
@@ -3759,7 +3735,6 @@
         "type": "object",
         "required": [
           "id",
-          "organizacao_id",
           "medicos_ativos_planejados",
           "alpha_backpressure",
           "cota_diaria_maxima",
@@ -4077,10 +4052,6 @@
             "format": "uuid",
             "title": "Id"
           },
-          "organizacao_id": {
-            "type": "integer",
-            "title": "Organizacao Id"
-          },
           "titular_id": {
             "type": "string",
             "format": "uuid",
@@ -4105,7 +4076,6 @@
         "type": "object",
         "required": [
           "id",
-          "organizacao_id",
           "titular_id",
           "dependente_id",
           "grau_parentesco",
@@ -4120,10 +4090,6 @@
             "type": "string",
             "format": "uuid",
             "title": "Id"
-          },
-          "organizacao_id": {
-            "type": "integer",
-            "title": "Organizacao Id"
           },
           "profissional_id": {
             "type": "string",
@@ -4160,7 +4126,6 @@
         "type": "object",
         "required": [
           "id",
-          "organizacao_id",
           "profissional_id",
           "especialidade",
           "dia_semana",
@@ -4183,10 +4148,6 @@
             "type": "string",
             "format": "uuid",
             "title": "Atendimento Id"
-          },
-          "organizacao_id": {
-            "type": "integer",
-            "title": "Organizacao Id"
           },
           "medico_id": {
             "type": "string",
@@ -4286,7 +4247,6 @@
         "required": [
           "id",
           "atendimento_id",
-          "organizacao_id",
           "medico_id",
           "tipo_documento",
           "chave_s3",
@@ -4372,18 +4332,6 @@
             ],
             "title": "Justificativa Excecao Liveness",
             "description": "Justificativa m\u00e9dica para dispensa excepcional de prova de vida (US-15)"
-          },
-          "organizacao_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Organizacao Id",
-            "description": "Identificador da organiza\u00e7\u00e3o"
           }
         },
         "additionalProperties": false,
@@ -4438,10 +4386,6 @@
             "type": "string",
             "format": "uuid",
             "title": "Atendimento Id"
-          },
-          "organizacao_id": {
-            "type": "integer",
-            "title": "Organizacao Id"
           },
           "medico_id": {
             "type": "string",
@@ -4580,7 +4524,6 @@
         "required": [
           "id",
           "atendimento_id",
-          "organizacao_id",
           "medico_id",
           "anamnese",
           "exame_fisico_virtual",
@@ -4982,26 +4925,6 @@
         "title": "Fase2Response",
         "description": "Response after Phase 2 CFM regulatory enrichment."
       },
-      "FinalizarConsultaRequest": {
-        "properties": {
-          "organizacao_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Organizacao Id",
-            "description": "Identificador da organiza\u00e7\u00e3o"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "FinalizarConsultaRequest",
-        "description": "Payload to conclude attendance and lock PEP records."
-      },
       "FinalizarConsultaResponse": {
         "properties": {
           "status": {
@@ -5084,17 +5007,6 @@
             "type": "string",
             "title": "Version"
           },
-          "tenant_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tenant Id"
-          },
           "request_id": {
             "anyOf": [
               {
@@ -5121,7 +5033,6 @@
         "required": [
           "status",
           "version",
-          "tenant_id",
           "request_id"
         ],
         "title": "HealthCheckResponse",
@@ -5454,11 +5365,6 @@
             "title": "Competencia",
             "description": "Compet\u00eancia de refer\u00eancia no formato YYYYMM"
           },
-          "organizacao_id": {
-            "type": "integer",
-            "title": "Organizacao Id",
-            "description": "Identificador do tenant municipal"
-          },
           "page": {
             "type": "integer",
             "title": "Page",
@@ -5475,7 +5381,6 @@
           "items",
           "total",
           "competencia",
-          "organizacao_id",
           "page",
           "size"
         ],
@@ -5484,18 +5389,6 @@
       },
       "LiveKitTokenRequest": {
         "properties": {
-          "organizacao_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Organizacao Id",
-            "description": "Identificador opcional da organiza\u00e7\u00e3o (resolvido via contexto HTTP quando omitido)"
-          },
           "participant_id": {
             "type": "string",
             "format": "uuid",
@@ -5557,7 +5450,7 @@
           "room_name": {
             "type": "string",
             "title": "Room Name",
-            "description": "Nome can\u00f4nico da sala org_{org}_atend_{atend}"
+            "description": "Nome can\u00f4nico da sala atend_{atend}"
           },
           "participant_identity": {
             "type": "string",
@@ -5725,18 +5618,6 @@
             "minLength": 1,
             "title": "Senha",
             "description": "Senha em texto puro"
-          },
-          "organizacao_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Organizacao Id",
-            "description": "ID da organiza\u00e7\u00e3o (se omitido, resolvido via cabe\u00e7alho X-Tenant-ID)"
           }
         },
         "additionalProperties": false,
@@ -5962,10 +5843,6 @@
       },
       "PainelTelemetriaResponse": {
         "properties": {
-          "organizacao_id": {
-            "type": "integer",
-            "title": "Organizacao Id"
-          },
           "gerado_em": {
             "type": "string",
             "format": "date-time",
@@ -6037,7 +5914,6 @@
         },
         "type": "object",
         "required": [
-          "organizacao_id",
           "gerado_em",
           "tme_medio_segundos",
           "tme_nivel_1_segundos",
@@ -6541,18 +6417,6 @@
             ],
             "title": "Justificativa Excecao Identidade",
             "description": "Justificativa cl\u00ednica caso o paciente n\u00e3o possua documento no ato."
-          },
-          "organizacao_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Organizacao Id",
-            "description": "Identificador da organiza\u00e7\u00e3o de sa\u00fade"
           }
         },
         "additionalProperties": false,
@@ -6837,10 +6701,6 @@
             "format": "uuid",
             "title": "Usuario Id"
           },
-          "organizacao_id": {
-            "type": "integer",
-            "title": "Organizacao Id"
-          },
           "identificador": {
             "type": "string",
             "title": "Identificador"
@@ -6858,7 +6718,6 @@
         "type": "object",
         "required": [
           "usuario_id",
-          "organizacao_id",
           "identificador",
           "papel",
           "ativo"

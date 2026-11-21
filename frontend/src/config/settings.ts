@@ -36,9 +36,6 @@ export const envSchema = z
     /** URL base da API REST e WebSockets */
     apiBaseUrl: z.string().default(""),
 
-    /** Identificador padrão do Tenant (Organização de Saúde) */
-    defaultTenantId: z.string().min(1).optional(),
-
     /** Flag de habilitação de atalhos e preenchimentos demo */
     isDemoMode: z.boolean().default(false),
 
@@ -117,9 +114,6 @@ export const storageSchema = z
     /** Chave dos dados temporários de conexão WebRTC LiveKit (SessionStorage) */
     callData: z.string().default("medisync_call_data"),
 
-    /** Chave do tenant selecionado no navegador (LocalStorage) */
-    tenantId: z.string().default("tenant_id"),
-
     /** Chave de dispensa do convite de biometria Passkeys (SessionStorage) */
     passkeyDismissed: z.string().default("medisync_passkey_invite_dismissed"),
   })
@@ -184,10 +178,6 @@ export function createSettings(rawEnv: Record<string, unknown> = import.meta.env
     apiBaseUrl = window.location.origin;
   }
 
-  // Resolução do Tenant ID
-  const rawTenantId = typeof rawEnv.VITE_TENANT_ID === "string" ? rawEnv.VITE_TENANT_ID.trim() : "";
-  const defaultTenantId = rawTenantId || undefined;
-
   // Resolução da flag isDemoMode
   let isDemoMode: boolean;
   if (rawEnv.VITE_ENABLE_DEMO_HELPERS !== undefined && rawEnv.VITE_ENABLE_DEMO_HELPERS !== "") {
@@ -213,7 +203,6 @@ export function createSettings(rawEnv: Record<string, unknown> = import.meta.env
   const parsed = settingsSchema.parse({
     env: {
       apiBaseUrl,
-      defaultTenantId,
       isDemoMode,
       defaultPscProvider: rawPsc,
       mode,

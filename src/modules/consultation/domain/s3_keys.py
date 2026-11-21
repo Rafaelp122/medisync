@@ -3,11 +3,10 @@
 from uuid import UUID
 
 
-def build_signed_document_key(
-    organizacao_id: int, atendimento_id: UUID, documento_id: UUID
-) -> str:
-    """Build canonical signed-document S3 key (single source of truth)."""
-    return (
-        f"orgs/{organizacao_id}/consultations/{atendimento_id}/"
-        f"documents/{documento_id}.pdf"
-    )
+def build_signed_document_key(atendimento_id: UUID, documento_id: UUID) -> str:
+    """Constrói a chave S3 canônica para documento clínico assinado em plataforma única.
+
+    Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md e
+    docs/adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md.
+    """
+    return f"consultations/{atendimento_id}/documents/{documento_id}.pdf"

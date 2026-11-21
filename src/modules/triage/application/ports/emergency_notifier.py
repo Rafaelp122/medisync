@@ -15,7 +15,6 @@ class EmergencyAlertDTO:
     """Immutable data transfer object for level 1 emergency alerts."""
 
     atendimento_id: UUID
-    organizacao_id: int
     queixa_principal: str
     sintomas_alerta: list[str]
     instrucao_redirecionamento: str = INSTRUCAO_SAMU_PADRAO

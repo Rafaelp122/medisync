@@ -19,7 +19,6 @@ DEFAULT_TEST_HASH = (
 
 
 def make_usuario_credencial(
-    organizacao_id: int = 1,
     usuario_id: UUID | None = None,
     *,
     identificador: str = "dr.plantonista@medisync.local",
@@ -30,7 +29,6 @@ def make_usuario_credencial(
 ) -> UsuarioCredencial:
     """Create a typed in-memory UsuarioCredencial instance for unit tests."""
     return UsuarioCredencial(
-        organizacao_id=organizacao_id,
         usuario_id=usuario_id or uuid7(),
         identificador=identificador,
         senha_hash=senha_hash,
@@ -41,7 +39,6 @@ def make_usuario_credencial(
 
 
 def make_cadastrar_credencial_command(
-    organizacao_id: int = 1,
     usuario_id: UUID | None = None,
     *,
     identificador: str = "dr.plantonista@medisync.local",
@@ -50,7 +47,6 @@ def make_cadastrar_credencial_command(
 ) -> CadastrarCredencialCommand:
     """Create a typed CadastrarCredencialCommand DTO."""
     return CadastrarCredencialCommand(
-        organizacao_id=organizacao_id,
         usuario_id=usuario_id or uuid7(),
         identificador=identificador,
         senha_pura=senha_pura,
@@ -60,7 +56,6 @@ def make_cadastrar_credencial_command(
 
 async def persist_credencial(
     session: AsyncSession,
-    organizacao_id: int = 1,
     usuario_id: UUID | None = None,
     *,
     identificador: str = "dr.plantonista@medisync.local",
@@ -72,7 +67,6 @@ async def persist_credencial(
     active_hasher = hasher or Argon2PasswordHasher()
     hashed = active_hasher.hash(senha_pura)
     cred = make_usuario_credencial(
-        organizacao_id=organizacao_id,
         usuario_id=usuario_id,
         identificador=identificador,
         senha_hash=hashed,

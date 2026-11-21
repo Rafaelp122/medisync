@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { client, getTenantHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import {
   extractProblemDetail,
   type ProblemDetailsError,
@@ -29,9 +29,7 @@ export function useDownloadDocumentoPdf(atendimentoId: string): UseDownloadDocum
       setDownloadingId(documentoId);
       setError(null);
       try {
-        const headers: Record<string, string> = {
-          ...getTenantHeaders(),
-        };
+        const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
         }

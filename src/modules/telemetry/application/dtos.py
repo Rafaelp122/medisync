@@ -21,7 +21,6 @@ class MedicoTMADTO:
 class PainelTelemetriaDTO:
     """Aggregated operational telemetry dashboard metrics."""
 
-    organizacao_id: int
     gerado_em: datetime
     tme_medio_segundos: float
     tme_nivel_1_segundos: float
@@ -42,7 +41,6 @@ class PainelTelemetriaDTO:
     def to_dict(self) -> dict[str, Any]:
         """Convert DTO to JSON-serializable dictionary."""
         return {
-            "organizacao_id": self.organizacao_id,
             "gerado_em": self.gerado_em.isoformat(),
             "tme_medio_segundos": self.tme_medio_segundos,
             "tme_nivel_1_segundos": self.tme_nivel_1_segundos,
@@ -96,7 +94,6 @@ class PainelTelemetriaDTO:
 
         sla_comp = float(data["sla_compliance_percentual"])
         return cls(
-            organizacao_id=int(data["organizacao_id"]),
             gerado_em=gerado_em,
             tme_medio_segundos=float(data["tme_medio_segundos"]),
             tme_nivel_1_segundos=float(data["tme_nivel_1_segundos"]),
@@ -120,7 +117,6 @@ class PainelTelemetriaDTO:
 class ConfigPlantaoCommand:
     """Command payload for creating or updating shift configuration."""
 
-    organizacao_id: int
     medicos_ativos_planejados: int
     alpha_backpressure: Decimal
     cota_diaria_maxima: int | None = 300

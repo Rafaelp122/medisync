@@ -5,7 +5,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Path, status
 
-from src.core.dependencies import TenantDep
 from src.modules.queue.composition import FilaServiceDep
 from src.modules.queue.presentation.dependencies import (
     PosseAtendimentoPathAuthDep,
@@ -39,13 +38,11 @@ fila_router = APIRouter(
 )
 async def obter_posicao_fila(
     atendimento_id: Annotated[UUID, Path(description="ID do atendimento")],
-    tenant_id: TenantDep,
     fila_service: FilaServiceDep,
     _auth: PosseAtendimentoPathAuthDep,
 ) -> PosicaoFilaResponse:
     """Query queue position and estimated wait time for patient."""
     result = await fila_service.obter_posicao_e_estimativa(
-        organizacao_id=tenant_id,
         atendimento_id=atendimento_id,
     )
     return PosicaoFilaResponse.model_validate(result)
@@ -62,7 +59,6 @@ async def obter_posicao_fila(
 )
 async def cancelar_atendimento_fila(
     atendimento_id: Annotated[UUID, Path(description="ID do atendimento")],
-    tenant_id: TenantDep,
     fila_service: FilaServiceDep,
     _auth: PosseAtendimentoPathAuthDep,
     body: Annotated[CancelarFilaRequest | None, Body()] = None,
@@ -70,7 +66,6 @@ async def cancelar_atendimento_fila(
     """Execute voluntary cancellation of attendance in virtual queue."""
     motivo = body.motivo if body is not None else "Desistência voluntária pelo paciente"
     result = await fila_service.cancelar_atendimento_paciente(
-        organizacao_id=tenant_id,
         atendimento_id=atendimento_id,
         motivo=motivo,
     )
@@ -89,12 +84,11 @@ async def cancelar_atendimento_fila(
 )
 async def comunicar_piora_clinica(
     body: Annotated[PioraClinicaRequest, Body()],
-    tenant_id: TenantDep,
     fila_service: FilaServiceDep,
     _auth: PosseAtendimentoPioraAuthDep,
 ) -> PioraClinicaResponse:
     """Execute clinical re-evaluation and queue re-prioritization on deterioration."""
-    cmd = body.to_command(organizacao_id=tenant_id)
+    cmd = body.to_command()
     result = await fila_service.processar_piora_clinica(cmd)
     return PioraClinicaResponse.model_validate(result)
 
@@ -111,7 +105,6 @@ async def comunicar_piora_clinica(
 async def regularizar_atendimento_fila(
     atendimento_id: Annotated[UUID, Path(description="ID do atendimento")],
     body: Annotated[RegularizacaoFilaRequest, Body()],
-    tenant_id: TenantDep,
     fila_service: FilaServiceDep,
     _auth: PosseAtendimentoPathAuthDep,
 ) -> RegularizacaoFilaResponse:
@@ -121,6 +114,6 @@ async def regularizar_atendimento_fila(
     Regras: docs/explanation/domains/queue-domain.md
     História: docs/user-stories/US-05-regularizacao-elegibilidade-fila.md
     """
-    cmd = body.to_command(organizacao_id=tenant_id, atendimento_id=atendimento_id)
+    cmd = body.to_command(atendimento_id=atendimento_id)
     result = await fila_service.regularizar_atendimento(cmd)
     return RegularizacaoFilaResponse.model_validate(result)

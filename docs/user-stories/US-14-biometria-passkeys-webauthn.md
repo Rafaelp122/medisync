@@ -48,7 +48,7 @@
 ## 3. Contrato de API
 
 * **Opções de Registro:** `POST /api/v1/auth/patient/webauthn/register/options`
-  * *Headers:* `Authorization: Bearer <jwt_paciente>`, `X-Tenant-ID: <org_id>`
+  * *Headers:* `Authorization: Bearer <jwt_paciente>`
   * *Resposta (`200 OK`):*
     ```json
     {
@@ -63,12 +63,12 @@
     ```
 
 * **Verificação de Registro:** `POST /api/v1/auth/patient/webauthn/register/verify`
-  * *Headers:* `Authorization: Bearer <jwt_paciente>`, `X-Tenant-ID: <org_id>`
+  * *Headers:* `Authorization: Bearer <jwt_paciente>`
   * *Payload de Entrada:* Credencial gerada pelo navegador (`id`, `rawId`, `response`, `type: "public-key"`)
   * *Resposta (`200 OK`):* `{ "status": "registrado", "credencial_id": "cred_xyz" }`
 
 * **Opções de Autenticação:** `POST /api/v1/auth/patient/webauthn/authenticate/options`
-  * *Headers:* `X-Tenant-ID: <org_id>`
+  * *Headers:* (sem cabeçalho de tenant; plataforma única)
   * *Resposta (`200 OK`):* Desafio e lista de credenciais permitidas (ou desafio aberto para *discoverable credentials*).
 
 * **Verificação de Autenticação:** `POST /api/v1/auth/patient/webauthn/authenticate/verify`
@@ -79,14 +79,14 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Modelo:** Tabela `paciente_passkeys` no módulo `identity` (`src/modules/identity/domain/models/passkey.py:PacientePasskey`) com `credential_id`, `public_key`, `sign_count`, `device_name` e `created_at` (migração `migrations/versions/0014_passkeys_and_liveness.py`).
-- [x] **Aplicação:** Serviço `src/modules/auth/application/services/patient_webauthn_service.py:PatientWebAuthnService` com verificação criptográfica `py-webauthn`, `authenticatorSelection` discoverable (`residentKey="required"`), desafios de uso único em Valkey e emissão de JWT `Role.PACIENTE` após checagem de vínculo ativo no tenant.
+- [x] **Modelo:** Tabela `paciente_passkeys` no módulo `identity` (`src/modules/identity/domain/models/passkey.py:PacientePasskey`) com `credential_id`, `public_key`, `sign_count`, `device_name` e `created_at` (migração `migrations/versions/0001_initial_schema.py`).
+- [x] **Aplicação:** Serviço `src/modules/auth/application/services/patient_webauthn_service.py:PatientWebAuthnService` com verificação criptográfica `py-webauthn`, `authenticatorSelection` discoverable (`residentKey="required"`), desafios de uso único em Valkey e emissão de JWT `Role.PACIENTE` após checagem de vínculo ativo.
 - [x] **Apresentação:** Router fino `src/modules/auth/presentation/routers/patient_webauthn_router.py:patient_webauthn_router` integrado em `/api/v1/auth/patient/webauthn`.
 - [x] **Frontend Registro e Login em 1 Toque (ADR-011):**
   - Registro FIDO2 na sala de espera via `frontend/src/features/queue/api/use-passkey-register.ts:usePasskeyRegister` e `frontend/src/features/queue/components/passkey-invitation-card.tsx:PasskeyInvitationCard`, e no perfil do cidadão (`/perfil`) via `frontend/src/features/citizen/api/use-citizen-profile-actions.ts:useCitizenPasskeyRegister` e `frontend/src/features/citizen/components/profile-passkey-section.tsx:ProfilePasskeySection`.
   - Autenticação 1-toque em `/entrar` via `frontend/src/features/auth/api/use-patient-methods.ts:usePatientPasskeyAuth` e `frontend/src/features/auth/components/patient-hybrid-auth-card.tsx:PatientHybridAuthCard` (preservando `frontend/src/features/onboarding/api/use-passkey-auth.ts:usePasskeyAuth`).
 - [x] **Testes Automatizados (Backend Unitário + Integração HTTP/DB + Frontend Vitest + E2E CDP):**
-  - `tests/unit/test_patient_webauthn_service.py` e `tests/integration/test_webauthn_endpoints.py` (desafios, replay, HMAC, isolamento multi-tenant, auditoria e JWT ativo)
+  - `tests/unit/test_patient_webauthn_service.py` e `tests/integration/test_webauthn_endpoints.py` (desafios, replay, HMAC, unicidade global de credencial, auditoria e JWT ativo)
   - `frontend/src/features/queue/tests/queue-unit.test.ts`, `passkey-invitation-card.test.tsx` e `frontend/src/features/citizen/tests/profile-page.test.tsx`
   - `frontend/e2e/auth-otp.spec.ts` (`E2E-04`: CDP Virtual Authenticator WebAuthn cadastro em `/fila` + login 1-toque em `/entrar`)
 

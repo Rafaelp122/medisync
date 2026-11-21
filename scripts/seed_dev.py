@@ -6,41 +6,56 @@ from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select
-from src.core.context import set_current_tenant_id
 from src.core.database import async_session_factory
 from src.modules.auth.domain.models import UsuarioCredencial
 from src.modules.auth.infrastructure.argon2_hasher import Argon2PasswordHasher
-from src.modules.identity.domain.models import Organizacao, Paciente, Profissional
+from src.modules.identity.domain.models import (
+    ConfiguracaoUnidade,
+    Paciente,
+    Profissional,
+)
+from src.modules.telemetry.domain.models import ConfiguracaoPlantao
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("medisync.seed_dev")
 
 
 async def main() -> None:
-    set_current_tenant_id(1)
+    """Popula o banco local com a unidade singleton, pacientes e médico demo."""
     async with async_session_factory() as session:
-        # 1. Garante Organização Tenant 1
-        stmt_org = select(Organizacao).where(Organizacao.id == 1)
-        res_org = await session.execute(stmt_org)
-        org = res_org.scalar_one_or_none()
+        # 1. Garante Configuração Singleton da Unidade SUS
+        stmt_unidade = select(ConfiguracaoUnidade).limit(1)
+        res_unidade = await session.execute(stmt_unidade)
+        unidade = res_unidade.scalar_one_or_none()
 
-        if org is None:
-            logger.info("Criando organização de demonstração (Tenant 1)...")
-            org = Organizacao(
-                id=1,
+        if unidade is None:
+            logger.info("Criando configuração da unidade de demonstração...")
+            unidade = ConfiguracaoUnidade(
                 cnpj="11223344000188",
                 razao_social="Hospital Municipal MediSync",
                 nome_fantasia="MediSync Demo",
                 modo_publico_sus=True,
+                cnes="0000000",
+                ibge_municipio="355030",
                 ativo=True,
             )
-            session.add(org)
+            session.add(unidade)
             await session.commit()
-            logger.info("Organização Tenant 1 criada com sucesso.")
+            logger.info("Configuração da unidade criada com sucesso.")
         else:
-            logger.info("Organização Tenant 1 já existente: %s", org.razao_social)
+            logger.info(
+                "Configuração da unidade já existente: %s", unidade.razao_social
+            )
 
-        # 2. Garante Pacientes de Teste
+        # 2. Garante Configuração Singleton do Plantão
+        stmt_plantao = select(ConfiguracaoPlantao).limit(1)
+        res_plantao = await session.execute(stmt_plantao)
+        if res_plantao.scalar_one_or_none() is None:
+            logger.info("Criando configuração padrão de plantão...")
+            session.add(ConfiguracaoPlantao())
+            await session.commit()
+
+        # 3. Garante Pacientes de Teste
         pacientes_demo = [
             {
                 "nome_completo": "Juliana Silva",
@@ -57,10 +72,7 @@ async def main() -> None:
         ]
 
         for dados in pacientes_demo:
-            stmt_pac = select(Paciente).where(
-                Paciente.organizacao_id == 1,
-                Paciente.telefone == dados["telefone"],
-            )
+            stmt_pac = select(Paciente).where(Paciente.telefone == dados["telefone"])
             res_pac = await session.execute(stmt_pac)
             pac = res_pac.scalars().first()
 
@@ -71,7 +83,6 @@ async def main() -> None:
                     dados["telefone"],
                 )
                 pac = Paciente(
-                    organizacao_id=1,
                     nome_completo=dados["nome_completo"],
                     cpf=dados["cpf"],
                     telefone=dados["telefone"],
@@ -85,7 +96,7 @@ async def main() -> None:
                     "Paciente '%s' (%s) já existente.", pac.nome_completo, pac.telefone
                 )
 
-        # 3. Garante Profissional Médico Plantonista Demo (Dr. Eduardo Rocha)
+        # 4. Garante Profissional Médico Plantonista Demo (Dr. Eduardo Rocha)
         med_id = UUID("018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e")
         stmt_prof = select(Profissional).where(Profissional.id == med_id)
         res_prof = await session.execute(stmt_prof)
@@ -95,7 +106,6 @@ async def main() -> None:
             logger.info("Criando perfil profissional do Dr. Eduardo Rocha...")
             prof = Profissional(
                 id=med_id,
-                organizacao_id=1,
                 cpf="11122233344",
                 nome_completo="Dr. Eduardo Rocha",
                 email="eduardo.rocha@medisync.com.br",
@@ -110,9 +120,8 @@ async def main() -> None:
         else:
             logger.info("Perfil profissional já existente: %s", prof.nome_completo)
 
-        # 4. Garante Credencial de Autenticação do Médico Demo
+        # 5. Garante Credencial de Autenticação do Médico Demo
         stmt_med = select(UsuarioCredencial).where(
-            UsuarioCredencial.organizacao_id == 1,
             UsuarioCredencial.identificador == "eduardo.rocha@medisync.com.br",
         )
         res_med = await session.execute(stmt_med)
@@ -123,7 +132,6 @@ async def main() -> None:
             hasher = Argon2PasswordHasher()
             med = UsuarioCredencial(
                 id=UUID("018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2f"),
-                organizacao_id=1,
                 usuario_id=med_id,
                 identificador="eduardo.rocha@medisync.com.br",
                 senha_hash=hasher.hash("Medisync@2026"),

@@ -27,7 +27,6 @@ def _row_to_historico_dto(row: Mapping[Any, Any]) -> AtendimentoHistoricoDTO:
     atend_id = raw_atend if isinstance(raw_atend, UUID) else UUID(str(raw_atend))
     return AtendimentoHistoricoDTO(
         atendimento_id=atend_id,
-        organizacao_id=int(row["organizacao_id"]),
         paciente_id=raw_pac if isinstance(raw_pac, UUID) else UUID(str(raw_pac)),
         status=str(row["status"]).strip().upper(),
         prioridade_clinica=int(row["prioridade_clinica"]),
@@ -47,7 +46,7 @@ class SqlAtendimentoReader:
     async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
         res = await self._session.execute(
             text(
-                "SELECT id, organizacao_id, paciente_id, medico_id, status, tcle_hash, "
+                "SELECT id, paciente_id, medico_id, status, tcle_hash, "
                 "chamada_iniciada_em, criado_em "
                 "FROM atendimentos WHERE id = :id"
             ),
@@ -61,7 +60,6 @@ class SqlAtendimentoReader:
         raw_pac = row.get("paciente_id")
         return AtendimentoResumoDTO(
             atendimento_id=row["id"],
-            organizacao_id=int(row["organizacao_id"]),
             medico_id=raw_med
             if isinstance(raw_med, UUID) or raw_med is None
             else UUID(str(raw_med)),
@@ -99,20 +97,18 @@ class SqlAtendimentoReader:
 
     async def listar_historico_paciente(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> list[AtendimentoHistoricoDTO]:
         res = await self._session.execute(
             text(
-                "SELECT id AS atendimento_id, organizacao_id, paciente_id, "
+                "SELECT id AS atendimento_id, paciente_id, "
                 "status, prioridade_clinica, criado_em, "
                 "chamada_finalizada_em AS finalizado_em, medico_id "
                 "FROM atendimentos "
-                "WHERE organizacao_id = :organizacao_id "
-                "AND paciente_id = :paciente_id "
+                "WHERE paciente_id = :paciente_id "
                 "ORDER BY criado_em DESC, id DESC"
             ),
-            {"organizacao_id": organizacao_id, "paciente_id": paciente_id},
+            {"paciente_id": paciente_id},
         )
         rows = res.mappings().all()
         return [_row_to_historico_dto(row) for row in rows]

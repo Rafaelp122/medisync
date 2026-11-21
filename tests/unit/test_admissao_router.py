@@ -6,25 +6,22 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from src.core.authz.token import create_access_token
 from src.core.config import get_settings
 from src.core.security import create_intake_token
 from src.main import create_app
-from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
 from src.modules.queue.application.dtos import AdmissaoAtendimentoResult
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.composition import get_fila_service
 
 
-def _make_intake_token(paciente_id: UUID, org_id: int) -> str:
+def _make_intake_token(paciente_id: UUID) -> str:
     settings = get_settings()
-    return create_intake_token(paciente_id, org_id, settings.SECRET_KEY)
+    return create_intake_token(paciente_id, settings.SECRET_KEY)
 
 
-def _make_jwt_token(user_id: UUID, org_id: int, papel: str = "PACIENTE") -> str:
-    service = JWTTokenService(secret_key=get_settings().JWT_SECRET_KEY)
-    return service.gerar_tokens(
-        usuario_id=user_id, organizacao_id=org_id, papel=papel
-    ).access_token
+def _make_jwt_token(user_id: UUID, papel: str = "PACIENTE") -> str:
+    return create_access_token(usuario_id=user_id, papel=papel)
 
 
 @pytest.mark.asyncio
@@ -34,7 +31,6 @@ async def test_admissao_sucesso_com_token_intake() -> None:
     paciente_id = uuid4()
     atendimento_id = uuid4()
     triagem_id = uuid4()
-    org_id = 42
 
     tcle_hash = "b" * 64
     mock_service = MagicMock(spec=FilaService)
@@ -42,7 +38,6 @@ async def test_admissao_sucesso_com_token_intake() -> None:
         return_value=AdmissaoAtendimentoResult(
             atendimento_id=atendimento_id,
             triagem_id=triagem_id,
-            organizacao_id=org_id,
             paciente_id=paciente_id,
             status_atendimento="APTO_PARA_CHAMADA",
             prioridade_clinica=3,
@@ -55,15 +50,12 @@ async def test_admissao_sucesso_com_token_intake() -> None:
     app.dependency_overrides[get_fila_service] = lambda: mock_service
 
     try:
-        token = _make_intake_token(paciente_id, org_id)
+        token = _make_intake_token(paciente_id)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/api/v1/fila/admissao",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
                 json={
                     "paciente_id": str(paciente_id),
                     "queixa_principal": "Febre e dor de cabeça há 2 dias",
@@ -78,7 +70,7 @@ async def test_admissao_sucesso_com_token_intake() -> None:
             assert data["atendimento_id"] == str(atendimento_id)
             assert data["triagem_id"] == str(triagem_id)
             assert data["paciente_id"] == str(paciente_id)
-            assert data["organizacao_id"] == org_id
+            assert "organizacao_id" not in data
             assert data["status_atendimento"] == "APTO_PARA_CHAMADA"
             assert data["prioridade_clinica"] == 3
             assert data["tcle_hash"] == tcle_hash
@@ -92,14 +84,12 @@ async def test_admissao_sucesso_com_token_jwt_paciente() -> None:
     """Verifica admissão autorizada com Bearer JWT de paciente autenticado."""
     app = create_app()
     paciente_id = uuid4()
-    org_id = 10
 
     mock_service = MagicMock(spec=FilaService)
     mock_service.admitir_paciente = AsyncMock(
         return_value=AdmissaoAtendimentoResult(
             atendimento_id=uuid4(),
             triagem_id=uuid4(),
-            organizacao_id=org_id,
             paciente_id=paciente_id,
             status_atendimento="APTO_PARA_CHAMADA",
             prioridade_clinica=4,
@@ -110,15 +100,12 @@ async def test_admissao_sucesso_com_token_jwt_paciente() -> None:
     app.dependency_overrides[get_fila_service] = lambda: mock_service
 
     try:
-        token = _make_jwt_token(paciente_id, org_id, papel="PACIENTE")
+        token = _make_jwt_token(paciente_id, papel="PACIENTE")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/api/v1/fila/admissao",
-                headers={
-                    "X-Tenant-ID": str(org_id),
-                    "Authorization": f"Bearer {token}",
-                },
+                headers={"Authorization": f"Bearer {token}"},
                 json={
                     "paciente_id": str(paciente_id),
                     "queixa_principal": "Dor leve no joelho",
@@ -135,13 +122,11 @@ async def test_admissao_rejeitada_sem_credencial_anonima() -> None:
     """Verifica que a tentativa de injeção anônima é bloqueada com 401."""
     app = create_app()
     paciente_id = uuid4()
-    org_id = 42
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
             "/api/v1/fila/admissao",
-            headers={"X-Tenant-ID": str(org_id)},
             json={
                 "paciente_id": str(paciente_id),
                 "queixa_principal": "Injeção não autorizada",
@@ -160,18 +145,14 @@ async def test_admissao_rejeitada_com_paciente_divergente_idor() -> None:
     app = create_app()
     paciente_autorizado = uuid4()
     paciente_alvo = uuid4()
-    org_id = 42
 
-    token = _make_intake_token(paciente_autorizado, org_id)
+    token = _make_intake_token(paciente_autorizado)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
             "/api/v1/fila/admissao",
-            headers={
-                "X-Tenant-ID": str(org_id),
-                "Authorization": f"Bearer {token}",
-            },
+            headers={"Authorization": f"Bearer {token}"},
             json={
                 "paciente_id": str(paciente_alvo),
                 "queixa_principal": "Tentativa de admissão fraudulenta",
@@ -182,32 +163,3 @@ async def test_admissao_rejeitada_com_paciente_divergente_idor() -> None:
         data = cast("dict[str, object]", resp.json())
         assert data["code"] == "FORBIDDEN"
         assert "Acesso negado" in str(data["detail"])
-
-
-@pytest.mark.asyncio
-async def test_admissao_rejeitada_com_organizacao_divergente() -> None:
-    """Verifica que token de org A não pode admitir na organização B."""
-    app = create_app()
-    paciente_id = uuid4()
-    org_a = 42
-    org_b = 99
-
-    token = _make_intake_token(paciente_id, org_a)
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/api/v1/fila/admissao",
-            headers={
-                "X-Tenant-ID": str(org_b),
-                "Authorization": f"Bearer {token}",
-            },
-            json={
-                "paciente_id": str(paciente_id),
-                "queixa_principal": "Queixa",
-                "tcle_texto": "TCLE",
-            },
-        )
-        assert resp.status_code == 403
-        data = cast("dict[str, object]", resp.json())
-        assert data["code"] == "FORBIDDEN"

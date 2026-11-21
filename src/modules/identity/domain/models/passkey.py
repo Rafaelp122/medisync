@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     DateTime,
     ForeignKey,
     Index,
@@ -31,29 +30,21 @@ class PacientePasskey(Base):
     __tablename__ = "paciente_passkeys"
     __table_args__ = (
         UniqueConstraint(
-            "organizacao_id",
             "credential_id",
-            name="uq_paciente_passkeys_org_cred",
+            name="uq_paciente_passkeys_cred",
         ),
-        Index("idx_paciente_passkeys_paciente", "organizacao_id", "paciente_id"),
+        Index("idx_paciente_passkeys_paciente", "paciente_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
     )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("organizacoes.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
     paciente_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("pacientes.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
-    credential_id: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
+    credential_id: Mapped[str] = mapped_column(String(512), nullable=False)
     public_key: Mapped[str] = mapped_column(Text, nullable=False)
     sign_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
@@ -67,7 +58,6 @@ class PacientePasskey(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
         credential_id: str,
         public_key: str,
@@ -75,10 +65,6 @@ class PacientePasskey(Base):
         device_name: str | None = None,
         id: UUID | None = None,
     ) -> None:
-        if organizacao_id <= 0:
-            raise ValidationError(
-                f"organizacao_id inválido: '{organizacao_id}'; esperado inteiro > 0."
-            )
         clean_cred = credential_id.strip()
         if not clean_cred:
             raise ValidationError(
@@ -98,7 +84,6 @@ class PacientePasskey(Base):
 
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             paciente_id=paciente_id,
             credential_id=clean_cred,
             public_key=clean_pub,

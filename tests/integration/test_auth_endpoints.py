@@ -1,6 +1,7 @@
-"""Integration tests for auth endpoints, anti-enumeration, and tenant isolation."""
+"""Integration tests for auth endpoints, anti-enumeration, and Anti-IDOR checks."""
 
 from typing import cast
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -10,8 +11,7 @@ from src.core.valkey import get_valkey_pool
 from src.modules.auth.composition import get_token_service
 
 from tests.factories.auth import persist_credencial
-from tests.factories.identity import make_organizacao, make_profissional
-from tests.factories.scenarios import seed_multi_tenant_orgs
+from tests.factories.identity import make_profissional
 
 pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 
@@ -22,13 +22,7 @@ async def test_auth_full_lifecycle_login_me_refresh_logout(
     async_client: AsyncClient,
 ) -> None:
     """Validate full authentication lifecycle: login, me, token rotation, and logout."""
-    org = make_organizacao(cnpj="88777666000155")
-    db_session.add(org)
-    await db_session.commit()
-    await db_session.refresh(org)
-
     medico = make_profissional(
-        org.id,
         cpf="11122233344",
         email="dr.lucas@telemed.com.br",
         papel="FATURAMENTO",
@@ -41,14 +35,11 @@ async def test_auth_full_lifecycle_login_me_refresh_logout(
 
     await persist_credencial(
         db_session,
-        organizacao_id=org.id,
         usuario_id=medico.id,
         identificador=medico.email,
         senha_pura="SenhaForte123!@#",
         papel=medico.papel,
     )
-
-    headers = {"X-Tenant-ID": str(org.id)}
 
     # 1. Login com credenciais válidas
     login_resp = await async_client.post(
@@ -57,7 +48,6 @@ async def test_auth_full_lifecycle_login_me_refresh_logout(
             "identificador": "dr.lucas@telemed.com.br",
             "senha": "SenhaForte123!@#",
         },
-        headers=headers,
     )
     assert login_resp.status_code == 200
     token_data = cast("dict[str, object]", login_resp.json())
@@ -77,25 +67,15 @@ async def test_auth_full_lifecycle_login_me_refresh_logout(
     access_token = cast("str", token_data["access_token"])
     refresh_token = cast("str", token_data["refresh_token"])
 
-    # 2. Consultar perfil em /auth/me usando Bearer token SEM X-Tenant-ID
-    me_resp_no_tenant = await async_client.get(
-        "/api/v1/auth/me",
-        headers={"Authorization": f"Bearer {access_token}"},
-    )
-    assert me_resp_no_tenant.status_code == 200
-    me_data_no_tenant = cast("dict[str, object]", me_resp_no_tenant.json())
-    assert me_data_no_tenant["usuario_id"] == str(medico.id)
-    assert me_data_no_tenant["organizacao_id"] == org.id
-
-    # Consultar perfil com X-Tenant-ID explícito
+    # 2. Consultar perfil em /auth/me usando Bearer token
     me_resp = await async_client.get(
         "/api/v1/auth/me",
-        headers={"Authorization": f"Bearer {access_token}", **headers},
+        headers={"Authorization": f"Bearer {access_token}"},
     )
     assert me_resp.status_code == 200
     me_data = cast("dict[str, object]", me_resp.json())
     assert me_data["usuario_id"] == str(medico.id)
-    assert me_data["organizacao_id"] == org.id
+    assert "organizacao_id" not in me_data
     assert me_data["identificador"] == "dr.lucas@telemed.com.br"
     assert me_data["papel"] == "FATURAMENTO"
     assert me_data["ativo"] is True
@@ -104,7 +84,6 @@ async def test_auth_full_lifecycle_login_me_refresh_logout(
     refresh_resp = await async_client.post(
         "/api/v1/auth/refresh",
         json={"refresh_token": refresh_token},
-        headers=headers,
     )
     assert refresh_resp.status_code == 200
     new_token_data = cast("dict[str, object]", refresh_resp.json())
@@ -118,7 +97,6 @@ async def test_auth_full_lifecycle_login_me_refresh_logout(
     stale_refresh_resp = await async_client.post(
         "/api/v1/auth/refresh",
         json={"refresh_token": refresh_token},
-        headers=headers,
     )
     assert stale_refresh_resp.status_code == 401
     stale_err = cast("dict[str, object]", stale_refresh_resp.json())
@@ -177,13 +155,7 @@ async def test_auth_anti_enumeration_and_lockout(
     async_client: AsyncClient,
 ) -> None:
     """Validate OWASP anti-enumeration and lockout on consecutive failed attempts."""
-    org = make_organizacao(cnpj="88777666000156")
-    db_session.add(org)
-    await db_session.commit()
-    await db_session.refresh(org)
-
     medico = make_profissional(
-        org.id,
         cpf="22233344455",
         email="dra.juliana@telemed.com.br",
         papel="MEDICO",
@@ -196,14 +168,11 @@ async def test_auth_anti_enumeration_and_lockout(
 
     await persist_credencial(
         db_session,
-        organizacao_id=org.id,
         usuario_id=medico.id,
         identificador=medico.email,
         senha_pura="SenhaCorreta123!",
         papel=medico.papel,
     )
-
-    headers = {"X-Tenant-ID": str(org.id)}
 
     # 1. Usuário inexistente retorna 401 genérico
     resp_absent = await async_client.post(
@@ -212,7 +181,6 @@ async def test_auth_anti_enumeration_and_lockout(
             "identificador": "inexistente@telemed.com.br",
             "senha": "SenhaQualquer123!",
         },
-        headers=headers,
     )
     assert resp_absent.status_code == 401
     err_absent = cast("dict[str, object]", resp_absent.json())
@@ -226,7 +194,6 @@ async def test_auth_anti_enumeration_and_lockout(
             "identificador": "dra.juliana@telemed.com.br",
             "senha": "SenhaErrada!",
         },
-        headers=headers,
     )
     assert resp_wrong.status_code == 401
     err_wrong = cast("dict[str, object]", resp_wrong.json())
@@ -241,7 +208,6 @@ async def test_auth_anti_enumeration_and_lockout(
                 "identificador": "dra.juliana@telemed.com.br",
                 "senha": "SenhaErrada!",
             },
-            headers=headers,
         )
         assert r.status_code == 401
 
@@ -252,7 +218,6 @@ async def test_auth_anti_enumeration_and_lockout(
             "identificador": "dra.juliana@telemed.com.br",
             "senha": "SenhaErrada!",
         },
-        headers=headers,
     )
     assert resp_blocked.status_code == 423
 
@@ -263,55 +228,8 @@ async def test_auth_anti_enumeration_and_lockout(
             "identificador": "dra.juliana@telemed.com.br",
             "senha": "SenhaCorreta123!",
         },
-        headers=headers,
     )
     assert resp_correct_but_blocked.status_code == 423
-
-
-@pytest.mark.asyncio
-async def test_auth_cross_tenant_isolation(
-    db_session: AsyncSession,
-    async_client: AsyncClient,
-) -> None:
-    """Validate cross-tenant credential isolation rejects login with 401."""
-    org_a, org_b = await seed_multi_tenant_orgs(
-        db_session,
-        cnpj_a="88777666000157",
-        cnpj_b="88777666000158",
-    )
-
-    medico_a = make_profissional(
-        org_a.id,
-        cpf="33344455566",
-        email="dr.tenant_a@telemed.com.br",
-        papel="MEDICO",
-        crm="11223",
-        crm_uf="MG",
-    )
-    db_session.add(medico_a)
-    await db_session.commit()
-    await db_session.refresh(medico_a)
-
-    await persist_credencial(
-        db_session,
-        organizacao_id=org_a.id,
-        usuario_id=medico_a.id,
-        identificador=medico_a.email,
-        senha_pura="SenhaOrgA123!",
-        papel=medico_a.papel,
-    )
-
-    # Tentar logar usando o cabeçalho do Tenant B com as credenciais do Tenant A
-    resp = await async_client.post(
-        "/api/v1/auth/login",
-        json={
-            "identificador": "dr.tenant_a@telemed.com.br",
-            "senha": "SenhaOrgA123!",
-        },
-        headers={"X-Tenant-ID": str(org_b.id)},
-    )
-    # Deve falhar com 401 por isolamento de tenant
-    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -319,10 +237,7 @@ async def test_auth_me_sem_bearer_retorna_401(
     async_client: AsyncClient,
 ) -> None:
     """Bearer ausente em /auth/me deve retornar 401 (travamento item 5.2)."""
-    resp = await async_client.get(
-        "/api/v1/auth/me",
-        headers={"X-Tenant-ID": "1"},
-    )
+    resp = await async_client.get("/api/v1/auth/me")
     assert resp.status_code == 401
 
 
@@ -333,75 +248,59 @@ async def test_auth_me_bearer_malformado_retorna_401(
     """Bearer malformado em /auth/me deve retornar 401 (travamento item 5.2)."""
     resp = await async_client.get(
         "/api/v1/auth/me",
-        headers={"Authorization": "Token abc", "X-Tenant-ID": "1"},
+        headers={"Authorization": "Token abc"},
     )
     assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_bearer_token_without_x_tenant_id_infers_tenant_for_tenant_dep(
+async def test_bearer_token_accesses_protected_routes_without_tenant_headers(
     db_session: AsyncSession,
     async_client: AsyncClient,
 ) -> None:
-    """Verify that omitting X-Tenant-ID header when sending a valid Bearer token
-    automatically resolves active tenant from JWT claims without 400 TENANT_INVALIDO.
-    """
-    from uuid import uuid4
-
-    org = make_organizacao(cnpj="88777666000190")
-    db_session.add(org)
-    await db_session.commit()
-    await db_session.refresh(org)
-
-    medico = make_profissional(
-        org.id,
+    """Verify protected routes rely exclusively on Bearer authentication and RBAC."""
+    faturamento = make_profissional(
         cpf="11122233390",
-        email="dr.tenantless@telemed.com.br",
+        email="dr.single@telemed.com.br",
         papel="FATURAMENTO",
         crm="12390",
         crm_uf="SP",
     )
-    db_session.add(medico)
+    db_session.add(faturamento)
     await db_session.commit()
-    await db_session.refresh(medico)
+    await db_session.refresh(faturamento)
 
     await persist_credencial(
         db_session,
-        organizacao_id=org.id,
-        usuario_id=medico.id,
-        identificador=medico.email,
+        usuario_id=faturamento.id,
+        identificador=faturamento.email,
         senha_pura="SenhaForte123!@#",
-        papel=medico.papel,
+        papel=faturamento.papel,
     )
 
     login_resp = await async_client.post(
         "/api/v1/auth/login",
         json={
-            "identificador": "dr.tenantless@telemed.com.br",
+            "identificador": "dr.single@telemed.com.br",
             "senha": "SenhaForte123!@#",
         },
-        headers={"X-Tenant-ID": str(org.id)},
     )
     assert login_resp.status_code == 200
     access_token = cast("str", login_resp.json()["access_token"])
 
-    # Query protected /auth/me WITHOUT X-Tenant-ID header
     me_resp = await async_client.get(
         "/api/v1/auth/me",
         headers={"Authorization": f"Bearer {access_token}"},
     )
     assert me_resp.status_code == 200
-    assert cast("dict[str, object]", me_resp.json())["organizacao_id"] == org.id
+    assert me_resp.json()["usuario_id"] == str(faturamento.id)
 
-    # Query protected endpoint that uses TenantDep without X-Tenant-ID
-    pac_id = uuid4()
+    # Role FATURAMENTO cannot access patient dependents endpoint (403 RBAC)
     pac_resp = await async_client.get(
-        f"/api/v1/pacientes/{pac_id}/dependentes",
+        f"/api/v1/pacientes/{uuid4()}/dependentes",
         headers={"Authorization": f"Bearer {access_token}"},
     )
-    # Shouldn't fail with 400 TENANT_INVALIDO
-    assert pac_resp.status_code != 400
-    assert cast("dict[str, object]", pac_resp.json()).get("code") != "TENANT_INVALIDO"
+    assert pac_resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -412,13 +311,7 @@ async def test_auth_cookie_lifecycle_and_missing_token_rejection(
     """Validate AC-01 to AC-03: Cookie-only refresh,
     missing token 401, and logout purge.
     """
-    org = make_organizacao(cnpj="88777666000199")
-    db_session.add(org)
-    await db_session.commit()
-    await db_session.refresh(org)
-
     medico = make_profissional(
-        org.id,
         cpf="11122233399",
         email="dr.cookie@telemed.com.br",
         papel="FATURAMENTO",
@@ -431,7 +324,6 @@ async def test_auth_cookie_lifecycle_and_missing_token_rejection(
 
     await persist_credencial(
         db_session,
-        organizacao_id=org.id,
         usuario_id=medico.id,
         identificador=medico.email,
         senha_pura="SenhaForte123!@#",
@@ -440,11 +332,7 @@ async def test_auth_cookie_lifecycle_and_missing_token_rejection(
 
     # 1. Requisicao a /refresh sem cookie e sem body deve falhar com 401 TOKEN_INVALIDO
     async_client.cookies.clear()
-    empty_refresh_resp = await async_client.post(
-        "/api/v1/auth/refresh",
-        json={},
-        headers={"X-Tenant-ID": str(org.id)},
-    )
+    empty_refresh_resp = await async_client.post("/api/v1/auth/refresh", json={})
     assert empty_refresh_resp.status_code == 401
     err_data = cast("dict[str, object]", empty_refresh_resp.json())
     assert err_data["code"] == "TOKEN_INVALIDO"
@@ -456,7 +344,6 @@ async def test_auth_cookie_lifecycle_and_missing_token_rejection(
             "identificador": "dr.cookie@telemed.com.br",
             "senha": "SenhaForte123!@#",
         },
-        headers={"X-Tenant-ID": str(org.id)},
     )
     assert login_resp.status_code == 200
     set_cookie_header = login_resp.headers.get("set-cookie", "")
@@ -466,10 +353,7 @@ async def test_auth_cookie_lifecycle_and_missing_token_rejection(
     assert "path=/api/v1/auth" in set_cookie_header.lower()
 
     # 3. Silent refresh usando EXCLUSIVAMENTE o cookie no jar (body vazio)
-    cookie_refresh_resp = await async_client.post(
-        "/api/v1/auth/refresh",
-        json={},
-    )
+    cookie_refresh_resp = await async_client.post("/api/v1/auth/refresh", json={})
     assert cookie_refresh_resp.status_code == 200
     cookie_refresh_data = cast("dict[str, object]", cookie_refresh_resp.json())
     assert "access_token" in cookie_refresh_data
@@ -478,17 +362,11 @@ async def test_auth_cookie_lifecycle_and_missing_token_rejection(
     assert "refresh_token=" in new_set_cookie
 
     # 4. Logout usando o cookie do jar (sem refresh_token no body)
-    logout_resp = await async_client.post(
-        "/api/v1/auth/logout",
-        json={},
-    )
+    logout_resp = await async_client.post("/api/v1/auth/logout", json={})
     assert logout_resp.status_code == 204
     logout_cookie = logout_resp.headers.get("set-cookie", "")
     assert "max-age=0" in logout_cookie.lower()
 
     # 5. Tentativa de refresh subsequente com cookie revogado/purgado
-    revoked_resp = await async_client.post(
-        "/api/v1/auth/refresh",
-        json={},
-    )
+    revoked_resp = await async_client.post("/api/v1/auth/refresh", json={})
     assert revoked_resp.status_code == 401

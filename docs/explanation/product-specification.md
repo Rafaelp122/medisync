@@ -21,7 +21,7 @@ As restrições abaixo delimitam as fronteiras legais e deontológicas do sistem
 * **RN-REG-02 (Privacidade, LGPD Art. 11, Identificação CFM e TCLE Obrigatório)**: Tratando-se de tratamento de dados sensíveis de saúde, o ingresso na esteira do pronto-atendimento virtual exige a coleta prévia e inequívoca do Termo de Consentimento Livre e Esclarecido (TCLE) com controle criptográfico imutável. Em conformidade com as Resoluções CFM nº 1.821/2007 e 2.314/2022, o Prontuário Eletrônico do Paciente (PEP) deve conter obrigatoriamente:
   1. Identificação civil completa (Nome completo, nome social se houver, sexo biológico e data de nascimento);
   2. Nome da mãe (chave indispensável para desambiguação perante CADSUS e Receita Federal);
-  3. Endereço completo com CEP e município de residência (informação mandatória para envio de socorro móvel SAMU 192, dispensação farmacêutica e regulação de consórcio intermunicipal).
+  3. Endereço completo com CEP e município de residência (informação mandatória para envio de socorro móvel SAMU 192, dispensação farmacêutica e faturamento BPA-I SUS).
   Em atendimentos pediátricos ou de incapazes civis, o responsável legal é formalmente qualificado e outorga o consentimento do TCLE em nome do paciente.
 * **RN-REG-03 (De-Manchesterização e Abertura Clínica - Parecer CREMESP nº 278.262/2023)**: O software é estritamente desvinculado de protocolos proprietários fechados sujeitos a licenças restritivas ou cobrança de royalties comerciais (como o Manchester Triage System). Em consonância com o Parecer Consulta CREMESP nº 278.262/2023, a avaliação inicial adota taxonomia clínica aberta, checklist eliminatório de bandeiras vermelhas (*Red Flags*: rebaixamento de nível de consciência, dor torácica aguda/opressiva, dispneia em repouso, convulsão ativa, déficit neurológico súbito) com encaminhamento prioritário imediato ao socorro pré-hospitalar (SAMU 192) e parametrização do Acolhimento com Classificação de Risco (ACR) do SUS.
 * **RN-NEG-01 (Universalidade e Gratuidade Universal - Art. 196 da CF/88 e Portaria MS nº 3.232/2024)**: O acesso ao pronto-atendimento virtual é universal, integral e absolutamente gratuito na porta de entrada, sendo expressamente vedada a cobrança de quaisquer taxas, copagamentos, cadastramento de cartões ou barreiras financeiras aos cidadãos. A inserção na esteira assistencial ocorre de forma desimpedida mediante identificação pelo CADSUS/Gov.br ou CPF.
@@ -52,11 +52,11 @@ As regras de negócio abaixo constituem as condições de integridade formal e i
   2. Caso decorram os 45 segundos sem que o paciente ingresse na sala de vídeo, o atendimento transiciona deterministicamente para `PACIENTE_AUSENTE`, os locks de reserva são liberados e o médico fica imediatamente disponível para convocar o próximo paciente.
 
 ### RN03 — Qualificação Cadastral SUS, Fila de Aptos e Chamada Segura
-* **Ciclo de Estados Contratual e Admissão Direta SUS**: Em conformidade com o Art. 196 da CF/88 e a ADR-012 (§4.4 e §5), a admissão após acolhimento e aceite do TCLE persiste o atendimento diretamente com status `APTO_PARA_CHAMADA` e inserção atômica no ZSET `fila:{org}:aptos` do Valkey. O ciclo de estados assistencial canônico percorre:
+* **Ciclo de Estados Contratual e Admissão Direta SUS**: Em conformidade com o Art. 196 da CF/88 e a ADR-012 / ADR-013, a admissão após acolhimento e aceite do TCLE persiste o atendimento diretamente com status `APTO_PARA_CHAMADA` e inserção atômica no ZSET `fila:aptos` do Valkey. O ciclo de estados assistencial canônico percorre:
   $$\text{APTO\_PARA\_CHAMADA} \longrightarrow \text{CHAMANDO\_PACIENTE} \longrightarrow \text{EM\_ATENDIMENTO} \longrightarrow \text{CONCLUIDO} \text{ / } \text{PACIENTE\_AUSENTE}$$
   Elimina-se a latência fictícia no ingresso da fila e qualquer menção a `TRIADO_AGUARDANDO_ELEGIBILIDADE` como etapa ou estado obrigatório na jornada do usuário SUS.
 * **Invariante de Início Clínico**: Nenhuma consulta médica pode transicionar para o status `EM_ATENDIMENTO` sem que o atendimento tenha alcançado previamente o status `APTO_PARA_CHAMADA`.
-* **Qualificação Cadastral SUS em Segundo Plano**: A validação demográfica perante a base CADSUS e checagem de vínculo com o município consorciado ocorre de forma assíncrona (Fase 2), enriquecendo o prontuário para faturamento BPA-I / SISAB (RF-08) sem reter o paciente nem postergar a convocação clínica.
+* **Qualificação Cadastral SUS em Segundo Plano**: A validação demográfica perante a base CADSUS ocorre de forma assíncrona (Fase 2), enriquecendo o prontuário para faturamento BPA-I / SISAB (RF-08) sem reter o paciente nem postergar a convocação clínica.
 * **Desvio Temporário e Regularização em Contingência**: O estado transitório `TRIADO_AGUARDANDO_ELEGIBILIDADE` atua estritamente como exceção em cenários de contingência cadastral ou regularização assistencial assíncrona. Caso um atendimento se encontre temporariamente nessa condição, a convocação médica seleciona o próximo paciente apto no topo da fila (`APTO_PARA_CHAMADA`), assegurando que a regularização posterior via `/api/v1/fila/atendimentos/{atendimento_id}/regularizar` preserve integralmente a antiguidade original acumulada ($T_0$).
 
 ### RN04 — Redirecionamento Mandatório, Checklist de Red Flags e Salvaguarda SAMU 192 (Parecer CREMESP nº 278.262/2023)
@@ -101,7 +101,7 @@ Os requisitos funcionais descrevem o comportamento observável da solução a pa
 
 ### RF-02: Qualificação Cadastral SUS e Enriquecimento Clínico (Cadastro Progressivo - Fase 2)
 * **Atores**: Sistema (Rotina em Segundo Plano) e Paciente.
-* **Comportamento**: Em paralelo à permanência do paciente na fila, rotinas assíncronas realizam a qualificação cadastral do cidadão (validação de CPF perante a base CADSUS e município consorciado). Simultaneamente, a interface convida o paciente a completar os dados mandatórios do CFM (nome da mãe, sexo biológico, endereço completo com CEP, município de residência, alergias medicamentosas e nome social conforme Resolução CFM nº 1.821/2007).
+* **Comportamento**: Em paralelo à permanência do paciente na fila, rotinas assíncronas realizam a qualificação cadastral do cidadão (validação de CPF perante a base CADSUS). Simultaneamente, a interface convida o paciente a completar os dados mandatórios do CFM (nome da mãe, sexo biológico, endereço completo com CEP, município de residência, alergias medicamentosas e nome social conforme Resolução CFM nº 1.821/2007).
 
 ### RF-03: Convocação, Ingresso na Teleconsulta e Resolução de No-Show
 * **Atores**: Médico Plantonista e Paciente.
@@ -129,9 +129,9 @@ Os requisitos funcionais descrevem o comportamento observável da solução a pa
   1. Consolidação automática do procedimento no lote de produção ambulatorial BPA-I (Boletim de Produção Ambulatorial Individualizado) e alimentação do SISAB/e-SUS sob o procedimento SIGTAP `03.01.01.025-0` e ponto de telessaúde CNES 160/006;
   2. Emissão do evento de auditoria `PRODUCAO_AMBULATORIAL_CONSOLIDADA` para cômputo dos repasses do incentivo eMulti (R$ 2.500/mês) e prestação de contas federativa municipal.
 
-### RF-09: Parametrização Dinâmica de Políticas Consorciais e Operacionais
+### RF-09: Parametrização Dinâmica de Políticas Operacionais da Unidade
 * **Ator**: Diretor Clínico e Gestor de Operações.
-* **Comportamento**: Permite configurar e ajustar dinamicamente os parâmetros operacionais da unidade e do consórcio intermunicipal (Lei nº 11.107/2005): metas de SLA de espera por nível de risco ACR, meta de Tempo Médio de Atendimento (TMA), margem estocástica de segurança operacional ($\alpha \in [1{,}20; 1{,}30]$), cotas diárias de admissão por turno e por município consorciado para cumprimento do limite de despesa da LRF (54%).
+* **Comportamento**: Permite configurar e ajustar dinamicamente os parâmetros operacionais da unidade na tabela singleton `configuracoes_plantao`: metas de SLA de espera por nível de risco ACR, meta de Tempo Médio de Atendimento (TMA), margem estocástica de segurança operacional ($\alpha \in [1{,}20; 1{,}30]$) e cotas diárias de admissão da unidade.
 
 ### RF-10: Telemetria Operacional, Governança e Auditoria de Capacidade
 * **Ator**: Diretor Clínico e Gestor de Operações.
@@ -141,7 +141,7 @@ Os requisitos funcionais descrevem o comportamento observável da solução a pa
 
 ## 4. Requisitos de Transição e Implantação
 
-* **RT-01 (Implantação 100% SUS, Consorcial ou Single-Tenant)**: Suporte a arquivos declarativos de configuração provisionando a plataforma sob a esteira 100% SUS com isolamento multi-tenant via PostgreSQL RLS por município consorciado (`MULTI_TENANCY_ENABLED=true`), suporte opcional a implantação dedicada em município único (`MULTI_TENANCY_ENABLED=false` com `DEFAULT_TENANT_ID`), parametrização de CNES 160/006, agenda multiprofissional eMulti (Portaria GM/MS nº 635/2023) e exportadores de lotes BPA-I e SISAB.
+* **RT-01 (Implantação 100% SUS em Plataforma Única)**: Suporte a provisionamento declarativo da plataforma sob a esteira 100% SUS sem multi-tenancy nem RLS ([ADR-013](../adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.md)), com parametrização de unidade singleton (`configuracoes_unidade`: CNES, CNPJ, IBGE), agenda multiprofissional eMulti (Portaria GM/MS nº 635/2023) e exportadores de lotes BPA-I e SISAB.
 * **RT-02 (Carga de Terminologias em Saúde)**: Rotinas automatizadas de inicialização de dados contendo tabelas abertas de terminologias clínicas (taxonomia ACR, CID-10 e tabela de procedimentos ambulatoriais).
 * **RT-03 (Documentação Orientada ao Padrão Diátaxis)**: Repositório organizado segundo as quatro dimensões de documentação técnica: Tutoriais de implantação, Guias de como fazer, Referência técnica de contratos e Explicações conceituais de filas e regras de negócio.
 
@@ -159,7 +159,7 @@ A matriz abaixo estabelece a relação auditável ponta a ponta entre as Necessi
 | **NEC-04 (Anti-Deadlock)** | Zero *overbooking* e resolução de *no-show* | RF-03 (Convocação, Ingresso e No-Show) | RN02 (Ring Timeout 45s / No-Show) | RNF-01 (Atomicidade de Lock) |
 | **NEC-05 (PEP e Autonomia)** | Soberania médica CFM nº 2.314/2022 | RF-07 (Consulta, PEP e Prescrição) | RN06 (Sem Desconexão por Tempo), RN08 (IA) & RN09 (Atestados) | RNF-04 (WebRTC) & RNF-06 (ICP) |
 | **NEC-06 (Consolidação SUS)** | Produção BPA-I / SISAB sob SIGTAP 03.01.01.025-0 | RF-02 (Qualificação), RF-05 (Exceção) & RF-08 (Consolidação Ambulatorial) | RN03 (Invariante de Qualificação) & RN-NEG-01 | RNF-02 (Resiliência) & RNF-09 |
-| **NEC-07 (Governança Consorcial)** | Parametrização consorcial e gestão de capacidade LRF | RF-04 (Backpressure) & RF-09 (Políticas Consorciais) | RN05 (Fator $\alpha$ e Transbordo) | RNF-08 (Orquestração) & RT-01 |
+| **NEC-07 (Governança Operacional)** | Parametrização operacional e gestão de capacidade da unidade | RF-04 (Backpressure) & RF-09 (Políticas de Plantão) | RN05 (Fator $\alpha$ e Transbordo) | RNF-08 (Orquestração) & RT-01 |
 | **NEC-08 (Governança)** | Decisões baseadas em métricas e auditoria | RF-10 (Telemetria Operacional e SLA) | RN07 (Auditoria Append-Only UTC) | RNF-10 (Latência Telemetria $< 5\text{ s}$) |
 
 ---

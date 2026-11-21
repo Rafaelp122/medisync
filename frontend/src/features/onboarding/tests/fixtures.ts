@@ -10,7 +10,6 @@ import type { EnrichmentFase2FormData, IntakeFase1FormData } from "../schemas/on
 export const MOCK_PACIENTE_ID = "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c";
 export const MOCK_ATENDIMENTO_ID = "018f3a5b-0000-4b2c-8b2c-018f3a5b7b2c";
 export const MOCK_TRIAGEM_ID = "018f3a5b-1111-4b2c-8b2c-018f3a5b7b2c";
-export const MOCK_ORGANIZACAO_ID = 1;
 export const MOCK_CPF_VALIDO = "52998224725";
 export const MOCK_CNS_VALIDO = "100000000000007";
 export const MOCK_CEP_VALIDO = "01310100";
@@ -57,7 +56,6 @@ export function createAdmissaoResponse(overrides?: Partial<AdmissaoResponse>): A
   return {
     atendimento_id: MOCK_ATENDIMENTO_ID,
     triagem_id: MOCK_TRIAGEM_ID,
-    organizacao_id: MOCK_ORGANIZACAO_ID,
     paciente_id: MOCK_PACIENTE_ID,
     status_atendimento: "TRIADO_AGUARDANDO_ELEGIBILIDADE",
     prioridade_clinica: 3,

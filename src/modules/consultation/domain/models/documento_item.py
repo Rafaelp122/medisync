@@ -1,10 +1,9 @@
-"""Prescription document item model with explicit multi-tenant RLS isolation."""
+"""Prescription document item model."""
 
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     ForeignKey,
     Index,
@@ -28,19 +27,13 @@ if TYPE_CHECKING:
 
 
 class DocumentoItem(Base):
-    """Prescription item entity adhering to PostgreSQL Row Level Security (RLS)."""
+    """Prescription item entity linked to DocumentoClinico."""
 
     __tablename__ = "documento_itens"
-    __table_args__ = (
-        Index("idx_documento_itens_doc", "documento_id"),
-        Index("idx_documento_itens_org", "organizacao_id"),
-    )
+    __table_args__ = (Index("idx_documento_itens_doc", "documento_id"),)
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid7
-    )
-    organizacao_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organizacoes.id", ondelete="RESTRICT"), nullable=False
     )
     documento_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -63,7 +56,6 @@ class DocumentoItem(Base):
 
     def __init__(
         self,
-        organizacao_id: int,
         documento_id: UUID,
         medicamento: str,
         dosagem: str,
@@ -73,12 +65,6 @@ class DocumentoItem(Base):
         controle_especial: bool = False,
         id: UUID | None = None,
     ) -> None:
-        if organizacao_id <= 0:
-            raise ConsultaInvalidaError(
-                f"organizacao_id inválido: {organizacao_id}; "
-                "deve ser um identificador positivo (> 0)."
-            )
-
         if not medicamento or not medicamento.strip():
             raise ConsultaInvalidaError(
                 f"Nome do medicamento é obrigatório e não pode ser vazio: "
@@ -104,7 +90,6 @@ class DocumentoItem(Base):
 
         super().__init__(
             id=id or uuid7(),
-            organizacao_id=organizacao_id,
             documento_id=documento_id,
             medicamento=medicamento.strip(),
             dosagem=dosagem.strip(),

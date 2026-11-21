@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict
 class LoginCommand:
     """Input command for authenticating user credentials."""
 
-    organizacao_id: int
     identificador: str
     senha: str
     client_ip: str
@@ -22,7 +21,6 @@ class LoginCommand:
 class CadastrarCredencialCommand:
     """Input command for provisioning or resetting an authentication credential."""
 
-    organizacao_id: int
     usuario_id: UUID
     identificador: str
     senha_pura: str
@@ -47,7 +45,6 @@ class TokenPayloadDTO:
     """Decoded and validated JWT claims."""
 
     sub: UUID
-    org_id: int
     papel: str
     exp: datetime
     jti: str
@@ -68,7 +65,6 @@ class AtivarMfaCommand:
     """Command to activate second-factor TOTP for a user."""
 
     usuario_id: UUID
-    organizacao_id: int
     codigo: str
 
 
@@ -194,7 +190,6 @@ class WebAuthnRegisterOptionsDTO:
 class WebAuthnRegisterVerifyCommand:
     """Command encapsulating patient passkey attestation payload verification."""
 
-    organizacao_id: int
     paciente_id: UUID
     id: str
     raw_id: str
@@ -234,7 +229,6 @@ class WebAuthnAuthOptionsDTO:
 class WebAuthnAuthVerifyCommand:
     """Command encapsulating patient passkey assertion verification."""
 
-    organizacao_id: int
     id: str
     raw_id: str
     response: dict[str, object] = field(default_factory=dict)
@@ -245,7 +239,6 @@ class WebAuthnAuthVerifyCommand:
 class RegistrarPacienteCommand:
     """Command encapsulating citizen self-service registration and client IP."""
 
-    organizacao_id: int
     cpf: str
     nome_completo: str
     data_nascimento: date
@@ -271,7 +264,6 @@ class RegistrarPacienteOutputDTO:
 class IdentificarPacienteCommand:
     """Command for anti-enumeration patient identification lookup."""
 
-    organizacao_id: int
     identificador: str
     client_ip: str = "127.0.0.1"
 
@@ -290,7 +282,6 @@ class IdentificarPacienteOutputDTO:
 class LoginPacienteSenhaCommand:
     """Command encapsulating patient password fallback login and client IP."""
 
-    organizacao_id: int
     identificador: str
     senha: str
     client_ip: str = "127.0.0.1"

@@ -30,7 +30,7 @@ export const healthcheckHealthzGet = <ThrowOnError extends boolean = false>(opti
  *
  * Autentica o usuário corporativo emitindo par de tokens de acesso e atualização.
  *
- * Regras: RN-AUT-01, RN-AUT-05, RN-AUT-08, OWASP ASVS v4.0 (V3.5.2).
+ * Regras: RN-AUT-01, RN-AUT-05, RN-AUT-08, ADR-013, OWASP ASVS v4.0 (V3.5.2).
  * Documentação: docs/explanation/domains/auth-domain.md
  */
 export const loginApiV1AuthLoginPost = <ThrowOnError extends boolean = false>(options: Options<LoginApiV1AuthLoginPostData, ThrowOnError>): RequestResult<LoginApiV1AuthLoginPostResponses, LoginApiV1AuthLoginPostErrors, ThrowOnError> => (options.client ?? client).post<LoginApiV1AuthLoginPostResponses, LoginApiV1AuthLoginPostErrors, ThrowOnError>({
@@ -176,7 +176,7 @@ export const postAuthPacienteCadsus = <ThrowOnError extends boolean = false>(opt
 /**
  * Auto-cadastro do cidadão com disparo inicial de OTP
  *
- * Registra novo paciente na organização com aceite LGPD, credencial opcional (e-mail/senha Argon2id) e envio inicial de código OTP via SMS.
+ * Registra novo paciente na plataforma com aceite LGPD, credencial opcional (e-mail/senha Argon2id) e envio inicial de código OTP via SMS.
  */
 export const postAuthPatientRegister = <ThrowOnError extends boolean = false>(options: Options<PostAuthPatientRegisterData, ThrowOnError>): RequestResult<PostAuthPatientRegisterResponses, PostAuthPatientRegisterErrors, ThrowOnError> => (options.client ?? client).post<PostAuthPatientRegisterResponses, PostAuthPatientRegisterErrors, ThrowOnError>({
     url: '/api/v1/auth/patient/register',
@@ -308,7 +308,7 @@ export const enrichmentFase2ApiV1OnboardingFase2Post = <ThrowOnError extends boo
 /**
  * Listar dependentes do titular
  *
- * Recupera a lista de todos os dependentes vinculados ao paciente titular na organização.
+ * Recupera a lista de todos os dependentes vinculados ao paciente titular autenticado.
  */
 export const listarDependentesApiV1PacientesIdDependentesGet = <ThrowOnError extends boolean = false>(options: Options<ListarDependentesApiV1PacientesIdDependentesGetData, ThrowOnError>): RequestResult<ListarDependentesApiV1PacientesIdDependentesGetResponses, ListarDependentesApiV1PacientesIdDependentesGetErrors, ThrowOnError> => (options.client ?? client).get<ListarDependentesApiV1PacientesIdDependentesGetResponses, ListarDependentesApiV1PacientesIdDependentesGetErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -334,7 +334,7 @@ export const cadastrarDependenteApiV1PacientesIdDependentesPost = <ThrowOnError 
 /**
  * Admissão clínica e triagem no PA Virtual
  *
- * Classifica o risco clínico pelo Protocolo Manchester/ACR, valida TCLE e backpressure estocástico, e persiste atomicamente atendimento e triagem. Requer credencial de autenticação válida (token provisório de acolhimento ou token de acesso) com posse sobre o paciente_id e organização para prevenir injeção anônima (Anti-IDOR).
+ * Classifica o risco clínico pelo Protocolo Manchester/ACR, valida TCLE e backpressure estocástico, e persiste atomicamente atendimento e triagem. Requer credencial de autenticação válida (token provisório de acolhimento ou token de acesso) com posse sobre o paciente_id para prevenir injeção anônima (Anti-IDOR).
  */
 export const admitirPacienteApiV1FilaAdmissaoPost = <ThrowOnError extends boolean = false>(options: Options<AdmitirPacienteApiV1FilaAdmissaoPostData, ThrowOnError>): RequestResult<AdmitirPacienteApiV1FilaAdmissaoPostResponses, AdmitirPacienteApiV1FilaAdmissaoPostErrors, ThrowOnError> => (options.client ?? client).post<AdmitirPacienteApiV1FilaAdmissaoPostResponses, AdmitirPacienteApiV1FilaAdmissaoPostErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -490,10 +490,9 @@ export const salvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPost = <ThrowO
 /**
  * Acesso ao prontuário médico protegido por RBAC e ABAC clínico
  *
- * Retorna o prontuário eletrônico mediante verificação em 3 camadas:
+ * Retorna o prontuário eletrônico mediante verificação em 2 camadas:
  * 1. Camada 1 (Macro RBAC): papel MEDICO.
- * 2. Camada 2 (RLS): isolamento de tenant.
- * 3. Camada 3 (ABAC Clínico): médico assistente + TCLE assinado + status ativo.
+ * 2. Camada 2 (ABAC Clínico): médico assistente + TCLE assinado + status ativo.
  */
 export const obterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet = <ThrowOnError extends boolean = false>(options: Options<ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetData, ThrowOnError>): RequestResult<ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetResponses, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetErrors, ThrowOnError> => (options.client ?? client).get<ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetResponses, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -565,11 +564,7 @@ export const verificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescript
 export const finalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePost = <ThrowOnError extends boolean = false>(options: Options<FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostData, ThrowOnError>): RequestResult<FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostErrors, ThrowOnError> => (options.client ?? client).post<FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/consultations/{atendimento_id}/finalize',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
+    ...options
 });
 
 /**
@@ -637,7 +632,7 @@ export const obterPainelTelemetriaApiV1TelemetriaPainelGet = <ThrowOnError exten
 /**
  * Consulta parametrização de políticas do plantão (RF-09)
  *
- * Consulta os parâmetros ativos do plantão para a organização (médicos planejados, fator alpha, cota diária, TMA padrão e metas de SLA). Se inexistente, inicializa e persiste a configuração default.
+ * Consulta os parâmetros ativos do plantão da plataforma (médicos planejados, fator alpha, cota diária, TMA padrão e metas de SLA). Se inexistente, inicializa e persiste a configuração default.
  */
 export const obterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGet = <ThrowOnError extends boolean = false>(options?: Options<ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetData, ThrowOnError>): RequestResult<ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -648,7 +643,7 @@ export const obterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGet = <ThrowOnE
 /**
  * Atualiza parametrização de políticas do plantão (RF-09)
  *
- * Atualiza as políticas e metas de SLA do plantão para a organização, validando limites e invariantes de domínio, invalidando o cache do painel e persistindo as alterações atomicamente.
+ * Atualiza as políticas e metas de SLA do plantão da plataforma, validando limites e invariantes de domínio, invalidando o cache do painel e persistindo as alterações atomicamente.
  */
 export const atualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut = <ThrowOnError extends boolean = false>(options: Options<AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutData, ThrowOnError>): RequestResult<AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutErrors, ThrowOnError> => (options.client ?? client).put<AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

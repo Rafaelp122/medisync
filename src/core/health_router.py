@@ -3,8 +3,8 @@
 from fastapi import APIRouter
 
 from src.core.config import get_settings
-from src.core.context import get_current_request_id, get_current_tenant_id
 from src.core.dependencies import ValkeyDep
+from src.core.logging import get_current_request_id
 from src.core.schemas import HealthCheckResponse, ValkeyHealth
 from src.core.valkey import check_valkey_health
 
@@ -29,7 +29,6 @@ async def healthcheck(
     return HealthCheckResponse(
         status="ok",
         version=settings.APP_VERSION,
-        tenant_id=get_current_tenant_id(),
         request_id=get_current_request_id(),
         valkey=valkey_telemetry,
     )

@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
 from src.core.authz.roles import Role
 from src.core.authz.token import create_access_token
-from src.core.errors import TenantInvalidoError
 from src.modules.auth.application.dtos import (
     VerificarOtpOutputDTO,
     WebAuthnAllowCredentialDTO,
@@ -54,7 +53,7 @@ _DEFAULT_ALLOWED_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
 class PatientWebAuthnService:
     """Serviço de registro e autenticação WebAuthn / Passkeys para pacientes.
 
-    Regras: RF-01, RF-07, ADR-005 (FIDO2/Passwordless), LGPD Art. 11 e US-14.
+    Regras: RF-01, RF-07, ADR-005 (FIDO2/Passwordless), ADR-013, LGPD Art. 11 e US-14.
     Documentação: docs/user-stories/US-14-biometria-passkeys-webauthn.md
     """
 
@@ -96,11 +95,13 @@ class PatientWebAuthnService:
                 return
             if not self._allow_memory_fallback:
                 raise WebAuthnChallengeInvalidoError(
-                    "Serviço de desafios WebAuthn (Valkey) indisponível no momento."
+                    "Serviço de desafios WebAuthn (Valkey) indisponível para "
+                    f"chave '{key}'."
                 )
         elif not self._allow_memory_fallback:
             raise WebAuthnChallengeInvalidoError(
-                "Serviço de desafios WebAuthn (Valkey) não configurado neste perfil."
+                "Serviço de desafios WebAuthn (Valkey) não configurado neste perfil "
+                f"(allow_memory_fallback={self._allow_memory_fallback!r})."
             )
 
         expires_at = time.time() + WEBAUTHN_CHALLENGE_TTL_SECONDS
@@ -132,7 +133,8 @@ class PatientWebAuthnService:
             logger.warning("Valkey getdel webauthn challenge failed: %s", exc)
             if not self._allow_memory_fallback:
                 raise WebAuthnChallengeInvalidoError(
-                    "Falha ao consumir desafio WebAuthn no armazenamento distribuído."
+                    "Falha ao consumir desafio WebAuthn no armazenamento distribuído "
+                    f"(chave='{key}'): {exc}."
                 ) from exc
             return None
 
@@ -154,16 +156,13 @@ class PatientWebAuthnService:
             return None
         return challenge
 
-    async def _resolve_user_descriptor(
-        self, organizacao_id: int, paciente_id: UUID
-    ) -> WebAuthnUserDTO:
+    async def _resolve_user_descriptor(self, paciente_id: UUID) -> WebAuthnUserDTO:
         user_handle = base64.urlsafe_b64encode(str(paciente_id).encode("utf-8")).decode(
             "ascii"
         )
         display = f"Paciente {str(paciente_id)[:8]}"
         if self._identity_reader is not None:
             pac = await self._identity_reader.buscar_paciente_por_id(
-                organizacao_id=organizacao_id,
                 paciente_id=paciente_id,
             )
             if pac is not None and pac.nome_completo.strip():
@@ -177,7 +176,6 @@ class PatientWebAuthnService:
     async def _record_audit_safe(
         self,
         *,
-        organizacao_id: int,
         paciente_id: UUID,
         tipo_evento: str,
         payload: dict[str, Any],
@@ -185,7 +183,6 @@ class PatientWebAuthnService:
         if self._audit_trail is None:
             return
         await self._audit_trail.record_event(
-            organizacao_id=organizacao_id,
             tipo_evento=tipo_evento,
             ator_tipo=AtorTipo.PACIENTE.value,
             ator_papel=AtorPapel.PACIENTE.value,
@@ -193,22 +190,12 @@ class PatientWebAuthnService:
             payload=payload,
         )
 
-    async def _resolve_active_attendance(
-        self, organizacao_id: int, paciente_id: UUID
-    ) -> UUID | None:
+    async def _resolve_active_attendance(self, paciente_id: UUID) -> UUID | None:
         if self._active_attendance is None:
             return None
         return await self._active_attendance.buscar_atendimento_ativo_paciente(
-            organizacao_id=organizacao_id,
             paciente_id=paciente_id,
         )
-
-    def _validate_tenant(self, organizacao_id: int) -> None:
-        if organizacao_id <= 0:
-            raise TenantInvalidoError(
-                f"Identificador da organização '{organizacao_id}' deve ser "
-                "positivo; esperado inteiro > 0."
-            )
 
     def _validate_identity_reader(self) -> IdentityReaderPort:
         if self._identity_reader is None:
@@ -221,20 +208,16 @@ class PatientWebAuthnService:
 
     async def gerar_opcoes_registro(
         self,
-        organizacao_id: int,
         paciente_id: UUID,
     ) -> WebAuthnRegisterOptionsDTO:
         """Gera opções criptográficas WebAuthn para cadastro de biometria do aparelho.
 
-        Regras: RF-01, ADR-005 e US-14 (§3).
+        Regras: RF-01, ADR-005, ADR-013 e US-14 (§3).
         Documentação: docs/user-stories/US-14-biometria-passkeys-webauthn.md
         """
-        self._validate_tenant(organizacao_id)
         challenge = secrets.token_urlsafe(32)
-        await self._save_challenge(
-            f"webauthn:reg:{organizacao_id}:{paciente_id}", challenge
-        )
-        user_dto = await self._resolve_user_descriptor(organizacao_id, paciente_id)
+        await self._save_challenge(f"webauthn:reg:{paciente_id}", challenge)
+        user_dto = await self._resolve_user_descriptor(paciente_id)
         return WebAuthnRegisterOptionsDTO(
             challenge=challenge,
             rp=WebAuthnRpDTO(name=self._rp_name, id=self._rp_id),
@@ -254,18 +237,17 @@ class PatientWebAuthnService:
     ) -> WebAuthnRegisterResultDTO:
         """Valida desafio WebAuthn e persiste chave pública Passkey do paciente.
 
-        Regras: RF-01, ADR-001 (§6), ADR-005, ADR-007 e US-14 (PASSKEY_REGISTRADA).
+        Regras: RF-01, ADR-001 (§6), ADR-005, ADR-007, ADR-013 e
+        US-14 (PASSKEY_REGISTRADA).
         Documentação: docs/user-stories/US-14-biometria-passkeys-webauthn.md
         """
-        self._validate_tenant(command.organizacao_id)
         reader = self._validate_identity_reader()
-        reg_key = f"webauthn:reg:{command.organizacao_id}:{command.paciente_id}"
+        reg_key = f"webauthn:reg:{command.paciente_id}"
         expected_challenge = await self._consume_challenge(reg_key)
         if expected_challenge is None:
             raise WebAuthnChallengeInvalidoError(
                 "Desafio WebAuthn de registro ausente ou expirado para o paciente "
-                f"'{command.paciente_id}' (org '{command.organizacao_id}'); "
-                "esperado desafio ativo gerado há menos de "
+                f"'{command.paciente_id}'; esperado desafio ativo gerado há menos de "
                 f"{WEBAUTHN_CHALLENGE_TTL_SECONDS}s."
             )
 
@@ -286,7 +268,6 @@ class PatientWebAuthnService:
             rp_id=self._rp_id,
         )
         passkey = await reader.registrar_passkey_paciente(
-            organizacao_id=command.organizacao_id,
             paciente_id=command.paciente_id,
             credential_id=command.id,
             public_key=public_key,
@@ -294,7 +275,6 @@ class PatientWebAuthnService:
             device_name=command.device_name,
         )
         await self._record_audit_safe(
-            organizacao_id=command.organizacao_id,
             paciente_id=command.paciente_id,
             tipo_evento="PASSKEY_REGISTRADA",
             payload={
@@ -312,24 +292,19 @@ class PatientWebAuthnService:
 
     async def gerar_opcoes_autenticacao(
         self,
-        organizacao_id: int,
         paciente_id: UUID | None = None,
     ) -> WebAuthnAuthOptionsDTO:
         """Gera opções e desafio FIDO2 para retorno biométrico do paciente em 1 toque.
 
-        Regras: RF-01, ADR-005 e US-14 (§3).
+        Regras: RF-01, ADR-005, ADR-013 e US-14 (§3).
         Documentação: docs/user-stories/US-14-biometria-passkeys-webauthn.md
         """
-        self._validate_tenant(organizacao_id)
         challenge = secrets.token_urlsafe(32)
-        await self._save_challenge(
-            f"webauthn:auth:{organizacao_id}:{challenge}", challenge
-        )
+        await self._save_challenge(f"webauthn:auth:{challenge}", challenge)
 
         allowed: list[WebAuthnAllowCredentialDTO] = []
         if paciente_id is not None and self._identity_reader is not None:
             passkeys = await self._identity_reader.listar_passkeys_paciente(
-                organizacao_id=organizacao_id,
                 paciente_id=paciente_id,
             )
             allowed = [
@@ -351,10 +326,9 @@ class PatientWebAuthnService:
     ) -> VerificarOtpOutputDTO:
         """Valida asserção Passkey, atualiza sign_count e emite JWT Role.PACIENTE.
 
-        Regras: RF-01, ADR-001 (§6), ADR-005, ADR-007 e US-14 (§2 Cenário 2).
+        Regras: RF-01, ADR-001 (§6), ADR-005, ADR-007, ADR-013 e US-14 (§2 Cenário 2).
         Documentação: docs/user-stories/US-14-biometria-passkeys-webauthn.md
         """
-        self._validate_tenant(command.organizacao_id)
         reader = self._validate_identity_reader()
         client_challenge, raw_cdj_bytes = decode_and_validate_client_data(
             response=command.response,
@@ -362,12 +336,11 @@ class PatientWebAuthnService:
             allowed_origins=self._allowed_origins,
         )
         expected_challenge = await self._consume_challenge(
-            f"webauthn:auth:{command.organizacao_id}:{client_challenge}"
+            f"webauthn:auth:{client_challenge}"
         )
         if expected_challenge is None:
             raise WebAuthnChallengeInvalidoError(
-                "Desafio WebAuthn de autenticação ausente ou expirado para a "
-                f"organização '{command.organizacao_id}' "
+                "Desafio WebAuthn de autenticação ausente ou expirado "
                 f"(challenge recebido: {client_challenge!r}); "
                 "esperado desafio ativo gerado há menos de "
                 f"{WEBAUTHN_CHALLENGE_TTL_SECONDS}s."
@@ -380,14 +353,12 @@ class PatientWebAuthnService:
             )
 
         passkey = await reader.buscar_passkey_por_credencial(
-            organizacao_id=command.organizacao_id,
             credential_id=command.id,
         )
         if passkey is None:
             raise PasskeyNaoEncontradaError(
-                f"Credencial Passkey '{command.id}' não encontrada na organização "
-                f"'{command.organizacao_id}'; esperado credential_id previamente "
-                "registrado para o paciente."
+                f"Credencial Passkey '{command.id}' não encontrada na plataforma; "
+                "esperado credential_id previamente registrado para o paciente."
             )
 
         novo_sign_count = verify_assertion_and_extract_sign_count(
@@ -399,16 +370,12 @@ class PatientWebAuthnService:
             raw_cdj_bytes=raw_cdj_bytes,
         )
         await reader.atualizar_sign_count_passkey(
-            organizacao_id=command.organizacao_id,
             credential_id=passkey.credential_id,
             novo_sign_count=novo_sign_count,
         )
 
-        atendimento_id = await self._resolve_active_attendance(
-            command.organizacao_id, passkey.paciente_id
-        )
+        atendimento_id = await self._resolve_active_attendance(passkey.paciente_id)
         await self._record_audit_safe(
-            organizacao_id=command.organizacao_id,
             paciente_id=passkey.paciente_id,
             tipo_evento="LOGIN_PASSKEY_SUCESSO",
             payload={
@@ -421,7 +388,6 @@ class PatientWebAuthnService:
 
         token = create_access_token(
             usuario_id=passkey.paciente_id,
-            organizacao_id=command.organizacao_id,
             papel=Role.PACIENTE.value,
             secret_key=self._jwt_secret,
             algorithm=self._jwt_algorithm,

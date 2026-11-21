@@ -31,14 +31,12 @@ from tests.helpers import auth_headers
 async def test_livekit_token_endpoint_doctor() -> None:
     """Test generating a room token for an assigned doctor via FastAPI endpoint."""
     atendimento_id = uuid4()
-    org_id = 1
     doctor_id = uuid4()
     patient_id = uuid4()
 
     reader = FakeAtendimentoReader(
         AtendimentoResumoDTO(
             atendimento_id=atendimento_id,
-            organizacao_id=org_id,
             medico_id=doctor_id,
             paciente_id=patient_id,
             status="EM_ATENDIMENTO",
@@ -50,7 +48,6 @@ async def test_livekit_token_endpoint_doctor() -> None:
 
     try:
         payload = {
-            "organizacao_id": org_id,
             "participant_id": str(doctor_id),
             "role": "medico",
             "participant_name": "Dr. Lucas Ramos",
@@ -63,13 +60,13 @@ async def test_livekit_token_endpoint_doctor() -> None:
             resp = await client.post(
                 f"/api/v1/consultations/{atendimento_id}/livekit/token",
                 json=payload,
-                headers=auth_headers(Role.MEDICO, org_id, doctor_id),
+                headers=auth_headers(Role.MEDICO, doctor_id),
             )
 
         assert resp.status_code == 200
         data = cast("dict[str, object]", resp.json())
         assert "token" in data
-        assert data["room_name"] == f"org_{org_id}_atend_{atendimento_id}"
+        assert data["room_name"] == f"atend_{atendimento_id}"
         assert data["participant_identity"] == f"medico_{doctor_id}"
         assert data["expires_in"] == 3600
 
@@ -83,7 +80,7 @@ async def test_livekit_token_endpoint_doctor() -> None:
         assert decoded["sub"] == f"medico_{doctor_id}"
         assert decoded["name"] == "Dr. Lucas Ramos"
         video = cast("dict[str, object]", decoded["video"])
-        assert video["room"] == f"org_{org_id}_atend_{atendimento_id}"
+        assert video["room"] == f"atend_{atendimento_id}"
         assert video["roomJoin"] is True
         assert video["canPublish"] is True
     finally:
@@ -94,14 +91,12 @@ async def test_livekit_token_endpoint_doctor() -> None:
 async def test_livekit_token_endpoint_patient() -> None:
     """Test generating a room token for a patient with intake token."""
     atendimento_id = uuid4()
-    org_id = 1
     doctor_id = uuid4()
     patient_id = uuid4()
 
     reader = FakeAtendimentoReader(
         AtendimentoResumoDTO(
             atendimento_id=atendimento_id,
-            organizacao_id=org_id,
             medico_id=doctor_id,
             paciente_id=patient_id,
             status="CHAMANDO_PACIENTE",
@@ -112,11 +107,10 @@ async def test_livekit_token_endpoint_patient() -> None:
     app.dependency_overrides[get_atendimento_reader] = lambda: reader
 
     settings = get_settings()
-    intake_token = create_intake_token(patient_id, org_id, settings.SECRET_KEY)
+    intake_token = create_intake_token(patient_id, settings.SECRET_KEY)
 
     try:
         payload = {
-            "organizacao_id": org_id,
             "participant_id": str(patient_id),
             "role": "paciente",
             "participant_name": "Carlos Silva",
@@ -147,7 +141,6 @@ async def test_livekit_token_endpoint_anonymous_rejected_401() -> None:
     """Verify anonymous request is rejected with HTTP 401 Unauthorized."""
     atendimento_id = uuid4()
     payload = {
-        "organizacao_id": 1,
         "participant_id": str(uuid4()),
         "role": "medico",
     }
@@ -166,7 +159,6 @@ async def test_livekit_token_endpoint_invalid_token_rejected_401() -> None:
     """Verify malformed token is rejected with HTTP 401 Unauthorized."""
     atendimento_id = uuid4()
     payload = {
-        "organizacao_id": 1,
         "participant_id": str(uuid4()),
         "role": "medico",
     }
@@ -184,14 +176,12 @@ async def test_livekit_token_endpoint_invalid_token_rejected_401() -> None:
 async def test_livekit_token_endpoint_mismatched_doctor_rejected_403() -> None:
     """Verify unassigned doctor is rejected with HTTP 403 Forbidden."""
     atendimento_id = uuid4()
-    org_id = 1
     doctor_alocado = uuid4()
     doctor_invasor = uuid4()
 
     reader = FakeAtendimentoReader(
         AtendimentoResumoDTO(
             atendimento_id=atendimento_id,
-            organizacao_id=org_id,
             medico_id=doctor_alocado,
             paciente_id=uuid4(),
             status="EM_ATENDIMENTO",
@@ -202,7 +192,6 @@ async def test_livekit_token_endpoint_mismatched_doctor_rejected_403() -> None:
     app.dependency_overrides[get_atendimento_reader] = lambda: reader
     try:
         payload = {
-            "organizacao_id": org_id,
             "participant_id": str(doctor_invasor),
             "role": "medico",
         }
@@ -211,7 +200,7 @@ async def test_livekit_token_endpoint_mismatched_doctor_rejected_403() -> None:
             resp = await client.post(
                 f"/api/v1/consultations/{atendimento_id}/livekit/token",
                 json=payload,
-                headers=auth_headers(Role.MEDICO, org_id, doctor_invasor),
+                headers=auth_headers(Role.MEDICO, doctor_invasor),
             )
         assert resp.status_code == 403
     finally:
@@ -222,14 +211,12 @@ async def test_livekit_token_endpoint_mismatched_doctor_rejected_403() -> None:
 async def test_livekit_token_endpoint_mismatched_patient_rejected_403() -> None:
     """Verify patient with token for another attendance is rejected with HTTP 403."""
     atendimento_id = uuid4()
-    org_id = 1
     paciente_real = uuid4()
     paciente_outro = uuid4()
 
     reader = FakeAtendimentoReader(
         AtendimentoResumoDTO(
             atendimento_id=atendimento_id,
-            organizacao_id=org_id,
             medico_id=uuid4(),
             paciente_id=paciente_real,
             status="EM_ATENDIMENTO",
@@ -239,11 +226,10 @@ async def test_livekit_token_endpoint_mismatched_patient_rejected_403() -> None:
     )
     app.dependency_overrides[get_atendimento_reader] = lambda: reader
     settings = get_settings()
-    token_outro = create_intake_token(paciente_outro, org_id, settings.SECRET_KEY)
+    token_outro = create_intake_token(paciente_outro, settings.SECRET_KEY)
 
     try:
         payload = {
-            "organizacao_id": org_id,
             "participant_id": str(paciente_outro),
             "role": "paciente",
         }
@@ -263,13 +249,11 @@ async def test_livekit_token_endpoint_mismatched_patient_rejected_403() -> None:
 async def test_livekit_token_endpoint_terminal_attendance_rejected_403() -> None:
     """Verify concluded attendance rejects token issuance with HTTP 403."""
     atendimento_id = uuid4()
-    org_id = 1
     doctor_id = uuid4()
 
     reader = FakeAtendimentoReader(
         AtendimentoResumoDTO(
             atendimento_id=atendimento_id,
-            organizacao_id=org_id,
             medico_id=doctor_id,
             paciente_id=uuid4(),
             status="CONCLUIDO",
@@ -280,7 +264,6 @@ async def test_livekit_token_endpoint_terminal_attendance_rejected_403() -> None
     app.dependency_overrides[get_atendimento_reader] = lambda: reader
     try:
         payload = {
-            "organizacao_id": org_id,
             "participant_id": str(doctor_id),
             "role": "medico",
         }
@@ -289,7 +272,7 @@ async def test_livekit_token_endpoint_terminal_attendance_rejected_403() -> None
             resp = await client.post(
                 f"/api/v1/consultations/{atendimento_id}/livekit/token",
                 json=payload,
-                headers=auth_headers(Role.MEDICO, org_id, doctor_id),
+                headers=auth_headers(Role.MEDICO, doctor_id),
             )
         assert resp.status_code == 403
     finally:
@@ -302,13 +285,11 @@ async def test_livekit_token_endpoint_paciente_ausente_409() -> None:
     HTTP 409 Conflict (US-08).
     """
     doctor_id = uuid4()
-    org_id = 1
     atendimento_id = uuid4()
 
     reader = FakeAtendimentoReader(
         AtendimentoResumoDTO(
             atendimento_id=atendimento_id,
-            organizacao_id=org_id,
             medico_id=doctor_id,
             paciente_id=uuid4(),
             status="PACIENTE_AUSENTE",
@@ -319,7 +300,6 @@ async def test_livekit_token_endpoint_paciente_ausente_409() -> None:
     app.dependency_overrides[get_atendimento_reader] = lambda: reader
     try:
         payload = {
-            "organizacao_id": org_id,
             "participant_id": str(doctor_id),
             "role": "medico",
         }
@@ -328,7 +308,7 @@ async def test_livekit_token_endpoint_paciente_ausente_409() -> None:
             resp = await client.post(
                 f"/api/v1/consultations/{atendimento_id}/livekit/token",
                 json=payload,
-                headers=auth_headers(Role.MEDICO, org_id, doctor_id),
+                headers=auth_headers(Role.MEDICO, doctor_id),
             )
         assert resp.status_code == 409
         data = cast("dict[str, object]", resp.json())
@@ -346,7 +326,6 @@ async def test_livekit_token_endpoint_validation_errors() -> None:
 
     # Invalid role
     payload = {
-        "organizacao_id": 1,
         "participant_id": str(uuid4()),
         "role": "administrador",  # invalid
         "ttl_seconds": 3600,
@@ -367,13 +346,11 @@ async def test_livekit_adapter_dependency_override() -> None:
     fake = FakeLiveKitAdapter()
     app.dependency_overrides[get_livekit_adapter] = lambda: fake
     atendimento_id = uuid4()
-    org_id = 1
     patient_id = uuid4()
 
     reader = FakeAtendimentoReader(
         AtendimentoResumoDTO(
             atendimento_id=atendimento_id,
-            organizacao_id=org_id,
             medico_id=uuid4(),
             paciente_id=patient_id,
             status="EM_ATENDIMENTO",
@@ -383,11 +360,10 @@ async def test_livekit_adapter_dependency_override() -> None:
     )
     app.dependency_overrides[get_atendimento_reader] = lambda: reader
     settings = get_settings()
-    intake_token = create_intake_token(patient_id, org_id, settings.SECRET_KEY)
+    intake_token = create_intake_token(patient_id, settings.SECRET_KEY)
 
     try:
         payload = {
-            "organizacao_id": org_id,
             "participant_id": str(patient_id),
             "role": "paciente",
         }

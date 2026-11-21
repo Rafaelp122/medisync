@@ -21,7 +21,6 @@ class AuditTrailPort(Protocol):
     async def record_event(
         self,
         *,
-        organizacao_id: int,
         ator_tipo: AtorTipo | str,
         ator_papel: AtorPapel | str,
         tipo_evento: str,

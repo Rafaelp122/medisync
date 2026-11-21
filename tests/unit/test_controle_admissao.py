@@ -140,7 +140,6 @@ async def test_controle_admissao_service_emissao_evento() -> None:
     service = ControleAdmissaoService(valkey=mock_valkey, notifier=spy_notifier)
 
     cmd = AvaliarAdmissaoCommand(
-        organizacao_id=1,
         medicos_ativos=1,
         tempo_restante_segundos=1000,
         pacientes_aguardando=10,  # Load: 10 * 600 * 1.25 / 1 = 7500s > 1000s
@@ -154,7 +153,6 @@ async def test_controle_admissao_service_emissao_evento() -> None:
 
     ev = spy_notifier.events[0]
     assert ev.evento == "QUEUE_OVERFLOW_TRANSIT"
-    assert ev.organizacao_id == 1
     assert ev.motivo == "CAPACIDADE_EXCEDIDA"
     assert ev.pacientes_aguardando == 10
     assert ev.medicos_ativos == 1
@@ -173,7 +171,6 @@ async def test_controle_admissao_service_admissao_permitida_nao_emite_evento() -
 
     # Case 1: pacientes_aguardando explicitly passed
     cmd = AvaliarAdmissaoCommand(
-        organizacao_id=1,
         medicos_ativos=5,
         tempo_restante_segundos=10000,
         pacientes_aguardando=2,
@@ -184,14 +181,13 @@ async def test_controle_admissao_service_admissao_permitida_nao_emite_evento() -
 
     # Case 2: pacientes_aguardando queried dynamically from Valkey ZSET
     cmd_none = AvaliarAdmissaoCommand(
-        organizacao_id=1,
         medicos_ativos=5,
         tempo_restante_segundos=10000,
         pacientes_aguardando=None,
     )
     res_none = await service.avaliar_admissao(cmd_none)
     assert res_none.admissao_permitida is True
-    mock_valkey.zcard.assert_called_once_with("fila:1:aptos")
+    mock_valkey.zcard.assert_called_once_with("fila:aptos")
 
 
 @pytest.mark.asyncio
@@ -205,15 +201,15 @@ async def test_controle_admissao_service_medicos_ativos_e_cotas() -> None:
     mock_valkey.incr.return_value = 42
     mock_valkey.get.return_value = b"42"
 
-    await service.registrar_medico_ativo(1, doc_id)
-    mock_valkey.sadd.assert_called_once_with("plantao:1:medicos_ativos", str(doc_id))
+    await service.registrar_medico_ativo(doc_id)
+    mock_valkey.sadd.assert_called_once_with("plantao:medicos_ativos", str(doc_id))
 
-    await service.desregistrar_medico_ativo(1, doc_id)
-    mock_valkey.srem.assert_called_once_with("plantao:1:medicos_ativos", str(doc_id))
+    await service.desregistrar_medico_ativo(doc_id)
+    mock_valkey.srem.assert_called_once_with("plantao:medicos_ativos", str(doc_id))
 
-    assert await service.obter_medicos_ativos_count(1) == 4
-    assert await service.incrementar_admissoes_hoje(1) == 42
-    assert await service.obter_admissoes_hoje(1) == 42
+    assert await service.obter_medicos_ativos_count() == 4
+    assert await service.incrementar_admissoes_hoje() == 42
+    assert await service.obter_admissoes_hoje() == 42
 
 
 @pytest.mark.asyncio
@@ -221,7 +217,6 @@ async def test_logging_overflow_notifier_coverage() -> None:
     """Ensure default LoggingQueueOverflowNotifier executes cleanly."""
     notifier = LoggingQueueOverflowNotifier()
     ev = QueueOverflowEvent(
-        organizacao_id=1,
         motivo="CAPACIDADE_EXCEDIDA",
         pacientes_aguardando=5,
         medicos_ativos=1,
@@ -254,7 +249,6 @@ async def test_fila_service_admitir_com_backpressure() -> None:
     atend_id = uuid4()
     # 1. Blocked: 10 waiting patients, 1 doctor, 1000s remaining -> load 7500s > 1000s
     blocked_cmd = IngressarFilaComBackpressureCommand(
-        organizacao_id=1,
         atendimento_id=atend_id,
         prioridade_clinica=PrioridadeClinica.URGENTE,
         medicos_ativos=1,
@@ -269,7 +263,6 @@ async def test_fila_service_admitir_com_backpressure() -> None:
 
     # 2. Allowed: 10 doctors, 10000s remaining -> load 750s <= 10000s
     allowed_cmd = IngressarFilaComBackpressureCommand(
-        organizacao_id=1,
         atendimento_id=atend_id,
         prioridade_clinica=PrioridadeClinica.URGENTE,
         medicos_ativos=10,

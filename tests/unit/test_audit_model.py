@@ -39,7 +39,6 @@ def test_create_audit_event_profissional_actor_success() -> None:
     event_id = uuid7()
 
     event = make_audit_event(
-        organizacao_id=1,
         atendimento_id=atend_id,
         ator_tipo=AtorTipo.PROFISSIONAL,
         ator_papel=AtorPapel.MEDICO,
@@ -48,13 +47,13 @@ def test_create_audit_event_profissional_actor_success() -> None:
         estado_anterior="APTO_PARA_CHAMADA",
         novo_estado="CHAMANDO_PACIENTE",
         tcle_hash=_SAMPLE_TCLE_HASH,
-        payload={"sala_livekit": "org_1_atend_123"},
+        payload={"sala_livekit": "atend_123"},
         ip_origem="192.168.1.100",
         id=event_id,
     )
 
     assert event.id == event_id
-    assert event.organizacao_id == 1
+    assert not hasattr(event, "organizacao_id")
     assert event.atendimento_id == atend_id
     assert event.ator_tipo == AtorTipo.PROFISSIONAL
     assert event.ator_papel == AtorPapel.MEDICO
@@ -63,7 +62,7 @@ def test_create_audit_event_profissional_actor_success() -> None:
     assert event.estado_anterior == "APTO_PARA_CHAMADA"
     assert event.novo_estado == "CHAMANDO_PACIENTE"
     assert event.tcle_hash == _SAMPLE_TCLE_HASH
-    assert event.payload == {"sala_livekit": "org_1_atend_123"}
+    assert event.payload == {"sala_livekit": "atend_123"}
     assert event.ip_origem == "192.168.1.100"
     assert event.registrado_em is not None
 
@@ -72,12 +71,11 @@ def test_create_audit_event_sistema_actor_without_ator_id() -> None:
     atend_id = uuid7()
 
     event = make_audit_event(
-        organizacao_id=1,
         atendimento_id=atend_id,
         ator_tipo=AtorTipo.SISTEMA,
         ator_papel=AtorPapel.WORKER_ARQ,
         tipo_evento="CHECK_NO_SHOW_EXCEEDED",
-        ator_id=None,  # SISTEMA pode ter ator_id nulo
+        ator_id=None,
         estado_anterior="CHAMANDO_PACIENTE",
         novo_estado="PACIENTE_AUSENTE",
     )
@@ -91,21 +89,9 @@ def test_audit_event_validacoes_campos_obrigatorios() -> None:
     atend_id = uuid7()
     med_id = uuid7()
 
-    # organizacao_id inválido
-    with pytest.raises(AuditoriaInvalidaError, match="organizacao_id"):
-        AuditEvent(
-            organizacao_id=0,
-            atendimento_id=atend_id,
-            ator_tipo=AtorTipo.PROFISSIONAL,
-            ator_papel=AtorPapel.MEDICO,
-            tipo_evento="EVT",
-            ator_id=med_id,
-        )
-
     # tipo_evento vazio
     with pytest.raises(AuditoriaInvalidaError, match="tipo_evento"):
         AuditEvent(
-            organizacao_id=1,
             atendimento_id=atend_id,
             ator_tipo=AtorTipo.PROFISSIONAL,
             ator_papel=AtorPapel.MEDICO,
@@ -116,7 +102,6 @@ def test_audit_event_validacoes_campos_obrigatorios() -> None:
     # Ator humano sem ator_id
     with pytest.raises(AuditoriaInvalidaError, match="ator_id"):
         AuditEvent(
-            organizacao_id=1,
             atendimento_id=atend_id,
             ator_tipo=AtorTipo.PROFISSIONAL,
             ator_papel=AtorPapel.MEDICO,
@@ -126,7 +111,6 @@ def test_audit_event_validacoes_campos_obrigatorios() -> None:
 
     with pytest.raises(AuditoriaInvalidaError, match="ator_id"):
         AuditEvent(
-            organizacao_id=1,
             atendimento_id=atend_id,
             ator_tipo=AtorTipo.PACIENTE,
             ator_papel=AtorPapel.PACIENTE,
@@ -137,7 +121,6 @@ def test_audit_event_validacoes_campos_obrigatorios() -> None:
     # tcle_hash com tamanho incorreto
     with pytest.raises(AuditoriaInvalidaError, match="TCLE"):
         AuditEvent(
-            organizacao_id=1,
             atendimento_id=atend_id,
             ator_tipo=AtorTipo.SISTEMA,
             ator_papel=AtorPapel.SISTEMA,
@@ -148,7 +131,6 @@ def test_audit_event_validacoes_campos_obrigatorios() -> None:
     # IP de origem inválido
     with pytest.raises(AuditoriaInvalidaError, match="IP"):
         AuditEvent(
-            organizacao_id=1,
             atendimento_id=atend_id,
             ator_tipo=AtorTipo.SISTEMA,
             ator_papel=AtorPapel.SISTEMA,
@@ -159,7 +141,6 @@ def test_audit_event_validacoes_campos_obrigatorios() -> None:
     # ator_tipo desconhecido
     with pytest.raises(AuditoriaInvalidaError, match="ator_tipo"):
         AuditEvent(
-            organizacao_id=1,
             atendimento_id=atend_id,
             ator_tipo="ATOR_ALIENIGENA",
             ator_papel=AtorPapel.SISTEMA,
@@ -169,7 +150,6 @@ def test_audit_event_validacoes_campos_obrigatorios() -> None:
     # ator_papel desconhecido
     with pytest.raises(AuditoriaInvalidaError, match="ator_papel"):
         AuditEvent(
-            organizacao_id=1,
             atendimento_id=atend_id,
             ator_tipo=AtorTipo.SISTEMA,
             ator_papel="PAPEL_INEXISTENTE",
@@ -184,7 +164,6 @@ def test_audit_event_immutability_hooks_raise_error() -> None:
     )
 
     event = make_audit_event(
-        organizacao_id=1,
         ator_tipo=AtorTipo.SISTEMA,
         ator_papel=AtorPapel.SISTEMA,
         tipo_evento="TEST_IMMUTABLE",
@@ -209,7 +188,6 @@ async def test_audit_service_record_event_sync_dispatch() -> None:
 
     evt = await AuditService.record_event(
         cast("AsyncSession", session),
-        organizacao_id=1,
         atendimento_id=atend_id,
         ator_tipo=AtorTipo.PROFISSIONAL,
         ator_papel=AtorPapel.MEDICO,
@@ -225,27 +203,33 @@ async def test_audit_service_record_event_sync_dispatch() -> None:
     assert evt in session.added
 
 
-def test_audit_event_admin_global_and_null_atendimento_id() -> None:
-    admin_id = uuid7()
+def test_audit_event_gestor_unidade_and_null_atendimento_id() -> None:
+    assert set(AtorPapel) == {
+        AtorPapel.PACIENTE,
+        AtorPapel.MEDICO,
+        AtorPapel.GESTOR_UNIDADE,
+        AtorPapel.FATURAMENTO,
+        AtorPapel.WORKER_ARQ,
+        AtorPapel.SISTEMA,
+    }
+    gestor_id = uuid7()
     evt = AuditEvent(
-        organizacao_id=1,
         atendimento_id=None,
         ator_tipo=AtorTipo.PROFISSIONAL,
-        ator_papel=AtorPapel.ADMIN_GLOBAL,
+        ator_papel=AtorPapel.GESTOR_UNIDADE,
         tipo_evento="CONFIGURACAO_GERAL_ALTERADA",
-        ator_id=admin_id,
+        ator_id=gestor_id,
         payload={"parametro": "valor"},
     )
     assert evt.atendimento_id is None
-    assert evt.ator_papel == "ADMIN_GLOBAL"
-    assert evt.ator_id == admin_id
+    assert evt.ator_papel == "GESTOR_UNIDADE"
+    assert evt.ator_id == gestor_id
     assert evt.tipo_evento == "CONFIGURACAO_GERAL_ALTERADA"
 
 
 def test_audit_event_ator_papel_invalido_mensagem_ofensiva_e_esperados() -> None:
     with pytest.raises(AuditoriaInvalidaError) as exc_info:
         AuditEvent(
-            organizacao_id=1,
             atendimento_id=None,
             ator_tipo=AtorTipo.SISTEMA,
             ator_papel="PAPEL_INEXISTENTE",
@@ -254,4 +238,5 @@ def test_audit_event_ator_papel_invalido_mensagem_ofensiva_e_esperados() -> None
     msg = str(exc_info.value)
     assert "PAPEL_INEXISTENTE" in msg
     assert "esperados:" in msg
-    assert "ADMIN_GLOBAL" in msg
+    assert "GESTOR_UNIDADE" in msg
+    assert "ADMIN_GLOBAL" not in msg

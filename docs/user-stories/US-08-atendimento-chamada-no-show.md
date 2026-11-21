@@ -50,11 +50,10 @@
 ## 3. Contrato de API
 
 * **Endpoint de Ingresso e Emissão de Token:** `POST /api/v1/consultations/{atendimento_id}/livekit/token`
-* **Headers:** `Authorization: Bearer <jwt_paciente>`, `X-Tenant-ID: <org_id>`
+* **Headers:** `Authorization: Bearer <jwt_paciente>`
 * **Payload de Entrada (`LiveKitTokenRequest`):**
   ```json
   {
-    "organizacao_id": 1,
     "participant_id": "018f3a5b-...",
     "role": "PACIENTE",
     "is_publisher": true,
