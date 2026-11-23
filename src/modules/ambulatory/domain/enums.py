@@ -16,11 +16,9 @@ class TipoProcedimentoAmbulatorial(StrEnum):
     """Tabela de Procedimentos do SUS (SIGTAP) para Atenção Primária e Telessaúde."""
 
     CONSULTA_MEDICA_ATENCAO_PRIMARIA = "03.01.01.025-0"
-    CONSULTA_MEDICA_ATENCAO_ESPECIALIZADA = "03.01.01.007-2"
 
 
 class CaraterAtendimento(StrEnum):
     """Caráter do atendimento para consolidação BPA-I / SISAB no SUS."""
 
-    ELETIVO = "01"
     URGENCIA = "02"

@@ -13,6 +13,10 @@ class ConfigPlantaoRepositoryPort(Protocol):
         """Fetch active singleton shift configuration of the platform."""
         ...
 
+    async def obter_ou_criar_padrao(self) -> ConfiguracaoPlantao:
+        """Fetch singleton shift configuration or atomically provision default row."""
+        ...
+
     async def salvar(self, configuracao: ConfiguracaoPlantao) -> ConfiguracaoPlantao:
         """Persist or update shift configuration."""
         ...

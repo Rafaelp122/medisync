@@ -14,7 +14,10 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.database import Base
+from src.core.errors import ValidationError
 from src.core.uuid7 import uuid7
+from src.modules.ambulatory.domain.bpa_formatter import validar_competencia
+from src.modules.ambulatory.domain.exceptions import CompetenciaInvalidaError
 
 
 class ProducaoAmbulatorial(Base):
@@ -88,13 +91,20 @@ class ProducaoAmbulatorial(Base):
         docs/explanation/domains/ambulatory-domain.md.
         """
         cnes_limpo = cnes.strip()
-        if not cnes_limpo or len(cnes_limpo) > 7:
-            raise ValueError(
-                f"CNES '{cnes}' inválido; esperado código numérico de até 7 dígitos."
+        if not cnes_limpo or len(cnes_limpo) > 7 or not cnes_limpo.isdigit():
+            raise ValidationError(
+                f"CNES '{cnes}' inválido; esperado código numérico de 1 a 7 dígitos."
             )
 
         now = consolidado_em or datetime.now(UTC)
-        comp = competencia or now.strftime("%Y%m")
+        comp_bruta = competencia if competencia is not None else now.strftime("%Y%m")
+        try:
+            comp = validar_competencia(comp_bruta)
+        except CompetenciaInvalidaError as exc:
+            raise ValidationError(
+                f"Competência '{comp_bruta}' inválida; esperado formato 'YYYYMM' "
+                "com mês entre 01 e 12 (ex.: '202611')."
+            ) from exc
 
         super().__init__(
             id=id or uuid7(),

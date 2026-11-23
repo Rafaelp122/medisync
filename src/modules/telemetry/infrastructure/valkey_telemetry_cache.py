@@ -1,9 +1,8 @@
 """Valkey cache adapter for telemetry dashboard and in-memory test double."""
 
-import json
 import time
-from typing import Any
 
+from pydantic import TypeAdapter
 from redis.asyncio import Redis
 
 from src.core.valkey import get_valkey_pool
@@ -11,6 +10,8 @@ from src.modules.telemetry.application.dtos import PainelTelemetriaDTO
 from src.modules.telemetry.application.ports.telemetry_cache_port import (
     TelemetryCachePort,
 )
+
+_PAINEL_ADAPTER: TypeAdapter[PainelTelemetriaDTO] = TypeAdapter(PainelTelemetriaDTO)
 
 
 class ValkeyTelemetryCache(TelemetryCachePort):
@@ -29,11 +30,7 @@ class ValkeyTelemetryCache(TelemetryCachePort):
             return None
 
         try:
-            val_str = (
-                raw_val.decode("utf-8") if isinstance(raw_val, bytes) else str(raw_val)
-            )
-            data: dict[str, Any] = json.loads(val_str)
-            return PainelTelemetriaDTO.from_dict(data)
+            return _PAINEL_ADAPTER.validate_json(raw_val)
         except Exception:
             return None
 
@@ -43,7 +40,7 @@ class ValkeyTelemetryCache(TelemetryCachePort):
         ttl_segundos: int = 60,
     ) -> None:
         ttl = max(1, ttl_segundos)
-        payload = json.dumps(painel.to_dict())
+        payload = _PAINEL_ADAPTER.dump_json(painel).decode("utf-8")
         await self._valkey.set(self._CACHE_KEY, payload, ex=ttl)  # pyright: ignore[reportUnknownMemberType]
 
     async def invalidar_painel(self) -> None:

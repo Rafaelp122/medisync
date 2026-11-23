@@ -16,7 +16,7 @@
 
 **Como** médico plantonista (Dr. Eduardo Rocha),  
 **Quero** acompanhar o painel operacional de telemetria durante o plantão,  
-**Para que** eu tenha visibilidade da carga da fila, tempos médios de espera e alinhamento assistencial com as metas da unidade, sem permissão para alterar as políticas de capacidade da organização.
+**Para que** eu tenha visibilidade da carga da fila, tempos médios de espera e alinhamento assistencial com as metas da unidade, sem permissão para alterar as políticas de capacidade da unidade.
 
 ---
 
@@ -52,28 +52,34 @@
 ## 3. Contrato de API
 
 * **Endpoint:** `GET /api/v1/telemetria/painel`
-* **Headers:** `Authorization: Bearer <jwt_gestor_ou_medico>`
-* **Resposta Esperada (`200 OK`):**
+* **Query Params:** `desconsiderar_cache` (`bool`, opcional, default `false`)
+* **Headers:** `Authorization: Bearer <jwt_gestor_ou_medico>` (`Role.GESTOR_UNIDADE` ou `Role.MEDICO`)
+* **Resposta Esperada (`200 OK` — `PainelTelemetriaResponse`):**
   ```json
   {
-    "data_referencia": "2026-10-17",
-    "total_atendimentos_dia": 42,
-    "tme_geral_segundos": 412,
-    "tme_por_nivel": {
-      "1": 45,
-      "2": 180,
-      "3": 450,
-      "4": 920,
-      "5": 1200
-    },
-    "tma_medio_segundos": 780,
-    "tma_por_medico": {
-      "018f3a5b-...": 750
-    },
-    "sla_cumprimento_percentual": 96.5,
+    "gerado_em": "2026-11-23T13:00:00Z",
+    "tme_medio_segundos": 412.0,
+    "tme_nivel_1_segundos": 45.0,
+    "tme_nivel_2_segundos": 180.0,
+    "tme_nivel_3_segundos": 450.0,
+    "tme_nivel_4_segundos": 920.0,
+    "tme_nivel_5_segundos": 1200.0,
+    "tma_medio_segundos": 780.0,
+    "medicos_tma": [
+      {
+        "medico_id": "018f3a5b-0000-7000-8000-000000000001",
+        "nome": "Dr. Eduardo Rocha",
+        "total_atendimentos": 12,
+        "tma_segundos": 750.0
+      }
+    ],
+    "no_show_rate": 4.76,
+    "evasao_rate": 1.2,
+    "sla_compliance_percentual": 96.5,
     "sla_em_conformidade": true,
-    "total_no_shows": 2,
-    "taxa_no_show_percentual": 4.76
+    "medicos_ativos_count": 3,
+    "total_pacientes_fila": 4,
+    "total_atendimentos": 42
   }
   ```
 
@@ -81,9 +87,9 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Read Model Desacoplado:** Leitor puro SQL com queries agregadas assíncronas (`src/modules/telemetry/infrastructure/telemetry_reader_sql.py`).
-- [x] **Cache Volátil no Valkey:** Caching de telemetria para garantir alta performance sem onerar o Postgres (`src/modules/telemetry/application/services/telemetry_service.py`).
-- [x] **Ajuste de TTL (NC-TEL-01):** Reduzir `_CACHE_TTL_SEGUNDOS` de 15s para 5s via injeção IoC (ADR-009) para cumprir RNF-10 e Meta SMART 5 (Resolvido na Issue #76).
+- [x] **Read Model Desacoplado:** `TelemetryReaderPort` com método único `obter_painel_telemetria(config, data_inicio)` (`src/modules/telemetry/application/ports/telemetry_reader_port.py`) e leitor SQL `SqlTelemetryReader` reutilizando `config.obter_sla_segundos(1..5)` (`src/modules/telemetry/infrastructure/telemetry_reader_sql.py`).
+- [x] **Cache Volátil no Valkey:** `ValkeyTelemetryCache` (`src/modules/telemetry/infrastructure/valkey_telemetry_cache.py`) serializa `PainelTelemetriaDTO` via Pydantic `TypeAdapter` sob a chave `telemetry:painel` com TTL de 5s (`TelemetryService.obter_painel`).
+- [x] **Ajuste de TTL (NC-TEL-01):** TTL de 5s via injeção IoC (ADR-009) para cumprir RNF-10 e Meta SMART 5 (Resolvido na Issue #76).
 - [x] **Acesso Clínico ao Painel (NC-TEL-02):** Dependência `require_telemetry_view_auth` permitindo `Role.MEDICO` e `Role.GESTOR_UNIDADE` no `GET /painel`, mantendo `config-plantao` restrito à gestão (`src/modules/telemetry/presentation/dependencies.py`).
 - [x] **Segurança e Singleton Operacional (NC-SEC-01 / ADR-013):** Tabela singleton `configuracoes_plantao` (`singleton_guard IS TRUE`) e controle RBAC sem bypass global validados na suíte de integração com PostgreSQL real (`tests/integration/test_migrations.py` e `tests/integration/test_telemetry_router.py`).
 - [x] **Apresentação:** Router fino `telemetry_router.py` montado em `/api/v1/telemetria/painel`.

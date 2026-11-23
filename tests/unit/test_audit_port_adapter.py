@@ -19,6 +19,7 @@ from src.core.audit import (
     AuditTrailPort,
     SqlAuditTrailAdapter,
 )
+from src.core.audit.exceptions import AuditoriaInvalidaError
 from src.core.audit.ports import AuditTrailPort as DirectAuditTrailPort
 from src.core.uuid7 import uuid7
 
@@ -98,3 +99,30 @@ async def test_fake_audit_trail_satisfies_protocol_and_records_in_memory() -> No
 
     fake.clear()
     assert len(fake.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_fake_audit_trail_rejeita_ator_papel_e_tipo_invalidos() -> None:
+    fake = FakeAuditTrail()
+
+    with pytest.raises(AuditoriaInvalidaError, match="WORKER"):
+        await fake.record_event(
+            ator_tipo=AtorTipo.SISTEMA,
+            ator_papel="WORKER",
+            tipo_evento="PRODUCAO_AMBULATORIAL_CONSOLIDADA",
+        )
+
+    with pytest.raises(AuditoriaInvalidaError, match="ROBO"):
+        await fake.record_event(
+            ator_tipo="ROBO",
+            ator_papel=AtorPapel.WORKER_ARQ,
+            tipo_evento="PRODUCAO_AMBULATORIAL_CONSOLIDADA",
+        )
+
+    event_id = await fake.record_event(
+        ator_tipo=AtorTipo.SISTEMA,
+        ator_papel=AtorPapel.WORKER_ARQ,
+        tipo_evento="PRODUCAO_AMBULATORIAL_CONSOLIDADA",
+    )
+    assert isinstance(event_id, UUID)
+    assert fake.events[0]["ator_papel"] == AtorPapel.WORKER_ARQ.value

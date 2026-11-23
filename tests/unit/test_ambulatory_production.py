@@ -9,7 +9,6 @@ from uuid import uuid4
 
 import pytest
 from src.modules.ambulatory import (
-    BpaProducaoDTO,
     CaraterAtendimento,
     ConsolidarTeleconsultaCommand,
     ElegibilidadeFalhaEvent,
@@ -20,6 +19,9 @@ from src.modules.ambulatory import (
     StatusElegibilidade,
     SusEligibilityAdapter,
     TipoProcedimentoAmbulatorial,
+)
+from src.modules.ambulatory.domain.models.producao_ambulatorial import (
+    ProducaoAmbulatorial,
 )
 
 from tests.doubles import FakeElegibilidadeNotifier, FakeEligibilityProvider
@@ -125,7 +127,7 @@ async def test_logging_elegibilidade_notifier(
     assert "Event ELEGIBILIDADE_FALHA" in caplog.text
 
 
-def test_consolidar_teleconsulta_command_and_bpa_dto() -> None:
+def test_consolidar_teleconsulta_command_and_producao_entity() -> None:
     """Verifica contratos tipados para consolidação de faturamento ambulatorial SUS."""
     atend_id = uuid4()
     prof_id = uuid4()
@@ -145,15 +147,15 @@ def test_consolidar_teleconsulta_command_and_bpa_dto() -> None:
     )
     assert cmd.carater_atendimento == CaraterAtendimento.URGENCIA
 
-    now = datetime.now(UTC)
-    bpa = BpaProducaoDTO(
+    producao = ProducaoAmbulatorial(
         atendimento_id=atend_id,
+        profissional_id=prof_id,
+        paciente_id=pac_id,
         cnes=cnes,
         codigo_sigtap=cmd.codigo_sigtap,
         carater_atendimento=cmd.carater_atendimento,
-        consolidado_em=now,
     )
 
-    assert bpa.cnes == "1234567"
-    assert bpa.codigo_sigtap == "03.01.01.025-0"
-    assert bpa.carater_atendimento == "02"
+    assert producao.cnes == "1234567"
+    assert producao.codigo_sigtap == "03.01.01.025-0"
+    assert producao.carater_atendimento == "02"
