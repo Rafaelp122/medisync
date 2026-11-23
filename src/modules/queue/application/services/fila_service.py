@@ -768,6 +768,7 @@ class FilaService:
             data_entrada_fila=atend.data_entrada_fila,
             criado_em=atend.criado_em,
             is_terminal=atend.status in TERMINAL_STATUSES,
+            chamada_iniciada_em=atend.chamada_iniciada_em,
         )
 
     async def listar_historico_paciente(

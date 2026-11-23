@@ -9,7 +9,6 @@ from src.modules.consultation.domain.exceptions import (
     EvolucaoNaoEncontradaError,
     IANaoRatificadaError,
     PrescricaoFisicaObrigatoriaError,
-    PrescricaoFisicaObrigatoriaException,
     TravaAntiFraudeAtestadoError,
 )
 from src.modules.consultation.domain.models import (
@@ -32,7 +31,6 @@ __all__ = [
     "EvolucaoNaoEncontradaError",
     "IANaoRatificadaError",
     "PrescricaoFisicaObrigatoriaError",
-    "PrescricaoFisicaObrigatoriaException",
     "TipoDocumentoClinico",
     "TravaAntiFraudeAtestadoError",
     "validar_substancia_permitida_telemedicina",

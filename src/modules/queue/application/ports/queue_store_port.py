@@ -23,6 +23,7 @@ class AtendimentoSnapshotDTO:
     data_entrada_fila: datetime | None
     criado_em: datetime
     is_terminal: bool
+    chamada_iniciada_em: datetime | None = None
 
 
 @dataclass(frozen=True)

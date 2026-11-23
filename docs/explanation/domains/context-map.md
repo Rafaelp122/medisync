@@ -66,7 +66,7 @@ Consome `src/modules/consultation/application/ports/atendimento_reader_port.py` 
 
 Implementação sql isolada de fallback em `src/modules/consultation/infrastructure/atendimento_reader_sql.py`, ligada em `src/modules/consultation/composition.py`.
 
-Consumidor interno: `src/modules/consultation/application/services/evolucao_service.py` barra evolução em atendimento finalizado e `PEPService` orquestra fechamento atômico.
+Consumidor interno: `PEPService` (`src/modules/consultation/application/services/pep_service.py`) barra evolução em atendimento finalizado e orquestra fechamento atômico.
 
 ### 2.4 ambulatory — autoridade de produção ambulatorial SUS
 

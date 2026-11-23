@@ -36,8 +36,6 @@ class DocumentoPDFPayload:
     paciente_cpf: str
     organizacao_cnpj: str | None = None
     organizacao_cnes: str | None = None
-    organizacao_endereco: str | None = None
-    organizacao_telefone: str | None = None
     medico_rqe: str | None = None
     paciente_data_nascimento: str | None = None
     paciente_endereco: str | None = None
