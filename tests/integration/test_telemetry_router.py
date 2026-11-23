@@ -1,14 +1,20 @@
 """Integration tests for shift telemetry and configuration endpoints."""
 
+import asyncio
 from decimal import Decimal
-from typing import cast
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
 from redis.asyncio import Redis
+from sqlalchemy import text
 from src.core.authz.roles import Role
+from src.core.database import get_session_factory
 from src.core.valkey import get_valkey_pool
+from src.modules.telemetry.infrastructure.config_plantao_repository import (
+    SqlConfigPlantaoRepository,
+)
 
 from tests.helpers import auth_headers
 
@@ -178,10 +184,24 @@ async def test_configuracao_plantao_validacao_limites_422(
     gestor_id = uuid4()
     headers = auth_headers(papel=Role.GESTOR_UNIDADE, usuario_id=gestor_id)
 
+    base_payload: dict[str, Any] = {
+        "medicos_ativos_planejados": 2,
+        "alpha_backpressure": "1.25",
+        "cota_diaria_maxima": 300,
+        "tma_padrao_segundos": 600,
+        "tempo_tolerancia_ring_segundos": 45,
+        "modo_operacao": "SUS",
+        "sla_minutos_nivel_1": 0,
+        "sla_minutos_nivel_2": 10,
+        "sla_minutos_nivel_3": 60,
+        "sla_minutos_nivel_4": 120,
+        "sla_minutos_nivel_5": 240,
+    }
+
     # 1. alpha < 1.20
     resp_low_alpha = await async_client.put(
         "/api/v1/telemetria/config-plantao",
-        json={"alpha_backpressure": "1.19"},
+        json={**base_payload, "alpha_backpressure": "1.19"},
         headers=headers,
     )
     assert resp_low_alpha.status_code == 422
@@ -189,7 +209,7 @@ async def test_configuracao_plantao_validacao_limites_422(
     # 2. alpha > 1.30
     resp_high_alpha = await async_client.put(
         "/api/v1/telemetria/config-plantao",
-        json={"alpha_backpressure": "1.31"},
+        json={**base_payload, "alpha_backpressure": "1.31"},
         headers=headers,
     )
     assert resp_high_alpha.status_code == 422
@@ -197,7 +217,7 @@ async def test_configuracao_plantao_validacao_limites_422(
     # 3. medicos_ativos_planejados < 1
     resp_zero_medicos = await async_client.put(
         "/api/v1/telemetria/config-plantao",
-        json={"medicos_ativos_planejados": 0},
+        json={**base_payload, "medicos_ativos_planejados": 0},
         headers=headers,
     )
     assert resp_zero_medicos.status_code == 422
@@ -205,7 +225,7 @@ async def test_configuracao_plantao_validacao_limites_422(
     # 4. tma_padrao_segundos < 60
     resp_low_tma = await async_client.put(
         "/api/v1/telemetria/config-plantao",
-        json={"tma_padrao_segundos": 59},
+        json={**base_payload, "tma_padrao_segundos": 59},
         headers=headers,
     )
     assert resp_low_tma.status_code == 422
@@ -213,10 +233,78 @@ async def test_configuracao_plantao_validacao_limites_422(
     # 5. modo_operacao inválido
     resp_modo_invalido = await async_client.put(
         "/api/v1/telemetria/config-plantao",
-        json={"modo_operacao": "MISTO"},
+        json={**base_payload, "modo_operacao": "MISTO"},
         headers=headers,
     )
     assert resp_modo_invalido.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_configuracao_plantao_put_parcial_retorna_422_sem_sobrescrever(
+    async_client: AsyncClient,
+) -> None:
+    """Validate partial PUT payload returns 422 and preserves existing config."""
+    gestor_id = uuid4()
+    headers = auth_headers(papel=Role.GESTOR_UNIDADE, usuario_id=gestor_id)
+
+    full_payload: dict[str, Any] = {
+        "medicos_ativos_planejados": 6,
+        "alpha_backpressure": "1.29",
+        "cota_diaria_maxima": 420,
+        "tma_padrao_segundos": 540,
+        "tempo_tolerancia_ring_segundos": 55,
+        "modo_operacao": "PRIVADO",
+        "sla_minutos_nivel_1": 1,
+        "sla_minutos_nivel_2": 12,
+        "sla_minutos_nivel_3": 50,
+        "sla_minutos_nivel_4": 100,
+        "sla_minutos_nivel_5": 210,
+    }
+    resp_put = await async_client.put(
+        "/api/v1/telemetria/config-plantao",
+        json=full_payload,
+        headers=headers,
+    )
+    assert resp_put.status_code == 200
+
+    # Payload parcial deve ser rejeitado com 422 sem sobrescrever defaults
+    resp_partial = await async_client.put(
+        "/api/v1/telemetria/config-plantao",
+        json={"medicos_ativos_planejados": 2},
+        headers=headers,
+    )
+    assert resp_partial.status_code == 422
+
+    resp_get = await async_client.get(
+        "/api/v1/telemetria/config-plantao", headers=headers
+    )
+    assert resp_get.status_code == 200
+    atual = cast("dict[str, object]", resp_get.json())
+    assert atual["medicos_ativos_planejados"] == 6
+    assert Decimal(str(atual["alpha_backpressure"])) == Decimal("1.29")
+    assert atual["cota_diaria_maxima"] == 420
+    assert atual["modo_operacao"] == "PRIVADO"
+
+
+@pytest.mark.asyncio
+async def test_config_plantao_obter_ou_criar_padrao_concorrente() -> None:
+    """Concurrent obter_ou_criar_padrao calls never fail singleton constraint."""
+
+    async def _provisionar() -> str:
+        async with get_session_factory()() as session:
+            repo = SqlConfigPlantaoRepository(session)
+            cfg = await repo.obter_ou_criar_padrao()
+            await session.commit()
+            return str(cfg.id)
+
+    ids = await asyncio.gather(*[_provisionar() for _ in range(5)])
+    assert len(set(ids)) == 1
+
+    async with get_session_factory()() as session:
+        count = (
+            await session.execute(text("SELECT COUNT(*) FROM configuracoes_plantao"))
+        ).scalar_one()
+        assert count == 1
 
 
 @pytest.mark.asyncio

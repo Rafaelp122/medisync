@@ -1,13 +1,20 @@
 """Unit tests for ConfiguracaoPlantao rich domain model and invariants."""
 
 from decimal import Decimal
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError as PydanticValidationError
 from src.core.errors import ValidationError
-from src.modules.telemetry.application.dtos import ConfigPlantaoCommand
 from src.modules.telemetry.domain.models import ConfiguracaoPlantao, ModoOperacao
-from src.modules.telemetry.presentation.schemas import ConfigPlantaoResponse
+from src.modules.telemetry.presentation.schemas import (
+    ConfigPlantaoRequest,
+    ConfigPlantaoResponse,
+)
+
+if TYPE_CHECKING:
+    from src.modules.telemetry.application.dtos import ConfigPlantaoInput
 
 
 def test_configuracao_plantao_default_initialization() -> None:
@@ -176,12 +183,8 @@ def test_obter_sla_minutos_e_segundos() -> None:
         config.obter_sla_minutos(6)
 
 
-def test_capacidade_atendimento_hora() -> None:
-    config = ConfiguracaoPlantao(
-        medicos_ativos_planejados=2,
-        tma_padrao_segundos=600,
-    )
-    assert config.capacidade_atendimento_hora() == 12.0
+def test_capacidade_atendimento_hora_podada() -> None:
+    assert not hasattr(ConfiguracaoPlantao, "capacidade_atendimento_hora")
 
 
 def test_response_schema_from_entity() -> None:
@@ -198,11 +201,23 @@ def test_response_schema_from_entity() -> None:
     assert dto.modo_operacao == "SUS"
 
 
-def test_config_plantao_command_defaults() -> None:
-    cmd = ConfigPlantaoCommand(
-        medicos_ativos_planejados=2,
+def test_config_plantao_request_exige_todos_os_11_campos_sem_defaults() -> None:
+    with pytest.raises(PydanticValidationError):
+        ConfigPlantaoRequest.model_validate({"medicos_ativos_planejados": 2})
+
+    req = ConfigPlantaoRequest(
+        medicos_ativos_planejados=3,
         alpha_backpressure=Decimal("1.25"),
+        cota_diaria_maxima=None,
+        tma_padrao_segundos=600,
+        tempo_tolerancia_ring_segundos=45,
+        modo_operacao="SUS",
+        sla_minutos_nivel_1=0,
+        sla_minutos_nivel_2=10,
+        sla_minutos_nivel_3=60,
+        sla_minutos_nivel_4=120,
+        sla_minutos_nivel_5=240,
     )
-    assert cmd.cota_diaria_maxima == 300
-    assert cmd.tma_padrao_segundos == 600
-    assert cmd.modo_operacao == "SUS"
+    contrato: ConfigPlantaoInput = req
+    assert contrato.cota_diaria_maxima is None
+    assert not hasattr(req, "to_command")

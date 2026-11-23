@@ -21,11 +21,10 @@ Plataforma única: todas as consultas e o registro singleton de `ConfiguracaoPla
 ## 2. Regras
 
 - **RN-TEL-01 — Parametrização estocástica com limites estritos.** `alpha_backpressure` restrito ao intervalo $[1{,}20; 1{,}30]$ (`Decimal("1.20") <= alpha <= Decimal("1.30")`), `tma_padrao_segundos >= 60s`, `tempo_tolerancia_ring_segundos >= 10s`, `medicos_ativos_planejados >= 1`. Valores fora desses limites disparam `ValidationError`. [Fonte](../product-specification.md) (RN05)
-- **RN-TEL-02 — Read Model CQRS analítico puro.** Leitura desacoplada do fluxo de escrita transacional via `TelemetryReaderPort` e `SqlTelemetryReader`. Executa consultas SQL agregadas diretamente sobre `atendimentos` e `profissionais`, computando métricas temporais sem locks relacionais. [Fonte](../../user-stories/US-13-telemetria-painel-operacional.md)
-- **RN-TEL-03 — Caching volátil com TTL de 5s.** `TelemetryService.obter_painel` consulta primeiramente `TelemetryCachePort`. Em cache miss, consulta o reader e persiste na chave `telemetry:painel` com TTL de 5 segundos, assegurando respostas <100ms. [Fonte](../../user-stories/US-13-telemetria-painel-operacional.md)
-- **RN-TEL-04 — Invalidação de cache sob mutação de política.** Ao atualizar parâmetros em `ConfigPlantaoService.atualizar_configuracao`, o serviço invoca `invalidar_painel()` no Valkey antes do `commit` relacional, prevenindo leituras inconsistentes no painel. [Fonte](../../user-stories/US-12-parametrizacao-politicas-plantao.md)
-- **RN-TEL-05 — Capacidade operacional horária.** `ConfiguracaoPlantao.capacidade_atendimento_hora` calcula `(medicos_ativos_planejados * 3600.0) / tma_padrao_segundos`, fornecendo a vazão máxima teórica da unidade para balizar a admissão e backpressure. [Fonte](../architecture/concurrency-and-queues.md)
-- **RN-TEL-06 — Segregação de autorização operacional.** A leitura do read model (`GET /painel`) requer autenticação com papel `Role.MEDICO` ou `Role.GESTOR_UNIDADE`. A leitura ou alteração de políticas de plantão (`/config-plantao`) exige `Role.GESTOR_UNIDADE` ou a permissão granular `Permission.TMA_CONFIG`. Papéis externos (`PACIENTE`, `FATURAMENTO`) são sumariamente rejeitados com `403 Forbidden`. [Fonte](../../user-stories/US-13-telemetria-painel-operacional.md)
+- **RN-TEL-02 — Read Model CQRS analítico puro.** Leitura desacoplada do fluxo de escrita transacional via `TelemetryReaderPort` (interface única com `obter_painel_telemetria(config, data_inicio)`) e `SqlTelemetryReader` (que reutiliza `config.obter_sla_segundos(1..5)`). Executa consultas SQL agregadas diretamente sobre `atendimentos` e `profissionais`, computando métricas temporais sem locks relacionais. [Fonte](../../user-stories/US-13-telemetria-painel-operacional.md)
+- **RN-TEL-03 — Caching volátil com TTL de 5s.** `TelemetryService.obter_painel` consulta primeiramente `TelemetryCachePort`. Em cache miss, consulta o reader e persiste na chave `telemetry:painel` com TTL de 5 segundos via `ValkeyTelemetryCache` (serialização direta via Pydantic `TypeAdapter`), assegurando respostas <100ms. [Fonte](../../user-stories/US-13-telemetria-painel-operacional.md)
+- **RN-TEL-04 — Invalidação de cache e atualização integral sob mutação de política.** `PUT /api/v1/telemetria/config-plantao` (`ConfigPlantaoRequest`) exige todos os 11 parâmetros sem valores default (payloads parciais retornam HTTP 422), alimentando `ConfigPlantaoService.atualizar_configuracao` via `ConfigPlantaoInput`. O serviço invoca `invalidar_painel()` no Valkey antes do `commit` relacional, prevenindo leituras inconsistentes no painel. [Fonte](../../user-stories/US-12-parametrizacao-politicas-plantao.md)
+- **RN-TEL-05 — Segregação de autorização operacional.** A leitura do read model (`GET /painel`) requer autenticação com papel `Role.MEDICO` ou `Role.GESTOR_UNIDADE`. A leitura ou alteração de políticas de plantão (`/config-plantao`) exige `Role.GESTOR_UNIDADE` ou a permissão granular `Permission.TMA_CONFIG`. Papéis externos (`PACIENTE`, `FATURAMENTO`) são sumariamente rejeitados com `403 Forbidden`. [Fonte](../../user-stories/US-13-telemetria-painel-operacional.md)
 
 Guardiões: `ConfiguracaoPlantao` valida tipos numéricos, integridade do enum `ModoOperacao` (SUS ou PRIVADO), cotas positivas e SLAs de níveis 1 a 5 não negativos no construtor e no método `atualizar_parametros`.
 
@@ -36,8 +35,8 @@ O domínio contempla o ciclo de vida da configuração de plantão e o fluxo de 
 ```mermaid
 stateDiagram-v2
     [*] --> NaoConfigurado: Primeira Execucao
-    NaoConfigurado --> DefaultSUS: obter_configuracao (auto-provisionamento singleton)
-    DefaultSUS --> Persistido: repo.salvar + commit
+    NaoConfigurado --> DefaultSUS: obter_ou_criar_padrao (ON CONFLICT DO NOTHING)
+    DefaultSUS --> Persistido: commit singleton
     Persistido --> Atualizando: PUT /config-plantao
     Atualizando --> InvalidaCache: validar_invariantes OK
     InvalidaCache --> Persistido: invalidar_painel + commit
@@ -60,15 +59,15 @@ flowchart TD
     Service --> RetornaFinal[Resposta HTTP 200]
 ```
 
-Auto-provisionamento: na ausência de registro singleton prévio em `configuracoes_plantao`, instancia-se automaticamente a configuração padrão SUS (`alpha = 1.25`, `tma = 600s`, `cota = 300`, `ring = 45s`, `medicos = 1`).
+Auto-provisionamento atômico: na ausência de registro singleton prévio em `configuracoes_plantao`, `SqlConfigPlantaoRepository.obter_ou_criar_padrao()` executa `INSERT ... ON CONFLICT (singleton_guard) DO NOTHING` seguido de leitura segura, evitando corridas concorrentes e instanciando a configuração padrão SUS (`alpha = 1.25`, `tma = 600s`, `cota = 300`, `ring = 45s`, `medicos = 1`).
 
 ## 4. Relações
 
 - Consumo por outros domínios: o módulo `queue` lê as diretrizes de `ConfiguracaoPlantao` em tempo real via `ShiftPolicyReaderPort` (`src/modules/queue/application/ports/shift_policy_reader_port.py`), adaptada em `src/modules/queue/composition.py` (`TelemetryShiftPolicyReaderAdapter`) sobre `src/modules/telemetry/composition.py:ler_politica_plantao_snapshot` (`PoliticaPlantaoSnapshotDTO`), governando `alpha_backpressure`, `cota_diaria_maxima`, `tma_padrao_segundos` (estimativa de espera e cálculo de saturação) e `tempo_tolerancia_ring_segundos` (TTL de ring 45s) sem ciclos no `tach.toml`.
 - Projeção de leitura desacoplada: `SqlTelemetryReader` consulta tabelas `atendimentos` e `profissionais` exclusivamente via projeções de agregação (`SELECT ... FILTER ...`), sem dependência de escrita ou acoplamento com modelos de outros módulos.
 - Cache desacoplado via porta: `TelemetryCachePort` é implementada por `ValkeyTelemetryCache` em produção e `MemoryTelemetryCache` em testes de unidade em memória.
-- Repositório de persistência: `ConfigPlantaoRepositoryPort` persiste e recupera `ConfiguracaoPlantao` via `SqlConfigPlantaoRepository`.
-- Rotas REST finas: `telemetry_router.py` expõe endpoints delegando execução a `TelemetryServiceDep` e `ConfigPlantaoServiceDep`, sem lógica de negócio na camada HTTP.
+- Repositório de persistência: `ConfigPlantaoRepositoryPort` persiste e recupera `ConfiguracaoPlantao` via `SqlConfigPlantaoRepository` (incluindo `obter_atual()` somente-leitura para `ler_politica_plantao_snapshot` e `obter_ou_criar_padrao()` atômico com `ON CONFLICT DO NOTHING`).
+- Rotas REST finas: `telemetry_router.py` expõe endpoints delegando execução a `TelemetryServiceDep` e `ConfigPlantaoServiceDep`, repassando `ConfigPlantaoRequest` diretamente via contrato estrutural `ConfigPlantaoInput` (ADR-008), sem lógica de negócio na camada HTTP.
 
 ## 5. Peculiaridades
 
@@ -114,8 +113,8 @@ rg -n "ConfiguracaoPlantao|TelemetryService|SqlTelemetryReader" src/modules/tele
 # telemetry_service.py:16 class TelemetryService
 # telemetry_reader_sql.py:16 class SqlTelemetryReader
 
-uv run pytest tests/unit/test_telemetry_model.py tests/unit/test_telemetry_service.py tests/unit/test_telemetry_infra.py -q --no-cov
-# 30 passed
+uv run pytest tests/unit/test_telemetry_model.py tests/unit/test_telemetry_service.py tests/unit/test_telemetry_infra.py tests/unit/test_telemetry_dependencies.py -q --no-cov
+# todos os testes unitarios de telemetria em memoria (Fakes) passam
 ```
 
 Sem corrigir código. Divergência entre documentação e invariantes do modelo exige ajuste na documentação para refletir as regras clínicas vigentes.

@@ -23,7 +23,7 @@ producao_router = APIRouter(
     summary="Lista a produção ambulatorial consolidada por competência (RF-08, US-11)",
     description=(
         "Consulta registros consolidados de faturamento público SUS (BPA-I / SISAB) "
-        "para prestação de contas do consórcio municipal e incentivo eMulti."
+        "para prestação de contas da unidade SUS e incentivo eMulti."
     ),
 )
 async def listar_producao(
@@ -37,12 +37,20 @@ async def listar_producao(
     size: Annotated[int, Query(ge=1, le=100, description="Tamanho da página")] = 50,
 ) -> ListaProducaoAmbulatorialResponse:
     """List consolidated SUS ambulatory production for the given competence."""
-    dto = await producao_service.listar_producao_por_competencia(
+    items, total = await producao_service.listar_producao_por_competencia(
         competencia=competencia,
         page=page,
         size=size,
     )
-    return ListaProducaoAmbulatorialResponse.model_validate(dto)
+    return ListaProducaoAmbulatorialResponse.model_validate(
+        {
+            "items": items,
+            "total": total,
+            "competencia": competencia.strip(),
+            "page": page,
+            "size": size,
+        }
+    )
 
 
 @producao_router.get(

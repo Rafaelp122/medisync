@@ -1,7 +1,6 @@
 """Ambulatory module package (ADR-012)."""
 
 from src.modules.ambulatory.application.dtos import (
-    BpaProducaoDTO,
     ConsolidarTeleconsultaCommand,
     RequisicaoElegibilidade,
     ResultadoElegibilidade,
@@ -23,7 +22,6 @@ from src.modules.ambulatory.infrastructure.adapters import (
 )
 
 __all__ = [
-    "BpaProducaoDTO",
     "CaraterAtendimento",
     "ConsolidarTeleconsultaCommand",
     "ElegibilidadeFalhaEvent",

@@ -402,13 +402,3 @@ class ConfiguracaoPlantao(Base):
         Regras: docs/explanation/domains/telemetry-domain.md.
         """
         return self.obter_sla_minutos(prioridade) * 60
-
-    def capacidade_atendimento_hora(self) -> float:
-        """Calcula a capacidade teórica de atendimentos por hora com base no TMA padrão.
-
-        Determina o throughput projetado do plantão para dimensionamento de escala.
-        Regras: docs/explanation/domains/telemetry-domain.md.
-        """
-        return (self.medicos_ativos_planejados * 3600.0) / float(
-            self.tma_padrao_segundos
-        )
