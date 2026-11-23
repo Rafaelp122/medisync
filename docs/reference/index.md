@@ -8,13 +8,13 @@
 
 ## 2. Cache, Concorrência & Atomicidade
 - [Valkey Keys Dictionary](valkey/keys-dictionary.md) — Namespaces de chaves, tipos de dados (ZSET/HASH/STRING), TTLs e políticas de evicção.
-- [Valkey Lua Scripts](valkey/lua-scripts.md) — Catálogo do script `alocar_chamada.lua`, parâmetros KEYS/ARGV, retornos e garantias lineares (<5ms).
+- [Valkey Lua Scripts](valkey/lua-scripts.md) — Catálogo dos scripts `alocar_chamada.lua` e `alocar_proximo.lua` (4-Keys), retornos e garantias lineares (<5ms).
 
 ## 3. APIs, Tempo Real & Background Jobs
 - [API Error Envelope (RFC 7807)](api/error-envelope.md) — Catálogo exaustivo de exceções de domínio, status HTTP e envelope de erro RFC 7807.
 - [Ambulatory Production Endpoints (BPA-I)](api/ambulatory-producao-endpoints.md) — Contratos HTTP para consulta e exportação magnética SIA-SUS BPA-I.
 - [WebSocket Channels & Realtime Protocol](api/websocket-channels.md) — Endpoints WS de fila/médico, autenticação pré-accept, eventos Pub/Sub e envelopes JSON.
-- [ARQ Background Tasks](worker/arq-tasks.md) — Catálogo de jobs assíncronos (`validar_elegibilidade`, `ring_timeout`, `sweeper`), cron schedules e retries.
+- [ARQ Background Tasks](worker/arq-tasks.md) — Catálogo de jobs assíncronos (`resolver_ring_timeout_task`, `reconciliar_fila_orphans_task` com lock distribuído, `ping_task`), cron schedules e retries.
 
 ## 4. Arquitetura, Governança & Qualidade
 - [Tach Boundaries Matrix](architecture-standards/tach-boundaries-matrix.md) — Matriz completa de dependências permitidas entre os 8 módulos, core e worker.

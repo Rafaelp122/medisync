@@ -1,7 +1,7 @@
 """Concrete emergency notifier adapter for SAMU 192 redirection (RN04, NC-MED-01)."""
 
 import logging
-from typing import Any
+from uuid import UUID
 
 import httpx
 
@@ -14,11 +14,7 @@ logger = logging.getLogger("medisync.triage.samu")
 
 
 class SamuEmergencyNotifierAdapter(EmergencyNotifierPort):
-    """Dispatches emergency alerts for level 1 patients via structured logs.
-
-    Retains an audit buffer and ensures that whenever an emergency deterioration
-    or level 1 risk is detected, a structured critical alert is emitted.
-    """
+    """Dispatches emergency alerts for level 1 patients via logs and HTTP webhook."""
 
     def __init__(
         self,
@@ -27,7 +23,6 @@ class SamuEmergencyNotifierAdapter(EmergencyNotifierPort):
     ) -> None:
         self._webhook_url = webhook_url
         self._http_client = http_client
-        self.sent_alerts: list[EmergencyAlertDTO] = []
 
     async def notificar_emergencia_samu(self, alert: EmergencyAlertDTO) -> None:
         """Dispatches an emergency alert notification for SAMU 192 redirection."""
@@ -47,12 +42,10 @@ class SamuEmergencyNotifierAdapter(EmergencyNotifierPort):
             },
         )
 
-        self.sent_alerts.append(alert)
-
         if not self._webhook_url:
             return
 
-        payload: dict[str, Any] = {
+        payload: dict[str, object] = {
             "event": "EMERGENCIA_SAMU_192",
             "atendimento_id": str(alert.atendimento_id),
             "queixa_principal": alert.queixa_principal,
@@ -63,21 +56,23 @@ class SamuEmergencyNotifierAdapter(EmergencyNotifierPort):
         await self._enviar_webhook(self._webhook_url, payload, alert.atendimento_id)
 
     async def _enviar_webhook(
-        self, url: str, payload: dict[str, Any], atendimento_id: object
+        self,
+        url: str,
+        payload: dict[str, object],
+        atendimento_id: UUID,
     ) -> None:
         try:
             if self._http_client is not None:
-                await self._http_client.post(url, json=payload)
+                response = await self._http_client.post(url, json=payload)
+                response.raise_for_status()
                 return
             async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(url, json=payload)
-        except Exception as exc:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
             logger.error(
                 "Failed to dispatch SAMU webhook for attendance %s: %s",
                 atendimento_id,
                 exc,
+                exc_info=True,
             )
-
-    def clear(self) -> None:
-        """Clear recorded in-memory alerts (primarily for testing)."""
-        self.sent_alerts.clear()

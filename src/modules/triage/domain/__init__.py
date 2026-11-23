@@ -4,6 +4,7 @@ from src.modules.triage.domain.classification import (
     SINAIS_ALARME_NIVEL_1,
     calcular_hash_tcle,
     classificar_risco_clinico,
+    normalizar_sintomas,
 )
 from src.modules.triage.domain.exceptions import (
     EmergenciaCriticaSamuError,
@@ -18,4 +19,5 @@ __all__ = [
     "TriagemInvalidaError",
     "calcular_hash_tcle",
     "classificar_risco_clinico",
+    "normalizar_sintomas",
 ]

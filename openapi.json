@@ -3006,13 +3006,6 @@
             "title": "Tcle Hash",
             "description": "Hash SHA-256 do TCLE"
           },
-          "medicos_ativos": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Medicos Ativos",
-            "description": "M\u00e9dicos ativos no plant\u00e3o para c\u00e1lculo de backpressure",
-            "default": 1
-          },
           "cpf": {
             "anyOf": [
               {
@@ -5996,19 +5989,7 @@
           "prioridade_clinica": {
             "type": "integer",
             "title": "Prioridade Clinica",
-            "description": "Nova prioridade cl\u00ednica p\u00f3s-reavalia\u00e7\u00e3o"
-          },
-          "nova_prioridade": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Nova Prioridade",
-            "description": "Nova prioridade cl\u00ednica p\u00f3s-reavalia\u00e7\u00e3o (can\u00f4nico US-06)"
+            "description": "Prioridade cl\u00ednica consolidada p\u00f3s-reavalia\u00e7\u00e3o"
           },
           "status_atendimento": {
             "anyOf": [
@@ -6055,18 +6036,6 @@
             ],
             "title": "Instrucoes",
             "description": "Instru\u00e7\u00f5es de redirecionamento ou emerg\u00eancia imediata"
-          },
-          "orientacoes_emergencia": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Orientacoes Emergencia",
-            "description": "Instru\u00e7\u00f5es de emerg\u00eancia imediata (can\u00f4nico US-06)"
           }
         },
         "type": "object",
@@ -6120,6 +6089,36 @@
             ],
             "title": "Tempo Estimado Segundos",
             "description": "Tempo de espera estimado em segundos"
+          },
+          "prioridade_clinica": {
+            "type": "integer",
+            "title": "Prioridade Clinica",
+            "description": "Classifica\u00e7\u00e3o de risco Manchester (1=Emerg\u00eancia a 5=N\u00e3o Urgente)"
+          },
+          "chamada_iniciada_em": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chamada Iniciada Em",
+            "description": "Timestamp de in\u00edcio do toque de chamada (para countdown ap\u00f3s F5)"
+          },
+          "ttl_segundos": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttl Segundos",
+            "description": "Toler\u00e2ncia em segundos da janela de toque ativa"
           }
         },
         "type": "object",
@@ -6128,10 +6127,11 @@
           "status",
           "posicao",
           "total_aguardando",
-          "tempo_estimado_segundos"
+          "tempo_estimado_segundos",
+          "prioridade_clinica"
         ],
         "title": "PosicaoFilaResponse",
-        "description": "Resposta com a posi\u00e7\u00e3o ordinal e estimativa de espera na fila."
+        "description": "Resposta com posi\u00e7\u00e3o ordinal, timer de chamada e estimativa de espera."
       },
       "ProntuarioResponse": {
         "properties": {

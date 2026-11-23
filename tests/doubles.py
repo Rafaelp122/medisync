@@ -1,10 +1,11 @@
 """Canonical test doubles and scripted in-memory adapters for unit tests."""
 
 import asyncio
+import hashlib
 import hmac
 import queue as queue_module
 import re
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Any, cast
@@ -40,9 +41,11 @@ from src.modules.identity.application.ports.identity_reader_port import (
 from src.modules.identity.application.ports.identity_writer_port import (
     IdentityWriterPort,
 )
-from src.modules.queue.application.ports.allocation_port import (
-    AllocationPort,
-    AlocacaoCodigo,
+from src.modules.queue.application.ports.allocation_port import AlocacaoCodigo
+from src.modules.queue.application.ports.queue_engine_port import QueueEnginePort
+from src.modules.queue.application.ports.shift_policy_reader_port import (
+    ShiftPolicyDTO,
+    ShiftPolicyReaderPort,
 )
 from src.modules.queue.application.ports.triage_port import (
     TriageEvaluationDTO,
@@ -55,6 +58,10 @@ from src.modules.scheduling.domain.models import (
     AgendaDisponibilidade,
     Agendamento,
     StatusAgendamento,
+)
+from src.modules.triage.application.ports.emergency_notifier import (
+    EmergencyAlertDTO,
+    EmergencyNotifierPort,
 )
 
 
@@ -136,15 +143,28 @@ class FakeAsyncSession:
         results: list[Any] | None = None,
         added: list[Any] | None = None,
         entities: dict[Any, Any] | None = None,
+        *,
+        commit_error: Exception | None = None,
     ) -> None:
         self._results: list[Any] = list(results) if results is not None else []
         self.added: list[Any] = added if added is not None else []
         self._entities: dict[Any, Any] = dict(entities) if entities is not None else {}
+        self.commit_error = commit_error
         self.commits: int = 0
+        self.rollbacks: int = 0
+        self.flushes: int = 0
         self.executes: int = 0
         self.refreshes: int = 0
+        self.get_calls: list[dict[str, Any]] = []
 
     async def get(self, entity_cls: Any, ident: Any, *args: Any, **kwargs: Any) -> Any:
+        self.get_calls.append(
+            {
+                "entity_cls": entity_cls,
+                "ident": ident,
+                "with_for_update": kwargs.get("with_for_update"),
+            }
+        )
         if ident in self._entities:
             return self._entities[ident]
         if (entity_cls, ident) in self._entities:
@@ -170,10 +190,16 @@ class FakeAsyncSession:
             self.add(obj)
 
     async def flush(self) -> None:
+        self.flushes += 1
         return None
 
     async def commit(self) -> None:
+        if self.commit_error is not None:
+            raise self.commit_error
         self.commits += 1
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
 
     async def refresh(self, obj: Any) -> None:
         self.refreshes += 1
@@ -215,10 +241,11 @@ class FakePubSub:
 
 
 class FakePipeline:
-    """In-memory Redis pipeline double for atomic operations."""
+    """In-memory Redis pipeline double buffering queued operations and results."""
 
     def __init__(self, valkey: "FakeValkey") -> None:
         self._valkey = valkey
+        self._ops: list[Callable[[], Any]] = []
 
     async def __aenter__(self) -> "FakePipeline":
         return self
@@ -227,20 +254,51 @@ class FakePipeline:
         pass
 
     def delete(self, *keys: str) -> "FakePipeline":
-        for k in keys:
-            self._valkey.delete_key(k)
+        self._ops.append(lambda: self._valkey.delete_sync(*keys))
         return self
 
     def set(self, key: str, value: Any, *args: Any, **kwargs: Any) -> "FakePipeline":
-        self._valkey.set_key(key, value)
+        nx = bool(kwargs.get("nx", False))
+        self._ops.append(lambda: self._valkey.set_sync(key, value, nx=nx))
+        return self
+
+    def get(self, key: str) -> "FakePipeline":
+        self._ops.append(lambda: self._valkey._kv.get(key))  # pyright: ignore[reportPrivateUsage]
+        return self
+
+    def exists(self, *keys: str) -> "FakePipeline":
+        self._ops.append(lambda: self._valkey.exists_sync(*keys))
+        return self
+
+    def zadd(
+        self,
+        name: str,
+        mapping: dict[str, float | int],
+        nx: bool = False,
+    ) -> "FakePipeline":
+        self._ops.append(lambda: self._valkey.zadd_sync(name, mapping, nx=nx))
+        return self
+
+    def zscore(self, name: str, member: str) -> "FakePipeline":
+        self._ops.append(lambda: self._valkey.zscore_sync(name, member))
+        return self
+
+    def zrank(self, name: str, member: str) -> "FakePipeline":
+        self._ops.append(lambda: self._valkey.zrank_sync(name, member))
+        return self
+
+    def zcard(self, name: str) -> "FakePipeline":
+        self._ops.append(lambda: len(self._valkey._zsets.get(name, {})))  # pyright: ignore[reportPrivateUsage]
         return self
 
     async def execute(self) -> list[Any]:
-        return []
+        ops = list(self._ops)
+        self._ops.clear()
+        return [op() for op in ops]
 
 
 class FakeValkey:
-    """Minimal Valkey double supporting pubsub and sorted sets for in-memory tests."""
+    """Minimal Valkey double supporting pubsub, sorted sets, locks, and pipelines."""
 
     def __init__(self) -> None:
         self._queues: dict[str, queue_module.Queue[str]] = {}
@@ -248,11 +306,67 @@ class FakeValkey:
         self._kv: dict[str, Any] = {}
         self._sets: dict[str, set[str]] = {}
 
+    def delete_sync(self, *keys: str) -> int:
+        deleted = 0
+        for key in keys:
+            if key in self._kv:
+                del self._kv[key]
+                deleted += 1
+        return deleted
+
     def delete_key(self, key: str) -> None:
         self._kv.pop(key, None)
 
+    def set_sync(self, key: str, value: Any, *, nx: bool = False) -> bool:
+        if nx and key in self._kv:
+            return False
+        self._kv[key] = value
+        return True
+
     def set_key(self, key: str, value: Any) -> None:
         self._kv[key] = value
+
+    def exists_sync(self, *names: str) -> int:
+        count = 0
+        for name in names:
+            if name in self._kv or name in self._sets or name in self._zsets:
+                count += 1
+        return count
+
+    def zadd_sync(
+        self,
+        name: str,
+        mapping: dict[str, float | int],
+        *,
+        nx: bool = False,
+    ) -> int:
+        if name not in self._zsets:
+            self._zsets[name] = {}
+        added = 0
+        for member, score in mapping.items():
+            exists_already = member in self._zsets[name]
+            if nx and exists_already:
+                continue
+            if not exists_already:
+                added += 1
+            self._zsets[name][member] = float(score)
+        return added
+
+    def zscore_sync(self, name: str, member: str) -> float | None:
+        if name not in self._zsets:
+            return None
+        return self._zsets[name].get(member)
+
+    def zrank_sync(self, name: str, member: str) -> int | None:
+        if name not in self._zsets or member not in self._zsets[name]:
+            return None
+        sorted_members = sorted(
+            self._zsets[name].items(), key=lambda item: (item[1], item[0])
+        )
+        for rank, (m, _) in enumerate(sorted_members):
+            if m == member:
+                return rank
+        return None
 
     def pipeline(self, transaction: bool = True) -> FakePipeline:
         return FakePipeline(self)
@@ -264,21 +378,23 @@ class FakeValkey:
         return self._kv.pop(name, None)
 
     async def delete(self, *names: str) -> int:
-        deleted = 0
-        for key in names:
-            if key in self._kv:
-                del self._kv[key]
-                deleted += 1
-        return deleted
+        return self.delete_sync(*names)
+
+    async def exists(self, *names: str) -> int:
+        return self.exists_sync(*names)
 
     async def set(self, name: str, value: Any, *args: Any, **kwargs: Any) -> bool:
-        self._kv[name] = value
-        return True
+        return self.set_sync(name, value, nx=bool(kwargs.get("nx", False)))
 
     async def incr(self, name: str, amount: int = 1) -> int:
         cur = int(self._kv.get(name, 0) or 0)
         self._kv[name] = cur + amount
         return cur + amount
+
+    async def decr(self, name: str, amount: int = 1) -> int:
+        cur = int(self._kv.get(name, 0) or 0)
+        self._kv[name] = cur - amount
+        return cur - amount
 
     async def expire(self, name: str, time: int) -> bool:
         return True
@@ -301,6 +417,9 @@ class FakeValkey:
         s = self._sets.get(name)
         return len(s) if s is not None else 0
 
+    def set_members(self, name: str) -> set[str]:
+        return set(self._sets.get(name, set()))
+
     def pubsub(self) -> FakePubSub:
         return FakePubSub(self._queues)
 
@@ -317,30 +436,27 @@ class FakeValkey:
         *args: Any,
         **kwargs: Any,
     ) -> int:
-        if name not in self._zsets:
-            self._zsets[name] = {}
-        added = 0
-        for member, score in mapping.items():
-            if member not in self._zsets[name]:
-                added += 1
-            self._zsets[name][member] = float(score)
-        return added
+        return self.zadd_sync(name, mapping, nx=bool(kwargs.get("nx", False)))
 
     async def zscore(self, name: str, member: str) -> float | None:
-        if name not in self._zsets:
-            return None
-        return self._zsets[name].get(member)
+        return self.zscore_sync(name, member)
 
     async def zrank(self, name: str, member: str) -> int | None:
-        if name not in self._zsets or member not in self._zsets[name]:
-            return None
-        sorted_members = sorted(
-            self._zsets[name].items(), key=lambda item: (item[1], item[0])
-        )
-        for rank, (m, _) in enumerate(sorted_members):
-            if m == member:
-                return rank
-        return None
+        return self.zrank_sync(name, member)
+
+    async def zrange(self, name: str, start: int, stop: int) -> list[str]:
+        if name not in self._zsets:
+            return []
+        sorted_members = [
+            m
+            for m, _ in sorted(
+                self._zsets[name].items(), key=lambda item: (item[1], item[0])
+            )
+        ]
+        if stop < 0:
+            end = len(sorted_members) + stop + 1
+            return sorted_members[start : max(0, end)]
+        return sorted_members[start : stop + 1]
 
     async def zcard(self, name: str) -> int:
         if name not in self._zsets:
@@ -356,6 +472,52 @@ class FakeValkey:
                 del self._zsets[name][m]
                 removed += 1
         return removed
+
+
+class FakeLuaValkeyClient(FakeValkey):
+    """In-memory Valkey double supporting scripted script_load, evalsha, and eval."""
+
+    def __init__(
+        self,
+        *,
+        evalsha_outcomes: Sequence[object] = (),
+        script_load_outcomes: Sequence[str | Exception] = (),
+        eval_outcomes: Sequence[object] = (),
+    ) -> None:
+        super().__init__()
+        self.evalsha_outcomes: list[object] = list(evalsha_outcomes)
+        self.script_load_outcomes: list[str | Exception] = list(script_load_outcomes)
+        self.eval_outcomes: list[object] = list(eval_outcomes)
+        self.script_load_calls: list[str] = []
+        self.evalsha_calls: list[tuple[str, int, tuple[object, ...]]] = []
+        self.eval_calls: list[tuple[str, int, tuple[object, ...]]] = []
+
+    async def script_load(self, script: str) -> str:
+        self.script_load_calls.append(script)
+        if self.script_load_outcomes:
+            outcome = self.script_load_outcomes.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+        return hashlib.sha1(script.encode("utf-8")).hexdigest()  # noqa: S324
+
+    async def evalsha(self, sha: str, numkeys: int, *keys_and_args: object) -> object:
+        self.evalsha_calls.append((sha, numkeys, keys_and_args))
+        if self.evalsha_outcomes:
+            outcome = self.evalsha_outcomes.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+        return None
+
+    async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
+        self.eval_calls.append((script, numkeys, keys_and_args))
+        if self.eval_outcomes:
+            outcome = self.eval_outcomes.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+        return None
 
 
 class FakePDFGenerator:
@@ -447,13 +609,21 @@ class FakeArqJob:
 class FakeArqPool:
     """In-memory ARQ Redis Pool double."""
 
-    def __init__(self, default_job_id: str = "test_job_123") -> None:
+    def __init__(
+        self,
+        default_job_id: str = "test_job_123",
+        *,
+        error: Exception | None = None,
+    ) -> None:
         self.default_job_id = default_job_id
+        self.error = error
         self.enqueued_jobs: list[dict[str, Any]] = []
 
     async def enqueue_job(
         self, function_name: str, *args: Any, **kwargs: Any
     ) -> FakeArqJob:
+        if self.error is not None:
+            raise self.error
         self.enqueued_jobs.append(
             {"function": function_name, "args": args, "kwargs": kwargs}
         )
@@ -549,6 +719,8 @@ class FakeAtendimentoReader(AtendimentoReaderPort):
         self.error_concluir_atendimento = error_concluir_atendimento
         self.chamada_atendida = False
         self.atendimento_concluido = False
+        self.last_auto_commit: bool | None = None
+        self.liberados_consulta: list[UUID] = []
 
     async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
         if self.error_obter_resumo is not None:
@@ -557,10 +729,22 @@ class FakeAtendimentoReader(AtendimentoReaderPort):
             return self.resumo
         return None
 
-    async def concluir_atendimento(self, atendimento_id: UUID) -> None:
+    async def concluir_atendimento(
+        self,
+        atendimento_id: UUID,
+        *,
+        auto_commit: bool = True,
+    ) -> UUID | None:
+        self.last_auto_commit = auto_commit
         if self.error_concluir_atendimento is not None:
             raise self.error_concluir_atendimento
         self.atendimento_concluido = True
+        if self.resumo is not None and self.resumo.atendimento_id == atendimento_id:
+            return self.resumo.medico_id
+        return None
+
+    async def liberar_consulta_ativa_medico(self, medico_id: UUID) -> None:
+        self.liberados_consulta.append(medico_id)
 
     async def atender_chamada(self, atendimento_id: UUID) -> None:
         self.chamada_atendida = True
@@ -762,23 +946,44 @@ class FakeProducaoAmbulatorialPort(ProducaoAmbulatorialPort):
         )
 
 
+class FakeEmergencyNotifier(EmergencyNotifierPort):
+    """Canonical in-memory test double replacing production buffer on adapter."""
+
+    def __init__(self, *, error: Exception | None = None) -> None:
+        self.sent_alerts: list[EmergencyAlertDTO] = []
+        self.error = error
+
+    async def notificar_emergencia_samu(self, alert: EmergencyAlertDTO) -> None:
+        if self.error is not None:
+            raise self.error
+        self.sent_alerts.append(alert)
+
+    def clear(self) -> None:
+        self.sent_alerts.clear()
+
+
 class FakeTriagePort(TriagePort):
-    """Canonical in-memory test double implementing TriagePort."""
+    """Canonical in-memory test double implementing unified TriagePort."""
 
     def __init__(
         self,
         evaluation: TriageEvaluationDTO,
         triagem_id: UUID | None = None,
+        *,
+        queixas: dict[UUID, str | None] | None = None,
     ) -> None:
         self.evaluation = evaluation
         self.triagem_id = triagem_id or uuid7()
+        self.queixas: dict[UUID, str | None] = queixas or {}
         self.avaliacoes: list[dict[str, Any]] = []
         self.triagens_registradas: list[dict[str, Any]] = []
+        self.error_avaliar: Exception | None = None
+        self.error_registrar: Exception | None = None
 
     async def avaliar_risco(
         self,
         queixa_principal: str,
-        sintomas: list[str],
+        sintomas: Sequence[str],
         escala_dor: int = 0,
         tcle_texto: str = "",
         tcle_hash: str | None = None,
@@ -789,7 +994,7 @@ class FakeTriagePort(TriagePort):
         self.avaliacoes.append(
             {
                 "queixa_principal": queixa_principal,
-                "sintomas": sintomas,
+                "sintomas": list(sintomas),
                 "escala_dor": escala_dor,
                 "tcle_texto": tcle_texto,
                 "tcle_hash": tcle_hash,
@@ -797,22 +1002,26 @@ class FakeTriagePort(TriagePort):
                 "atendimento_id": atendimento_id,
             }
         )
+        if self.error_avaliar is not None:
+            raise self.error_avaliar
         return self.evaluation
 
     async def registrar_triagem(
         self,
         atendimento_id: UUID,
         queixa_principal: str,
-        sintomas: list[str],
-        prioridade_calculada: int,
+        sintomas: Sequence[str],
+        prioridade_calculada: int | None = None,
         alerta_samu_disparado: bool = False,
         escala_dor: int = 0,
     ) -> UUID:
+        if self.error_registrar is not None:
+            raise self.error_registrar
         self.triagens_registradas.append(
             {
                 "atendimento_id": atendimento_id,
                 "queixa_principal": queixa_principal,
-                "sintomas": sintomas,
+                "sintomas": list(sintomas),
                 "prioridade_calculada": prioridade_calculada,
                 "alerta_samu_disparado": alerta_samu_disparado,
                 "escala_dor": escala_dor,
@@ -820,31 +1029,232 @@ class FakeTriagePort(TriagePort):
         )
         return self.triagem_id
 
+    async def obter_queixas_por_atendimentos(
+        self,
+        atendimento_ids: Sequence[UUID],
+    ) -> dict[UUID, str | None]:
+        return {aid: self.queixas.get(aid) for aid in atendimento_ids}
 
-class FakeAllocationPort(AllocationPort):
-    """Canonical in-memory test double implementing AllocationPort."""
+
+class FakeShiftPolicyReader(ShiftPolicyReaderPort):
+    """Canonical in-memory ShiftPolicyReaderPort double."""
+
+    def __init__(self, policy: ShiftPolicyDTO | None = None) -> None:
+        self.policy = policy or ShiftPolicyDTO()
+
+    async def obter_politica_atual(self) -> ShiftPolicyDTO:
+        return self.policy
+
+
+class FakeQueueEngine(QueueEnginePort):
+    """Canonical stateful in-memory QueueEnginePort double for queue & worker tests."""
 
     def __init__(
         self,
-        codigo: AlocacaoCodigo = AlocacaoCodigo.SUCESSO,
+        *,
+        medicos_ativos: set[UUID] | None = None,
+        cota_diaria_usada: int = 0,
+        forced_codigo: AlocacaoCodigo | None = None,
+        forced_next_id: UUID | None = None,
     ) -> None:
-        self.codigo = codigo
-        self.chamadas: list[dict[str, Any]] = []
+        self.fila_scores: dict[UUID, int] = {}
+        self.locks_medico: dict[UUID, UUID] = {}
+        self.locks_atendimento: dict[UUID, UUID] = {}
+        self.locks_consulta_ativa: dict[UUID, UUID] = {}
+        self.medicos_ativos: set[UUID] = set(medicos_ativos or ())
+        self.cota_diaria_usada: int = cota_diaria_usada
+        self.sweeper_lock_held: bool = False
+        self.published_fila: list[tuple[UUID, dict[str, object]]] = []
+        self.published_medico: list[tuple[UUID, dict[str, object]]] = []
+        self.forced_codigo = forced_codigo
+        self.forced_next_id = forced_next_id
+        self.alocar_atendimento_calls: list[dict[str, object]] = []
+        self.alocar_proximo_calls: list[dict[str, object]] = []
+        self.sweeper_checks: int = 0
 
-    async def execute_script(
+    def _sorted_ids(self) -> list[UUID]:
+        return sorted(
+            self.fila_scores.keys(),
+            key=lambda aid: (self.fila_scores[aid], str(aid)),
+        )
+
+    async def alocar_proximo(
         self,
-        client: Any,
-        script_name: str,
-        keys: Sequence[str] = (),
-        args: Sequence[Any] = (),
-    ) -> Any:
-        return int(self.codigo)
+        medico_id: UUID,
+        ttl_segundos: int = 45,
+        max_scan: int = 50,
+    ) -> tuple[AlocacaoCodigo, UUID | None]:
+        self.alocar_proximo_calls.append(
+            {
+                "medico_id": medico_id,
+                "ttl_segundos": ttl_segundos,
+                "max_scan": max_scan,
+            }
+        )
+        if self.forced_codigo is not None:
+            return self.forced_codigo, self.forced_next_id
+        if medico_id in self.locks_medico or medico_id in self.locks_consulta_ativa:
+            return AlocacaoCodigo.MEDICO_OCUPADO, None
+        for cand in self._sorted_ids()[:max_scan]:
+            if cand not in self.locks_atendimento:
+                self.fila_scores.pop(cand, None)
+                self.locks_medico[medico_id] = cand
+                self.locks_atendimento[cand] = medico_id
+                return AlocacaoCodigo.SUCESSO, cand
+        return AlocacaoCodigo.INDISPONIVEL, None
 
-    async def alocar_chamada(
-        self, client: Any, keys: list[str], args: list[object]
+    async def alocar_atendimento(
+        self,
+        medico_id: UUID,
+        atendimento_id: UUID,
+        ttl_segundos: int = 45,
     ) -> AlocacaoCodigo:
-        self.chamadas.append({"keys": list(keys), "args": list(args)})
-        return self.codigo
+        self.alocar_atendimento_calls.append(
+            {
+                "medico_id": medico_id,
+                "atendimento_id": atendimento_id,
+                "ttl_segundos": ttl_segundos,
+            }
+        )
+        if self.forced_codigo is not None:
+            return self.forced_codigo
+        if medico_id in self.locks_medico or medico_id in self.locks_consulta_ativa:
+            return AlocacaoCodigo.MEDICO_OCUPADO
+        if (
+            atendimento_id in self.locks_atendimento
+            or atendimento_id not in self.fila_scores
+        ):
+            return AlocacaoCodigo.INDISPONIVEL
+        self.fila_scores.pop(atendimento_id, None)
+        self.locks_medico[medico_id] = atendimento_id
+        self.locks_atendimento[atendimento_id] = medico_id
+        return AlocacaoCodigo.SUCESSO
+
+    async def promover_para_consulta(
+        self,
+        medico_id: UUID,
+        atendimento_id: UUID,
+        ttl_segundos: int = 7200,
+    ) -> None:
+        self.locks_atendimento.pop(atendimento_id, None)
+        self.locks_medico.pop(medico_id, None)
+        self.locks_consulta_ativa[medico_id] = atendimento_id
+
+    async def liberar_ring(
+        self,
+        medico_id: UUID,
+        atendimento_id: UUID,
+    ) -> None:
+        self.locks_medico.pop(medico_id, None)
+        self.locks_atendimento.pop(atendimento_id, None)
+
+    async def liberar_consulta(self, medico_id: UUID) -> None:
+        self.locks_consulta_ativa.pop(medico_id, None)
+
+    async def devolver_para_fila(
+        self,
+        atendimento_id: UUID,
+        score: int,
+        medico_id: UUID | None = None,
+        *,
+        nx: bool = False,
+    ) -> bool:
+        self.locks_atendimento.pop(atendimento_id, None)
+        if medico_id is not None:
+            self.locks_medico.pop(medico_id, None)
+        if nx and atendimento_id in self.fila_scores:
+            return False
+        self.fila_scores[atendimento_id] = score
+        return True
+
+    async def inserir_ou_atualizar_fila(
+        self,
+        atendimento_id: UUID,
+        score: int,
+        *,
+        nx: bool = False,
+    ) -> int | None:
+        if not (nx and atendimento_id in self.fila_scores):
+            self.fila_scores[atendimento_id] = score
+        ordered = self._sorted_ids()
+        return ordered.index(atendimento_id) if atendimento_id in ordered else None
+
+    async def remover_da_fila(self, atendimento_id: UUID) -> bool:
+        return self.fila_scores.pop(atendimento_id, None) is not None
+
+    async def obter_posicao_e_tamanho(
+        self,
+        atendimento_id: UUID,
+    ) -> tuple[int | None, int]:
+        ordered = self._sorted_ids()
+        rank = ordered.index(atendimento_id) if atendimento_id in ordered else None
+        return rank, len(ordered)
+
+    async def obter_tamanho_fila(self) -> int:
+        return len(self.fila_scores)
+
+    async def consumir_cota_ou_bloquear(
+        self,
+        cota_diaria_maxima: int | None,
+    ) -> tuple[bool, int]:
+        self.cota_diaria_usada += 1
+        if (
+            cota_diaria_maxima is not None
+            and self.cota_diaria_usada > cota_diaria_maxima
+        ):
+            self.cota_diaria_usada = max(0, self.cota_diaria_usada - 1)
+            return False, self.cota_diaria_usada
+        return True, self.cota_diaria_usada
+
+    async def estornar_cota_diaria(self) -> None:
+        self.cota_diaria_usada = max(0, self.cota_diaria_usada - 1)
+
+    async def registrar_medico_ativo(self, medico_id: UUID) -> None:
+        self.medicos_ativos.add(medico_id)
+
+    async def desregistrar_medico_ativo(self, medico_id: UUID) -> None:
+        self.medicos_ativos.discard(medico_id)
+
+    async def obter_medicos_ativos_count(self) -> int:
+        return len(self.medicos_ativos)
+
+    async def publicar_evento_fila(
+        self,
+        atendimento_id: UUID,
+        payload: dict[str, object],
+    ) -> None:
+        self.published_fila.append((atendimento_id, dict(payload)))
+
+    async def publicar_evento_medico(
+        self,
+        medico_id: UUID,
+        payload: dict[str, object],
+    ) -> None:
+        self.published_medico.append((medico_id, dict(payload)))
+
+    async def adquirir_lock_sweeper(self, ttl_segundos: int = 55) -> bool:
+        if self.sweeper_lock_held:
+            return False
+        self.sweeper_lock_held = True
+        return True
+
+    async def liberar_lock_sweeper(self) -> None:
+        self.sweeper_lock_held = False
+
+    async def esta_bloqueado_para_reconciliacao(
+        self,
+        atendimento_id: UUID,
+        medico_id: UUID | None,
+    ) -> bool:
+        self.sweeper_checks += 1
+        if atendimento_id in self.fila_scores:
+            return True
+        if atendimento_id in self.locks_atendimento:
+            return True
+        return medico_id is not None and (
+            self.locks_medico.get(medico_id) == atendimento_id
+            or self.locks_consulta_ativa.get(medico_id) == atendimento_id
+        )
 
 
 class FakePasswordHasher(PasswordHasherPort):

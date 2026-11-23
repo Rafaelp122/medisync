@@ -4,7 +4,6 @@ from src.modules.queue.domain.exceptions import (
     AdmissaoFilaSuspensaError,
     AtendimentoNaoDisponivelError,
     AtendimentoNaoEncontradoError,
-    FilaVaziaError,
     MedicoOcupadoError,
     TransicaoEstadoInvalidaError,
 )
@@ -19,7 +18,6 @@ __all__ = [
     "Atendimento",
     "AtendimentoNaoDisponivelError",
     "AtendimentoNaoEncontradoError",
-    "FilaVaziaError",
     "MedicoOcupadoError",
     "PrioridadeClinica",
     "StatusAtendimento",

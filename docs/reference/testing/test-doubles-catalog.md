@@ -32,8 +32,12 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 | `FakeIdentityReader` | `IdentityReaderPort` (`src.modules.identity`) | `obter_dados_diretorio()`, `buscar_paciente_cadsus()`, `buscar_passkey_por_credencial()` | Somente leitura CQRS (`lookups`, `passkeys`); bloqueia consultas CADSUS sem CPF/CNS ou ambíguas. |
 | `FakeIdentityWriter` | `IdentityWriterPort` (`src.modules.identity`) | `criar_paciente()`, `registrar_passkey_paciente()`, `atualizar_sign_count_passkey()` | Persiste pacientes e mutações de passkeys no `FakeIdentityReader` compartilhado sem commit. |
 | `FakeSmsSenderAdapter` | `SmsSenderPort` (`src.modules.auth`) | `enviar_otp(telefone, codigo)`, `clear()` | `sent_otps: list[dict]` residente em `src/modules/auth/infrastructure/fake_sms_adapter.py` (removido de `identity`). |
-| `FakeAtendimentoReader` | `AtendimentoReaderPort` (`src.modules.consultation`) | `obter_resumo()`, `concluir_atendimento()`, `atender_chamada()` | `resumo: AtendimentoResumoDTO | None`, `chamada_atendida: bool`, `atendimento_concluido: bool`. |
-| `FakeValkey` / `FakePubSub` | Protocolo Valkey / Redis Pub/Sub | `publish(canal, msg)`, `pubsub()`, `subscribe()`, `listen()` | Filas thread-safe `queue.Queue` em memória para testes de WebSockets e SSE sem infraestrutura externa. |
+| `FakeAtendimentoReader` | `AtendimentoReaderPort` (`src.modules.consultation`) | `obter_resumo()`, `concluir_atendimento(..., auto_commit=True)`, `liberar_consulta_ativa_medico()`, `atender_chamada()` | `resumo`, `chamada_atendida`, `atendimento_concluido`, `last_auto_commit: bool \| None`, `liberados_consulta: list[UUID]`. |
+| `FakeEmergencyNotifier` | `EmergencyNotifierPort` (`src.modules.triage`) | `notificar_emergencia_samu(alert)`, `clear()` | `sent_alerts: list[EmergencyAlertDTO]`, `error: Exception \| None` (extraído da classe de produção `SamuEmergencyNotifierAdapter`). |
+| `FakeTriagePort` | `TriagePort` (`src.modules.queue`) | `avaliar_risco()`, `registrar_triagem()`, `obter_queixas_por_atendimentos()` | `avaliacoes: list[dict]`, `triagens_registradas: list[dict]`, `queixas: dict[UUID, str \| None]`, `error_avaliar`, `error_registrar`. |
+| `FakeShiftPolicyReader` | `ShiftPolicyReaderPort` (`src.modules.queue`) | `obter_politica_atual()` | `policy: ShiftPolicyDTO` configurável com `alpha_backpressure`, `cota_diaria_maxima`, `tma_padrao_segundos`, `tempo_tolerancia_ring_segundos`. |
+| `FakeQueueEngine` | `QueueEnginePort` (`src.modules.queue`) | `alocar_proximo()`, `alocar_atendimento()`, `promover_para_consulta()`, `liberar_ring()`, `liberar_consulta()`, `devolver_para_fila()`, `consumir_cota_ou_bloquear()`, `estornar_cota_diaria()`, `adquirir_lock_sweeper()`, `esta_bloqueado_para_reconciliacao()`, `publicar_evento_*()` | Estado completo em memória: `fila_scores`, `locks_medico`, `locks_atendimento`, `locks_consulta_ativa`, `medicos_ativos`, `cota_diaria_usada`, `sweeper_lock_held`, `published_fila`, `published_medico`, `alocar_*_calls`, `sweeper_checks`. |
+| `FakeValkey` / `FakePubSub` | Protocolo Valkey / Redis Pub/Sub | `publish(canal, msg)`, `pubsub()`, `subscribe()`, `listen()`, `zadd()`, `zrange()`, `incr()`, `decr()`, `sadd()` | Filas `queue.Queue`, `_zsets`, `_kv`, `_sets` e `FakePipeline` em memória sem infraestrutura externa. |
 
 ### Detalhamento dos Dublês e Mecânica de Estado
 
@@ -72,6 +76,12 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
    - `MemoryChallengeStore` substitui dicts ad-hoc `_memory_*` e stubs locais em testes unitários de OTP e WebAuthn (`consume_one_time` atômico e `verify_and_increment_otp`).
    - `FakeIdentityReader` (leitura CQRS) e `FakeIdentityWriter` (escrita de pacientes e passkeys) espelham a segregação `IdentityReaderPort`/`IdentityWriterPort`, enquanto `SmsSenderPort`/`FakeSmsSenderAdapter` pertencem exclusivamente ao módulo `auth`.
 
+9. **`FakeEmergencyNotifier`, `FakeTriagePort`, `FakeShiftPolicyReader` & `FakeQueueEngine` (`tests/doubles.py`)**:
+   - `FakeEmergencyNotifier` mantém o buffer em memória `sent_alerts` exclusivamente na suíte de testes após remoção de estado de teste da classe de produção `SamuEmergencyNotifierAdapter`.
+   - `FakeTriagePort` implementa o seam único `TriagePort` (incluindo `obter_queixas_por_atendimentos`), eliminando o antigo `TriageQueixaReaderPort`.
+   - `FakeShiftPolicyReader` fornece snapshots `ShiftPolicyDTO` para testar backpressure e estimativa de espera sem banco relacional.
+   - `FakeQueueEngine` simula integralmente o contrato `QueueEnginePort` (ZSET ordenado, locks 4-Keys com `locks_consulta_ativa`, presença médica, cota atômica, lock do sweeper e Pub/Sub), substituindo mocks inline de `Redis` e dos antigos seams removidos.
+
 ## Onde no código
 
 - Impl: `tests/doubles.py:FakeAsyncSession`
@@ -82,6 +92,10 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Impl: `tests/doubles.py:FakeEligibilityProvider`
 - Impl: `tests/doubles.py:FakeElegibilidadeNotifier`
 - Impl: `tests/doubles.py:FakeAtendimentoReader`
+- Impl: `tests/doubles.py:FakeEmergencyNotifier`
+- Impl: `tests/doubles.py:FakeTriagePort`
+- Impl: `tests/doubles.py:FakeShiftPolicyReader`
+- Impl: `tests/doubles.py:FakeQueueEngine`
 - Impl: `tests/doubles.py:MemoryChallengeStore`
 - Impl: `tests/doubles.py:FakeIdentityReader`
 - Impl: `tests/doubles.py:FakeIdentityWriter`
@@ -91,6 +105,10 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Spec: `src/modules/auth/application/ports/sms_sender_port.py:SmsSenderPort`
 - Spec: `src/modules/identity/application/ports/identity_reader_port.py:IdentityReaderPort`
 - Spec: `src/modules/identity/application/ports/identity_writer_port.py:IdentityWriterPort`
+- Spec: `src/modules/queue/application/ports/queue_engine_port.py:QueueEnginePort`
+- Spec: `src/modules/queue/application/ports/shift_policy_reader_port.py:ShiftPolicyReaderPort`
+- Spec: `src/modules/queue/application/ports/triage_port.py:TriagePort`
+- Spec: `src/modules/triage/application/ports/emergency_notifier.py:EmergencyNotifierPort`
 - Spec: `src/modules/consultation/application/ports/pdf_generator_port.py:PDFGeneratorPort`
 - Spec: `src/modules/consultation/application/ports/icp_brasil_signer_port.py:ICPBrasilSignerPort`
 - Spec: `src/modules/consultation/application/ports/storage_port.py:StoragePort`
@@ -101,7 +119,8 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Prova viva: `tests/unit/test_factories.py:test_seed_clinical_scenario_with_fake_session`
 - Prova viva: `tests/unit/test_pyhanko_signer.py:test_fake_icp_brasil_signer_success`
 - Prova viva: `tests/unit/test_ambulatory_production.py:test_elegibilidade_service_emits_failure_event_on_rejection`
-
+- Prova viva: `tests/unit/test_triage_model.py:test_samu_notifier_adapter_raise_for_status_e_log_erro`
+- Prova viva: `tests/unit/test_pep_service.py:test_pep_finalizar_consulta_transacao_unica_e_libera_lock_pos_commit`
 - Prova viva: `tests/unit/test_token_revocation.py:test_memory_token_revocation`
 - Prova viva: `tests/unit/test_documento_service.py:test_emitir_gera_chave_canonica_sem_legado`
 - Prova viva: `tests/unit/test_livekit_dependencies.py:test_validar_acesso_livekit_paciente_ausente_retorna_conflict_error`

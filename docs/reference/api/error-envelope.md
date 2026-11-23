@@ -52,7 +52,6 @@ Tabela de códigos (fonte única; detalhe completo só no `raise`):
 | 404 | `NOT_FOUND` | Recurso genérico não encontrado (`NotFoundError`) |
 | 404 | `PACIENTE_NAO_ENCONTRADO` | Paciente não cadastrado (`PacienteNaoEncontradoError`) |
 | 404 | `ATENDIMENTO_NAO_ENCONTRADO` | Atendimento não localizado no banco (`AtendimentoNaoEncontradoError`) |
-| 404 | `FILA_VAZIA` | Sem pacientes elegíveis na fila de espera (`FilaVaziaError`) |
 | 404 | `EVOLUCAO_NAO_ENCONTRADA` | SOAP inexistente para o atendimento (`EvolucaoNaoEncontradaError`) |
 | 404 | `DOCUMENTO_CLINICO_NAO_ENCONTRADO` | Documento clínico inexistente (`DocumentoClinicoNaoEncontradoError`) |
 | 404 | `DOCUMENTO_STORAGE_NAO_ENCONTRADO` | Chave de arquivo ausente no MinIO/S3 (`DocumentoNaoEncontradoNoStorageError`) |

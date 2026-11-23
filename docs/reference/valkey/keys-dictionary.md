@@ -22,15 +22,16 @@ Princípios pétreos de governança de chaves:
 | `fila:aptos` | `queue` | `ZSET` | Nenhum | Persistente (`noeviction`); remoção por `ZREM` | Fila ordenada de pacientes aptos para atendimento médico (RN01, ADR-002). Score: `(prioridade * 10^12) + timestamp`. |
 | `lock:medico:{id}` | `queue` | `STRING` | 45 | Volátil (`EX 45`); expiração pelo ARQ ou atendimento | Trava de toque (ring) do médico durante chamada WebRTC de 45 segundos (ADR-002). Armazena `atendimento_id`. |
 | `lock:atendimento:{id}` | `queue` | `STRING` | 45 | Volátil (`EX 45`); expiração pelo ARQ ou atendimento | Trava de chamada do atendimento durante toque de 45 segundos (ADR-002). Armazena `medico_id`. |
-| `lock:consulta_ativa:medico:{id}` | `queue` | `STRING` | 7200 | Volátil (`EX 7200`); renovado por heartbeat | Trava de teleconsulta médica ativa em consultório virtual. Armazena `atendimento_id`. Liberado na finalização. |
-| `plantao:medicos_ativos` | `queue` | `SET` | Nenhum | Gerenciado por escala (`SADD`/`SREM`) | Relação de identificadores de médicos plantonistas ativos na unidade para cálculo de backpressure (RN05). |
+| `lock:consulta_ativa:medico:{id}` | `queue` | `STRING` | 7200 | Volátil (`EX 7200`); liberado no commit de finalização | Trava de teleconsulta médica ativa verificada em `KEYS[4]` pelos scripts Lua 4-Keys. Armazena `atendimento_id`. |
+| `lock:sweeper:fila_aptos` | `queue` | `STRING` | 55 | Volátil (`SET NX EX 55`); liberado no `finally` do sweeper | Trava distribuída exclusiva que impede execuções concorrentes de `reconciliar_fila_orphans_task` entre réplicas de worker ARQ. |
+| `plantao:medicos_ativos` | `queue` | `SET` | Nenhum | Gerenciado via `SADD`/`SREM` por `ValkeyQueueEngine` | Médicos ativos no plantão (atualizado em `auth` login/MFA/logout via `DoctorPresencePort`, `/chamar-proximo` e `/ws/doctor/{id}`) para backpressure (RN05). |
 | `auth:ratelimit:ip:{ip}` | `auth` | `ZSET` | 900 | Volátil (`EX 900`); janela deslizante | Janela deslizante de tentativas de autenticação por IP de origem (teto de 5 tentativas por 15 minutos). |
 | `auth:ratelimit:{chave}` | `auth` | `ZSET` | 900 | Volátil (`EX 900`); janela deslizante | Janela deslizante de tentativas por identificador/credencial contra força bruta (`acc:{user}` e afins). |
 | `validation:ratelimit:{chave}` | `consultation` | `ZSET` | 60 | Volátil (`EX 60`); janela deslizante | Janela deslizante de validação pública de receitas e atestados médicos (teto de 30 requisições por minuto). |
 | `telemetry:painel` | `telemetry` | `STRING` | 5 | Volátil (`EX 5`); cache com auto-invalidação | Cache volátil de payload JSON com dados consolidados do dashboard (`PainelTelemetriaDTO`). |
-| `queue:admissoes:{data}` | `queue` | `STRING` | 172800 | Volátil (`EX 172800` - 48h); contador numérico | Contador de admissões do dia (`YYYY-MM-DD`) via `INCR` para fiscalização de cota diária (RN05). |
+| `queue:admissoes:{data}` | `queue` | `STRING` | 172800 | Volátil (`EX 172800` - 48h); `INCR`/`DECR` atômico | Contador diário (`YYYY-MM-DD`) com reserva pré-commit e estorno compensatório (`estornar_cota_diaria`) em rollback (RN05). |
 | `auth:revoked:{token_id}` | `auth` | `STRING` | Dinâmico | Volátil (`EX exp_restante`); máximo 3600 | Blacklist de revogação explícita de identificadores JWT (`jti`) persistidos até a expiração original do token. |
-| `ratelimit:notif:{destination}` | `queue` | `HASH` | 3600 | Volátil (`EXPIRE`); token bucket atômico | Rate limiting anti-spam de notificações (WhatsApp/SMS) por telefone de paciente (E.164). Campos `tokens` e `last_refill`. |
+| `ratelimit:notif:{destination}` | `queue` | `HASH` | 3600 | Volátil (`EXPIRE`); token bucket atômico | Rate limiting anti-spam de notificações WhatsApp por telefone de paciente (E.164). Campos `tokens` e `last_refill`. |
 | `doc:assinado:{documento_id}` | `consultation` | `STRING` | 86400 | Volátil (`EX 86400` - 24h) | Cache de status de conformidade da assinatura digital ICP-Brasil (PAdES) de documento clínico emitido. |
 | `medisync:pubsub:queue:{atendimento_id}` | `queue` | `PUBSUB` | N/A | Transitório de streaming em memória | Barramento de publicação e assinatura em tempo real para sinalizar mudanças de estado e toque ao paciente. |
 | `medisync:pubsub:doctor:{medico_id}` | `consultation` | `PUBSUB` | N/A | Transitório de streaming em memória | Barramento Pub/Sub para sinalização e despacho de eventos operacionais ao painel do médico conectado. |
@@ -43,14 +44,15 @@ Princípios pétreos de governança de chaves:
 - **Pontuação (Score)**: Inteiro de 64 bits calculado por `(prioridade * 10^12) + timestamp_epoch`. Garante ordenação estrita por gravidade clínica (1 a 5) com desempate cronológico sub-milissegundo via ordenação lexicográfica de UUIDv7.
 - **Complexidade**: $\mathcal{O}(\log N)$ para inclusão (`ZADD`) e remoção atômica (`ZREM`); $\mathcal{O}(1)$ para leitura da ponta da fila (`ZRANGE 0 0`).
 
-#### 2. Travas Temporizadas e Ciclo de Vida de Chamada (`lock`)
-- **Fase de Toque (Ring - 45s)**: Chaves emparelhadas `lock:medico:{id}` e `lock:atendimento:{id}` vinculam médico e paciente durante a janela de ring da videochamada LiveKit. Criadas atomicamente pelo script Lua (`alocar_chamada.lua`).
-- **Fase de Atendimento Ativo**: Ao atender, o lock é promovido para `lock:consulta_ativa:medico:{id}` com TTL de 7200s (2 horas), garantindo que o médico permaneça protegido contra dupla alocação durante toda a teleconsulta.
-- **Resolução de No-Show**: Caso o paciente não atenda dentro dos 45s, a tarefa diferida ARQ (`resolver_ring_timeout_task`) desfaz os locks e devolve o médico ao estado disponível.
+#### 2. Travas Temporizadas, Sweeper e Ciclo de Vida de Chamada (`lock`)
+- **Fase de Toque (Ring - 45s)**: Chaves emparelhadas `lock:medico:{id}` e `lock:atendimento:{id}` vinculam médico e paciente durante a janela de ring da videochamada LiveKit. Criadas atomicamente pelos scripts Lua 4-Keys (`alocar_chamada.lua` e `alocar_proximo.lua`) encapsulados em `ValkeyQueueEngine`.
+- **Fase de Atendimento Ativo**: Ao atender, `ValkeyQueueEngine.promover_para_consulta` remove os locks de toque em pipeline e grava `lock:consulta_ativa:medico:{id}` (TTL 7200s). Essa chave é verificada em `KEYS[4]` pelos scripts Lua para impedir overbooking e é removida pós-commit na finalização da consulta (`ValkeyQueueEngine.liberar_consulta`).
+- **Exclusividade do Sweeper**: `lock:sweeper:fila_aptos` (`SET NX EX 55`) garante que apenas um worker ARQ reconcilie órfãos de `fila:aptos` por ciclo.
+- **Resolução de No-Show**: Caso o paciente não atenda dentro dos 45s, a tarefa diferida ARQ (`resolver_ring_timeout_task`) desfaz os locks de toque e devolve o médico ao estado disponível.
 
 #### 3. Proteção e Rate Limiting Deslizante e Token Bucket (`auth`, `consultation` e `queue`)
 - **Janela Deslizante (`auth` e `consultation`)**: Sorted Sets onde cada membro possui formato `{timestamp}:{uuid7}` e score igual ao timestamp Unix da tentativa. Executado em pipeline com `ZREMRANGEBYSCORE` para expurgar registros fora da janela e `ZCARD` para comparar o total acumulado contra o limite estabelecido. Em caso de esgotamento, calcula o tempo remanescente inspecionando o elemento mais antigo via `ZRANGE 0 0 WITHSCORES`.
-- **Token Bucket Atômico de Notificações (`queue`)**: Chave HASH `ratelimit:notif:{destination}` avaliada via script Lua atômico com campos `tokens` e `last_refill`, TTL renovado via `EXPIRE`. Contém rajadas e mitiga custos de envio de SMS/WhatsApp sem contenção entre pacientes distintos.
+- **Token Bucket Atômico de Notificações (`queue`)**: Chave HASH `ratelimit:notif:{destination}` avaliada via script Lua atômico com campos `tokens` e `last_refill`, TTL renovado via `EXPIRE`. Contém rajadas e mitiga custos de envio de WhatsApp sem contenção entre pacientes distintos.
 
 #### 4. Métricas e Caches Voláteis (`telemetry` e `consultation`)
 - Payloads JSON com expiração estrita (60s a 86400s). Evitam queries analíticas repetitivas no PostgreSQL, com auto-invalidação imediata quando ocorrem mutações clínicas relevantes.
@@ -61,6 +63,8 @@ Princípios pétreos de governança de chaves:
 
 ## Onde no código
 
+- Impl: `src/modules/queue/infrastructure/valkey_queue_engine.py:ValkeyQueueEngine`
+- Spec: `src/modules/queue/application/ports/queue_engine_port.py:QueueEnginePort`
 - Impl: `src/modules/queue/application/services/alocacao_service.py:AlocacaoChamadaService`
 - Impl: `src/modules/queue/application/services/fila_service.py:FilaService`
 - Impl: `src/modules/queue/application/services/controle_admissao_service.py:ControleAdmissaoService`
@@ -79,8 +83,7 @@ Princípios pétreos de governança de chaves:
 - Prova viva: `tests/unit/test_valkey_config.py`
 - Prova viva: `tests/unit/test_composition_wiring.py:test_queue_notification_adapter_resolution_with_rate_limiter`
 - Prova viva: `tests/unit/test_notifications.py:test_in_memory_rate_limiter_burst_and_rejection`
-- Ver: `rg -n "fila:" src/modules/queue/application/services/`
-- Ver: `rg -n "lock:" src/modules/queue/application/services/`
+- Ver: `rg -n "fila:|lock:|plantao:" src/modules/queue/infrastructure/valkey_queue_engine.py`
 - Ver: `rg -n "auth:ratelimit" src/modules/auth/infrastructure/`
 
 ## Verificação

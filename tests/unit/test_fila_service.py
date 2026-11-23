@@ -1,26 +1,27 @@
-"""Unit tests for queue ingestion service, 64-bit scoring, and retry loop (RN01)."""
+"""Unit tests for queue ingestion service, 64-bit scoring, and atomic scan."""
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import pytest
-from redis.asyncio import Redis
-from src.core.errors import NotFoundError, ValidationError
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.core.errors import ValidationError
 from src.core.uuid7 import uuid7
 from src.modules.queue.application.dtos import (
     AdquirirProximoPacienteCommand,
-    AlocacaoChamadaResult,
     IngressarFilaCommand,
 )
+from src.modules.queue.application.ports.shift_policy_reader_port import ShiftPolicyDTO
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
 )
-from src.modules.queue.application.services.fila_service import (
-    FilaService,
-)
+from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.domain.exceptions import (
-    AtendimentoNaoDisponivelError,
+    AtendimentoNaoEncontradoError,
     MedicoOcupadoError,
     TransicaoEstadoInvalidaError,
 )
@@ -31,27 +32,36 @@ from src.modules.queue.domain.models import (
 )
 from src.modules.queue.domain.scoring import calcular_score
 
+from tests.doubles import (
+    FakeAsyncSession,
+    FakeQueueEngine,
+    FakeShiftPolicyReader,
+)
+
+_SAMPLE_TCLE = "a" * 64
+
 
 def test_calcular_score_formula() -> None:
     """Validate 64-bit score formula: (priority * 10^12) + timestamp."""
     epoch_fixed = 1_700_000_000
-    score_p1 = calcular_score(PrioridadeClinica.EMERGENCIA, epoch_fixed)
-    assert score_p1 == 1_001_700_000_000
+    assert (
+        calcular_score(PrioridadeClinica.EMERGENCIA, epoch_fixed) == 1_001_700_000_000
+    )
+    assert (
+        calcular_score(PrioridadeClinica.MUITO_URGENTE, epoch_fixed)
+        == 2_001_700_000_000
+    )
+    assert (
+        calcular_score(PrioridadeClinica.POUCO_URGENTE, epoch_fixed)
+        == 4_001_700_000_000
+    )
+    assert (
+        calcular_score(PrioridadeClinica.NAO_URGENTE, epoch_fixed) == 5_001_700_000_000
+    )
 
-    score_p2 = calcular_score(PrioridadeClinica.MUITO_URGENTE, epoch_fixed)
-    assert score_p2 == 2_001_700_000_000
-
-    score_p4 = calcular_score(PrioridadeClinica.POUCO_URGENTE, epoch_fixed)
-    assert score_p4 == 4_001_700_000_000
-
-    score_p5 = calcular_score(PrioridadeClinica.NAO_URGENTE, epoch_fixed)
-    assert score_p5 == 5_001_700_000_000
-
-    # With datetime instance
     dt = datetime.fromtimestamp(epoch_fixed, tz=UTC)
     assert calcular_score(PrioridadeClinica.URGENTE, dt) == 3_001_700_000_000
 
-    # With default timestamp (current time)
     score_default = calcular_score(PrioridadeClinica.URGENTE)
     assert 3_000_000_000_000 < score_default < 4_000_000_000_000
 
@@ -70,28 +80,19 @@ def test_prevalencia_clinica_invariante_rn01() -> None:
     now = datetime.now(UTC)
     ten_years_ago = now - timedelta(days=3650)
 
-    # A level 2 patient who arrived right now
     score_lvl2_now = calcular_score(PrioridadeClinica.MUITO_URGENTE, now)
-
-    # A level 4 patient who waited for 10 years
     score_lvl4_old = calcular_score(PrioridadeClinica.POUCO_URGENTE, ten_years_ago)
-
-    # Level 2 must have a LOWER score than level 4 (ZSET sorts ascending)
     assert score_lvl2_now < score_lvl4_old
 
 
 @pytest.mark.asyncio
 async def test_ingressar_fila_unit() -> None:
-    """Ingress attendance and verify Valkey ZADD and ZRANK invocation."""
-    mock_valkey = AsyncMock()
-    mock_session = AsyncMock()
-    mock_valkey.zadd.return_value = 1
-    mock_valkey.zrank.return_value = 0  # 0-indexed rank -> position 1
-
+    """Ingress attendance and verify QueueEnginePort score and 1-based position."""
+    engine = FakeQueueEngine()
+    session = FakeAsyncSession()
     service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=AsyncMock(),
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
     )
     atend_id = uuid4()
     cmd = IngressarFilaCommand(
@@ -104,353 +105,265 @@ async def test_ingressar_fila_unit() -> None:
 
     assert result.atendimento_id == atend_id
     assert result.posicao == 1
-    mock_valkey.zadd.assert_called_once()
-    mock_valkey.zrank.assert_called_once_with("fila:aptos", str(atend_id))
+    assert atend_id in engine.fila_scores
 
 
 @pytest.mark.asyncio
 async def test_adquirir_proximo_paciente_fila_vazia() -> None:
-    """Return None when queue has no patients waiting."""
-    mock_valkey = AsyncMock()
-    mock_session = AsyncMock()
-    mock_valkey.zrange.return_value = []
-
-    service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=AsyncMock(),
+    """Return None when queue has no patients and still register active doctor."""
+    engine = FakeQueueEngine()
+    session = FakeAsyncSession()
+    alocacao = AlocacaoChamadaService(
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
     )
-    cmd = AdquirirProximoPacienteCommand(medico_id=uuid4())
-
-    result = await service.adquirir_proximo_paciente(cmd)
+    service = FilaService(
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
+        alocacao_service=alocacao,
+    )
+    med_id = uuid4()
+    result = await service.adquirir_proximo_paciente(
+        AdquirirProximoPacienteCommand(medico_id=med_id)
+    )
     assert result is None
+    assert med_id in engine.medicos_ativos
 
 
 @pytest.mark.asyncio
-async def test_adquirir_proximo_paciente_sucesso_primeira_tentativa() -> None:
-    """Successfully allocate the top patient in queue on first attempt."""
-    mock_valkey = AsyncMock()
-    mock_session = AsyncMock()
-    mock_alocacao = AsyncMock(spec=AlocacaoChamadaService)
-
-    atend_id = uuid4()
+async def test_adquirir_proximo_paciente_sucesso_com_ttl_da_politica() -> None:
+    """Allocate top patient using ShiftPolicyDTO ring tolerance when TTL omitted."""
+    atend = Atendimento(
+        id=uuid7(),
+        paciente_id=uuid7(),
+        status=StatusAtendimento.APTO_PARA_CHAMADA,
+        prioridade_clinica=PrioridadeClinica.URGENTE,
+        tcle_hash=_SAMPLE_TCLE,
+    )
     medico_id = uuid4()
-    mock_valkey.zrange.return_value = [str(atend_id)]
-
-    expected_result = AlocacaoChamadaResult(
-        atendimento_id=atend_id,
-        medico_id=medico_id,
-        status=StatusAtendimento.CHAMANDO_PACIENTE,
-        chamada_iniciada_em=datetime.now(UTC),
-        ttl_segundos=45,
+    engine = FakeQueueEngine()
+    engine.fila_scores[atend.id] = 3000
+    session = FakeAsyncSession(entities={atend.id: atend})
+    alocacao = AlocacaoChamadaService(
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
     )
-    mock_alocacao.alocar_chamada.return_value = expected_result
-
     service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=mock_alocacao,
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
+        alocacao_service=alocacao,
+        shift_policy_reader=FakeShiftPolicyReader(
+            ShiftPolicyDTO(tempo_tolerancia_ring_segundos=60)
+        ),
     )
-    cmd = AdquirirProximoPacienteCommand(medico_id=medico_id)
 
-    result = await service.adquirir_proximo_paciente(cmd)
-    assert result == expected_result
-    mock_alocacao.alocar_chamada.assert_called_once()
+    result = await service.adquirir_proximo_paciente(
+        AdquirirProximoPacienteCommand(medico_id=medico_id)
+    )
+    assert result is not None
+    assert result.atendimento_id == atend.id
+    assert result.ttl_segundos == 60
+    assert medico_id in engine.medicos_ativos
+    assert engine.alocar_proximo_calls[-1]["ttl_segundos"] == 60
 
 
 @pytest.mark.asyncio
-async def test_adquirir_proximo_paciente_medico_ocupado_sem_retry() -> None:
-    """Busy doctor raises MedicoOcupadoError immediately without retrying."""
-    mock_valkey = AsyncMock()
-    mock_session = AsyncMock()
-    mock_alocacao = AsyncMock(spec=AlocacaoChamadaService)
-
-    atend_id = uuid4()
+async def test_adquirir_proximo_paciente_medico_ocupado() -> None:
+    """Busy doctor (ring or active consultation) raises MedicoOcupadoError."""
     medico_id = uuid4()
-    mock_valkey.zrange.return_value = [str(atend_id)]
-    mock_alocacao.alocar_chamada.side_effect = MedicoOcupadoError(
-        "Médico já possui chamada ativa."
+    engine = FakeQueueEngine()
+    engine.locks_consulta_ativa[medico_id] = uuid7()
+    session = FakeAsyncSession()
+    alocacao = AlocacaoChamadaService(
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
     )
-
     service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=mock_alocacao,
-    )
-    cmd = AdquirirProximoPacienteCommand(
-        medico_id=medico_id,
-        max_retries=3,
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
+        alocacao_service=alocacao,
     )
 
     with pytest.raises(MedicoOcupadoError):
-        await service.adquirir_proximo_paciente(cmd)
-
-    # Must NOT retry when doctor is busy
-    assert mock_alocacao.alocar_chamada.call_count == 1
-
-
-@pytest.mark.asyncio
-async def test_adquirir_proximo_paciente_retry_em_memoria() -> None:
-    """In-memory retry catches code -1 and allocates 2nd patient seamlessly."""
-    mock_valkey = AsyncMock()
-    mock_session = AsyncMock()
-    mock_alocacao = AsyncMock(spec=AlocacaoChamadaService)
-
-    atend_1 = uuid4()
-    atend_2 = uuid4()
-    medico_id = uuid4()
-
-    # 1st zrange returns atend_1, 2nd zrange returns atend_2
-    mock_valkey.zrange.side_effect = [[str(atend_1)], [str(atend_2)]]
-
-    expected_result = AlocacaoChamadaResult(
-        atendimento_id=atend_2,
-        medico_id=medico_id,
-        status=StatusAtendimento.CHAMANDO_PACIENTE,
-        chamada_iniciada_em=datetime.now(UTC),
-        ttl_segundos=45,
-    )
-
-    # 1st call raises AtendimentoNaoDisponivelError, 2nd succeeds
-    mock_alocacao.alocar_chamada.side_effect = [
-        AtendimentoNaoDisponivelError("Paciente capturado concorrentemente."),
-        expected_result,
-    ]
-
-    service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=mock_alocacao,
-    )
-    cmd = AdquirirProximoPacienteCommand(
-        medico_id=medico_id,
-        max_retries=3,
-    )
-
-    result = await service.adquirir_proximo_paciente(cmd)
-    assert result == expected_result
-    assert mock_alocacao.alocar_chamada.call_count == 2
+        await service.adquirir_proximo_paciente(
+            AdquirirProximoPacienteCommand(medico_id=medico_id)
+        )
 
 
 @pytest.mark.asyncio
-async def test_adquirir_proximo_paciente_retry_esgotado_levanta_excecao() -> None:
-    """Exhausting all retries raises AtendimentoNaoDisponivelError."""
-    mock_valkey = AsyncMock()
-    mock_session = AsyncMock()
-    mock_alocacao = AsyncMock(spec=AlocacaoChamadaService)
-
-    mock_valkey.zrange.return_value = [str(uuid4())]
-    mock_alocacao.alocar_chamada.side_effect = AtendimentoNaoDisponivelError(
-        "Paciente indisponível."
+async def test_adquirir_proximo_paciente_zrange_pula_travado() -> None:
+    """Atomic scan skips locked candidate and allocates next free patient."""
+    atend_1 = Atendimento(
+        id=uuid7(),
+        paciente_id=uuid7(),
+        status=StatusAtendimento.APTO_PARA_CHAMADA,
+        prioridade_clinica=PrioridadeClinica.URGENTE,
+        tcle_hash=_SAMPLE_TCLE,
     )
+    atend_2 = Atendimento(
+        id=uuid7(),
+        paciente_id=uuid7(),
+        status=StatusAtendimento.APTO_PARA_CHAMADA,
+        prioridade_clinica=PrioridadeClinica.URGENTE,
+        tcle_hash=_SAMPLE_TCLE,
+    )
+    engine = FakeQueueEngine()
+    engine.fila_scores[atend_1.id] = 1000
+    engine.fila_scores[atend_2.id] = 2000
+    engine.locks_atendimento[atend_1.id] = uuid4()
 
+    session = FakeAsyncSession(entities={atend_2.id: atend_2})
+    alocacao = AlocacaoChamadaService(
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
+    )
     service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=mock_alocacao,
-    )
-    cmd = AdquirirProximoPacienteCommand(
-        medico_id=uuid4(),
-        max_retries=3,
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
+        alocacao_service=alocacao,
     )
 
-    with pytest.raises(AtendimentoNaoDisponivelError) as exc_info:
-        await service.adquirir_proximo_paciente(cmd)
-
-    assert "após 3 tentativas" in str(exc_info.value)
-    assert mock_alocacao.alocar_chamada.call_count == 3
+    result = await service.adquirir_proximo_paciente(
+        AdquirirProximoPacienteCommand(medico_id=uuid4(), max_scan=50)
+    )
+    assert result is not None
+    assert result.atendimento_id == atend_2.id
+    assert len(engine.alocar_proximo_calls) == 1
 
 
 @pytest.mark.asyncio
 async def test_remover_e_obter_posicao_e_tamanho() -> None:
     """Test helper queue query and removal methods."""
-    mock_valkey = AsyncMock()
-    mock_session = AsyncMock()
-    mock_valkey.zrem.return_value = 1
-    mock_valkey.zrank.return_value = 4  # 0-indexed rank 4 -> position 5
-    mock_valkey.zcard.return_value = 12
-    mock_valkey.zrange.return_value = [b"id-1", b"id-2"]
+    engine = FakeQueueEngine()
+    id_1, id_2, id_3 = uuid4(), uuid4(), uuid4()
+    engine.fila_scores[id_1] = 1000
+    engine.fila_scores[id_2] = 2000
+    engine.fila_scores[id_3] = 3000
 
     service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=AsyncMock(),
+        queue_engine=engine,
+        db_session=cast("AsyncSession", FakeAsyncSession()),
     )
-    atend_id = uuid4()
 
-    assert await service.remover_da_fila(atend_id) is True
-    assert await service.obter_posicao_fila(atend_id) == 5
-    assert await service.obter_tamanho_fila() == 12
-
-    # When attendance is not in queue, rank is None -> returns None
-    mock_valkey.zrank.return_value = None
-    assert await service.obter_posicao_fila(atend_id) is None
-
-    lista = await service.listar_fila(offset=0, limit=2)
-    assert lista == ["id-1", "id-2"]
+    assert await service.obter_posicao_fila(id_2) == 2
+    assert await service.obter_tamanho_fila() == 3
+    assert await service.remover_da_fila(id_2) is True
+    assert await service.obter_posicao_fila(id_2) is None
+    assert await service.obter_tamanho_fila() == 2
 
 
 @pytest.mark.asyncio
 async def test_atender_chamada_success_transitions_state_and_locks() -> None:
     """Transition from CHAMANDO_PACIENTE to EM_ATENDIMENTO with lock promotion."""
-    mock_pipe = MagicMock()
-    mock_pipe.execute = AsyncMock()
-    mock_valkey = MagicMock(spec=Redis)
-    mock_valkey.pipeline.return_value.__aenter__.return_value = mock_pipe
-    mock_session = AsyncMock()
-
     paciente_id = uuid7()
     medico_id = uuid7()
     atendimento = Atendimento(
         paciente_id=paciente_id,
-        tcle_hash="a" * 64,
+        tcle_hash=_SAMPLE_TCLE,
     )
     atendimento.promover_para_apto()
     atendimento.iniciar_chamada(medico_id=medico_id)
-    assert atendimento.status == StatusAtendimento.CHAMANDO_PACIENTE.value
 
-    mock_session.get.return_value = atendimento
-
+    engine = FakeQueueEngine()
+    engine.locks_medico[medico_id] = atendimento.id
+    engine.locks_atendimento[atendimento.id] = medico_id
+    session = FakeAsyncSession(entities={atendimento.id: atendimento})
     service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=AsyncMock(),
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
     )
 
     await service.atender_chamada(atendimento.id)
 
-    mock_session.get.assert_awaited_once_with(
-        Atendimento, atendimento.id, with_for_update=True
-    )
+    assert session.get_calls[-1]["with_for_update"] is True
     assert atendimento.status == StatusAtendimento.EM_ATENDIMENTO.value
-    mock_session.commit.assert_awaited_once()
-
-    k_medico_ring = f"lock:medico:{medico_id}"
-    k_atend_ring = f"lock:atendimento:{atendimento.id}"
-    k_medico_consulta = f"lock:consulta_ativa:medico:{medico_id}"
-
-    mock_pipe.delete.assert_any_call(k_medico_ring)
-    mock_pipe.delete.assert_any_call(k_atend_ring)
-    mock_pipe.set.assert_called_once_with(
-        k_medico_consulta, str(atendimento.id), ex=7200
-    )
-    mock_pipe.execute.assert_awaited_once()
+    assert session.commits == 1
+    assert medico_id not in engine.locks_medico
+    assert atendimento.id not in engine.locks_atendimento
+    assert engine.locks_consulta_ativa[medico_id] == atendimento.id
 
 
 @pytest.mark.asyncio
 async def test_atender_chamada_idempotent_when_already_em_atendimento() -> None:
-    """Refreshes active consultation lock without error when already active."""
-    mock_valkey = AsyncMock()
-    mock_session = AsyncMock()
-
+    """Refreshes active consultation lock without committing when already active."""
     paciente_id = uuid7()
     medico_id = uuid7()
     atendimento = Atendimento(
         paciente_id=paciente_id,
-        tcle_hash="a" * 64,
+        tcle_hash=_SAMPLE_TCLE,
     )
     atendimento.promover_para_apto()
     atendimento.iniciar_chamada(medico_id=medico_id)
     atendimento.atender_chamada()
-    assert atendimento.status == StatusAtendimento.EM_ATENDIMENTO.value
 
-    mock_session.get.return_value = atendimento
-
+    engine = FakeQueueEngine()
+    session = FakeAsyncSession(entities={atendimento.id: atendimento})
     service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=AsyncMock(),
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
     )
 
-    # Re-call should be idempotent
     await service.atender_chamada(atendimento.id)
 
-    mock_session.get.assert_awaited_once_with(
-        Atendimento, atendimento.id, with_for_update=True
-    )
-    mock_session.commit.assert_not_called()
-    k_medico_consulta = f"lock:consulta_ativa:medico:{medico_id}"
-    mock_valkey.set.assert_awaited_once_with(
-        k_medico_consulta, str(atendimento.id), ex=7200
-    )
+    assert session.get_calls[-1]["with_for_update"] is True
+    assert session.commits == 0
+    assert engine.locks_consulta_ativa[medico_id] == atendimento.id
 
 
 @pytest.mark.asyncio
 async def test_atender_chamada_invalid_status_raises_conflict() -> None:
     """Cannot directly answer attendance in APTO_PARA_CHAMADA."""
-    mock_valkey = AsyncMock()
-    mock_session = AsyncMock()
-
     atendimento = Atendimento(
         paciente_id=uuid7(),
-        tcle_hash="a" * 64,
+        tcle_hash=_SAMPLE_TCLE,
     )
     atendimento.promover_para_apto()
-    assert atendimento.status == StatusAtendimento.APTO_PARA_CHAMADA.value
-
-    mock_session.get.return_value = atendimento
-
+    session = FakeAsyncSession(entities={atendimento.id: atendimento})
     service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=AsyncMock(),
+        queue_engine=FakeQueueEngine(),
+        db_session=cast("AsyncSession", session),
     )
 
     with pytest.raises(TransicaoEstadoInvalidaError, match="Apenas atendimentos em"):
         await service.atender_chamada(atendimento.id)
 
-    mock_session.get.assert_awaited_once_with(
-        Atendimento, atendimento.id, with_for_update=True
-    )
+    assert session.get_calls[-1]["with_for_update"] is True
 
 
 @pytest.mark.asyncio
 async def test_atender_chamada_not_found_raises_404() -> None:
-    """Non-existent attendance raises NotFoundError."""
-    mock_valkey = AsyncMock()
-    mock_session = AsyncMock()
-    mock_session.get.return_value = None
-
+    """Non-existent attendance raises AtendimentoNaoEncontradoError."""
+    session = FakeAsyncSession()
     service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=AsyncMock(),
+        queue_engine=FakeQueueEngine(),
+        db_session=cast("AsyncSession", session),
     )
 
     target_id = uuid4()
-    with pytest.raises(NotFoundError, match="não encontrado"):
+    with pytest.raises(AtendimentoNaoEncontradoError, match=str(target_id)):
         await service.atender_chamada(target_id)
 
-    mock_session.get.assert_awaited_once_with(
-        Atendimento, target_id, with_for_update=True
-    )
+    assert session.get_calls[-1]["with_for_update"] is True
 
 
 @pytest.mark.asyncio
 async def test_resolver_ring_timeout_with_for_update_no_show() -> None:
     """Validate with_for_update=True and no-show transition when CHAMANDO_PACIENTE."""
-    mock_pipe = MagicMock()
-    mock_pipe.execute = AsyncMock()
-    mock_valkey = MagicMock(spec=Redis)
-    mock_valkey.pipeline.return_value.__aenter__.return_value = mock_pipe
-    mock_session = AsyncMock()
-
-    paciente_id = uuid7()
     medico_id = uuid7()
     atendimento = Atendimento(
-        paciente_id=paciente_id,
-        tcle_hash="a" * 64,
+        paciente_id=uuid7(),
+        tcle_hash=_SAMPLE_TCLE,
     )
     atendimento.promover_para_apto()
     atendimento.iniciar_chamada(medico_id=medico_id)
-    assert atendimento.status == StatusAtendimento.CHAMANDO_PACIENTE.value
 
-    mock_session.get.return_value = atendimento
-
+    engine = FakeQueueEngine()
+    engine.locks_medico[medico_id] = atendimento.id
+    engine.locks_atendimento[atendimento.id] = medico_id
+    session = FakeAsyncSession(entities={atendimento.id: atendimento})
     service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=AsyncMock(),
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
     )
 
     res = await service.resolver_ring_timeout(
@@ -459,39 +372,29 @@ async def test_resolver_ring_timeout_with_for_update_no_show() -> None:
     )
 
     assert res == "no_show_recorded"
-    mock_session.get.assert_awaited_once_with(
-        Atendimento, atendimento.id, with_for_update=True
-    )
+    assert session.get_calls[-1]["with_for_update"] is True
     assert atendimento.status == StatusAtendimento.PACIENTE_AUSENTE.value
-    mock_session.commit.assert_awaited_once()
+    assert session.commits == 1
+    assert medico_id not in engine.locks_medico
 
 
 @pytest.mark.asyncio
 async def test_resolver_ring_timeout_with_for_update_active_consultation() -> None:
     """Validate with_for_update=True and active lock promotion when EM_ATENDIMENTO."""
-    mock_pipe = MagicMock()
-    mock_pipe.execute = AsyncMock()
-    mock_valkey = MagicMock(spec=Redis)
-    mock_valkey.pipeline.return_value.__aenter__.return_value = mock_pipe
-    mock_session = AsyncMock()
-
-    paciente_id = uuid7()
     medico_id = uuid7()
     atendimento = Atendimento(
-        paciente_id=paciente_id,
-        tcle_hash="a" * 64,
+        paciente_id=uuid7(),
+        tcle_hash=_SAMPLE_TCLE,
     )
     atendimento.promover_para_apto()
     atendimento.iniciar_chamada(medico_id=medico_id)
     atendimento.atender_chamada()
-    assert atendimento.status == StatusAtendimento.EM_ATENDIMENTO.value
 
-    mock_session.get.return_value = atendimento
-
+    engine = FakeQueueEngine()
+    session = FakeAsyncSession(entities={atendimento.id: atendimento})
     service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=AsyncMock(),
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
     )
 
     res = await service.resolver_ring_timeout(
@@ -500,22 +403,17 @@ async def test_resolver_ring_timeout_with_for_update_active_consultation() -> No
     )
 
     assert res == "active_consultation_preserved"
-    mock_session.get.assert_awaited_once_with(
-        Atendimento, atendimento.id, with_for_update=True
-    )
+    assert session.get_calls[-1]["with_for_update"] is True
+    assert engine.locks_consulta_ativa[medico_id] == atendimento.id
 
 
 @pytest.mark.asyncio
 async def test_resolver_ring_timeout_with_for_update_not_found() -> None:
     """Validate with_for_update=True when attendance not found."""
-    mock_valkey = MagicMock(spec=Redis)
-    mock_session = AsyncMock()
-    mock_session.get.return_value = None
-
+    session = FakeAsyncSession()
     service = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=AsyncMock(),
+        queue_engine=FakeQueueEngine(),
+        db_session=cast("AsyncSession", session),
     )
 
     target_id = uuid4()
@@ -525,6 +423,4 @@ async def test_resolver_ring_timeout_with_for_update_not_found() -> None:
     )
 
     assert res == "not_found"
-    mock_session.get.assert_awaited_once_with(
-        Atendimento, target_id, with_for_update=True
-    )
+    assert session.get_calls[-1]["with_for_update"] is True

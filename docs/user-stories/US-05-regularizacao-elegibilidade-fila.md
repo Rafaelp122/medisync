@@ -54,7 +54,7 @@
 
 - [x] **Preservação de Antiguidade:** Gap crítico NC-QUE-04 resolvido em `Atendimento.promover_para_apto()` e `FilaService.regularizar_atendimento()` (`src/modules/queue/application/services/fila_service.py`).
 - [x] **Rota REST de Regularização:** Endpoint dedicado `POST /api/v1/fila/atendimentos/{atendimento_id}/regularizar` em `src/modules/queue/presentation/routers/fila_router.py`.
-- [x] **Desvio Temporário:** Médico consome exclusivamente o conjunto de aptos, ignorando atendimentos retidos (`src/modules/queue/infrastructure/lua/alocar_chamada.lua`).
+- [x] **Desvio Temporário:** Médico consome exclusivamente o conjunto de aptos (`fila:aptos`), ignorando atendimentos retidos (`src/modules/queue/infrastructure/lua/alocar_chamada.lua` e `src/modules/queue/infrastructure/lua/alocar_proximo.lua`).
 - [x] **Testes Automatizados:**
   - `tests/unit/test_queue_scoring.py`
   - `tests/unit/test_atendimento_model.py`

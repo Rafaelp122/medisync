@@ -12,28 +12,28 @@ Entrada via RF-03 (alocação e chamada) e RF-04 (backpressure). Saída alimenta
 
 Escopo termina na entrega do par médico-paciente. Elegibilidade decide quem fica apto, consulta decide o que acontece dentro do ato médico.
 
-Chaves Valkey seguem convenção fixa: `fila:aptos` (ZSET de aptos), `lock:medico:{id}`, `lock:atendimento:{id}`, `plantao:medicos_ativos` (SET de plantão), `queue:admissoes:{data}` (contador diário com expiração de 2 dias).
+Chaves Valkey concentram-se em `ValkeyQueueEngine` (`src/modules/queue/infrastructure/valkey_queue_engine.py`): `fila:aptos` (ZSET de aptos), `lock:medico:{id}`, `lock:atendimento:{id}`, `lock:consulta_ativa:medico:{id}` (TTL 7200s), `plantao:medicos_ativos` (SET de presença médica), `queue:admissoes:{data}` (contador diário com TTL 48h) e `lock:sweeper:fila_aptos` (TTL 55s).
 
-Defaults operacionais: TMA estimado 600s, alpha 1,25, cota diária 300. Deploy SUS aperta alpha e cota, privado relaxa; código não muda, só parâmetro.
+Parâmetros operacionais vêm dinamicamente de `ConfiguracaoPlantao` (`telemetry`) via `ShiftPolicyReaderPort` (defaults em `ShiftPolicyDTO`: TMA 600s, alpha 1,25, cota diária 300, tolerância ring 45s).
 
 ## 2. Regras
 
 - **RN01 — Score 64 bits: prioridade domina, tempo desempata.** `calcular_score` devolve `prioridade * 10^12 + epoch`; menor inteiro chama primeiro dentro do nível, FIFO cronológico puro. [Fonte](../product-specification.md) (RN01)
 - **RN01 (bis) — Identidade FIFO via UUIDv7 e Preservação de Antiguidade ($T_0$).** `Atendimento` usa `uuid7()` como PK. Na regularização ou promoção para `APTO_PARA_CHAMADA`, o timestamp original de acolhimento (`data_entrada_fila` ou `criado_em`) é rigorosamente preservado (NC-QUE-04 / US-05). [Fonte](../product-specification.md) (RN01, RN03)
-- **RN02 — Double-lock atômico com ring de 45s.** `alocar_chamada.lua` trava médico + atendimento, remove do ZSET, expira em TTL; `0` médico ocupado, `-1` atendimento indisponível, `1` sucesso. [Fonte](../product-specification.md) (RN02)
+- **RN02 — Lua 4-Keys anti-overbooking e seleção atômica com ring de 45s.** `alocar_chamada.lua` e `alocar_proximo.lua` validam `KEYS[1]` (`lock:medico:{id}`) e `KEYS[4]` (`lock:consulta_ativa:medico:{id}`) antes de checar `KEYS[2]` (`lock:atendimento:...`) e remover de `KEYS[3]` (`fila:aptos`), aplicando TTL de ring; `0` médico ocupado/em consulta (`MedicoOcupadoError` HTTP 409), `-1` indisponível, `1` sucesso. [Fonte](../product-specification.md) (RN02)
 - **RN02 (bis) — No-show determinístico.** `iniciar_chamada` abre janela CHAMANDO; sem resposta em 45s, `registrar_ausencia_paciente` fecha em PACIENTE_AUSENTE e libera médico. [Fonte](../product-specification.md) (RN02)
-- **RN05 — Backpressure com α e transbordo.** `avaliar_capacidade_admissao` suspende entrada por cota diária ou carga `(aguardando * TMA * alpha) / medicos > restante`; bloqueio emite `QUEUE_OVERFLOW_TRANSIT`. [Fonte](../product-specification.md) (RN05)
+- **RN05 — Backpressure com α, presença real e cota atômica.** `FilaService.admitir_paciente` lê `plantao:medicos_ativos` (alimentado por `AuthService` via `DoctorPresencePort`, `/chamar-proximo` e `/ws/doctor/{id}`), aplica parâmetros de `ShiftPolicyReaderPort`, reserva cota diária via `consumir_cota_ou_bloquear` (`INCR` + `DECR` compensatório; `estornar_cota_diaria` em rollback de BD) e suspende entrada com `AdmissaoFilaSuspensaError` (HTTP 503) + log estruturado quando `SEM_MEDICOS_ATIVOS`, `COTA_ATINGIDA` ou `CAPACIDADE_EXCEDIDA`. [Fonte](../product-specification.md) (RN05)
 - **RN07 / ADR-007 — Trilha de Auditoria Clínica Append-Only.** Todo evento do ciclo de vida da fila (`ADMISSAO_PACIENTE`, `ELEGIBILIDADE_CONFIRMADA`, `CHAMADA_INICIADA`, `CHAMADA_ATENDIDA`, `TIMEOUT_CHAMADA_NO_SHOW`, `ATENDIMENTO_CANCELADO_PACIENTE`, `PIORA_CLINICA_REGISTRADA`) persiste atomicamente um `AuditEvent` via `AuditTrailPort` antes do commit do service. Catálogo canônico: [Catálogo de Eventos](../../reference/audit/event-catalog.md). Prova viva: `tests/unit/test_queue_audit_events.py` e `tests/integration/test_clinical_audit_integration.py`.
 
-Guardiões: `promover_para_apto` exige TCLE prévio e preserva timestamp $T_0$; `iniciar_chamada` exige médico não vazio; `cancelar_pelo_paciente` bloqueado em EM_ATENDIMENTO; `atualizar_prioridade` preserva soberania diagnóstica do assistente.
+Guardiões: `Atendimento.__init__` valida `status` eagerly; `promover_para_apto` exige TCLE prévio e preserva timestamp $T_0$; `iniciar_chamada` exige médico não vazio; `cancelar_pelo_paciente` aceita opcionalmente `motivo` higienizado e bloqueia `EM_ATENDIMENTO`; `atualizar_prioridade` preserva soberania diagnóstica.
 
-Alpha fora de `1,20–1,30` é erro de configuração, não de domínio: função valida `alpha > 0` e TMA positivo, resto é política de deploy.
+Alpha fora de `1,20–1,30` é erro de configuração, não de domínio: função valida `alpha > 0` e TMA positivo, resto é política de deploy via `ConfiguracaoPlantao`.
 
 Exemplo numérico RN01: emergência (1) com epoch atual gera ~`1000000000000 + epoch`; eletivo (5) gera ~`5000000000000 + epoch`. Diferença de nível vale `10^12`, espera máxima humana vale `10^8`; prevalência garantida por magnitude.
 
-Lua executa em 4 passos indivisíveis: checa lock médico, checa lock atendimento, confirma `ZRANK` na fila, depois `ZREM` + dois `SET EX`. Qualquer falha retorna antes de mutar; sem meio-estado observável.
+Lua executa de forma indivisível: `alocar_proximo.lua` varre `ZRANGE fila:aptos 0 (max_scan - 1)` em 1 round-trip, pulando candidatos com `lock:atendimento:{cand}` e retornando `{1, cand}` para o primeiro elegível — eliminando corridas em cascata sob >3 médicos simultâneos.
 
-Admissão avalia em ordem fixa: sem médicos ativos, cota diária atingida, carga estocástica. Primeira condição verdadeira define `motivo_bloqueio` (`SEM_MEDICOS_ATIVOS`, `COTA_ATINGIDA`, `CAPACIDADE_EXCEDIDA`) e mensagem explicativa pronta para UI.
+Admissão avalia em ordem fixa: `SEM_MEDICOS_ATIVOS`, `COTA_ATINGIDA` (reserva atômica no Valkey antes da transação SQL, estornada se houver exceção), carga estocástica `CAPACIDADE_EXCEDIDA`. Todas as mutações em Valkey (`inserir_ou_atualizar_fila`, `remover_da_fila`, `liberar_ring`, `liberar_consulta`) ocorrem estritamente **pós-commit** no PostgreSQL.
 
 ## 3. Máquina de estados
 
@@ -76,22 +76,21 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 
 ## 4. Relações
 
-- Admissão SUS direta e imediata (ADR-012 / ADR-013). O acolhimento via `POST /api/v1/fila/admissao` valida TCLE e risco ACR, persistindo `Atendimento` em `APTO_PARA_CHAMADA` com score de 64 bits calculado e inserção atômica no ZSET `fila:aptos`, sem latência assíncrona ou dependência de workers externos.
-- Expõe alocação via porta tipada. `AllocationPort.alocar_chamada` esconde códigos Lua (`AlocacaoCodigo` 0/1/-1) atrás de enum; infra Valkey pluga sem tocar serviço.
+- Admissão SUS direta e imediata (ADR-012 / ADR-013). O acolhimento via `POST /api/v1/fila/admissao` (`AdmissaoRequest`, sem `medicos_ativos`) valida TCLE e risco ACR via `TriagePort`, lê política via `ShiftPolicyReaderPort` e presença real em `plantao:medicos_ativos`, reserva cota atômica e persiste `Atendimento` em `APTO_PARA_CHAMADA`, inserindo no ZSET `fila:aptos` somente pós-commit.
+- Isolamento profundo via `QueueEnginePort` (`src/modules/queue/application/ports/queue_engine_port.py`) implementado por `ValkeyQueueEngine` (`src/modules/queue/infrastructure/valkey_queue_engine.py`): concentra scripts Lua 4-Keys (`AlocacaoCodigo`), cota diária, presença médica, lock de sweeper e Pub/Sub (eliminando `LuaScriptPort`, `QueueOverflowNotifierPort` e `DoctorCallNotifierPort`).
 - Persiste em tabela `atendimentos` (FKs `pacientes` e `profissionais` com `RESTRICT`, índices `idx_atendimentos_status`, `idx_atendimentos_paciente`, `idx_atendimentos_medico` e `idx_atendimentos_fila`). [Modelo](../architecture/data-model.md)
-- Notifica transbordo via porta abstrata. `QueueOverflowNotifierPort.emitir_transbordo` recebe `QueueOverflowEvent` imutável com motivo, carga e alpha; default loga, regulação externa pluga.
-- Publica ausência via `paciente_ausente_notifier`. Timeout vira evento de domínio, não só mudança de coluna; painel e métricas reagem sem polling.
-- Orquestra concorrência conforme desenho de filas e locks. [Concorrência](../architecture/concurrency-and-queues.md)
-- Notifica convocação médica protegida por taxa. Alocação despacha convocação ao paciente via porta `NotificationPort`, decorada na raiz de composição por `RateLimitedNotificationAdapter` sobre o cliente Valkey ativo (ou fallback em memória).
-- Auto-cura e reconciliação via sweeper. A tarefa periódica `reconciliar_fila_orphans_task` (`src/worker/tasks/sweeper.py`) varre o banco relacional a cada 60s e reinsere no ZSET qualquer atendimento em `APTO_PARA_CHAMADA` ausente no Valkey.
-- `FilaService` compõe admissão + alocação. `ingressar_fila` calcula score e insere no ZSET; `adquirir_proximo` puxa cabeça e delega lock ao `AlocacaoChamadaService`; backpressure avaliado antes de inserir com leitura e incremento da cota diária atômica no Valkey (`queue:admissoes:{today}`, TTL 48h).
+- Publica ausência via `PacienteAusenteNotifierPort` (`paciente_ausente_notifier.py`) e eventos realtime Pub/Sub (`INCOMING_CALL`, `CALLED`, `CALL_CANCELLED`) via `QueueEnginePort`.
+- Transação única com `consultation` (ADR-001 §6): `QueueStorePort.concluir_atendimento(..., auto_commit=False)` carrega com `with_for_update=True` e executa apenas `flush()` dentro de `PEPService.finalizar_consulta`, liberando `lock:consulta_ativa:medico:{id}` após o commit único via `liberar_consulta_ativa_medico`.
+- Orquestra concorrência e compensação segura conforme desenho de filas e locks (`devolver_para_fila(..., nx=True)` em rollback de alocação e proteção pós-commit de `enqueue_job` em `_compensar_falha_agendamento`). [Concorrência](../architecture/concurrency-and-queues.md)
+- Notifica convocação médica protegida por taxa via `NotificationPort.send_whatsapp`, decorada na raiz de composição por `RateLimitedNotificationAdapter` sobre Valkey.
+- Auto-cura e reconciliação via sweeper blindado: `reconciliar_fila_orphans_task` (`src/worker/tasks/sweeper.py`) adquire `lock:sweeper:fila_aptos` (`NX EX 55`), pagina em lotes keyset (`batch_size=200`), verifica locks em 1 pipeline (`esta_bloqueado_para_reconciliacao`) e reinjeta órfãos confirmados com `ZADD NX`.
 - Routers REST finos expõem as operações centrais da fila clínica em conformidade com ADR-001/ADR-008:
-  - `POST /api/v1/fila/chamar-proximo`: Médico adquire atomicamente o próximo paciente via script Lua com retry automático e double-lock (RF-03).
-  - `GET /api/v1/fila/posicao/{atendimento_id}`: Consulta posição 1-based no ZSET e tempo estimado via TMA com guarda Anti-IDOR.
-  - `POST /api/v1/fila/atendimentos/{atendimento_id}/regularizar`: Regularização de pendência de convênio ou contingência assistencial com preservação de antiguidade original (RN01, RN03, US-05, NC-QUE-04).
-  - `POST /api/v1/fila/cancelar/{atendimento_id}`: Cancelamento voluntário com remoção atômica da fila e transição no banco (RN06).
-  - `POST /api/v1/fila/piora`: Salvaguarda clínica para relato de piora de sintomas, reavaliando risco via `TriagePort`, recalculando score na fila ou disparando alerta SAMU 192 (RF-06).
-- Transmite posição e avanço em tempo real via WebSocket (`/ws/queue/{atendimento_id}`). O handshake exige autenticação via `?token=` (HMAC ou JWT) com checagem de posse ReBAC em sessão de banco efêmera (código WS 4401/4403 pré-accept) para evitar esgotamento de conexões durante o streaming via Valkey Pub/Sub (Issue #42).
+  - `POST /api/v1/fila/chamar-proximo`: Médico adquire atomicamente o próximo paciente via `alocar_proximo.lua` (HTTP 200 `{alocado: true|false}` ou HTTP 409 `MEDICO_OCUPADO`).
+  - `GET /api/v1/fila/posicao/{atendimento_id}`: Retorna `PosicaoFilaResponse` com posição 1-based, `prioridade_clinica`, `chamada_iniciada_em`, `ttl_segundos` (suportando restauração de countdown pós-F5) e estimativa usando `policy.tma_padrao_segundos`.
+  - `POST /api/v1/fila/atendimentos/{atendimento_id}/regularizar`: Regularização ou contingência assistencial preservando antiguidade original $T_0$ (RN01, RN03, US-05).
+  - `POST /api/v1/fila/cancelar/{atendimento_id}`: Cancelamento voluntário ou recusa explícita do toque (`CHAMANDO_PACIENTE`) com `with_for_update=True`, limpeza pós-commit no Valkey e evento `CALL_CANCELLED` no canal do médico.
+  - `POST /api/v1/fila/piora`: Salvaguarda clínica via `PioraClinicaInput` (`Protocol`) + `TriagePort`, mutando Valkey apenas pós-commit com `atendimento.prioridade_clinica` e retornando `PioraClinicaResponse` sem campos espelho duplicados (RF-06).
+- Transmite posição e avanço em tempo real via WebSocket (`/ws/queue/{atendimento_id}`) autenticado pré-accept via `?token=` (HMAC ou JWT) com posse Anti-IDOR em sessão efêmera (códigos 4401/4403).
 
 ## 5. Peculiaridades
 
@@ -106,35 +105,38 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - UUIDv7 como PK dá FIFO aproximado até sem score. Inserção ordenada por tempo correlaciona id com chegada; índice de fila refina com prioridade.
 - `atualizar_prioridade` permite reclassificar sem sair da fila. Soberania do assistente (RN-REG-01) sobrepõe triagem inicial; score recalcula no próximo ciclo.
 - `CheckConstraint` no banco espelha validação do modelo. Status e prioridade 1–5 checados em DDL e em `__init__`; invariante sobrevive a escrita fora da ORM.
-- Erros de domínio tipados, não genéricos. `TransicaoEstadoInvalidaError` para salto ilegal, `ValidationError` para dado inválido, `MedicoOcupadoError` / `AtendimentoNaoDisponivelError` / `AdmissaoFilaSuspensaError` na borda de serviço.
-- `FilaService` delega o cálculo de score diretamente para a função pura `scoring.calcular_score`, eliminando duplicações e ciclos de dependência.
+- Erros de domínio tipados, não genéricos. `TransicaoEstadoInvalidaError` para salto ilegal, `ValidationError` para dado inválido, `AtendimentoNaoEncontradoError` (404), `MedicoOcupadoError` / `AtendimentoNaoDisponivelError` (409) e `AdmissaoFilaSuspensaError` (503) na borda de serviço.
+- `FilaService` delega o cálculo de score diretamente para a função pura `scoring.calcular_score` e isola toda manipulação Valkey atrás de `QueueEnginePort`.
 
 ## 6. Onde no código
 
 - `src/modules/queue/domain/scoring.py`
 - `src/modules/queue/domain/models/atendimento.py`
 - `src/modules/queue/infrastructure/lua/alocar_chamada.lua`
-- `src/modules/queue/application/ports/queue_store_port.py` (QueueStorePort - interface profunda consolidando PostgreSQL + Valkey)
-- `src/modules/queue/application/services/fila_service.py` (Implementação de QueueStorePort, admissão, cancelamento, piora e reconciliação)
-- `src/modules/queue/application/ports/triage_port.py` (TriagePort e TriageEvaluationDTO para isolamento de Bounded Context)
-- `src/modules/queue/presentation/schemas.py` (AdmissaoResponse com tcle_hash per US-01, PioraClinicaResponse com campos canônicos per US-06, ChamarProximoResponse com paciente_id e prioridade_clinica per US-07)
-- `src/modules/queue/presentation/routers/admissao_router.py` (POST /api/v1/fila/admissao)
-- `src/modules/queue/presentation/routers/alocacao_router.py` (POST /api/v1/fila/chamar-proximo via model_validate sem mapper hell)
-- `src/modules/queue/presentation/routers/fila_router.py` (GET /api/v1/fila/posicao/{id}, POST /api/v1/fila/cancelar/{id}, POST /api/v1/fila/piora, POST /api/v1/fila/atendimentos/{id}/regularizar)
-- `src/modules/queue/presentation/routers/queue_ws_router.py` (WebSocket de avanço da fila do paciente: /ws/queue/{atendimento_id})
-- `src/modules/queue/presentation/dependencies.py` (Guards de autenticação, posse Anti-IDOR e autorização de médico plantonista)
-- `src/modules/queue/application/services/alocacao_service.py`
-- `src/modules/queue/application/services/controle_admissao_service.py`
-- `src/modules/queue/application/ports/allocation_port.py`
+- `src/modules/queue/infrastructure/lua/alocar_proximo.lua`
+- `src/modules/queue/infrastructure/valkey_queue_engine.py` (`ValkeyQueueEngine`)
+- `src/modules/queue/infrastructure/lua_loader.py` (`LuaScriptManager`)
+- `src/modules/queue/application/ports/queue_engine_port.py` (`QueueEnginePort`)
+- `src/modules/queue/application/ports/shift_policy_reader_port.py` (`ShiftPolicyReaderPort`, `ShiftPolicyDTO`)
+- `src/modules/queue/application/ports/queue_store_port.py` (`QueueStorePort`)
+- `src/modules/queue/application/services/fila_service.py` (`FilaService`)
+- `src/modules/queue/application/ports/triage_port.py` (`TriagePort`, `TriageEvaluationDTO`)
+- `src/modules/queue/presentation/schemas.py` (`AdmissaoRequest`, `PosicaoFilaResponse`, `PioraClinicaResponse`, `ChamarProximoResponse`)
+- `src/modules/queue/presentation/routers/admissao_router.py` (`POST /api/v1/fila/admissao`)
+- `src/modules/queue/presentation/routers/alocacao_router.py` (`POST /api/v1/fila/chamar-proximo`)
+- `src/modules/queue/presentation/routers/fila_router.py` (`GET /posicao/{id}`, `POST /cancelar/{id}`, `POST /piora`, `POST /atendimentos/{id}/regularizar`)
+- `src/modules/queue/presentation/routers/queue_ws_router.py` (`/ws/queue/{atendimento_id}`)
+- `src/modules/queue/presentation/dependencies.py`
+- `src/modules/queue/application/services/alocacao_service.py` (`AlocacaoChamadaService`)
+- `src/modules/queue/application/services/controle_admissao_service.py` (`ControleAdmissaoService`)
+- `src/modules/queue/application/ports/allocation_port.py` (`AlocacaoCodigo`)
 - `src/modules/queue/application/ports/notification_port.py`
-- `src/modules/queue/application/ports/queue_overflow_notifier.py`
-- `src/modules/queue/composition.py:get_notification_adapter`
+- `src/modules/queue/composition.py` (`build_queue_engine`, `TelemetryShiftPolicyReaderAdapter`, `get_notification_adapter`)
 - `src/modules/queue/infrastructure/notifications/rate_limited_adapter.py`
 - `src/modules/queue/infrastructure/notifications/rate_limiter.py`
 - `src/modules/queue/infrastructure/notifications/logging_adapter.py`
-- `src/modules/ambulatory/application/ports/eligibility_provider.py`
+- `tests/doubles.py` (`FakeQueueEngine`, `FakeShiftPolicyReader`, `FakeTriagePort`)
 - `tests/unit/test_queue_schemas.py`
-
 - `tests/unit/test_queue_store.py`
 - `tests/unit/test_admissao_service.py`
 - `tests/unit/test_alocacao_service.py`
@@ -150,48 +152,31 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - `tests/unit/test_alocacao_router.py`
 - `tests/unit/test_fila_router.py`
 - `tests/integration/test_admissao_integrada_flow.py`
+- `tests/integration/test_alocar_chamada_concurrency.py`
 - `tests/integration/test_valkey_rate_limiter.py`
 - `tests/integration/test_regularizacao_flow.py`
-- `frontend/src/features/queue/components/virtual-waiting-room.tsx` (orquestrador principal da sala de espera do paciente)
-- `frontend/src/features/queue/components/queue-position-card.tsx` (card de posição ordinal e tempo estimado com badge ACR)
-- `frontend/src/features/queue/components/incoming-call-ring-modal.tsx` (modal fullscreen de toque médico com áudio chime e timer 45s)
-- `frontend/src/features/queue/components/piora-clinica-modal.tsx` (checklist de reavaliação de piora clínica e escape SAMU 192)
-- `frontend/src/features/queue/components/cancelar-fila-dialog.tsx` (confirmação voluntária de saída da fila)
-- `frontend/src/features/queue/components/passkey-invitation-card.tsx` (card não-bloqueante de biometria Passkey)
-- `frontend/src/features/queue/api/use-posicao-fila.ts` (consulta de posição e tempo estimado via Hey API)
-- `frontend/src/features/queue/api/use-queue-socket.ts` (WebSocket de tempo real com contingência)
-- `frontend/src/features/queue/api/use-comunicar-piora.ts` (mutação de piora clínica)
-- `frontend/src/features/queue/api/use-cancelar-fila.ts` (mutação de cancelamento voluntário)
-- `frontend/src/features/queue/api/use-atender-chamada.ts` (mutação de atendimento e geração de token LiveKit)
-- `frontend/src/features/queue/tests/virtual-waiting-room.test.tsx` (integração de tela completa com MSW)
-- `frontend/src/features/queue/tests/incoming-call-ring-modal.test.tsx` (testes de timer, chime e auto-dismiss)
-- `frontend/src/features/queue/tests/passkey-invitation-card.test.tsx` (testes de convite à biometria)
-- `frontend/src/features/queue/tests/queue-unit.test.ts` (testes unitários de formatação e utilitários)
-
+- `frontend/src/features/queue/components/virtual-waiting-room.tsx`
+- `frontend/src/features/queue/components/incoming-call-ring-modal.tsx`
+- `frontend/src/features/queue/components/piora-clinica-modal.tsx`
+- `frontend/src/features/queue/components/cancelar-fila-dialog.tsx`
 
 Prova viva:
 
 ```bash
 ls tests/unit | rg -i "alocacao|atendimento|admissao|fila|queue"
-# test_admissao_service.py
-# test_alocacao_service.py
-# test_atendimento_model.py
-# test_controle_admissao.py
-# test_fila_service.py
-# test_queue_store.py
+# test_admissao_service.py, test_alocacao_service.py, test_atendimento_model.py, test_controle_admissao.py, test_fila_service.py, test_queue_store.py
 ```
 
 ## 7. Verificação
 
 ```bash
 rg -n "def calcular_score|def iniciar_chamada|def registrar_ausencia_paciente" src/modules/queue/domain/
-# scoring.py:11 def calcular_score + atendimento.py:234 iniciar_chamada, :268 registrar_ausencia
+# scoring.py:11 def calcular_score; atendimento.py:214 iniciar_chamada, :271 registrar_ausencia_paciente
 
 ls src/modules/queue/infrastructure/lua/
-# alocar_chamada.lua
+# alocar_chamada.lua  alocar_proximo.lua
 
-pytest tests/unit/test_alocacao_service.py tests/unit/test_atendimento_model.py -q --no-cov
-# 22 passed (2026-10-07)
+uv run pytest tests/unit/test_alocacao_service.py tests/unit/test_atendimento_model.py -q --no-cov
 ```
 
 Sem corrigir código. Divergência entre doc e guardião real exige atualizar doc, nunca relaxar transição clínica.

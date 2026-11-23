@@ -46,16 +46,7 @@ def monitored_task[**P, R](
             return await func(ctx, *args, **kwargs)
         except Exception as exc:
             job_id = str(ctx.get("job_id", "unknown"))
-            import sys
-
-            tasks_pkg = sys.modules.get("src.worker.tasks")
-            if (
-                tasks_pkg is not None
-                and getattr(tasks_pkg, "on_job_failure", None) is not on_job_failure
-            ):
-                await tasks_pkg.on_job_failure(ctx, job_id, exc)
-            else:
-                await on_job_failure(ctx, job_id, exc)
+            await on_job_failure(ctx, job_id, exc)
             raise
 
     return wrapper
@@ -64,10 +55,10 @@ def monitored_task[**P, R](
 @monitored_task
 async def ping_task(ctx: dict[str, Any], message: str = "pong") -> str:
     """Diagnostic task verifying shared connection pool health across services."""
-    valkey = get_valkey_from_ctx(ctx)
-    valkey_alive = bool(
-        await valkey.ping()  # pyright: ignore[reportUnknownMemberType]
-    )
+    async with get_valkey_from_ctx(ctx) as valkey:
+        valkey_alive = bool(
+            await valkey.ping()  # pyright: ignore[reportUnknownMemberType]
+        )
 
     db_alive = False
     async with get_db_session_from_ctx(ctx) as session:

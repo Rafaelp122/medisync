@@ -8,9 +8,9 @@
 
 ## Contexto
 
-Quando um paciente é acolhido e triado, seu atendimento ingressa com status `TRIADO_AGUARDANDO_ELEGIBILIDADE`. Se a validação com a operadora de saúde sofrer lentidão, indisponibilidade de gateway ou rejeição cadastral temporária, o paciente permanece retido sem ser convocado pelos médicos (desvio temporário RN03). 
+Quando um paciente é acolhido e triado sob fluxo de contingência cadastral, seu atendimento ingressa com status `TRIADO_AGUARDANDO_ELEGIBILIDADE`. Em cenários de indisponibilidade externa (CADSUS) ou divergência demográfica temporária na rede 100% SUS (ADR-012), o paciente aguarda regularização antes da alocação clínica sem ser descartado da esteira.
 
-Para evitar paywall obstrutivo e desassistência clínica (CFM 2.314/2022 e RN-NEG-01), este endpoint permite ao paciente ou operador submeter a regularização cadastral ou acionar contingência assistencial, promovendo o atendimento imediatamente para `APTO_PARA_CHAMADA` sem perder a antiguidade original acumulada desde o acolhimento inicial ($T_0$).
+Para evitar barreiras burocráticas e desassistência clínica (CFM 2.314/2022 e RN-NEG-01), este endpoint permite ao paciente ou operador submeter a regularização cadastral ou acionar contingência assistencial, promovendo o atendimento imediatamente para `APTO_PARA_CHAMADA` sem perder a antiguidade original acumulada desde o acolhimento inicial ($T_0$).
 
 ---
 
@@ -18,8 +18,8 @@ Para evitar paywall obstrutivo e desassistência clínica (CFM 2.314/2022 e RN-N
 
 O endpoint opera sob os seguintes pilares conceituais:
 1. **Preservação de Antiguidade ($T_0$ / NC-QUE-04):** Ao transicionar para `APTO_PARA_CHAMADA`, o cálculo do score no Valkey ZSET utiliza estritamente o timestamp original de acolhimento (`data_entrada_fila` ou `criado_em`), garantindo que o paciente recupere sua precedência justa frente a pacientes que chegaram depois.
-2. **Idempotência Estrita:** Se o worker assíncrono de elegibilidade aprovar o convênio no mesmo instante em que a contingência for acionada, a operação retorna status `already_promoted` com HTTP 200, sem erros, sem mutação redundante e sem duplicar o score no ZSET.
-3. **Proteção Anti-IDOR:** Acesso protegido por `PosseAtendimentoPathAuthDep`, exigindo que o solicitante seja o próprio paciente titular do atendimento (ou profissional autorizado).
+2. **Idempotência Estrita:** Se o atendimento já estiver promovido para `APTO_PARA_CHAMADA` em acionamento concorrente, a operação retorna `promovido: false` com `status: "already_promoted"` e HTTP 200, sem erros, sem mutação redundante e sem duplicar o score no ZSET.
+3. **Proteção Anti-IDOR:** Acesso protegido por `PosseAtendimentoPathAuthDep`, exigindo que o solicitante seja o próprio paciente titular do atendimento.
 
 ### Contrato HTTP
 
@@ -31,8 +31,6 @@ O endpoint opera sob os seguintes pilares conceituais:
 * **Request Body (`RegularizacaoFilaRequest`):**
   - `motivo: str` (Obrigatório, 3 a 500 caracteres)
   - `tipo_contingencia: str` (Default: `"CONTINGENCIA_ASSISTENCIAL"`)
-  - `operadora_id: str | None` (Opcional)
-  - `numero_carteirinha: str | None` (Opcional)
 * **Response Body (`RegularizacaoFilaResponse`):**
   - `atendimento_id: UUID`
   - `promovido: bool`
@@ -48,7 +46,7 @@ O endpoint opera sob os seguintes pilares conceituais:
 | `200 OK` | — | Atendimento regularizado ou já previamente apto (idempotência). |
 | `401 Unauthorized` | `UNAUTHORIZED` | Token ausente, expirado ou com assinatura inválida. |
 | `403 Forbidden` | `FORBIDDEN` | Token sem posse sobre o atendimento (Anti-IDOR). |
-| `404 Not Found` | `NOT_FOUND` | Atendimento não encontrado. |
+| `404 Not Found` | `ATENDIMENTO_NAO_ENCONTRADO` | Atendimento não encontrado (`AtendimentoNaoEncontradoError`). |
 | `409 Conflict` | `TRANSICAO_ESTADO_INVALIDA` | Atendimento finalizado ou em consulta (`EM_ATENDIMENTO`). |
 | `422 Unprocessable Entity` | `VALIDATION_ERROR` | Motivo ausente ou com menos de 3 caracteres. |
 

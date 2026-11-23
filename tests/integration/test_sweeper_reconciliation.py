@@ -144,3 +144,42 @@ async def test_end_to_end_sweeper_idempotent_when_already_in_queue() -> None:
     async for valkey in get_valkey_client():
         card = await valkey.zcard(k_fila)  # pyright: ignore[reportUnknownMemberType]
         assert card == 1
+
+
+@pytest.mark.asyncio
+async def test_end_to_end_sweeper_skips_when_distributed_lock_held() -> None:
+    """Concurrent sweeper skips gracefully when distributed lock is held."""
+    from src.modules.queue.infrastructure.valkey_queue_engine import SWEEPER_LOCK_KEY
+
+    entrada = datetime.now(UTC) - timedelta(seconds=120)
+    async with get_session_factory()() as session:
+        cenario = await seed_clinical_scenario(
+            session,
+            status_atendimento=StatusAtendimento.APTO_PARA_CHAMADA,
+            prioridade_clinica=PrioridadeClinica.URGENTE,
+        )
+        atend = cenario.atendimento
+        atend.medico_id = None
+        atend.data_entrada_fila = entrada
+        session.add(atend)
+        await session.commit()
+        await session.execute(
+            text("UPDATE atendimentos SET atualizado_em = :past WHERE id = :atend_id"),
+            {"past": entrada, "atend_id": atend.id},
+        )
+        await session.commit()
+
+    async for valkey in get_valkey_client():
+        await valkey.set(SWEEPER_LOCK_KEY, "other-worker", nx=True, ex=55)
+
+    ctx: dict[str, Any] = {}
+    await startup(ctx)
+    result = await reconciliar_fila_orphans_task(ctx, threshold_segundos=60)
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "lock_held"
+    assert result["scanned_appointments"] == 0
+
+    async for valkey in get_valkey_client():
+        assert await valkey.zscore("fila:aptos", str(atend.id)) is None  # pyright: ignore[reportUnknownMemberType]
+        assert await valkey.get(SWEEPER_LOCK_KEY) == "other-worker"

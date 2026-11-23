@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -19,6 +20,9 @@ from src.modules.auth.application.dtos import (
 )
 from src.modules.auth.application.ports.auth_rate_limiter_port import (
     AuthRateLimiterPort,
+)
+from src.modules.auth.application.ports.doctor_presence_port import (
+    DoctorPresencePort,
 )
 from src.modules.auth.application.ports.password_hasher_port import (
     PasswordHasherPort,
@@ -38,6 +42,8 @@ from src.modules.auth.domain.totp import (
     verify_totp_code,
 )
 
+logger = logging.getLogger("medisync.auth.service")
+
 
 class AuthService:
     """Orquestra autenticação corporativa e proteção contra brute force.
@@ -55,6 +61,7 @@ class AuthService:
         revocation: TokenRevocationPort,
         max_attempts: int = 5,
         window_seconds: int = 900,
+        doctor_presence: DoctorPresencePort | None = None,
     ) -> None:
         self._session = session
         self._hasher = hasher
@@ -64,6 +71,31 @@ class AuthService:
 
         self._max_attempts = max_attempts
         self._window_seconds = window_seconds
+        self._doctor_presence = doctor_presence
+
+    async def _registrar_presenca_medico(self, usuario_id: UUID, papel: str) -> None:
+        if self._doctor_presence is None or papel != Role.MEDICO.value:
+            return
+        try:
+            await self._doctor_presence.registrar_medico_ativo(usuario_id)
+        except Exception:
+            logger.warning(
+                "Failed to register active doctor %s in shift presence",
+                usuario_id,
+                exc_info=True,
+            )
+
+    async def _desregistrar_presenca_medico(self, usuario_id: UUID, papel: str) -> None:
+        if self._doctor_presence is None or papel != Role.MEDICO.value:
+            return
+        try:
+            await self._doctor_presence.desregistrar_medico_ativo(usuario_id)
+        except Exception:
+            logger.warning(
+                "Failed to unregister active doctor %s from shift presence",
+                usuario_id,
+                exc_info=True,
+            )
 
     async def autenticar(self, command: LoginCommand) -> TokenPairDTO:
         """Autentica com rate limiting anti-brute force e checagem constant-time.
@@ -152,6 +184,7 @@ class AuthService:
                 mfa_setup_requerido=not cred.mfa_ativo,
             )
 
+        await self._registrar_presenca_medico(cred.usuario_id, cred.papel)
         return self._token_service.gerar_tokens(
             usuario_id=cred.usuario_id,
             papel=cred.papel,
@@ -267,6 +300,7 @@ class AuthService:
                 f"O token temporário MFA (jti={payload.jti}) já foi consumido."
             )
 
+        await self._registrar_presenca_medico(cred.usuario_id, cred.papel)
         return self._token_service.gerar_tokens(
             usuario_id=cred.usuario_id,
             papel=cred.papel,
@@ -329,31 +363,45 @@ class AuthService:
             )
         return payload
 
+    async def _revogar_refresh_token(
+        self, refresh_token: str | None, now: datetime
+    ) -> tuple[UUID, str] | None:
+        if not refresh_token:
+            return None
+        with contextlib.suppress(Exception):
+            payload = self._token_service.validar_refresh_token(refresh_token)
+            remaining_seconds = max(1, int((payload.exp - now).total_seconds()))
+            await self._revocation.revogar(payload.jti, exp_segundos=remaining_seconds)
+            return payload.sub, payload.papel
+        return None
+
+    async def _revogar_access_token(
+        self, access_token: str | None, now: datetime
+    ) -> tuple[UUID, str] | None:
+        if not access_token:
+            return None
+        with contextlib.suppress(Exception):
+            acc_payload = self._token_service.validar_access_token(access_token)
+            acc_remaining = max(1, int((acc_payload.exp - now).total_seconds()))
+            await self._revocation.revogar(acc_payload.jti, exp_segundos=acc_remaining)
+            return acc_payload.sub, acc_payload.papel
+        return None
+
     async def revogar_sessao(
         self,
         refresh_token: str | None = None,
         access_token: str | None = None,
     ) -> None:
-        """Revoga tokens de refresh e access na blacklist distribuída Valkey.
+        """Revoga tokens de refresh e access e desregistra presença médica no plantão.
 
-        Regras: RN-AUT-06 (docs/explanation/domains/auth-domain.md), ADR-013, RF-01.
+        Regras: RN-AUT-06, RN05 e docs/explanation/domains/auth-domain.md.
         """
         now = datetime.now(UTC)
-        if refresh_token:
-            with contextlib.suppress(Exception):
-                payload = self._token_service.validar_refresh_token(refresh_token)
-                remaining_seconds = max(1, int((payload.exp - now).total_seconds()))
-                await self._revocation.revogar(
-                    payload.jti, exp_segundos=remaining_seconds
-                )
-
-        if access_token:
-            with contextlib.suppress(Exception):
-                acc_payload = self._token_service.validar_access_token(access_token)
-                acc_remaining = max(1, int((acc_payload.exp - now).total_seconds()))
-                await self._revocation.revogar(
-                    acc_payload.jti, exp_segundos=acc_remaining
-                )
+        refresh_actor = await self._revogar_refresh_token(refresh_token, now)
+        access_actor = await self._revogar_access_token(access_token, now)
+        resolved = refresh_actor or access_actor
+        if resolved is not None:
+            await self._desregistrar_presenca_medico(resolved[0], resolved[1])
 
     async def obter_usuario_por_id(self, usuario_id: UUID) -> UsuarioCredencial | None:
         """Recupera entidade de credenciais do usuário autenticado na plataforma.

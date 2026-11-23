@@ -4,8 +4,7 @@ Decisões: docs/adrs/ADR-007-Auditoria-Imutavel-Append-Only.md
 Referência: docs/reference/audit/event-catalog.md
 """
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import pytest
@@ -17,10 +16,6 @@ from src.core.audit import AtorPapel, AtorTipo
 from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoCommand,
     AlocarChamadaCommand,
-    PioraClinicaCommand,
-)
-from src.modules.queue.application.ports.allocation_port import (
-    AlocacaoCodigo,
 )
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
@@ -31,28 +26,20 @@ from src.modules.queue.domain.models import (
     PrioridadeClinica,
     StatusAtendimento,
 )
+from src.modules.queue.presentation.schemas import PioraClinicaRequest
+from src.modules.triage.application.dtos import TriageRiskEvaluationDTO
 
 from tests.doubles import (
-    FakeAllocationPort,
     FakeAsyncSession,
     FakeAuditTrail,
+    FakeQueueEngine,
     FakeTriagePort,
-    FakeValkey,
 )
 
 
-@dataclass
-class DummyTriageEvaluation:
-    prioridade_clinica: int
-    alerta_samu_disparado: bool = False
-    tcle_hash: str = ""
-    tcle_texto: str = ""
-    instrucao_redirecionamento: str | None = None
-
-
 @pytest.fixture
-def fake_valkey() -> FakeValkey:
-    return FakeValkey()
+def fake_engine() -> FakeQueueEngine:
+    return FakeQueueEngine(medicos_ativos={uuid4()})
 
 
 @pytest.fixture
@@ -62,7 +49,7 @@ def fake_audit_trail() -> FakeAuditTrail:
 
 @pytest.mark.asyncio
 async def test_admitir_paciente_records_admissao_audit_event(
-    fake_valkey: FakeValkey,
+    fake_engine: FakeQueueEngine,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
     paciente_id = uuid4()
@@ -70,16 +57,15 @@ async def test_admitir_paciente_records_admissao_audit_event(
 
     fake_session = FakeAsyncSession()
     fake_triage = FakeTriagePort(
-        evaluation=DummyTriageEvaluation(
+        evaluation=TriageRiskEvaluationDTO(
             prioridade_clinica=PrioridadeClinica.POUCO_URGENTE,
             alerta_samu_disparado=False,
             tcle_hash=tcle_hash,
-            tcle_texto="Termo de Consentimento Livre e Esclarecido",
         )
     )
 
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
+        queue_engine=fake_engine,
         db_session=cast("AsyncSession", fake_session),
         triage_port=fake_triage,
         audit_trail=fake_audit_trail,
@@ -110,7 +96,7 @@ async def test_admitir_paciente_records_admissao_audit_event(
 
 @pytest.mark.asyncio
 async def test_admitir_paciente_propaga_ip_origem_para_auditoria(
-    fake_valkey: FakeValkey,
+    fake_engine: FakeQueueEngine,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
     paciente_id = uuid4()
@@ -118,16 +104,15 @@ async def test_admitir_paciente_propaga_ip_origem_para_auditoria(
 
     fake_session = FakeAsyncSession()
     fake_triage = FakeTriagePort(
-        evaluation=DummyTriageEvaluation(
+        evaluation=TriageRiskEvaluationDTO(
             prioridade_clinica=PrioridadeClinica.POUCO_URGENTE,
             alerta_samu_disparado=False,
             tcle_hash=tcle_hash,
-            tcle_texto="Termo de Consentimento Livre e Esclarecido",
         )
     )
 
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
+        queue_engine=fake_engine,
         db_session=cast("AsyncSession", fake_session),
         triage_port=fake_triage,
         audit_trail=fake_audit_trail,
@@ -152,7 +137,7 @@ async def test_admitir_paciente_propaga_ip_origem_para_auditoria(
 
 @pytest.mark.asyncio
 async def test_admitir_atendimento_apto_records_elegibilidade_confirmada_audit_event(
-    fake_valkey: FakeValkey,
+    fake_engine: FakeQueueEngine,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
     atendimento_id = uuid4()
@@ -167,7 +152,7 @@ async def test_admitir_atendimento_apto_records_elegibilidade_confirmada_audit_e
     fake_session = FakeAsyncSession(entities={atendimento_id: atendimento})
 
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
+        queue_engine=fake_engine,
         db_session=cast("AsyncSession", fake_session),
         audit_trail=fake_audit_trail,
     )
@@ -186,14 +171,13 @@ async def test_admitir_atendimento_apto_records_elegibilidade_confirmada_audit_e
         evt["estado_anterior"]
         == StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
     )
-
     assert evt["novo_estado"] == StatusAtendimento.APTO_PARA_CHAMADA.value
     assert evt["payload"]["canal"] == "ARQ_WORKER"
 
 
 @pytest.mark.asyncio
 async def test_admitir_atendimento_apto_records_codigo_autorizacao_in_audit_payload(
-    fake_valkey: FakeValkey,
+    fake_engine: FakeQueueEngine,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
     atendimento_id = uuid4()
@@ -208,7 +192,7 @@ async def test_admitir_atendimento_apto_records_codigo_autorizacao_in_audit_payl
     fake_session = FakeAsyncSession(entities={atendimento_id: atendimento})
 
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
+        queue_engine=fake_engine,
         db_session=cast("AsyncSession", fake_session),
         audit_trail=fake_audit_trail,
     )
@@ -227,7 +211,7 @@ async def test_admitir_atendimento_apto_records_codigo_autorizacao_in_audit_payl
 
 @pytest.mark.asyncio
 async def test_alocar_chamada_records_chamada_iniciada_audit_event(
-    fake_valkey: FakeValkey,
+    fake_engine: FakeQueueEngine,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
     atendimento_id = uuid4()
@@ -239,14 +223,12 @@ async def test_alocar_chamada_records_chamada_iniciada_audit_event(
         prioridade_clinica=PrioridadeClinica.URGENTE,
         tcle_hash="c" * 64,
     )
+    fake_engine.fila_scores[atendimento_id] = 3000
     fake_session = FakeAsyncSession(entities={atendimento_id: atendimento})
 
-    fake_allocation = FakeAllocationPort(codigo=AlocacaoCodigo.SUCESSO)
-
     alocacao_service = AlocacaoChamadaService(
-        valkey=cast("Any", fake_valkey),
+        queue_engine=fake_engine,
         db_session=cast("AsyncSession", fake_session),
-        lua_manager=fake_allocation,
         audit_trail=fake_audit_trail,
     )
 
@@ -272,7 +254,7 @@ async def test_alocar_chamada_records_chamada_iniciada_audit_event(
 
 @pytest.mark.asyncio
 async def test_atender_chamada_records_chamada_atendida_audit_event(
-    fake_valkey: FakeValkey,
+    fake_engine: FakeQueueEngine,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
     atendimento_id = uuid4()
@@ -289,7 +271,7 @@ async def test_atender_chamada_records_chamada_atendida_audit_event(
     fake_session = FakeAsyncSession(entities={atendimento_id: atendimento})
 
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
+        queue_engine=fake_engine,
         db_session=cast("AsyncSession", fake_session),
         audit_trail=fake_audit_trail,
     )
@@ -310,7 +292,7 @@ async def test_atender_chamada_records_chamada_atendida_audit_event(
 
 @pytest.mark.asyncio
 async def test_resolver_ring_timeout_records_timeout_no_show_audit_event(
-    fake_valkey: FakeValkey,
+    fake_engine: FakeQueueEngine,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
     atendimento_id = uuid4()
@@ -326,14 +308,13 @@ async def test_resolver_ring_timeout_records_timeout_no_show_audit_event(
     fake_session = FakeAsyncSession(entities={atendimento_id: atendimento})
 
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
+        queue_engine=fake_engine,
         db_session=cast("AsyncSession", fake_session),
         audit_trail=fake_audit_trail,
     )
 
     res = await fila_service.resolver_ring_timeout(atendimento_id, medico_id)
     assert res == "no_show_recorded"
-
     assert atendimento.status == StatusAtendimento.PACIENTE_AUSENTE.value
 
     events = fake_audit_trail.get_events_by_type("TIMEOUT_CHAMADA_NO_SHOW")
@@ -346,7 +327,7 @@ async def test_resolver_ring_timeout_records_timeout_no_show_audit_event(
 
 @pytest.mark.asyncio
 async def test_cancelar_atendimento_paciente_records_cancelamento_audit_event(
-    fake_valkey: FakeValkey,
+    fake_engine: FakeQueueEngine,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
     atendimento_id = uuid4()
@@ -361,7 +342,7 @@ async def test_cancelar_atendimento_paciente_records_cancelamento_audit_event(
     fake_session = FakeAsyncSession(entities={atendimento_id: atendimento})
 
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
+        queue_engine=fake_engine,
         db_session=cast("AsyncSession", fake_session),
         audit_trail=fake_audit_trail,
     )
@@ -382,7 +363,7 @@ async def test_cancelar_atendimento_paciente_records_cancelamento_audit_event(
 
 @pytest.mark.asyncio
 async def test_processar_piora_clinica_samu_records_deterioracao_audit_event(
-    fake_valkey: FakeValkey,
+    fake_engine: FakeQueueEngine,
     fake_audit_trail: FakeAuditTrail,
 ) -> None:
     atendimento_id = uuid4()
@@ -397,30 +378,29 @@ async def test_processar_piora_clinica_samu_records_deterioracao_audit_event(
     fake_session = FakeAsyncSession(entities={atendimento_id: atendimento})
 
     fake_triage = FakeTriagePort(
-        evaluation=DummyTriageEvaluation(
+        evaluation=TriageRiskEvaluationDTO(
             prioridade_clinica=1,
             alerta_samu_disparado=True,
             tcle_hash="9" * 64,
-            tcle_texto="Termo",
             instrucao_redirecionamento="SAMU 192",
         )
     )
 
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
+        queue_engine=fake_engine,
         db_session=cast("AsyncSession", fake_session),
         triage_port=fake_triage,
         audit_trail=fake_audit_trail,
     )
 
-    cmd = PioraClinicaCommand(
+    req = PioraClinicaRequest(
         atendimento_id=atendimento_id,
         queixa_adicional="Dor no peito irradiando para o braço",
         novos_sintomas=["dor_toracica", "sudorese"],
         escala_dor=10,
     )
 
-    res = await fila_service.processar_piora_clinica(cmd)
+    res = await fila_service.processar_piora_clinica(req)
     assert res.alerta_samu_disparado is True
     assert atendimento.status == StatusAtendimento.CANCELADO_PACIENTE.value
 

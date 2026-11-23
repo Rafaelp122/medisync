@@ -149,7 +149,17 @@ class Atendimento(Base):
         if tcle_hash is not None:
             clean_tcle = _validar_tcle_hash(tcle_hash)
 
-        status_str = str(status)
+        status_str = (
+            status.value
+            if isinstance(status, StatusAtendimento)
+            else str(status).strip().upper()
+        )
+        valid_statuses = {s.value for s in StatusAtendimento}
+        if status_str not in valid_statuses:
+            raise ValidationError(
+                f"Status de atendimento '{status}' inválido; "
+                f"esperados: {sorted(valid_statuses)}."
+            )
 
         super_kwargs: dict[str, object] = {
             "id": id or uuid7(),
@@ -227,6 +237,21 @@ class Atendimento(Base):
         self.chamada_iniciada_em = now
         self.atualizado_em = now
 
+    def reverter_para_apto(self) -> None:
+        """Compensa falha pós-commit revertendo chamada iniciada para APTO (ADR-002).
+
+        Regras: docs/explanation/domains/queue-domain.md
+        """
+        if self.status != StatusAtendimento.CHAMANDO_PACIENTE:
+            raise TransicaoEstadoInvalidaError(
+                f"Apenas chamadas em '{StatusAtendimento.CHAMANDO_PACIENTE}' "
+                f"podem ser revertidas para apto. Estado atual: '{self.status}'."
+            )
+        self.status = StatusAtendimento.APTO_PARA_CHAMADA.value
+        self.medico_id = None
+        self.chamada_iniciada_em = None
+        self.atualizado_em = datetime.now(UTC)
+
     def atender_chamada(self) -> None:
         """Paciente conecta à videochamada e transiciona para EM_ATENDIMENTO (RN03).
 
@@ -278,9 +303,10 @@ class Atendimento(Base):
         self.chamada_finalizada_em = now
         self.atualizado_em = now
 
-    def cancelar_pelo_paciente(self, motivo: str | None = None) -> None:
+    def cancelar_pelo_paciente(self, motivo: str | None = None) -> str | None:
         """Registra desistência do paciente antes da consulta clínica (RN03).
 
+        Higieniza e retorna o motivo normalizado para trilha de auditoria.
         Regras: docs/explanation/domains/queue-domain.md
         """
         self._assegurar_nao_finalizado()
@@ -307,6 +333,7 @@ class Atendimento(Base):
             self.chamada_finalizada_em = now
         self.status = StatusAtendimento.CANCELADO_PACIENTE.value
         self.atualizado_em = now
+        return motivo.strip() if motivo and motivo.strip() else None
 
     # -------------------------------------------------------------------------
     # Regras Clínicas Adicionais (RN-REG-01 e Valkey Queue Score)
