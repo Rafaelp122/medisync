@@ -11,10 +11,6 @@ class PrescricaoFisicaObrigatoriaError(ValidationError):
     code: str = "PRESCRICAO_FISICA_OBRIGATORIA"
 
 
-# Compatibility alias
-PrescricaoFisicaObrigatoriaException = PrescricaoFisicaObrigatoriaError
-
-
 class ConsultaFinalizadaError(DomainError):
     """Raised when attempting to modify/delete records of finalized consultation."""
 

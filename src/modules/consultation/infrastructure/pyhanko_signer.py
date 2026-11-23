@@ -1,13 +1,16 @@
 """PyHanko ICP-Brasil PAdES cloud digital signer and PSC OAuth2 client."""
 
 import base64
-import hashlib
+import binascii
 import io
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 from uuid import uuid4
 
 import httpx
+from asn1crypto import cms as asn1_cms
+from asn1crypto import x509 as asn1_x509
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -18,12 +21,9 @@ from pyhanko.keys.pemder import (
 )
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers
+from pyhanko.sign.signers.pdf_signer import PdfTBSDocument
 from pyhanko_certvalidator.registry import SimpleCertificateStore
 
-if TYPE_CHECKING:
-    from asn1crypto import x509 as asn1_x509
-
-from src.core.config import get_settings
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
     ICPBrasilSignerPort,
@@ -33,6 +33,108 @@ from src.modules.consultation.domain.exceptions import (
     AssinaturaDigitalInvalidaError,
 )
 
+DEFAULT_PSC_ENDPOINTS: dict[str, str] = {
+    "birdid": "https://api.birdid.com.br",
+    "safeid": "https://api.safeid.com.br",
+    "vidaas": "https://api.vidaas.com.br",
+}
+_CLOUD_CMS_RESERVED_BYTES = 16384
+
+
+def _validar_entrada_assinatura(
+    pdf_bytes: bytes,
+    credenciais: DoctorCertificateCredentials,
+) -> None:
+    """Validate minimal PDF structure and physician authorization token."""
+    if not pdf_bytes or not pdf_bytes.startswith(b"%PDF-"):
+        raise AssinaturaDigitalInvalidaError(
+            "Conteúdo fornecido não é um arquivo PDF válido."
+        )
+    if not credenciais.token or not credenciais.token.strip():
+        raise AssinaturaDigitalInvalidaError(
+            "Token de autorização do médico não pode ser vazio."
+        )
+
+
+def _decodificar_certificado(raw_cert: object, provider: str) -> asn1_x509.Certificate:
+    """Parse a base64 DER or PEM X.509 certificate from PSC response."""
+    if not isinstance(raw_cert, str) or not raw_cert.strip():
+        raise AssinaturaDigitalInvalidaError(
+            f"Certificado vazio ou inválido retornado pelo PSC '{provider}'."
+        )
+    cleaned = raw_cert.strip()
+    if "-----BEGIN CERTIFICATE-----" in cleaned:
+        pem_iter = cast(
+            "list[asn1_x509.Certificate]",
+            list(load_certs_from_pemder_data(cleaned.encode("ascii"))),  # pyright: ignore[reportUnknownArgumentType]
+        )
+        if not pem_iter:
+            raise AssinaturaDigitalInvalidaError(
+                f"PEM de certificado sem conteúdo retornado pelo PSC '{provider}'."
+            )
+        return pem_iter[0]
+    try:
+        der_bytes = base64.b64decode(cleaned, validate=True)
+        return cast("asn1_x509.Certificate", asn1_x509.Certificate.load(der_bytes))  # pyright: ignore[reportUnknownMemberType]
+    except (binascii.Error, ValueError) as err:
+        raise AssinaturaDigitalInvalidaError(
+            f"Certificado X.509 malformado retornado pelo PSC '{provider}': {err}"
+        ) from err
+
+
+def _carregar_certificados_psc(
+    cert_info: dict[str, Any],
+    provider: str,
+) -> tuple[asn1_x509.Certificate, SimpleCertificateStore]:
+    """Extract leaf certificate and chain store from CSC credentials/info."""
+    cert_block = cert_info.get("cert")
+    raw_list: object = (
+        cast("dict[str, Any]", cert_block).get("certificates")
+        if isinstance(cert_block, dict)
+        else cert_info.get("certificates")
+    )
+    if not isinstance(raw_list, list) or not raw_list:
+        raise AssinaturaDigitalInvalidaError(
+            f"Cadeia de certificados ausente na resposta do PSC '{provider}'."
+        )
+    raw_items = cast("list[object]", raw_list)
+    parsed = [_decodificar_certificado(item, provider) for item in raw_items]
+    store = SimpleCertificateStore()
+    for cert in parsed:
+        store.register(cert)
+    return parsed[0], store
+
+
+def _decodificar_cms_container(
+    cms_b64: str,
+    provider: str,
+    max_bytes: int,
+) -> asn1_cms.ContentInfo:
+    """Decode and verify a SignedData CMS container returned by Cloud PSC."""
+    try:
+        cms_bytes = base64.b64decode(cms_b64.strip(), validate=True)
+        content_info = cast(
+            "asn1_cms.ContentInfo",
+            asn1_cms.ContentInfo.load(cms_bytes),  # pyright: ignore[reportUnknownMemberType]
+        )
+    except (binascii.Error, ValueError) as err:
+        raise AssinaturaDigitalInvalidaError(
+            f"Container CMS inválido retornado pelo PSC '{provider}': {err}"
+        ) from err
+
+    content_type = str(content_info["content_type"].native)  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType]
+    if content_type != "signed_data":
+        raise AssinaturaDigitalInvalidaError(
+            f"CMS inválido do PSC '{provider}': content_type='{content_type}', "
+            "esperado 'signed_data'."
+        )
+    if len(cms_bytes) > max_bytes:
+        raise AssinaturaDigitalInvalidaError(
+            f"Container CMS do PSC '{provider}' excede reserva "
+            f"({len(cms_bytes)} > {max_bytes})."
+        )
+    return content_info
+
 
 class CloudPSCOAuth2Client:
     """HTTP client communicating with Brazilian Cloud PSCs (CSC standard)."""
@@ -41,21 +143,21 @@ class CloudPSCOAuth2Client:
         self,
         timeout: float = 15.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        provider_endpoints: Mapping[str, str] | None = None,
     ) -> None:
         self._timeout = timeout
         self._transport = transport
+        source = provider_endpoints or DEFAULT_PSC_ENDPOINTS
+        self._provider_endpoints = {
+            k.strip().lower(): v.rstrip("/") for k, v in source.items()
+        }
 
     def get_provider_base_url(self, provider: str) -> str:
         """Resolve base URL for target Brazilian Trust Service Provider."""
-        settings = get_settings()
         prov_clean = provider.strip().lower()
-
-        if prov_clean == "birdid":
-            return settings.PSC_BIRDID_ENDPOINT.rstrip("/")
-        if prov_clean == "safeid":
-            return settings.PSC_SAFEID_ENDPOINT.rstrip("/")
-        if prov_clean == "vidaas":
-            return settings.PSC_VIDAAS_ENDPOINT.rstrip("/")
+        base_url = self._provider_endpoints.get(prov_clean)
+        if base_url:
+            return base_url
 
         raise AssinaturaDigitalInvalidaError(
             f"Provedor PSC não suportado: '{provider}'. "
@@ -293,20 +395,10 @@ class PyHankoSigner(ICPBrasilSignerPort):
         credenciais: DoctorCertificateCredentials,
         metadata: SignatureMetadataDTO | None = None,
     ) -> bytes:
-        """Sign PDF with PAdES standard via Cloud PSC or in-memory signer."""
-        if not pdf_bytes or not pdf_bytes.startswith(b"%PDF-"):
-            raise AssinaturaDigitalInvalidaError(
-                "Conteúdo fornecido não é um arquivo PDF válido."
-            )
-
-        if not credenciais.token or not credenciais.token.strip():
-            raise AssinaturaDigitalInvalidaError(
-                "Token de autorização do médico é obrigatório para assinar."
-            )
-
+        """Apply PAdES signature via PyHanko ExternalSigner or Fake test signer."""
+        _validar_entrada_assinatura(pdf_bytes, credenciais)
         prov = credenciais.provider.strip().lower()
 
-        # In test mode or when provider is fake/mock, execute with in-memory signer
         if prov in ("fake", "mock", "local"):
             if not self._allow_fake:
                 raise AssinaturaDigitalInvalidaError(
@@ -314,29 +406,75 @@ class PyHankoSigner(ICPBrasilSignerPort):
                 )
             return await self._fake_signer.assinar_pdf(pdf_bytes, credenciais, metadata)
 
-        # For external cloud PSCs (BirdID, SafeID, Vidaas)
         meta_dto = metadata or SignatureMetadataDTO()
-
-        # Calculate document hash for pre-flight validation
-        doc_hash = hashlib.sha256(pdf_bytes).digest()
-        hash_b64 = base64.b64encode(doc_hash).decode("ascii")
-
-        # In production this calls signHash; in staging/dev fallback or mock
         alias = credenciais.certificate_alias or "default-credential"
+        return await self._assinar_via_cloud_psc(
+            pdf_bytes=pdf_bytes,
+            provider=prov,
+            token=credenciais.token,
+            credential_id=alias,
+            meta_dto=meta_dto,
+        )
+
+    async def _assinar_via_cloud_psc(
+        self,
+        *,
+        pdf_bytes: bytes,
+        provider: str,
+        token: str,
+        credential_id: str,
+        meta_dto: SignatureMetadataDTO,
+    ) -> bytes:
+        """Prepare TBS ByteRange digest via ExternalSigner and embed PSC CMS."""
         try:
-            await self._psc_client.assinar_hash(
-                provider=prov,
-                token=credenciais.token,
-                credential_id=alias,
+            cert_info = await self._psc_client.obter_info_credencial(
+                provider=provider,
+                token=token,
+                credential_id=credential_id,
+            )
+            signing_cert, cert_store = _carregar_certificados_psc(cert_info, provider)
+
+            ext_signer = signers.ExternalSigner(
+                signing_cert=signing_cert,
+                cert_registry=cert_store,
+                signature_value=256,
+            )
+            pdf_meta = signers.PdfSignatureMetadata(
+                field_name=f"{meta_dto.field_name}_{uuid4().hex[:8]}",
+                reason=meta_dto.reason,
+                location=meta_dto.location,
+            )
+            pdf_signer = signers.PdfSigner(signature_meta=pdf_meta, signer=ext_signer)
+            writer = IncrementalPdfFileWriter(io.BytesIO(pdf_bytes))
+            signing_session = pdf_signer.init_signing_session(writer)
+            validation_info = await signing_session.perform_presign_validation(writer)
+            estimated = await signing_session.estimate_signature_container_size(  # pyright: ignore[reportUnknownMemberType]
+                validation_info
+            )
+            bytes_reserved = max(int(estimated), _CLOUD_CMS_RESERVED_BYTES)
+            tbs_doc: Any = signing_session.prepare_tbs_document(  # pyright: ignore[reportUnknownMemberType]
+                validation_info=validation_info,
+                bytes_reserved=bytes_reserved,
+            )
+            prepared_pair: tuple[Any, io.BytesIO] = tbs_doc.digest_tbs_document()
+            prepared_digest, res_output = prepared_pair
+
+            hash_b64 = base64.b64encode(prepared_digest.document_digest).decode("ascii")
+            cms_b64 = await self._psc_client.assinar_hash(
+                provider=provider,
+                token=token,
+                credential_id=credential_id,
                 hash_b64=hash_b64,
                 response_format="cms",
             )
+            cms_obj = _decodificar_cms_container(cms_b64, provider, bytes_reserved)
+            await PdfTBSDocument.async_finish_signing(  # pyright: ignore[reportUnknownMemberType]
+                res_output, prepared_digest, cms_obj
+            )
+            return res_output.getvalue()
         except AssinaturaDigitalInvalidaError:
             raise
         except Exception as err:
             raise AssinaturaDigitalInvalidaError(
-                f"Erro inesperado ao conectar com o provedor PSC '{prov}': {err}"
+                f"Erro inesperado ao assinar via provedor PSC '{provider}': {err}"
             ) from err
-
-        # Generate PAdES signature structure
-        return await self._fake_signer.assinar_pdf(pdf_bytes, credenciais, meta_dto)

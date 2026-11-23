@@ -11,6 +11,7 @@ from uuid import UUID
 from src.core.errors import ForbiddenError, NotFoundError
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
+    AtendimentoResumoDTO,
 )
 
 _READ_ALLOWED_STATUSES = frozenset({"EM_ATENDIMENTO", "CHAMANDO_PACIENTE", "CONCLUIDO"})
@@ -27,8 +28,10 @@ class ClinicalAccessPolicy:
         reader: AtendimentoReaderPort,
         *,
         is_mutation: bool = False,
-    ) -> None:
+    ) -> AtendimentoResumoDTO:
         """Evaluate Tier 3 ABAC/ReBAC conditions for a physician accessing records.
+
+        Returns the validated AtendimentoResumoDTO so callers reuse the single DB read.
 
         Raises:
             NotFoundError: If attendance does not exist.
@@ -72,3 +75,4 @@ class ClinicalAccessPolicy:
                 f"Acesso negado: prontuário só pode ser {operacao} "
                 f"durante atendimento ativo. Status atual do atendimento: '{status}'."
             )
+        return resumo

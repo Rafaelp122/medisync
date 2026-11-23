@@ -42,6 +42,7 @@ from src.modules.consultation.infrastructure.memory_signed_cache import (
 from tests.doubles import (
     FakeAddedResult,
     FakeAsyncSession,
+    FakeDocumentDirectory,
     FakeICPBrasilSigner,
     FakeMemoryStorage,
     FakePDFGenerator,
@@ -207,34 +208,63 @@ async def test_compilar_storage_hit_nao_recompila() -> None:
 
 
 @pytest.mark.asyncio
-async def test_compilar_storage_miss_compila_4_blocos() -> None:
-    """Storage miss must compile via SQL blocks and pdf generator."""
+async def test_compilar_storage_miss_compila_com_diretorio_sem_placeholders() -> None:
+    """Storage miss compiles via DocumentDirectoryPort without placeholders."""
     atend_id = uuid7()
     med_id = uuid7()
     doc_id = uuid7()
     doc = _make_doc(atend_id, med_id, doc_id)
     storage = FakeMemoryStorage()
     pdf_generator = FakePDFGenerator(content=b"%PDF-compilado%")
-    # doc load + org + medico + paciente + cid10 (all empty -> defaults).
-    session = FakeAsyncSession(
-        [
-            FakeResult(doc),
-            FakeResult(None),
-            FakeResult(None),
-            FakeResult(None),
-            FakeResult(None),
-        ]
-    )
+    session = FakeAsyncSession([FakeResult(doc), FakeResult(None)])
     svc = DocumentoService(
         session=cast("AsyncSession", session),
         pdf_generator=pdf_generator,
         signer=FakeICPBrasilSigner(),
         storage=storage,
         cache=MemorySignedCache(),
+        directory=FakeDocumentDirectory(),
     )
 
-    assert await svc.compilar_pdf(doc_id) == b"%PDF-compilado%"
+    assert await svc.compilar_pdf(doc_id, atendimento_id=atend_id) == b"%PDF-compilado%"
     assert pdf_generator.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_compilar_falha_quando_diretorio_ausente_ou_idor() -> None:
+    """Missing directory raises DocumentoIntegridadeError; mismatch raises 404."""
+    from src.modules.consultation.domain.exceptions import (
+        DocumentoClinicoNaoEncontradoError,
+        DocumentoIntegridadeError,
+    )
+
+    atend_id = uuid7()
+    med_id = uuid7()
+    doc_id = uuid7()
+    doc = _make_doc(atend_id, med_id, doc_id)
+    session = FakeAsyncSession([FakeResult(doc)])
+    svc = DocumentoService(
+        session=cast("AsyncSession", session),
+        pdf_generator=FakePDFGenerator(),
+        signer=FakeICPBrasilSigner(),
+        storage=FakeMemoryStorage(),
+        cache=MemorySignedCache(),
+        directory=None,
+    )
+    with pytest.raises(DocumentoIntegridadeError):
+        await svc.compilar_pdf(doc_id, atendimento_id=atend_id)
+
+    session_idor = FakeAsyncSession([FakeResult(doc)])
+    svc_idor = DocumentoService(
+        session=cast("AsyncSession", session_idor),
+        pdf_generator=FakePDFGenerator(),
+        signer=FakeICPBrasilSigner(),
+        storage=FakeMemoryStorage(),
+        cache=MemorySignedCache(),
+        directory=FakeDocumentDirectory(),
+    )
+    with pytest.raises(DocumentoClinicoNaoEncontradoError):
+        await svc_idor.compilar_pdf(doc_id, atendimento_id=uuid7())
 
 
 @pytest.mark.asyncio
@@ -423,3 +453,74 @@ async def test_compilar_pdf_propaga_cnpj_e_cnes_do_diretorio() -> None:
     assert spy_pdf.last_payload.organizacao_nome == "UPA Virtual Central"
     assert spy_pdf.last_payload.organizacao_cnpj == "12.345.678/0001-99"
     assert spy_pdf.last_payload.organizacao_cnes == "2077558"
+
+
+@pytest.mark.asyncio
+async def test_identity_directory_adapter_rejeita_campos_ausentes() -> None:
+    """IdentityDocumentDirectoryAdapter raises DocumentoIntegridadeError when empty."""
+    from datetime import UTC, datetime
+
+    from src.modules.consultation.composition import IdentityDocumentDirectoryAdapter
+    from src.modules.consultation.domain.exceptions import DocumentoIntegridadeError
+    from src.modules.identity.application.ports.identity_reader_port import (
+        IdentityDirectoryDTO,
+    )
+    from src.modules.queue.application.ports.queue_store_port import (
+        AtendimentoSnapshotDTO,
+    )
+
+    from tests.doubles import FakeIdentityReader
+
+    atend_id = uuid7()
+    med_id = uuid7()
+    pac_id = uuid7()
+
+    class _SnapStore:
+        async def buscar_atendimento(self, _aid: UUID) -> AtendimentoSnapshotDTO:
+            return AtendimentoSnapshotDTO(
+                id=atend_id,
+                paciente_id=pac_id,
+                medico_id=med_id,
+                status="EM_ATENDIMENTO",
+                prioridade_clinica=3,
+                tcle_hash="a" * 64,
+                data_entrada_fila=datetime.now(UTC),
+                criado_em=datetime.now(UTC),
+                is_terminal=False,
+            )
+
+    incompleto = IdentityDirectoryDTO(
+        organizacao_nome="Unidade SUS",
+        organizacao_cnpj=None,
+        medico_id=med_id,
+        medico_nome="Dr. Sem CRM",
+        medico_crm=None,
+        medico_crm_uf="SP",
+        paciente_id=pac_id,
+        paciente_nome="Paciente Sem CPF",
+        paciente_cpf=None,
+        paciente_data_nascimento=None,
+        paciente_endereco=None,
+    )
+    adapter = IdentityDocumentDirectoryAdapter(
+        identity_reader=FakeIdentityReader(diretorio=incompleto),
+        queue_store=_SnapStore(),  # pyright: ignore[reportArgumentType]
+    )
+    with pytest.raises(DocumentoIntegridadeError, match="medico_crm"):
+        await adapter.obter_dados_verificacao(medico_id=med_id, atendimento_id=atend_id)
+
+
+@pytest.mark.asyncio
+async def test_assinar_documento_inexistente_levanta_documento_nao_encontrado() -> None:
+    """DocumentoService.assinar raises specific DocumentoClinicoNaoEncontradoError."""
+    from src.modules.consultation.domain.exceptions import (
+        DocumentoClinicoNaoEncontradoError,
+    )
+
+    svc = _service(FakeAsyncSession([FakeResult(None)]))
+    with pytest.raises(DocumentoClinicoNaoEncontradoError):
+        await svc.assinar(
+            uuid7(),
+            uuid7(),
+            DoctorCertificateCredentials(token="tok", provider="fake"),
+        )

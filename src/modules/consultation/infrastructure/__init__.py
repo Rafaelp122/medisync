@@ -5,7 +5,6 @@ from src.modules.consultation.infrastructure.livekit_adapter import (
     LiveKitAdapter,
 )
 from src.modules.consultation.infrastructure.pdf_generator import (
-    FakePDFGenerator,
     ReportLabPDFGenerator,
 )
 from src.modules.consultation.infrastructure.pyhanko_signer import (
@@ -22,7 +21,6 @@ __all__ = [
     "CloudPSCOAuth2Client",
     "FakeICPBrasilSigner",
     "FakeLiveKitAdapter",
-    "FakePDFGenerator",
     "FakeStorageAdapter",
     "LiveKitAdapter",
     "PyHankoSigner",

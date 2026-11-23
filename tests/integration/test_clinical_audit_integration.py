@@ -23,9 +23,6 @@ from src.modules.consultation.application.dtos import (
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
 )
-from src.modules.consultation.application.services.evolucao_service import (
-    EvolucaoService,
-)
 from src.modules.queue.application.dtos import AdmissaoAtendimentoCommand
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.domain.models import PrioridadeClinica
@@ -41,7 +38,11 @@ from tests.doubles import (
 from tests.factories.identity import make_paciente
 from tests.factories.queue import make_atendimento
 from tests.factories.scenarios import seed_clinical_scenario
-from tests.helpers import clean_database_tables, make_pep_service
+from tests.helpers import (
+    clean_database_tables,
+    make_documento_service,
+    make_pep_service,
+)
 
 _SAMPLE_TCLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
@@ -162,12 +163,21 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
         atend_id = cenario.atendimento.id
         medico_id = cenario.medico.id
 
+        audit_adapter = SqlAuditTrailAdapter(session)
+        fake_pdf = FakePDFGenerator()
+        fake_storage = FakeMemoryStorage()
         pep_svc = make_pep_service(
             session,
-            audit_trail=SqlAuditTrailAdapter(session),
-            pdf_generator=FakePDFGenerator(),
+            audit_trail=audit_adapter,
+            pdf_generator=fake_pdf,
+            storage=fake_storage,
+        )
+        doc_svc = make_documento_service(
+            session,
+            audit_trail=audit_adapter,
+            pdf_generator=fake_pdf,
             signer=FakeICPBrasilSigner(),
-            storage=FakeMemoryStorage(),
+            storage=fake_storage,
         )
 
         # 1. Salvar Evolução SOAP
@@ -196,12 +206,12 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
                 )
             ],
         )
-        doc = await pep_svc.emitir_documento(cmd_doc)
+        doc = await doc_svc.emitir_documento(cmd_doc)
         assert doc.tipo_documento == "RECEITA_SIMPLES"
 
         # 3. Assinar Documento Clínico com ICP-Brasil
         creds = DoctorCertificateCredentials(token="fake-icp-brasil-token")
-        assinado = await pep_svc.assinar_documento(
+        assinado = await doc_svc.assinar(
             documento_id=doc.id,
             atendimento_id=atend_id,
             credenciais=creds,
@@ -284,7 +294,7 @@ async def test_clinical_audit_event_immutability_trigger() -> None:
             medico_email="dr.immutability@medisync.local",
             tcle_hash=_SAMPLE_TCLE_HASH,
         )
-        ev_svc = EvolucaoService(
+        pep_imm_svc = make_pep_service(
             session=session,
             audit_trail=SqlAuditTrailAdapter(session),
         )
@@ -295,7 +305,7 @@ async def test_clinical_audit_event_immutability_trigger() -> None:
             conduta="Orientações gerais.",
             cid10_principal="J02.9",
         )
-        await ev_svc.salvar_evolucao_soap(cmd_soap)
+        await pep_imm_svc.salvar_evolucao_soap(cmd_soap)
 
         # Retrieve the generated audit event
         events = await AuditService.list_events_by_atendimento(

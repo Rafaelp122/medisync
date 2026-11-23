@@ -5,7 +5,6 @@ from typing import Any, cast
 import aioboto3
 from botocore.exceptions import ClientError
 
-from src.core.config import get_settings
 from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.domain.exceptions import (
     DocumentoNaoEncontradoNoStorageError,
@@ -31,30 +30,27 @@ class S3StorageAdapter(StoragePort):
 
     def __init__(
         self,
-        endpoint_url: str | None = None,
-        bucket_name: str | None = None,
-        access_key: str | None = None,
-        secret_key: str | None = None,
-        region_name: str | None = None,
+        endpoint_url: str = "",
+        bucket_name: str = "medisync-docs",
+        access_key: str = "",
+        secret_key: str = "",
+        region_name: str = "us-east-1",
+        session: Any | None = None,
     ) -> None:
-        settings = get_settings()
-        self._endpoint_url = endpoint_url or settings.S3_ENDPOINT_URL
-        self._bucket_name = bucket_name or settings.S3_BUCKET_NAME
-        self._access_key = access_key or settings.S3_ACCESS_KEY_ID
-        self._secret_key = secret_key or settings.S3_SECRET_ACCESS_KEY
-        self._region_name = region_name or settings.S3_REGION_NAME
-        self._session = aioboto3.Session()
+        self._endpoint_url = endpoint_url
+        self._bucket_name = bucket_name
+        self._access_key = access_key
+        self._secret_key = secret_key
+        self._region_name = region_name
+        self._session: Any = session if session is not None else aioboto3.Session()
 
     def _client(self) -> Any:
-        return cast(
-            "Any",
-            self._session.client(  # pyright: ignore[reportUnknownMemberType]
-                "s3",
-                endpoint_url=self._endpoint_url,
-                aws_access_key_id=self._access_key,
-                aws_secret_access_key=self._secret_key,
-                region_name=self._region_name,
-            ),
+        return self._session.client(
+            "s3",
+            endpoint_url=self._endpoint_url,
+            aws_access_key_id=self._access_key,
+            aws_secret_access_key=self._secret_key,
+            region_name=self._region_name,
         )
 
     async def salvar_documento(
