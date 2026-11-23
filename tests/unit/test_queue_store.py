@@ -1,159 +1,181 @@
 """Unit tests for FilaService QueueStorePort implementations (Fase 3)."""
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import pytest
-from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
-from src.core.errors import NotFoundError
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.modules.queue.application.ports.queue_store_port import (
     AdmissaoAptoResult,
     AtendimentoSnapshotDTO,
     QueueStorePort,
 )
-from src.modules.queue.application.services.alocacao_service import (
-    AlocacaoChamadaService,
-)
-from src.modules.queue.application.services.controle_admissao_service import (
-    ControleAdmissaoService,
-)
 from src.modules.queue.application.services.fila_service import FilaService
+from src.modules.queue.domain.exceptions import AtendimentoNaoEncontradoError
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import (
     PrioridadeClinica,
     StatusAtendimento,
 )
 
+from tests.doubles import FakeAsyncSession, FakeQueueEngine, FakeResult
 
-@pytest.fixture
-def mock_session() -> AsyncMock:
-    session = AsyncMock(spec=AsyncSession)
-    session.commit = AsyncMock()
-    session.refresh = AsyncMock()
-    return session
+_SAMPLE_TCLE = "a" * 64
 
 
-@pytest.fixture
-def mock_valkey() -> MagicMock:
-    valkey = MagicMock(spec=Redis)
-    valkey.zadd = AsyncMock(return_value=1)
-    valkey.zscore = AsyncMock(return_value=None)
-    valkey.exists = AsyncMock(return_value=0)
-    valkey.get = AsyncMock(return_value=None)
-    pipe = MagicMock()
-    pipe.delete = MagicMock()
-    pipe.set = MagicMock()
-    pipe.execute = AsyncMock()
-    valkey.pipeline.return_value.__aenter__.return_value = pipe
-    return valkey
-
-
-@pytest.fixture
-def fila_service(mock_valkey: MagicMock, mock_session: AsyncMock) -> FilaService:
-    alocacao_mock = MagicMock(spec=AlocacaoChamadaService)
-    admissao_mock = MagicMock(spec=ControleAdmissaoService)
-    return FilaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        alocacao_service=alocacao_mock,
-        controle_admissao=admissao_mock,
+def test_fila_service_satisfies_queue_store_port() -> None:
+    svc = FilaService(
+        queue_engine=FakeQueueEngine(),
+        db_session=cast("AsyncSession", FakeAsyncSession()),
     )
-
-
-def test_fila_service_satisfies_queue_store_port(fila_service: FilaService) -> None:
-    assert isinstance(fila_service, QueueStorePort)
+    assert isinstance(svc, QueueStorePort)
 
 
 @pytest.mark.asyncio
-async def test_admitir_atendimento_apto_success(
-    fila_service: FilaService, mock_session: AsyncMock, mock_valkey: MagicMock
-) -> None:
-    atend_id = uuid4()
-    mock_atend = MagicMock(spec=Atendimento)
-    mock_atend.id = atend_id
-    mock_atend.status = StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE.value
-    mock_atend.prioridade_clinica = PrioridadeClinica.URGENTE
-    mock_atend.data_entrada_fila = datetime.now(UTC)
-    mock_atend.criado_em = datetime.now(UTC)
-    mock_session.get.return_value = mock_atend
+async def test_admitir_atendimento_apto_success() -> None:
+    atend = Atendimento(
+        id=uuid4(),
+        paciente_id=uuid4(),
+        status=StatusAtendimento.TRIADO_AGUARDANDO_ELEGIBILIDADE,
+        prioridade_clinica=PrioridadeClinica.URGENTE,
+        tcle_hash=_SAMPLE_TCLE,
+        data_entrada_fila=datetime.now(UTC),
+    )
+    engine = FakeQueueEngine()
+    session = FakeAsyncSession(entities={atend.id: atend})
+    svc = FilaService(
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
+    )
 
-    res = await fila_service.admitir_atendimento_apto(atend_id)
+    res = await svc.admitir_atendimento_apto(atend.id)
     assert isinstance(res, AdmissaoAptoResult)
     assert res.promovido is True
     assert res.status == "aprovado"
-    mock_atend.promover_para_apto.assert_called_once()
-    mock_session.commit.assert_awaited_once()
-    mock_valkey.zadd.assert_awaited_once()
+    assert atend.status == StatusAtendimento.APTO_PARA_CHAMADA.value
+    assert session.commits == 1
+    assert atend.id in engine.fila_scores
 
 
 @pytest.mark.asyncio
-async def test_admitir_atendimento_apto_not_found(
-    fila_service: FilaService, mock_session: AsyncMock
-) -> None:
-    mock_session.get.return_value = None
-    with pytest.raises(NotFoundError):
-        await fila_service.admitir_atendimento_apto(uuid4())
+async def test_admitir_atendimento_apto_not_found() -> None:
+    svc = FilaService(
+        queue_engine=FakeQueueEngine(),
+        db_session=cast("AsyncSession", FakeAsyncSession()),
+    )
+    missing_id = uuid4()
+    with pytest.raises(AtendimentoNaoEncontradoError, match=str(missing_id)):
+        await svc.admitir_atendimento_apto(missing_id)
 
 
 @pytest.mark.asyncio
-async def test_resolver_ring_timeout_no_show(
-    fila_service: FilaService, mock_session: AsyncMock, mock_valkey: MagicMock
-) -> None:
-    atend_id = uuid4()
+async def test_resolver_ring_timeout_no_show() -> None:
     med_id = uuid4()
-    mock_atend = MagicMock(spec=Atendimento)
-    mock_atend.id = atend_id
-    mock_atend.paciente_id = uuid4()
-    mock_atend.status = StatusAtendimento.CHAMANDO_PACIENTE.value
-    mock_session.get.return_value = mock_atend
+    atend = Atendimento(
+        id=uuid4(),
+        paciente_id=uuid4(),
+        medico_id=med_id,
+        status=StatusAtendimento.CHAMANDO_PACIENTE,
+        prioridade_clinica=PrioridadeClinica.URGENTE,
+        tcle_hash=_SAMPLE_TCLE,
+    )
+    engine = FakeQueueEngine()
+    engine.locks_medico[med_id] = atend.id
+    engine.locks_atendimento[atend.id] = med_id
+    session = FakeAsyncSession(entities={atend.id: atend})
+    svc = FilaService(
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
+    )
 
-    action = await fila_service.resolver_ring_timeout(atend_id, med_id)
+    action = await svc.resolver_ring_timeout(atend.id, med_id)
     assert action == "no_show_recorded"
-    mock_atend.registrar_ausencia_paciente.assert_called_once()
-    mock_session.commit.assert_awaited_once()
+    assert atend.status == StatusAtendimento.PACIENTE_AUSENTE.value
+    assert session.commits == 1
+    assert med_id not in engine.locks_medico
+    assert atend.id not in engine.locks_atendimento
 
 
 @pytest.mark.asyncio
-async def test_concluir_atendimento_success(
-    fila_service: FilaService, mock_session: AsyncMock
-) -> None:
-    atend_id = uuid4()
-    mock_atend = MagicMock(spec=Atendimento)
-    mock_atend.id = atend_id
-    mock_atend.status = StatusAtendimento.EM_ATENDIMENTO.value
-    mock_session.get.return_value = mock_atend
+async def test_concluir_atendimento_auto_commit_true_libera_lock_consulta() -> None:
+    med_id = uuid4()
+    atend = Atendimento(
+        id=uuid4(),
+        paciente_id=uuid4(),
+        medico_id=med_id,
+        status=StatusAtendimento.EM_ATENDIMENTO,
+        prioridade_clinica=PrioridadeClinica.URGENTE,
+        tcle_hash=_SAMPLE_TCLE,
+    )
+    engine = FakeQueueEngine()
+    engine.locks_consulta_ativa[med_id] = atend.id
+    session = FakeAsyncSession(entities={atend.id: atend})
+    svc = FilaService(
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
+    )
 
-    await fila_service.concluir_atendimento(atend_id)
-    mock_atend.concluir_atendimento.assert_called_once()
-    mock_session.commit.assert_awaited_once()
+    returned_med = await svc.concluir_atendimento(atend.id)
+    assert returned_med == med_id
+    assert atend.status == StatusAtendimento.CONCLUIDO.value
+    assert session.commits == 1
+    assert session.get_calls[-1]["with_for_update"] is True
+    assert med_id not in engine.locks_consulta_ativa
 
 
 @pytest.mark.asyncio
-async def test_buscar_atendimento(
-    fila_service: FilaService, mock_session: AsyncMock
-) -> None:
-    atend_id = uuid4()
-    pac_id = uuid4()
-    now = datetime.now(UTC)
+async def test_concluir_atendimento_auto_commit_false_flushes_sem_commitar() -> None:
+    """auto_commit=False flushes and retains active consultation lock until release."""
+    med_id = uuid4()
+    atend = Atendimento(
+        id=uuid4(),
+        paciente_id=uuid4(),
+        medico_id=med_id,
+        status=StatusAtendimento.EM_ATENDIMENTO,
+        prioridade_clinica=PrioridadeClinica.URGENTE,
+        tcle_hash=_SAMPLE_TCLE,
+    )
+    engine = FakeQueueEngine()
+    engine.locks_consulta_ativa[med_id] = atend.id
+    session = FakeAsyncSession(entities={atend.id: atend})
+    svc = FilaService(
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
+    )
 
-    mock_atend = MagicMock(spec=Atendimento)
-    mock_atend.id = atend_id
-    mock_atend.paciente_id = pac_id
-    mock_atend.medico_id = None
-    mock_atend.status = StatusAtendimento.CONCLUIDO.value
-    mock_atend.prioridade_clinica = PrioridadeClinica.POUCO_URGENTE
-    mock_atend.tcle_hash = "a" * 64
-    mock_atend.data_entrada_fila = now
-    mock_atend.criado_em = now
+    returned_med = await svc.concluir_atendimento(atend.id, auto_commit=False)
+    assert returned_med == med_id
+    assert atend.status == StatusAtendimento.CONCLUIDO.value
+    assert session.commits == 0
+    assert session.flushes == 1
+    assert med_id in engine.locks_consulta_ativa
 
-    mock_exec_res = MagicMock()
-    mock_exec_res.scalar_one_or_none.return_value = mock_atend
-    mock_session.execute.return_value = mock_exec_res
+    await svc.liberar_consulta_ativa_medico(med_id)
+    assert med_id not in engine.locks_consulta_ativa
 
-    snapshot = await fila_service.buscar_atendimento(atend_id)
+
+@pytest.mark.asyncio
+async def test_buscar_atendimento() -> None:
+    atend = Atendimento(
+        id=uuid4(),
+        paciente_id=uuid4(),
+        status=StatusAtendimento.CONCLUIDO,
+        prioridade_clinica=PrioridadeClinica.POUCO_URGENTE,
+        tcle_hash=_SAMPLE_TCLE,
+        data_entrada_fila=datetime.now(UTC),
+    )
+    session = FakeAsyncSession(results=[FakeResult(atend)])
+    svc = FilaService(
+        queue_engine=FakeQueueEngine(),
+        db_session=cast("AsyncSession", session),
+    )
+
+    snapshot = await svc.buscar_atendimento(atend.id)
     assert isinstance(snapshot, AtendimentoSnapshotDTO)
-    assert snapshot.id == atend_id
+    assert snapshot.id == atend.id
     assert snapshot.status == StatusAtendimento.CONCLUIDO.value
     assert snapshot.is_terminal is True

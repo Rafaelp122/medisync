@@ -309,26 +309,9 @@ class PEPService:
         for doc in documentos:
             doc.marcar_finalizado()
 
-        resumo: AtendimentoResumoDTO | None = None
-        if self._reader is not None:
-            try:
-                resumo = await self._reader.obter_resumo(command.atendimento_id)
-            except Exception as exc:
-                logger.warning(
-                    "Falha ao obter resumo do atendimento '%s' via reader: %s",
-                    command.atendimento_id,
-                    exc,
-                    exc_info=True,
-                )
-            try:
-                await self._reader.concluir_atendimento(command.atendimento_id)
-            except Exception as exc:
-                logger.warning(
-                    "Falha ao concluir atendimento '%s' na fila virtual via reader: %s",
-                    command.atendimento_id,
-                    exc,
-                    exc_info=True,
-                )
+        resumo, medico_para_liberar = await self._concluir_fila_antes_commit(
+            command.atendimento_id
+        )
 
         if (
             self._producao_port is not None
@@ -368,10 +351,55 @@ class PEPService:
                 payload={"evolucao_id": str(evolucao.id)},
             )
         await self._session.commit()
+        await self._liberar_lock_consulta_pos_commit(medico_para_liberar)
         return FinalizarConsultaResult(
             atendimento_id=command.atendimento_id,
             is_finalizado=evolucao.is_finalizado,
         )
+
+    async def _concluir_fila_antes_commit(
+        self, atendimento_id: UUID
+    ) -> tuple[AtendimentoResumoDTO | None, UUID | None]:
+        if self._reader is None:
+            return None, None
+        resumo: AtendimentoResumoDTO | None = None
+        medico_para_liberar: UUID | None = None
+        try:
+            resumo = await self._reader.obter_resumo(atendimento_id)
+        except Exception as exc:
+            logger.warning(
+                "Falha ao obter resumo do atendimento '%s' via reader: %s",
+                atendimento_id,
+                exc,
+                exc_info=True,
+            )
+        try:
+            medico_para_liberar = await self._reader.concluir_atendimento(
+                atendimento_id,
+                auto_commit=False,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Falha ao concluir atendimento '%s' na fila virtual via reader: %s",
+                atendimento_id,
+                exc,
+                exc_info=True,
+            )
+        return resumo, medico_para_liberar
+
+    async def _liberar_lock_consulta_pos_commit(self, medico_id: UUID | None) -> None:
+        if self._reader is None or medico_id is None:
+            return
+        try:
+            await self._reader.liberar_consulta_ativa_medico(medico_id)
+        except Exception as exc:
+            logger.warning(
+                "Falha ao liberar lock de consulta ativa para médico '%s' "
+                "pós-commit: %s",
+                medico_id,
+                exc,
+                exc_info=True,
+            )
 
     def calcular_tma_status(
         self,

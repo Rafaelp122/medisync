@@ -5,8 +5,6 @@ Referência: docs/reference/audit/event-catalog.md
 """
 
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass
-from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import text
@@ -29,17 +27,16 @@ from src.modules.consultation.application.services.evolucao_service import (
     EvolucaoService,
 )
 from src.modules.queue.application.dtos import AdmissaoAtendimentoCommand
-from src.modules.queue.application.services.alocacao_service import (
-    AlocacaoChamadaService,
-)
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.domain.models import PrioridadeClinica
+from src.modules.triage.application.dtos import TriageRiskEvaluationDTO
 
 from tests.doubles import (
     FakeICPBrasilSigner,
     FakeMemoryStorage,
     FakePDFGenerator,
-    FakeValkey,
+    FakeQueueEngine,
+    FakeTriagePort,
 )
 from tests.factories.identity import make_paciente
 from tests.factories.queue import make_atendimento
@@ -47,15 +44,6 @@ from tests.factories.scenarios import seed_clinical_scenario
 from tests.helpers import clean_database_tables, make_pep_service
 
 _SAMPLE_TCLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
-
-@dataclass
-class DummyTriageEvaluation:
-    prioridade_clinica: int
-    alerta_samu_disparado: bool = False
-    tcle_hash: str = ""
-    tcle_texto: str = ""
-    instrucao_redirecionamento: str | None = None
 
 
 @pytest.fixture(autouse=True)
@@ -75,23 +63,19 @@ async def test_admissao_paciente_records_audit_event_in_postgres() -> None:
         await session.commit()
         await session.refresh(paciente)
 
-        fake_valkey = FakeValkey()
-        mock_triage = AsyncMock()
-        mock_triage.avaliar_risco = AsyncMock(
-            return_value=DummyTriageEvaluation(
+        fake_engine = FakeQueueEngine(medicos_ativos={uuid7()})
+        fake_triage = FakeTriagePort(
+            evaluation=TriageRiskEvaluationDTO(
                 prioridade_clinica=PrioridadeClinica.POUCO_URGENTE,
                 alerta_samu_disparado=False,
                 tcle_hash=_SAMPLE_TCLE_HASH,
-                tcle_texto="Termo de Consentimento Livre e Esclarecido",
             )
         )
-        mock_triage.registrar_triagem = AsyncMock(return_value=uuid7())
 
         fila_svc = FilaService(
-            valkey=fake_valkey,  # type: ignore[reportArgumentType]
+            queue_engine=fake_engine,
             db_session=session,
-            alocacao_service=AsyncMock(spec=AlocacaoChamadaService),
-            triage_port=mock_triage,
+            triage_port=fake_triage,
             audit_trail=SqlAuditTrailAdapter(session),
         )
 

@@ -91,7 +91,7 @@ Adotamos a **Opção 3: Hexagonal Pragmático com Modelos Ricos no SQLAlchemy 2.
   * `presentation → application + composition + core` (nunca `domain.models`, `infrastructure`, `sqlalchemy`).
   * `composition → application + domain + infrastructure + core` — único lugar que importa adaptadores concretos.
   * `infrastructure → application + domain + core`; `application → domain + core`; `domain → core`.
-  * `worker → core + queue/ambulatory` camadas (`application/domain/infrastructure`).
+  * `worker → core + queue + identity` (`application/composition` autorizados no `tach.toml`, sem dependência de `ambulatory`).
 * **Router fino (guard `tests/architecture/test_routers_are_thin.py`, AST sem deps novas)**:
   * Sem `import sqlalchemy/infrastructure/domain.models`; sem `.commit()/.refresh()/text()/select()`.
   * Sem `HTTPException` — só `presentation/dependencies.py` pode levantar HTTP (ex.: `exigir_rate_limit` → 429).
@@ -108,7 +108,7 @@ Adotamos a **Opção 3: Hexagonal Pragmático com Modelos Ricos no SQLAlchemy 2.
 
 * **Deep QueueStore (`QueueStorePort`)**:
   * Encapsula a persistência e transições de estado do PostgreSQL (`Atendimento`) com a manipulação atômica de chaves e locks no Valkey (`fila:aptos`, `lock:...`) sob uma única interface profunda em `FilaService`.
-  * Workers assíncronos (`eligibility`, `ring_timeout`, `sweeper`) tornam-se adaptadores de despacho finos sem conhecimento de chaves brutas de Redis nem queries manuais.
+  * Workers assíncronos (`ring_timeout`, `sweeper`) tornam-se adaptadores de despacho finos sem conhecimento de chaves brutas de Redis nem queries manuais.
 * **Acolhimento Clínico Unificado & Triagem Persistida (`AdmissaoAtendimentoService`)**:
   * O módulo de triagem foi aprofundado e unificado na admissão clínica (`POST /api/v1/fila/admissao`).
   * Orquestra a classificação clínica estruturada (Manchester / ACR), salvaguarda SAMU Nível 1 com encaminhamento emergencial, backpressure estocástico e persistência atômica do `Atendimento` e da `Triagem` na tabela `triagens`.
@@ -142,3 +142,16 @@ Adotamos a **Opção 3: Hexagonal Pragmático com Modelos Ricos no SQLAlchemy 2.
 * **Hooks Assíncronos de Ciclo de Vida (`on_startup`)**:
   * Inicializações técnicas de infraestrutura (como pré-carregamento de scripts Lua em Valkey) foram migradas para hooks assíncronos no composition root do respectivo módulo (ex.: `src/modules/queue/composition.py:on_startup`).
   * O `lifespan` de `main.py` apenas despacha esses hooks, mantendo o encapsulamento hexagonal.
+
+---
+
+## 10. Adendo — Deepening de `ValkeyQueueEngine`, Seams Únicos e Transação Única PEP (Issue #163 - 2026-11-23)
+
+* **Deepening de `QueueEnginePort` (`ValkeyQueueEngine`)**:
+  * Toda manipulação de ZSET, scripts Lua 4-Keys, reserva/estorno de cota diária, presença médica (`plantao:medicos_ativos`), lock distribuído do sweeper e Pub/Sub foi concentrada em `QueueEnginePort` (`src/modules/queue/application/ports/queue_engine_port.py`) $\leftarrow$ `ValkeyQueueEngine`, eliminando os seams hipotéticos `LuaScriptPort`, `QueueOverflowNotifierPort` e `DoctorCallNotifierPort`.
+* **Unificação do Seam `TriagePort` e Políticas de Plantão (`ShiftPolicyReaderPort`)**:
+  * `TriagePort` absorveu `TriageQueixaReaderPort`, removendo checagens `isinstance()` em `FilaService`; `ShiftPolicyReaderPort` (`queue`) lê `ConfiguracaoPlantao` via `telemetry.composition.ler_politica_plantao_snapshot` e `DoctorPresencePort` (`auth`) integra `auth.composition` a `build_doctor_presence_engine` mantendo `tach.toml` estritamente acíclico.
+* **Transação Única no Encerramento de Consulta (`auto_commit=False`)**:
+  * `QueueStorePort.concluir_atendimento(..., auto_commit=False)` executa apenas `flush()` quando chamado por `PEPService.finalizar_consulta`, permitindo que todo o encerramento clínico (PEP, status `CONCLUIDO`, BPA-I, `CONSULTA_FINALIZADA`) comite exatamente 1 vez antes da liberação pós-commit de `lock:consulta_ativa:medico:{id}` via `liberar_consulta_ativa_medico`.
+* **Poda de Task Morta no Worker**:
+  * A remoção da task morta `eligibility` (`tasks/eligibility.py`) eliminou o falso acoplamento `src.worker -> ambulatory.*` no `tach.toml`.

@@ -129,3 +129,13 @@ class ConfigPlantaoCommand:
     sla_minutos_nivel_4: int = 120
     sla_minutos_nivel_5: int = 240
     atualizado_por_id: UUID | None = None
+
+
+@dataclass(frozen=True)
+class PoliticaPlantaoSnapshotDTO:
+    """Read-only snapshot of active shift operational parameters across modules."""
+
+    alpha_backpressure: float = 1.25
+    cota_diaria_maxima: int | None = 300
+    tma_padrao_segundos: int = 600
+    tempo_tolerancia_ring_segundos: int = 45

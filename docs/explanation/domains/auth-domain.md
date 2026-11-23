@@ -87,6 +87,7 @@ flowchart TD
 - Revogação distribuída: `TokenRevocationPort` implementada por `ValkeyTokenRevocation` (`auth:revoked:{jti}`).
 - Integração com identidade: `IdentityReaderPort` valida existência, telefone, dados CADSUS e passkeys de pacientes; `IdentityWriterPort` (`SqlIdentityWriter` em `src/modules/identity/infrastructure/identity_writer_sql.py`) persiste novos pacientes no auto-cadastro dentro da mesma transação antes do `commit` em `PatientAuthService`.
 - Credenciais de pacientes e lookup de fila: `PatientCredentialRepositoryPort` (`SqlPatientCredentialRepository`) persiste credenciais do cidadão; `ActiveAttendanceLookupPort` resolve eventual `atendimento_id` ativo no retorno do login.
+- Presença médica no plantão: `DoctorPresencePort` (`src/modules/auth/application/ports/doctor_presence_port.py`), plugada em `auth/composition.py` via `build_doctor_presence_engine`, registra `Role.MEDICO` em `plantao:medicos_ativos` ao autenticar (`/login` ou `/mfa/verify`) e desregistra no `/logout` (`revogar_sessao`).
 - Provedor de SMS: `SmsSenderPort` implementa envio de mensagens de texto assíncronas.
 - Biometria FIDO2/WebAuthn: `PatientWebAuthnService` e `patient_webauthn_router.py` orquestram registro e login 1-toque com desafios em Valkey.
 - Rotas REST finas: `auth_router.py`, `patient_auth_router.py` e `patient_webauthn_router.py` delegam execução a `AuthServiceDep`, `PatientAuthServiceDep` e `PatientWebAuthnServiceDep`, sem regras de autenticação nos routers.
@@ -116,6 +117,7 @@ flowchart TD
 - `src/modules/auth/application/ports/identity_writer_port.py`
 - `src/modules/auth/application/ports/patient_credential_repository_port.py`
 - `src/modules/auth/application/ports/active_attendance_lookup_port.py`
+- `src/modules/auth/application/ports/doctor_presence_port.py`
 - `src/modules/auth/application/services/auth_service.py`
 - `src/modules/auth/application/services/patient_auth_service.py`
 - `src/modules/auth/application/services/patient_webauthn_service.py`

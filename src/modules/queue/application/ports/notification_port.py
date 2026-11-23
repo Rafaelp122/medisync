@@ -5,11 +5,7 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class NotificationPort(Protocol):
-    """Abstract port for dispatching SMS and WhatsApp notifications."""
-
-    async def send_sms(self, to: str, message: str) -> bool:
-        """Send an SMS text message to the given destination phone number."""
-        ...
+    """Abstract port for dispatching WhatsApp notifications."""
 
     async def send_whatsapp(
         self,

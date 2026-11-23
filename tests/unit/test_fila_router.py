@@ -43,14 +43,18 @@ async def test_obter_posicao_sucesso_com_token_intake() -> None:
     paciente_id = uuid4()
     atendimento_id = uuid4()
 
+    chamada_em = datetime.now(UTC)
     mock_service = MagicMock(spec=FilaService)
     mock_service.obter_posicao_e_estimativa = AsyncMock(
         return_value=PosicaoFilaResult(
             atendimento_id=atendimento_id,
-            status="APTO_PARA_CHAMADA",
-            posicao=2,
+            status="CHAMANDO_PACIENTE",
+            posicao=0,
             total_aguardando=5,
-            tempo_estimado_segundos=1800,
+            tempo_estimado_segundos=0,
+            prioridade_clinica=2,
+            chamada_iniciada_em=chamada_em,
+            ttl_segundos=45,
         )
     )
     mock_checker = AsyncMock(return_value=True)
@@ -69,9 +73,12 @@ async def test_obter_posicao_sucesso_com_token_intake() -> None:
             assert resp.status_code == 200
             data = cast("dict[str, object]", resp.json())
             assert data["atendimento_id"] == str(atendimento_id)
-            assert data["posicao"] == 2
+            assert data["posicao"] == 0
             assert data["total_aguardando"] == 5
-            assert data["tempo_estimado_segundos"] == 1800
+            assert data["tempo_estimado_segundos"] == 0
+            assert data["prioridade_clinica"] == 2
+            assert data["chamada_iniciada_em"] is not None
+            assert data["ttl_segundos"] == 45
             mock_service.obter_posicao_e_estimativa.assert_awaited_once_with(
                 atendimento_id=atendimento_id,
             )
@@ -220,7 +227,7 @@ async def test_comunicar_piora_clinica_reclassificacao_sucesso() -> None:
             data = cast("dict[str, object]", resp.json())
             assert data["atendimento_id"] == str(atendimento_id)
             assert data["prioridade_clinica"] == 2
-            assert data["nova_prioridade"] == 2
+            assert "nova_prioridade" not in data
             assert data["alerta_samu_disparado"] is False
             assert data["redirecionado_emergencia"] is False
             assert data["nova_posicao"] == 1
@@ -245,11 +252,7 @@ async def test_comunicar_piora_clinica_emergencia_samu() -> None:
             redirecionado_emergencia=True,
             nova_posicao=None,
             instrucoes="Emergência detectada. SAMU 192 notificado imediatamente.",
-            nova_prioridade=1,
-            status_atendimento="CANCELADO_PELO_PACIENTE",
-            orientacoes_emergencia=(
-                "Emergência detectada. SAMU 192 notificado imediatamente."
-            ),
+            status_atendimento="CANCELADO_PACIENTE",
         )
     )
     mock_checker = AsyncMock(return_value=True)
@@ -274,15 +277,16 @@ async def test_comunicar_piora_clinica_emergencia_samu() -> None:
             data = cast("dict[str, object]", resp.json())
             assert data["atendimento_id"] == str(atendimento_id)
             assert data["prioridade_clinica"] == 1
-            assert data["nova_prioridade"] == 1
-            assert data["status_atendimento"] == "CANCELADO_PELO_PACIENTE"
+            assert data["status_atendimento"] == "CANCELADO_PACIENTE"
             assert data["alerta_samu_disparado"] is True
             assert data["redirecionado_emergencia"] is True
             assert data["nova_posicao"] is None
             assert (
-                data["orientacoes_emergencia"]
+                data["instrucoes"]
                 == "Emergência detectada. SAMU 192 notificado imediatamente."
             )
+            assert "nova_prioridade" not in data
+            assert "orientacoes_emergencia" not in data
     finally:
         app.dependency_overrides.clear()
 

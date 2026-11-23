@@ -9,6 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from src.core.authz import (
     AuthenticatedUser,
     BearerAuthSettings,
+    BearerPrincipal,
     CurrentUserDep,
     OptionalBearerAuthSettingsDep,
     OptionalTokenRevocationDep,
@@ -30,6 +31,32 @@ from src.modules.queue.presentation.schemas import (
 )
 
 
+async def _resolver_principal_fila_http(
+    credentials: HTTPAuthorizationCredentials | None,
+    *,
+    allowed_roles: tuple[Role, ...],
+    missing_detail: str,
+    revocation: TokenRevocationPort | None = None,
+    auth_settings: BearerAuthSettings | None = None,
+) -> BearerPrincipal:
+    """Validate Bearer token and resolve principal for HTTP queue routes."""
+    if not credentials or not credentials.credentials:
+        raise UnauthorizedError(missing_detail)
+
+    resolved_settings = auth_settings or get_bearer_auth_settings()
+    resolved_revocation = revocation or get_token_revocation()
+    return await resolve_bearer_principal(
+        credentials.credentials,
+        allowed_roles=allowed_roles,
+        accept_intake=True,
+        revocation=resolved_revocation,
+        secret_key=resolved_settings.secret_key,
+        jwt_secret=resolved_settings.jwt_secret,
+        jwt_algorithm=resolved_settings.jwt_algorithm,
+        transport="http",
+    )
+
+
 async def validar_ws_queue_token(
     websocket: WebSocket,
     atendimento_id: UUID,
@@ -40,12 +67,7 @@ async def validar_ws_queue_token(
     revocation: OptionalTokenRevocationDep = None,
     auth_settings: OptionalBearerAuthSettingsDep = None,
 ) -> None:
-    """Valida o handshake WebSocket da fila via parâmetro ?token= (Issue #42, ADR-013).
-
-    Aceita token provisório de acolhimento (HMAC-SHA256, 2 partes) ou token JWT
-    de acesso (papel PACIENTE, 3 partes). Rejeita com código WS 4401 ou 4403 antes
-    de invocar websocket.accept().
-    """
+    """Valida o handshake WebSocket da fila via ?token= (Issue #42, ADR-013)."""
     resolved_settings = auth_settings or get_bearer_auth_settings()
     resolved_revocation = revocation or get_token_revocation()
     principal = await resolve_bearer_principal(
@@ -83,29 +105,17 @@ async def validar_admissao_paciente(
     revocation: OptionalTokenRevocationDep = None,
     auth_settings: OptionalBearerAuthSettingsDep = None,
 ) -> None:
-    """Valida posse e autorização para admissão na fila clínica (Anti-IDOR).
-
-    Aceita token provisório de acolhimento (HMAC-SHA256, 2 partes) ou token JWT
-    de acesso (papel PACIENTE ou GESTOR_UNIDADE, 3 partes).
-    """
-    if not credentials or not credentials.credentials:
-        raise UnauthorizedError(
+    """Valida posse e autorização para admissão na fila clínica (Anti-IDOR)."""
+    principal = await _resolver_principal_fila_http(
+        credentials,
+        allowed_roles=(Role.PACIENTE, Role.GESTOR_UNIDADE),
+        missing_detail=(
             "Credencial de autenticação não fornecida para admissão do paciente "
             f"'{body.paciente_id}'. Envie o token no cabeçalho "
             "Authorization: Bearer <token>."
-        )
-
-    resolved_settings = auth_settings or get_bearer_auth_settings()
-    resolved_revocation = revocation or get_token_revocation()
-    principal = await resolve_bearer_principal(
-        credentials.credentials,
-        allowed_roles=(Role.PACIENTE, Role.GESTOR_UNIDADE),
-        accept_intake=True,
-        revocation=resolved_revocation,
-        secret_key=resolved_settings.secret_key,
-        jwt_secret=resolved_settings.jwt_secret,
-        jwt_algorithm=resolved_settings.jwt_algorithm,
-        transport="http",
+        ),
+        revocation=revocation,
+        auth_settings=auth_settings,
     )
     if (
         principal.papel == Role.PACIENTE.value
@@ -143,24 +153,16 @@ async def _verificar_posse_token_e_atendimento(
     auth_settings: BearerAuthSettings | None = None,
 ) -> None:
     """Verifica credenciais e posse sobre o atendimento (Anti-IDOR)."""
-    if not credentials or not credentials.credentials:
-        raise UnauthorizedError(
+    principal = await _resolver_principal_fila_http(
+        credentials,
+        allowed_roles=(Role.PACIENTE,),
+        missing_detail=(
             "Credencial de autenticação não fornecida para atendimento "
             f"'{atendimento_id}'. Envie o token no cabeçalho "
             "Authorization: Bearer <token>."
-        )
-
-    resolved_settings = auth_settings or get_bearer_auth_settings()
-    resolved_revocation = revocation or get_token_revocation()
-    principal = await resolve_bearer_principal(
-        credentials.credentials,
-        allowed_roles=(Role.PACIENTE,),
-        accept_intake=True,
-        revocation=resolved_revocation,
-        secret_key=resolved_settings.secret_key,
-        jwt_secret=resolved_settings.jwt_secret,
-        jwt_algorithm=resolved_settings.jwt_algorithm,
-        transport="http",
+        ),
+        revocation=revocation,
+        auth_settings=auth_settings,
     )
 
     tem_posse = await checker(atendimento_id, principal.actor_id)

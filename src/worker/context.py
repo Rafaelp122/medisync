@@ -5,27 +5,10 @@ from collections.abc import AsyncGenerator
 from typing import Any, cast
 
 from redis.asyncio import ConnectionPool, Redis
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.core.config import Settings, get_settings
-from src.core.database import get_engine, get_session_factory
+from src.core.database import get_session_factory
 from src.core.valkey import get_valkey_pool
-
-
-def get_settings_from_ctx(ctx: dict[str, Any]) -> Settings:
-    """Extract cached Settings instance from worker context or fallback."""
-    extracted = ctx.get("settings")
-    if extracted is not None:
-        return cast("Settings", extracted)
-    return get_settings()
-
-
-def get_db_engine_from_ctx(ctx: dict[str, Any]) -> AsyncEngine:
-    """Extract shared database AsyncEngine from context or fallback to singleton."""
-    extracted = ctx.get("db_engine")
-    if extracted is not None:
-        return cast("AsyncEngine", extracted)
-    return get_engine()
 
 
 def get_session_factory_from_ctx(
@@ -48,12 +31,22 @@ async def get_db_session_from_ctx(
         yield session
 
 
-def get_valkey_from_ctx(ctx: dict[str, Any]) -> Redis:
-    """Retrieve asynchronous Redis/Valkey client reusing context connection pool."""
+@contextlib.asynccontextmanager
+async def get_valkey_from_ctx(
+    ctx: dict[str, Any],
+) -> AsyncGenerator[Redis, None]:
+    """Yield Valkey client from ctx or pool, closing pool-owned clients on exit."""
     client = ctx.get("valkey_client")
     if client is not None:
-        return cast("Redis", client)
+        yield cast("Redis", client)
+        return
+
     pool = ctx.get("valkey_pool")
-    if pool is not None:
-        return Redis(connection_pool=cast("ConnectionPool", pool))
-    return Redis(connection_pool=get_valkey_pool())
+    target_pool = (
+        cast("ConnectionPool", pool) if pool is not None else get_valkey_pool()
+    )
+    owned_client = Redis(connection_pool=target_pool)
+    try:
+        yield owned_client
+    finally:
+        await owned_client.aclose()

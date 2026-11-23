@@ -1,33 +1,29 @@
 """Unit tests for ARQ worker settings, context accessors, and failure telemetry."""
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from redis.asyncio import ConnectionPool, Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from src.core.config import Settings, get_settings
+from src.core.valkey import create_arq_redis_settings
 from src.worker.context import (
-    get_db_engine_from_ctx,
     get_db_session_from_ctx,
     get_session_factory_from_ctx,
-    get_settings_from_ctx,
     get_valkey_from_ctx,
 )
 from src.worker.health import check_worker_heartbeat
-from src.worker.settings import (
-    WorkerSettings,
-    create_redis_settings,
-    shutdown,
-    startup,
-)
+from src.worker.settings import WorkerSettings, shutdown, startup
 from src.worker.tasks import monitored_task, on_job_failure
 
+from tests.doubles import FakeValkey
 
-def test_create_redis_settings() -> None:
-    """RedisSettings should inherit host, port and pool limits from Settings."""
+
+def test_create_arq_redis_settings() -> None:
+    """create_arq_redis_settings should inherit host, port and pool limits."""
     settings = get_settings()
-    redis_settings = create_redis_settings()
+    redis_settings = create_arq_redis_settings()
     assert redis_settings.host == settings.VALKEY_HOST
     assert redis_settings.port == settings.VALKEY_PORT
     assert redis_settings.conn_timeout == 5
@@ -35,7 +31,7 @@ def test_create_redis_settings() -> None:
 
 
 def test_worker_settings_attributes() -> None:
-    """WorkerSettings class should configure queue name, limits, and functions."""
+    """WorkerSettings class should configure queue name, limits, and active tasks."""
     assert WorkerSettings.queue_name == "arq:queue"
     assert WorkerSettings.max_jobs == 20
     assert WorkerSettings.job_timeout == 60
@@ -43,7 +39,7 @@ def test_worker_settings_attributes() -> None:
     assert WorkerSettings.health_check_key == "medisync:worker:health"
     assert WorkerSettings.health_check_interval == 10
     assert WorkerSettings.handle_signals is True
-    assert len(WorkerSettings.functions) == 4
+    assert len(WorkerSettings.functions) == 3
     func_names: list[str] = [
         str(getattr(f, "name", getattr(f, "__name__", "")))
         for f in WorkerSettings.functions
@@ -51,7 +47,7 @@ def test_worker_settings_attributes() -> None:
     assert "ping_task" in func_names
     assert "resolver_ring_timeout_task" in func_names
     assert "reconciliar_fila_orphans_task" in func_names
-    assert "validar_elegibilidade_task" in func_names
+    assert "validar_elegibilidade_task" not in func_names
 
     assert WorkerSettings.cron_jobs is not None
     assert len(WorkerSettings.cron_jobs) == 1
@@ -62,11 +58,27 @@ def test_worker_settings_attributes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_startup_injects_connection_pools() -> None:
-    """Worker startup hook should populate context with shared DB and Valkey pools."""
+async def test_startup_initializes_logging_telemetry_and_pools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Worker startup hook initializes logging, OpenTelemetry, and shared pools."""
+    logging_calls: list[str] = []
+    telemetry_calls: list[bool] = []
+
+    def _fake_setup_logging(*, level: str = "INFO", **kwargs: object) -> None:
+        logging_calls.append(level)
+
+    def _fake_setup_telemetry(*args: object, **kwargs: object) -> None:
+        telemetry_calls.append(True)
+
+    monkeypatch.setattr("src.worker.settings.setup_logging", _fake_setup_logging)
+    monkeypatch.setattr("src.worker.settings.setup_telemetry", _fake_setup_telemetry)
+
     ctx: dict[str, Any] = {}
     await startup(ctx)
 
+    assert len(logging_calls) == 1
+    assert telemetry_calls == [True]
     assert "settings" in ctx
     assert isinstance(ctx["settings"], Settings)
     assert "db_engine" in ctx
@@ -94,41 +106,60 @@ async def test_shutdown_disposes_pools() -> None:
         mock_dispose.assert_awaited_once()
 
 
-def test_context_accessors_with_populated_ctx() -> None:
-    """Context accessors should prefer context-provided resources."""
-    mock_settings = Settings()
-    mock_engine = MagicMock(spec=AsyncEngine)
+@pytest.mark.asyncio
+async def test_context_accessors_with_populated_ctx(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Context accessors reuse valkey_client or close pool-owned clients."""
     mock_factory = MagicMock(spec=async_sessionmaker)
     mock_pool = MagicMock(spec=ConnectionPool)
     mock_pool.connection_kwargs = {}
 
-    ctx: dict[str, Any] = {
-        "settings": mock_settings,
-        "db_engine": mock_engine,
+    # Case 1: explicit valkey_client injected (not closed by context manager)
+    fake_client = FakeValkey()
+    ctx_client: dict[str, Any] = {
+        "db_session_factory": mock_factory,
+        "valkey_client": fake_client,
+    }
+    assert get_session_factory_from_ctx(ctx_client) is mock_factory
+    async with get_valkey_from_ctx(ctx_client) as yielded:
+        assert yielded is fake_client
+
+    # Case 2: pool-owned client must be closed via aclose() on exit
+    closed = 0
+
+    async def _fake_aclose(self: Redis) -> None:
+        nonlocal closed
+        closed += 1
+
+    monkeypatch.setattr(Redis, "aclose", _fake_aclose)
+    ctx_pool: dict[str, Any] = {
         "db_session_factory": mock_factory,
         "valkey_pool": mock_pool,
     }
-
-    assert get_settings_from_ctx(ctx) is mock_settings
-    assert get_db_engine_from_ctx(ctx) is mock_engine
-    assert get_session_factory_from_ctx(ctx) is mock_factory
-
-    valkey_client = get_valkey_from_ctx(ctx)
-    assert isinstance(valkey_client, Redis)
-    assert valkey_client.connection_pool is mock_pool
+    async with get_valkey_from_ctx(ctx_pool) as valkey_client:
+        assert isinstance(valkey_client, Redis)
+        assert valkey_client.connection_pool is mock_pool
+    assert closed == 1
 
 
-def test_context_accessors_fallback() -> None:
-    """Context accessors should fallback to system singletons if ctx is empty."""
+@pytest.mark.asyncio
+async def test_context_accessors_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Context accessors fallback to singletons and close owned Redis client."""
     empty_ctx: dict[str, Any] = {}
-    settings = get_settings_from_ctx(empty_ctx)
-    assert isinstance(settings, Settings)
-    engine = get_db_engine_from_ctx(empty_ctx)
-    assert isinstance(engine, AsyncEngine)
     factory = get_session_factory_from_ctx(empty_ctx)
     assert isinstance(factory, async_sessionmaker)
-    client = get_valkey_from_ctx(empty_ctx)
-    assert isinstance(client, Redis)
+
+    closed = 0
+
+    async def _fake_aclose(self: Redis) -> None:
+        nonlocal closed
+        closed += 1
+
+    monkeypatch.setattr(Redis, "aclose", _fake_aclose)
+    async with get_valkey_from_ctx(empty_ctx) as client:
+        assert isinstance(client, Redis)
+    assert closed == 1
 
 
 @pytest.mark.asyncio
@@ -168,28 +199,30 @@ async def test_on_job_failure_logs_diagnostics() -> None:
 
 
 @pytest.mark.asyncio
-async def test_monitored_task_decorator() -> None:
+async def test_monitored_task_decorator(caplog: pytest.LogCaptureFixture) -> None:
     """monitored_task wrapper should invoke on_job_failure and propagate error."""
-    mock_failure = AsyncMock()
+    import logging
 
     @monitored_task
     async def sample_failing_task(ctx: dict[str, Any]) -> None:
         raise RuntimeError("Something went wrong")
 
-    with patch("src.worker.tasks.on_job_failure", mock_failure):
-        with pytest.raises(RuntimeError, match="Something went wrong"):
-            await sample_failing_task({"job_id": "err_1"})
+    with (
+        caplog.at_level(logging.ERROR, logger="medisync.worker"),
+        pytest.raises(RuntimeError, match="Something went wrong"),
+    ):
+        await sample_failing_task({"job_id": "err_1", "job_try": 1})
 
-        mock_failure.assert_awaited_once()
+    assert "job_id=err_1" in caplog.text
+    assert "RuntimeError: Something went wrong" in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_check_worker_heartbeat_offline() -> None:
     """Heartbeat check should report offline when key is not found in Valkey."""
-    mock_valkey = MagicMock(spec=Redis)
-    mock_valkey.get = AsyncMock(return_value=None)
+    fake_valkey = FakeValkey()
 
-    result = await check_worker_heartbeat(mock_valkey)
+    result = await check_worker_heartbeat(cast("Redis", fake_valkey))
     assert result["status"] == "offline"
     assert result["is_alive"] is False
     assert result["telemetry"] is None
@@ -198,14 +231,13 @@ async def test_check_worker_heartbeat_offline() -> None:
 @pytest.mark.asyncio
 async def test_check_worker_heartbeat_healthy() -> None:
     """Heartbeat check should parse formatted ARQ telemetry string."""
-    mock_valkey = MagicMock(spec=Redis)
-    mock_valkey.get = AsyncMock(
-        return_value=(
-            b"Oct-02 18:10:00 j_complete=42 j_failed=1 j_retried=3 j_ongoing=2 queued=5"
-        )
+    fake_valkey = FakeValkey()
+    await fake_valkey.set(
+        get_settings().ARQ_HEALTH_CHECK_KEY,
+        b"Oct-02 18:10:00 j_complete=42 j_failed=1 j_retried=3 j_ongoing=2 queued=5",
     )
 
-    result = await check_worker_heartbeat(mock_valkey)
+    result = await check_worker_heartbeat(cast("Redis", fake_valkey))
     assert result["status"] == "healthy"
     assert result["is_alive"] is True
     telemetry = result["telemetry"]

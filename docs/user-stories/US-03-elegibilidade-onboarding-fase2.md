@@ -20,11 +20,10 @@
 ## 2. Critérios de Aceite Formais (Gherkin)
 
 ### Cenário 1: Qualificação cadastral pública SUS (Caso Feliz Universal)
-- **Dado que** o atendimento pertence a uma unidade do Sistema Único de Saúde (100% SUS, ADR-012),
-- **Quando** a rotina de qualificação cadastral em segundo plano executa,
-- **Então** a elegibilidade é aprovada imediatamente com isenção pública universal (`SUS-ISENTO`),
-- **E** o atendimento permanece ou é promovido para `APTO_PARA_CHAMADA`,
-- **E** a paciente fica disponível para convocação pelos médicos plantonistas sem qualquer paywall.
+- **Dado que** o atendimento pertence à plataforma pública do Sistema Único de Saúde (100% SUS, ADR-012 / ADR-013),
+- **Quando** a paciente é admitida em `POST /api/v1/fila/admissao` (com aprovação universal `SUS-ISENTO` via `SusEligibilityAdapter` para checagens cadastrais),
+- **Então** o atendimento nasce diretamente como `APTO_PARA_CHAMADA` sem bloqueio de worker assíncrono nem paywall,
+- **E** a paciente fica disponível para convocação pelos médicos plantonistas enquanto enriquece seus dados CFM na Fase 2.
 
 ### Cenário 2: Atualização cadastral CFM contínua no Portal do Cidadão (`/perfil`)
 - **Dado que** a paciente pulou o enriquecimento na fila ou retornou posteriormente ao Portal do Cidadão (`/perfil`),
@@ -75,7 +74,7 @@
 - [x] **Frontend (Fase 2, ViaCEP & `/perfil`):** Formulário em `frontend/src/features/onboarding/components/enriquecimento-fase2-form.tsx` com autopreenchimento assíncrono e timeout de 5000ms (`frontend/src/features/onboarding/api/use-via-cep.ts`), integrado tanto à sala de espera `/fila` quanto ao perfil do cidadão em `/perfil` (`frontend/src/routes/perfil.tsx`, `ProfilePage`).
 - [x] **Frontend Hook:** `frontend/src/features/onboarding/api/use-enrichment-fase2.ts` integrando com SDK Hey API.
 - [x] **Testes Automatizados:**
-  - Backend: `tests/unit/test_onboarding_schemas.py`, `tests/unit/test_eligibility_task.py`, `tests/integration/test_eligibility_flow.py`
+  - Backend: `tests/unit/test_onboarding_schemas.py`, `tests/unit/test_fila_regularizacao.py`, `tests/integration/test_eligibility_flow.py`
   - Frontend Schemas: `frontend/src/features/onboarding/schemas/onboarding-schema.test.ts`
   - Frontend Hooks: `frontend/src/features/onboarding/api/__tests__/onboarding-hooks.test.tsx`
   - Frontend Telas: `frontend/src/features/onboarding/tests/enriquecimento-fase2-form.test.tsx`

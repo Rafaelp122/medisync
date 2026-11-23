@@ -17,9 +17,8 @@ O sistema expõe rotas de streaming em tempo real mapeadas para canais Pub/Sub c
 
 | Endpoint WebSocket | Canal Valkey | Destinatário | Propósito |
 |---|---|---|---|
-| `/ws/queue/{atendimento_id}` | `medisync:pubsub:queue:{atendimento_id}` | Paciente | Posição ordinal na fila e notificação de chamada iniciada |
-| `/api/v1/queue/ws/atendimentos/{atendimento_id}` | `medisync:pubsub:queue:{atendimento_id}` | Paciente | Alias canônico do contrato da fila sob o prefixo da API |
-| `/ws/doctor/{medico_id}` | `medisync:pubsub:doctor:{medico_id}` | Médico | Disparo de modal e evento de chamada alocada |
+| `/ws/queue/{atendimento_id}` | `medisync:pubsub:queue:{atendimento_id}` | Paciente | Atualizações de fila (`QUEUE_POSITION_UPDATE`) e notificação de chamada iniciada (`CALLED`) |
+| `/ws/doctor/{medico_id}` | `medisync:pubsub:doctor:{medico_id}` | Médico | Registro de presença em `plantao:medicos_ativos` e disparo/cancelamento de chamada (`INCOMING_CALL`, `CALL_CANCELLED`) |
 
 ### Handshake e Autenticação Pré-Accept
 
@@ -36,35 +35,36 @@ A validação ocorre antes de `websocket.accept()` (`validar_ws_queue_token` e `
 
 ### Catálogo de Tipos de Mensagem
 
-Os eventos clínicos e de controle trafegam em formato JSON serializado:
+Os eventos clínicos e de controle trafegam em formato JSON serializado via `ValkeyQueueEngine` (`publicar_evento_fila` / `publicar_evento_medico`) e `stream_channel`:
 
-| Tipo de Mensagem | Origem | Destino | Gatilho / Descrição |
+| Tipo de Mensagem (`event` / `type`) | Origem | Destino | Gatilho / Descrição |
 |---|---|---|---|
-| `CHAMADA_INICIADA` | Valkey Pub/Sub | Paciente | Médico aceitou/alocou o atendimento; aciona ring de 45 segundos |
-| `PACIENTE_CONECTADO` | WebSocket (`CONNECTED`) | Paciente | Confirmação de conexão inicial bem-sucedida do paciente no canal |
-| `MEDICO_CONECTADO` | WebSocket (`READY`) | Médico | Confirmação de prontidão do médico para recebimento de consultas |
-| `PULSE_HEARTBEAT` | Servidor (`{"type":"ping"}`) | Ambos | Batimento enviado a cada 25s para manter túneis NAT e balanceadores vivos |
-| `ATENDIMENTO_ENCERRADO` | Valkey Pub/Sub | Ambos | Finalização formal ou cancelamento clínico da consulta |
-| `DESCONEXAO_TIMEOUT` | Valkey / ARQ | Ambos | Abandono por no-show (45s) ou queda de conexão do cliente |
-| `QUEUE_POSITION_UPDATE` | Valkey Pub/Sub | Paciente | Recálculo de prioridade ordinal na fila ZSET |
-| `INCOMING_CALL` | Valkey Pub/Sub | Médico | Disparo de modal na tela médica com ID do atendimento e TTL de 45s |
+| `CONNECTED` | WebSocket (`stream_channel`) | Paciente | Payload inicial imediato após handshake de `/ws/queue/{atendimento_id}` |
+| `READY` | WebSocket (`stream_channel`) | Médico | Payload inicial de `/ws/doctor/{medico_id}` após `presence.registrar_medico_ativo(medico_id)` |
+| `CALLED` | `AlocacaoChamadaService` $\to$ Pub/Sub | Paciente | Médico alocou o atendimento; envia `medico_id`, `status`, `ttl_segundos` (45s) e `chamada_iniciada_em` |
+| `INCOMING_CALL` | `AlocacaoChamadaService` $\to$ Pub/Sub | Médico | Disparo de modal na estação médica com `atendimento_id`, `ttl_segundos` e `chamada_iniciada_em` |
+| `CALL_CANCELLED` | `FilaService` $\to$ Pub/Sub | Médico | Paciente recusou/cancelou via `POST /api/v1/fila/cancelar/{id}` ou sofreu piora SAMU durante `CHAMANDO_PACIENTE`; desbloqueia a estação |
+| `QUEUE_POSITION_UPDATE` | Valkey Pub/Sub | Paciente | Recálculo de prioridade ordinal na fila ZSET (`medisync:pubsub:queue:{atendimento_id}`) |
+| `{"type": "ping"}` | Servidor (`_heartbeat_worker`) | Ambos | Batimento enviado a cada 25s para manter túneis NAT e balanceadores vivos |
 
 ### Envelope JSON de Sinalização
 
 Contrato mínimo do evento em tempo real (spec, 5 linhas):
 
 ```json
-{"event": "QUEUE_POSITION_UPDATE", "timestamp": "2026-10-18T00:00:00Z", "atendimento_id": "uuid", "posicao": 1}
+{"event": "CALLED", "atendimento_id": "uuid", "medico_id": "uuid", "status": "CHAMANDO_PACIENTE", "ttl_segundos": 45}
 ```
 
 Campos obrigatórios e opcionais do envelope:
 
 | Campo | Tipo | Presença | Descrição |
 |---|---|---|---|
-| `event` | `string` | Obrigatório | Identificador discriminador do tipo de evento |
-| `timestamp` | `string (ISO-8601)` | Obrigatório | Momento UTC da geração da mensagem |
+| `event` | `string` | Obrigatório (eventos de domínio) | Discriminador (`CONNECTED`, `READY`, `CALLED`, `INCOMING_CALL`, `CALL_CANCELLED`, `QUEUE_POSITION_UPDATE`) |
+| `timestamp` / `chamada_iniciada_em` | `string (ISO-8601)` | Contextual | Carimbo UTC de geração ou início da chamada |
 | `atendimento_id` | `string (UUID)` | Contextual | Identificador único do atendimento vinculado |
 | `medico_id` | `string (UUID)` | Contextual | Identificador do profissional alocado |
+| `status` | `string` | Contextual | Estado resultante do atendimento (`CHAMANDO_PACIENTE`, `CANCELADO_PACIENTE`) |
+| `motivo` | `string \| null` | Opcional | Motivo em `CALL_CANCELLED` (ex.: recusa do paciente ou `ENCAMINHADO_SAMU_PIORA_CLINICA`) |
 | `posicao` | `integer` | Opcional | Posição ordinal calculada na fila de espera |
 | `ttl_segundos` | `integer` | Opcional | Janela temporal limite para resposta (ex.: 45s no ring) |
 
@@ -72,8 +72,10 @@ Campos obrigatórios e opcionais do envelope:
 
 - Impl: `src/modules/queue/application/realtime_channels.py:channel_queue_patient`
 - Impl: `src/modules/consultation/application/realtime_channels.py:channel_doctor_calls`
-- Impl: `src/modules/queue/application/ports/doctor_call_notifier_port.py:DoctorCallNotifierPort`
-- Impl: `src/modules/queue/composition.py:ValkeyDoctorCallNotifier`
+- Spec: `src/modules/queue/application/ports/queue_engine_port.py:QueueEnginePort`
+- Impl: `src/modules/queue/infrastructure/valkey_queue_engine.py:ValkeyQueueEngine`
+- Impl: `src/modules/queue/application/services/alocacao_service.py:AlocacaoChamadaService._publicar_eventos_chamada`
+- Impl: `src/modules/queue/application/services/fila_service.py:FilaService._notificar_cancelamento_chamada_medico`
 - Impl: `src/core/realtime.py:stream_channel`
 - Impl: `src/core/realtime.py:forward_pubsub_to_websocket`
 - Impl: `src/core/realtime.py:publish_realtime_event`

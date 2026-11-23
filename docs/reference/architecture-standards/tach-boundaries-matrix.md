@@ -30,14 +30,14 @@ A separação modular segue o princípio *Inside-Out* estrito (Stage B), onde ca
 |---|---|---|
 | `src.core` | `[]` | Nenhuma (camada fundacional transversal compartilhada). |
 | `src.modules.auth.domain` | `src.core` | Isolado. Regras de credenciais e hashing. |
-| `src.modules.auth.application` | `src.core`, `auth.domain` | Isolado. Casos de uso de login, tokens e OTP. |
-| `src.modules.auth.infrastructure` | `src.core`, `auth.application`, `auth.domain` | Adaptador Valkey de revogação de tokens JWT. |
-| `src.modules.auth.composition` | `src.core`, `auth.*`, `identity.application`, `identity.composition`, `queue.application`, `queue.composition` | Consome leitor/escritor de `identity` e lookup de atendimento ativo de `queue` via composition. |
+| `src.modules.auth.application` | `src.core`, `auth.domain` | Casos de uso de login, tokens, OTP e porta `DoctorPresencePort`. |
+| `src.modules.auth.infrastructure` | `src.core`, `auth.application`, `auth.domain` | Adaptador Valkey de revogação de tokens JWT e desafios OTP/WebAuthn. |
+| `src.modules.auth.composition` | `src.core`, `auth.*`, `identity.application`, `identity.composition`, `queue.application`, `queue.composition` | Consome leitor/escritor de `identity`, lookup de atendimento ativo e `build_doctor_presence_engine` (`DoctorPresencePort`) de `queue.composition`. |
 | `src.modules.auth.presentation` | `src.core`, `auth.application`, `auth.composition` | Routers finos e schemas de autenticação. |
 | `src.modules.ambulatory.domain` | `src.core` | Isolado. Modelos de produção ambulatorial SUS, enums e regras de BPA-I / SISAB. |
 | `src.modules.ambulatory.application` | `src.core`, `ambulatory.domain` | Orquestra consolidação de teleconsulta, portas de elegibilidade e DTOs BPA-I. |
 | `src.modules.ambulatory.infrastructure` | `src.core`, `ambulatory.application`, `ambulatory.domain` | Adaptador SUS isento e adaptadores técnicos de notificação ambulatorial. |
-| `src.modules.ambulatory.composition` | `src.core`, `ambulatory.application`, `ambulatory.domain`, `ambulatory.infrastructure` | Fornece `build_producao_ambulatorial_service`, `get_producao_ambulatorial_service` e `ElegibilidadeService` para worker, API e módulo de consulta. |
+| `src.modules.ambulatory.composition` | `src.core`, `ambulatory.application`, `ambulatory.domain`, `ambulatory.infrastructure` | Fornece `build_producao_ambulatorial_service` e `get_producao_ambulatorial_service` para API e módulo `consultation` (sem acoplamento ao `worker`). |
 | `src.modules.consultation.domain` | `src.core` | Isolado. Modelos de prontuário, documentos e prescrições. |
 | `src.modules.consultation.application` | `src.core`, `consultation.domain` | Define portas de storage, PDF, assinatura e LiveKit. |
 | `src.modules.consultation.infrastructure` | `src.core`, `consultation.application`, `consultation.domain` | Adaptadores PyHanko, S3 MinIO e ReportLab. |
@@ -48,15 +48,15 @@ A separação modular segue o princípio *Inside-Out* estrito (Stage B), onde ca
 | `src.modules.identity.infrastructure` | `src.core`, `identity.application`, `identity.domain` | Repositórios SQLAlchemy e adaptadores SMS. |
 | `src.modules.identity.composition` | `src.core`, `identity.application`, `identity.domain`, `identity.infrastructure` | Expõe `IdentityReaderPort` para outros módulos. |
 | `src.modules.identity.presentation` | `src.core`, `identity.application`, `identity.composition` | Routers de onboarding e pacientes. |
-| `src.modules.queue.domain` | `src.core` | Isolado. Máquina de estados de atendimentos na fila. |
-| `src.modules.queue.application` | `src.core`, `queue.domain` | Define portas de alocação de chamadas e triagem. |
-| `src.modules.queue.infrastructure` | `src.core`, `queue.application`, `queue.domain` | Scripts Lua atômicos no Valkey e repositórios de fila. |
-| `src.modules.queue.composition` | `src.core`, `queue.*`, `triage.application`, `triage.composition` | Integra classificação de risco da triagem. |
-| `src.modules.queue.presentation` | `src.core`, `queue.application`, `queue.composition` | Routers de admissão, chamada e cancelamento. |
-| `src.modules.triage.domain` | `src.core` | Isolado. Modelos de classificação Manchester e sinais vitais. |
-| `src.modules.triage.application` | `src.core`, `triage.domain` | Orquestra protocolo Manchester e cálculo de score. |
-| `src.modules.triage.infrastructure` | `src.core`, `triage.application`, `triage.domain` | Persistência de respostas e avaliações de triagem. |
-| `src.modules.triage.composition` | `src.core`, `triage.application`, `triage.domain`, `triage.infrastructure` | Expõe serviço de triagem para a fila. |
+| `src.modules.queue.domain` | `src.core` | Isolado. Máquina de estados de `Atendimento`, `scoring.calcular_score` e exceções da fila. |
+| `src.modules.queue.application` | `src.core`, `queue.domain` | Define portas `QueueEnginePort`, `ShiftPolicyReaderPort`, `QueueStorePort`, `TriagePort` (unificada) e `NotificationPort`. |
+| `src.modules.queue.infrastructure` | `src.core`, `queue.application`, `queue.domain` | `ValkeyQueueEngine`, scripts Lua 4-Keys (`alocar_chamada.lua`, `alocar_proximo.lua`) e adaptadores de notificação. |
+| `src.modules.queue.composition` | `src.core`, `queue.*`, `consultation.application`, `telemetry.application`, `telemetry.composition`, `triage.application`, `triage.composition` | Integra `TriageService` (`TriagePort`), `TelemetryShiftPolicyReaderAdapter` (`ShiftPolicyReaderPort` sobre `ler_politica_plantao_snapshot`), canal Pub/Sub médico e `ValkeyQueueEngine`. |
+| `src.modules.queue.presentation` | `src.core`, `queue.application`, `queue.composition` | Routers finos de admissão, chamada, posição, piora, regularização, cancelamento/recusa e WS. |
+| `src.modules.triage.domain` | `src.core` | Isolado. Motor puro de classificação ACR/Red Flags (`normalizar_sintomas`, `classificar_risco_clinico`), hash TCLE e `Triagem.criar_avaliada()`. |
+| `src.modules.triage.application` | `src.core`, `triage.domain` | `TriageService` (avaliação com validação SHA-256 de `tcle_hash`, persistência 1:1 de `Triagem` e leitura de queixas) + `EmergencyNotifierPort`. |
+| `src.modules.triage.infrastructure` | `src.core`, `triage.application`, `triage.domain` | `SamuEmergencyNotifierAdapter` (webhook HTTP com `raise_for_status()`). |
+| `src.modules.triage.composition` | `src.core`, `triage.application`, `triage.domain`, `triage.infrastructure` | Expõe `TriageServiceDep` e `build_triage_service_for_session` consumidos por `queue`. |
 | `src.modules.scheduling.domain` | `src.core` | Isolado. Agregados `AgendaDisponibilidade` e `Agendamento`, enums e exceções eMulti. |
 | `src.modules.scheduling.application` | `src.core`, `scheduling.domain` | Orquestra geração de slots, reservas e portas `SchedulingRepositoryPort` / `AttendanceLookupPort`. |
 | `src.modules.scheduling.infrastructure` | `src.core`, `scheduling.application`, `scheduling.domain` | `SqlSchedulingRepository` assíncrono com `for_update=True` e checagens de conflito temporal. |
@@ -67,7 +67,7 @@ A separação modular segue o princípio *Inside-Out* estrito (Stage B), onde ca
 | `src.modules.telemetry.infrastructure` | `src.core`, `telemetry.application`, `telemetry.domain` | Agregações Valkey e repositórios analíticos. |
 | `src.modules.telemetry.composition` | `src.core`, `telemetry.application`, `telemetry.domain`, `telemetry.infrastructure` | Fornece dependências do painel e plantão. |
 | `src.modules.telemetry.presentation` | `src.core`, `telemetry.application`, `telemetry.composition` | Routers de métricas e painel em tempo real. |
-| `src.worker` | `src.core`, `queue.*`, `ambulatory.*`, `identity.application`, `identity.composition` | Executa jobs em background (timeout de ring, consolidação e elegibilidade). |
+| `src.worker` | `src.core`, `queue.application`, `queue.domain`, `queue.infrastructure`, `queue.composition`, `identity.application`, `identity.composition` | Executa jobs em background (`resolver_ring_timeout_task`, `reconciliar_fila_orphans_task` com lock distribuído e `ping_task`; sem dependência de `ambulatory`). |
 
 ### Proibição de Imports Cross-Module Diretos
 

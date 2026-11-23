@@ -1,5 +1,6 @@
 """Clinical triage aggregate model with risk priority and emergency flag."""
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -17,7 +18,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.database import Base
 from src.core.uuid7 import uuid7
-from src.modules.triage.domain.classification import classificar_risco_clinico
+from src.modules.triage.domain.classification import (
+    classificar_risco_clinico,
+    normalizar_sintomas,
+)
 from src.modules.triage.domain.exceptions import TriagemInvalidaError
 
 
@@ -72,10 +76,11 @@ class Triagem(Base):
         prioridade_calculada: int,
         *,
         escala_dor: int = 0,
-        sintomas_alerta: list[str] | None = None,
+        sintomas_alerta: Sequence[str] | None = None,
         alerta_samu_disparado: bool = False,
         avaliado_em: datetime | None = None,
         id: UUID | None = None,
+        _pre_avaliada: bool = False,
     ) -> None:
         if not queixa_principal or not queixa_principal.strip():
             raise TriagemInvalidaError(
@@ -97,18 +102,17 @@ class Triagem(Base):
                 "esperado valor entre 0 e 10."
             )
 
-        clean_sintomas = [
-            s.strip().lower() for s in (sintomas_alerta or []) if s and s.strip()
-        ]
+        clean_sintomas = normalizar_sintomas(sintomas_alerta or ())
 
-        prioridade_esperada = classificar_risco_clinico(
-            queixa_principal.strip(), clean_sintomas, escala_dor_int
-        )
-        if prioridade_int != prioridade_esperada:
-            raise TriagemInvalidaError(
-                f"Prioridade calculada '{prioridade_int}' incoerente com a queixa "
-                f"e sintomas informados; esperado '{prioridade_esperada}'."
+        if not _pre_avaliada:
+            prioridade_esperada = classificar_risco_clinico(
+                queixa_principal.strip(), clean_sintomas, escala_dor_int
             )
+            if prioridade_int != prioridade_esperada:
+                raise TriagemInvalidaError(
+                    f"Prioridade calculada '{prioridade_int}' incoerente com a queixa "
+                    f"e sintomas informados; esperado '{prioridade_esperada}'."
+                )
 
         super().__init__(
             id=id or uuid7(),
@@ -120,6 +124,45 @@ class Triagem(Base):
             prioridade_calculada=prioridade_int,
             avaliado_em=avaliado_em or datetime.now(UTC),
         )
+
+    @classmethod
+    def criar_avaliada(
+        cls,
+        *,
+        atendimento_id: UUID,
+        queixa_principal: str,
+        sintomas: Sequence[str] = (),
+        escala_dor: int = 0,
+        alerta_samu_disparado: bool = False,
+        avaliado_em: datetime | None = None,
+        id: UUID | None = None,
+    ) -> "Triagem":
+        """Factory de domínio que classifica risco 1x e aciona SAMU no Nível 1 (RN04).
+
+        Evita dupla classificação em __init__ e higieniza aliases de sintomas.
+        Regras: docs/explanation/domains/triage-domain.md.
+        História: docs/user-stories/US-01-acolhimento-triagem-tcle.md.
+        """
+        sintomas_normalizados = normalizar_sintomas(sintomas)
+        prioridade = classificar_risco_clinico(
+            queixa_principal=queixa_principal,
+            sintomas=sintomas_normalizados,
+            escala_dor=escala_dor,
+        )
+        triagem = cls(
+            atendimento_id=atendimento_id,
+            queixa_principal=queixa_principal,
+            prioridade_calculada=prioridade,
+            escala_dor=escala_dor,
+            sintomas_alerta=sintomas_normalizados,
+            alerta_samu_disparado=alerta_samu_disparado,
+            avaliado_em=avaliado_em,
+            id=id,
+            _pre_avaliada=True,
+        )
+        if prioridade == 1:
+            triagem.disparar_alerta_samu()
+        return triagem
 
     def disparar_alerta_samu(self) -> None:
         """Sinaliza a salvaguarda de deterioração e redirecionamento SAMU 192 (RN04).

@@ -40,6 +40,7 @@ DEFAULT_VALKEY_TEST_PATTERNS: tuple[str, ...] = (
     "fila:*",
     "lock:*",
     "plantao:*",
+    "queue:*",
     "cota:*",
     "arq:*",
     "test_org:*",
@@ -171,18 +172,26 @@ def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
 def make_alocacao(
     valkey: Any, db_session: AsyncSession, **overrides: Any
 ) -> AlocacaoChamadaService:
-    """Build AlocacaoChamadaService with AsyncMock Lua manager unless overridden."""
+    """Build AlocacaoChamadaService with FakeQueueEngine or ValkeyQueueEngine."""
     from src.modules.queue.application.services.alocacao_service import (
         AlocacaoChamadaService,
     )
+    from src.modules.queue.infrastructure.valkey_queue_engine import ValkeyQueueEngine
 
-    lua_manager: Any = overrides.get("lua_manager", AsyncMock())
+    from tests.doubles import FakeQueueEngine
+
+    queue_engine = overrides.get("queue_engine")
+    if queue_engine is None:
+        queue_engine = (
+            ValkeyQueueEngine(valkey=valkey)
+            if valkey is not None
+            else FakeQueueEngine()
+        )
     arq_pool: Any = overrides.get("arq_pool")
     notification_adapter: Any = overrides.get("notification_adapter")
     return AlocacaoChamadaService(
-        valkey=valkey,
+        queue_engine=queue_engine,
         db_session=db_session,
-        lua_manager=lua_manager,
         arq_pool=arq_pool,
         notification_adapter=notification_adapter,
     )
@@ -191,13 +200,23 @@ def make_alocacao(
 def make_fila_service(
     valkey: Any, db_session: AsyncSession, **overrides: Any
 ) -> FilaService:
-    """Build FilaService with AsyncMock collaborators unless overridden."""
+    """Build FilaService with FakeQueueEngine or real engine unless overridden."""
     from src.modules.queue.application.services.fila_service import FilaService
+    from src.modules.queue.infrastructure.valkey_queue_engine import ValkeyQueueEngine
 
+    from tests.doubles import FakeQueueEngine
+
+    queue_engine = overrides.get("queue_engine")
+    if queue_engine is None:
+        queue_engine = (
+            ValkeyQueueEngine(valkey=valkey)
+            if valkey is not None
+            else FakeQueueEngine()
+        )
     alocacao_service: Any = overrides.get("alocacao_service", AsyncMock())
-    controle_admissao: Any = overrides.get("controle_admissao", AsyncMock())
+    controle_admissao: Any = overrides.get("controle_admissao")
     return FilaService(
-        valkey=valkey,
+        queue_engine=queue_engine,
         db_session=db_session,
         alocacao_service=alocacao_service,
         controle_admissao=controle_admissao,

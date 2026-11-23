@@ -400,3 +400,29 @@ def test_criar_atendimento_admissao_direta_sus_apto() -> None:
     assert atendimento.data_entrada_fila == now
     assert atendimento.is_apto_para_chamada is True
     assert atendimento.is_em_fila is True
+
+
+def test_atendimento_init_rejeita_status_invalido_eager() -> None:
+    """Atendimento.__init__ must validate status eagerly with offending value."""
+    with pytest.raises(ValidationError, match="STATUS_INEXISTENTE"):
+        Atendimento(
+            paciente_id=uuid7(),
+            tcle_hash=SAMPLE_TCLE_HASH,
+            status="STATUS_INEXISTENTE",
+        )
+
+
+def test_atendimento_cancelar_normaliza_motivo_e_reverter_para_apto() -> None:
+    """cancelar_pelo_paciente normalizes motivo; reverter_para_apto clears medico."""
+    medico_id = uuid7()
+    a1 = Atendimento(paciente_id=uuid7(), tcle_hash=SAMPLE_TCLE_HASH)
+    a1.promover_para_apto()
+    a1.iniciar_chamada(medico_id=medico_id)
+    a1.reverter_para_apto()
+    assert a1.status == StatusAtendimento.APTO_PARA_CHAMADA
+    assert a1.medico_id is None
+    assert a1.chamada_iniciada_em is None
+
+    motivo_norm = a1.cancelar_pelo_paciente("  Desistência voluntária  ")
+    assert motivo_norm == "Desistência voluntária"
+    assert a1.status == StatusAtendimento.CANCELADO_PACIENTE

@@ -2,7 +2,6 @@
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
 
 from src.modules.queue.application.ports.notification_port import NotificationPort
 
@@ -13,24 +12,11 @@ class LoggingNotificationAdapter(NotificationPort):
     """Console/logger notification adapter for local testing and open-source deploys.
 
     Operates without requiring third-party API credentials (e.g. Twilio, Meta, Z-API).
-    Maintains an in-memory buffer of dispatched messages for test inspections.
+    Maintains an in-memory buffer of dispatched WhatsApp messages for test inspections.
     """
 
     def __init__(self) -> None:
-        self.sent_sms: list[dict[str, Any]] = []
-        self.sent_whatsapp: list[dict[str, Any]] = []
-
-    async def send_sms(self, to: str, message: str) -> bool:
-        """Log SMS dispatch and record in memory buffer."""
-        logger.info("Notification [SMS] sent to %s: %s", to, message)
-        self.sent_sms.append(
-            {
-                "to": to,
-                "message": message,
-                "sent_at": datetime.now(UTC),
-            }
-        )
-        return True
+        self.sent_whatsapp: list[dict[str, object]] = []
 
     async def send_whatsapp(
         self,
@@ -57,6 +43,5 @@ class LoggingNotificationAdapter(NotificationPort):
         return True
 
     def clear(self) -> None:
-        """Clear recorded in-memory messages."""
-        self.sent_sms.clear()
+        """Clear recorded in-memory WhatsApp messages."""
         self.sent_whatsapp.clear()

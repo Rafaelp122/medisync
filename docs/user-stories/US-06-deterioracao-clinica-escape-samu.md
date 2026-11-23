@@ -45,32 +45,34 @@
   ```json
   {
     "atendimento_id": "018f3a5b-...",
-    "novos_sintomas": ["dor_no_peito_irradiando", "sudorese_fria"],
-    "escala_dor": 9
+    "novos_sintomas": ["dor_toracica_irradiada", "falta_de_ar"],
+    "escala_dor": 9,
+    "queixa_adicional": "Aperto no peito com falta de ar"
   }
   ```
-* **Resposta Esperada em Caso de Emergência Nível 1 (`200 OK`):**
+  *(Nota: `normalizar_sintomas` aceita tanto os IDs canônicos `dor_toracica_irradiada`, `dispneia_grave`, `inconsciencia`, `confusao_mental`, `hemorragia_grave`, `febre` quanto os aliases de UI `dor_no_peito`, `falta_de_ar`, `tontura_desmaio`, `sangramento_grave`, `febre_alta`.)*
+* **Resposta Esperada em Caso de Emergência Nível 1 (`200 OK` — `PioraClinicaResponse`):**
   ```json
   {
     "atendimento_id": "018f3a5b-...",
-    "nova_prioridade": 1,
-    "status_atendimento": "CANCELADO_PELO_PACIENTE",
+    "prioridade_clinica": 1,
+    "status_atendimento": "CANCELADO_PACIENTE",
     "alerta_samu_disparado": true,
     "redirecionado_emergencia": true,
     "nova_posicao": null,
-    "orientacoes_emergencia": "Ligue imediatamente para o SAMU 192 ou dirija-se à UPA/Hospital mais próximo."
+    "instrucoes": "Ligue imediatamente para o SAMU 192 ou procure o pronto-socorro mais próximo."
   }
   ```
-* **Resposta Esperada em Caso de Agravamento Nível 2 (`200 OK`):**
+* **Resposta Esperada em Caso de Agravamento Nível 2 (`200 OK` — `PioraClinicaResponse`):**
   ```json
   {
     "atendimento_id": "018f3a5b-...",
-    "nova_prioridade": 2,
+    "prioridade_clinica": 2,
     "status_atendimento": "APTO_PARA_CHAMADA",
     "alerta_samu_disparado": false,
     "redirecionado_emergencia": false,
     "nova_posicao": 1,
-    "orientacoes_emergencia": null
+    "instrucoes": "Prioridade recalculada com sucesso na fila de espera."
   }
   ```
 
@@ -78,9 +80,9 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Desacoplamento Modular:** Comunicação via porta abstrata `TriagePort` injetada no composition root de `queue` (`src/modules/queue/application/ports/triage_port.py`).
-- [x] **Remoção Atômica:** Atendimento Nível 1 é expurgado atômica e deterministicamente do conjunto de aptos no Valkey (`FilaService.processar_piora_clinica()`).
-- [x] **Apresentação:** Rota REST implementada em `src/modules/queue/presentation/routers/fila_router.py` com `PioraClinicaResponse` harmonizado com campos canônicos (ADR-001/ADR-008).
+- [x] **Desacoplamento Modular & Zero Mapper Hell:** Comunicação via `TriagePort` unificado (`src/modules/queue/application/ports/triage_port.py`) e protocolo `PioraClinicaInput` (`src/modules/queue/application/dtos.py`) sem `PioraClinicaCommand` nem campos espelho em `PioraClinicaResponse` (`src/modules/queue/presentation/schemas.py`).
+- [x] **Pós-Commit Estrito & Notificação de Chamada Ativa:** `FilaService.processar_piora_clinica()` carrega com `with_for_update=True`, executa mutações Valkey (`remover_da_fila`, `liberar_ring`, `inserir_ou_atualizar_fila` usando `atendimento.prioridade_clinica`) somente após `commit()`, e emite `CALL_CANCELLED` ao médico caso o paciente estivesse em `CHAMANDO_PACIENTE`.
+- [x] **Taxonomia Red Flags Canônica:** Normalização de aliases em `src/modules/triage/domain/classification.py:normalizar_sintomas` garante Nível 1 e SAMU 192 mesmo quando `escala_dor=0`.
 - [x] **Frontend (Salvaguarda SAMU 192):** Componente composto `frontend/src/features/onboarding/components/samu-emergency-modal.tsx` com `role="alertdialog"`, bloqueio de dismiss em backdrop/esc e discagem rápida `tel:192`.
 - [x] **Frontend Fila (Piora Clínica - RF-06):** Modal `PioraClinicaModal` em `frontend/src/features/queue/components/piora-clinica-modal.tsx` integrado à `VirtualWaitingRoom` para relato de novos sintomas e reavaliação imediata.
 - [x] **Detecção de Red Flags:** Chips de sinais clínicos críticos em `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx:SINAIS_ALARME_CRITICOS` e interceptação de HTTP 422 `EMERGENCIA_CRITICA_SAMU_192`.

@@ -511,6 +511,47 @@ async def test_pep_warning_on_reader_concluir_atendimento_failure(
 
 
 @pytest.mark.asyncio
+async def test_pep_finalizar_consulta_transacao_unica_e_libera_lock_pos_commit() -> (
+    None
+):
+    """finalizar_consulta uses auto_commit=False, commits 1x, and frees doctor lock."""
+    atend_id = uuid4()
+    medico_id = uuid4()
+    paciente_id = uuid4()
+
+    evolucao = EvolucaoClinica(
+        atendimento_id=atend_id,
+        medico_id=medico_id,
+        anamnese="Quadro clínico estável",
+        conduta="Alta com orientações",
+        identidade_verificada=True,
+    )
+    fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
+    resumo = AtendimentoResumoDTO(
+        atendimento_id=atend_id,
+        medico_id=medico_id,
+        paciente_id=paciente_id,
+        status="EM_ATENDIMENTO",
+        tcle_hash="h" * 64,
+        is_terminal=False,
+    )
+    fake_reader = FakeAtendimentoReader(resumo=resumo)
+    svc = _build_test_pep_service(
+        session=fake_session,
+        atendimento_reader=fake_reader,
+    )
+    result = await svc.finalizar_consulta(
+        FinalizarConsultaCommand(atendimento_id=atend_id, medico_id=medico_id)
+    )
+
+    assert result.is_finalizado is True
+    assert fake_reader.atendimento_concluido is True
+    assert fake_reader.last_auto_commit is False
+    assert fake_session.commits == 1
+    assert fake_reader.liberados_consulta == [medico_id]
+
+
+@pytest.mark.asyncio
 async def test_pep_warning_on_producao_failure_with_context(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -609,7 +650,15 @@ async def test_pep_service_patient_portal_empty_history_and_uuid7_docs() -> None
         ) -> AtendimentoResumoDTO | None:
             return None
 
-        async def concluir_atendimento(self, atendimento_id: object) -> None:
+        async def concluir_atendimento(
+            self,
+            atendimento_id: object,
+            *,
+            auto_commit: bool = True,
+        ) -> None:
+            return None
+
+        async def liberar_consulta_ativa_medico(self, medico_id: object) -> None:
             return None
 
         async def atender_chamada(self, atendimento_id: object) -> None:

@@ -4,7 +4,8 @@ import hashlib
 from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
+from uuid import UUID
 
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError, ResponseError
@@ -147,6 +148,39 @@ class LuaScriptManager:
 
         raw: Any = await self.execute_script(client, "alocar_chamada", keys, args)
         return AlocacaoCodigo(int(raw))
+
+    async def alocar_proximo(
+        self, client: Redis, keys: Sequence[str], args: Sequence[Any]
+    ) -> "tuple[AlocacaoCodigo, UUID | None]":
+        """Atomically scan ZSET window and allocate first unlocked attendance."""
+        raw: Any = await self.execute_script(client, "alocar_proximo", keys, args)
+        return _decode_alocar_proximo_result(raw)
+
+
+def _decode_alocar_proximo_result(
+    raw: Any,
+) -> "tuple[AlocacaoCodigo, UUID | None]":
+    from src.modules.queue.application.ports.allocation_port import AlocacaoCodigo
+
+    if not isinstance(raw, (list, tuple)):
+        raise LuaScriptError(
+            f"Retorno inesperado do script 'alocar_proximo': {raw!r}; "
+            "esperado par [codigo, atendimento_id]."
+        )
+    items = cast("list[object] | tuple[object, ...]", raw)
+    if len(items) < 2:
+        raise LuaScriptError(
+            f"Retorno inesperado do script 'alocar_proximo': {raw!r}; "
+            "esperado par [codigo, atendimento_id]."
+        )
+    codigo = AlocacaoCodigo(int(cast("int | str", items[0])))
+    cand_raw = items[1]
+    cand_str = (
+        cand_raw.decode("utf-8") if isinstance(cand_raw, bytes) else str(cand_raw or "")
+    )
+    if codigo != AlocacaoCodigo.SUCESSO or not cand_str:
+        return codigo, None
+    return codigo, UUID(cand_str)
 
 
 @lru_cache

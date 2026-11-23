@@ -24,6 +24,9 @@ from src.modules.auth.application.ports.auth_rate_limiter_port import (
 from src.modules.auth.application.ports.challenge_store_port import (
     ChallengeStorePort,
 )
+from src.modules.auth.application.ports.doctor_presence_port import (
+    DoctorPresencePort,
+)
 from src.modules.auth.application.ports.identity_reader_port import (
     IdentityReaderPort,
 )
@@ -65,6 +68,7 @@ from src.modules.identity.composition import (
 )
 from src.modules.queue.composition import (
     build_active_attendance_reader_for_session,
+    build_doctor_presence_engine,
 )
 
 _sms_adapter_instance = FakeSmsSenderAdapter()
@@ -130,9 +134,14 @@ def build_auth_service_for_session(
     token_service: TokenServicePort | None = None,
     rate_limiter: AuthRateLimiterPort | None = None,
     revocation: TokenRevocationPort | None = None,
+    doctor_presence: DoctorPresencePort | None = None,
+    valkey: Redis | None = None,
 ) -> AuthService:
     """Build AuthService outside request scope (tests/worker tooling)."""
     settings = get_settings()
+    resolved_presence: DoctorPresencePort | None = doctor_presence
+    if resolved_presence is None and valkey is not None:
+        resolved_presence = build_doctor_presence_engine(valkey=valkey)
     return AuthService(
         session=session,
         hasher=hasher or get_password_hasher(),
@@ -141,12 +150,16 @@ def build_auth_service_for_session(
         revocation=revocation or get_token_revocation(),
         max_attempts=settings.AUTH_RATE_LIMIT_MAX_ATTEMPTS,
         window_seconds=settings.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+        doctor_presence=resolved_presence,
     )
 
 
-def get_auth_service(session: DbSessionDep) -> AuthService:
-    """Build AuthService with all mandatory ports wired (no infra defaults)."""
-    return build_auth_service_for_session(session)
+def get_auth_service(
+    session: DbSessionDep,
+    valkey: Annotated[Redis | None, Depends(get_valkey_client)] = None,
+) -> AuthService:
+    """Build AuthService with all mandatory ports wired (including doctor presence)."""
+    return build_auth_service_for_session(session, valkey=valkey)
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
