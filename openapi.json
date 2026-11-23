@@ -2378,7 +2378,7 @@
           "Produ\u00e7\u00e3o Ambulatorial SUS"
         ],
         "summary": "Lista a produ\u00e7\u00e3o ambulatorial consolidada por compet\u00eancia (RF-08, US-11)",
-        "description": "Consulta registros consolidados de faturamento p\u00fablico SUS (BPA-I / SISAB) para presta\u00e7\u00e3o de contas do cons\u00f3rcio municipal e incentivo eMulti.",
+        "description": "Consulta registros consolidados de faturamento p\u00fablico SUS (BPA-I / SISAB) para presta\u00e7\u00e3o de contas da unidade SUS e incentivo eMulti.",
         "operationId": "listar_producao_api_v1_ambulatory_producao_get",
         "security": [
           {
@@ -3542,8 +3542,7 @@
             "type": "integer",
             "minimum": 1.0,
             "title": "Medicos Ativos Planejados",
-            "description": "N\u00famero planejado de m\u00e9dicos ativos no plant\u00e3o",
-            "default": 1
+            "description": "N\u00famero planejado de m\u00e9dicos ativos no plant\u00e3o"
           },
           "alpha_backpressure": {
             "anyOf": [
@@ -3558,8 +3557,7 @@
               }
             ],
             "title": "Alpha Backpressure",
-            "description": "Fator de sobrecarga (alpha) do plant\u00e3o (entre 1.20 e 1.30)",
-            "default": "1.25"
+            "description": "Fator de sobrecarga (alpha) do plant\u00e3o (entre 1.20 e 1.30)"
           },
           "cota_diaria_maxima": {
             "anyOf": [
@@ -3572,22 +3570,19 @@
               }
             ],
             "title": "Cota Diaria Maxima",
-            "description": "Cota m\u00e1xima di\u00e1ria de atendimentos (ou null para ilimitado)",
-            "default": 300
+            "description": "Cota m\u00e1xima di\u00e1ria de atendimentos (ou null para ilimitado)"
           },
           "tma_padrao_segundos": {
             "type": "integer",
             "minimum": 60.0,
             "title": "Tma Padrao Segundos",
-            "description": "Tempo M\u00e9dio de Atendimento planejado em segundos (m\u00ednimo 60s)",
-            "default": 600
+            "description": "Tempo M\u00e9dio de Atendimento planejado em segundos (m\u00ednimo 60s)"
           },
           "tempo_tolerancia_ring_segundos": {
             "type": "integer",
             "minimum": 10.0,
             "title": "Tempo Tolerancia Ring Segundos",
-            "description": "Toler\u00e2ncia de ring em segundos antes de timeout (m\u00ednimo 10s)",
-            "default": 45
+            "description": "Toler\u00e2ncia de ring em segundos antes de timeout (m\u00ednimo 10s)"
           },
           "modo_operacao": {
             "type": "string",
@@ -3596,46 +3591,53 @@
               "PRIVADO"
             ],
             "title": "Modo Operacao",
-            "description": "Modo de opera\u00e7\u00e3o do plant\u00e3o (SUS ou PRIVADO)",
-            "default": "SUS"
+            "description": "Modo de opera\u00e7\u00e3o do plant\u00e3o (SUS ou PRIVADO)"
           },
           "sla_minutos_nivel_1": {
             "type": "integer",
             "minimum": 0.0,
             "title": "Sla Minutos Nivel 1",
-            "description": "SLA n\u00edvel 1 (Vermelho - Emerg\u00eancia) em minutos",
-            "default": 0
+            "description": "SLA n\u00edvel 1 (Vermelho - Emerg\u00eancia) em minutos"
           },
           "sla_minutos_nivel_2": {
             "type": "integer",
             "minimum": 0.0,
             "title": "Sla Minutos Nivel 2",
-            "description": "SLA n\u00edvel 2 (Laranja - Muito Urgente) em minutos",
-            "default": 10
+            "description": "SLA n\u00edvel 2 (Laranja - Muito Urgente) em minutos"
           },
           "sla_minutos_nivel_3": {
             "type": "integer",
             "minimum": 0.0,
             "title": "Sla Minutos Nivel 3",
-            "description": "SLA n\u00edvel 3 (Amarelo - Urgente) em minutos",
-            "default": 60
+            "description": "SLA n\u00edvel 3 (Amarelo - Urgente) em minutos"
           },
           "sla_minutos_nivel_4": {
             "type": "integer",
             "minimum": 0.0,
             "title": "Sla Minutos Nivel 4",
-            "description": "SLA n\u00edvel 4 (Verde - Pouco Urgente) em minutos",
-            "default": 120
+            "description": "SLA n\u00edvel 4 (Verde - Pouco Urgente) em minutos"
           },
           "sla_minutos_nivel_5": {
             "type": "integer",
             "minimum": 0.0,
             "title": "Sla Minutos Nivel 5",
-            "description": "SLA n\u00edvel 5 (Azul - N\u00e3o Urgente) em minutos",
-            "default": 240
+            "description": "SLA n\u00edvel 5 (Azul - N\u00e3o Urgente) em minutos"
           }
         },
         "type": "object",
+        "required": [
+          "medicos_ativos_planejados",
+          "alpha_backpressure",
+          "cota_diaria_maxima",
+          "tma_padrao_segundos",
+          "tempo_tolerancia_ring_segundos",
+          "modo_operacao",
+          "sla_minutos_nivel_1",
+          "sla_minutos_nivel_2",
+          "sla_minutos_nivel_3",
+          "sla_minutos_nivel_4",
+          "sla_minutos_nivel_5"
+        ],
         "title": "ConfigPlantaoRequest",
         "description": "Request payload for updating shift configuration and SLAs (RF-09)."
       },

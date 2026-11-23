@@ -26,19 +26,19 @@
 - **E** renova o cache de telemetria operacional,
 - **E** retorna confirmação de atualização (HTTP 200 OK) com os parâmetros consolidados.
 
-### Cenário 2: Rejeição de valores fora dos limites de segurança operacional
-- **Dado que** o gestor tenta configurar `alpha_backpressure = 1.10` (abaixo do piso de $1{,}20$) ou `medicos_ativos_planejados = 0`,
+### Cenário 2: Rejeição de valores fora dos limites ou payloads parciais (HTTP 422)
+- **Dado que** o gestor tenta configurar `alpha_backpressure = 1.10` (abaixo do piso de $1{,}20$), `medicos_ativos_planejados = 0`, ou submete um payload parcial omitindo qualquer um dos 11 campos obrigatórios do `PUT`,
 - **Quando** submete a alteração,
-- **Então** o sistema rejeita a alteração por violação de regra de negócio (HTTP 422 Unprocessable Entity),
-- **E** preserva a configuração anterior sem alteração de estado.
+- **Então** o sistema rejeita a alteração por violação de regra de negócio ou schema obrigatório (HTTP 422 Unprocessable Entity),
+- **E** preserva integralmente a configuração anterior sem sobrescrita silenciosa.
 
 ---
 
 ## 3. Contrato de API
 
 * **Consulta:** `GET /api/v1/telemetria/config-plantao`
-* **Atualização:** `PUT /api/v1/telemetria/config-plantao`
-* **Headers:** `Authorization: Bearer <jwt_gestor>`
+* **Atualização:** `PUT /api/v1/telemetria/config-plantao` (todos os 11 campos obrigatórios, sem defaults no schema)
+* **Headers:** `Authorization: Bearer <jwt_gestor>` (`Role.GESTOR_UNIDADE` ou `Permission.TMA_CONFIG`)
 * **Payload de Atualização (`ConfigPlantaoRequest`):**
   ```json
   {
@@ -61,10 +61,13 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Modelo:** Entidade rica `ConfiguracaoPlantao` com validações de invariantes em `src/modules/telemetry/domain/models.py`.
-- [x] **Consumo Desacoplado em `queue`:** `ShiftPolicyReaderPort` (`src/modules/queue/application/ports/shift_policy_reader_port.py`) adaptada por `TelemetryShiftPolicyReaderAdapter` (`src/modules/queue/composition.py`) sobre `src/modules/telemetry/composition.py:ler_politica_plantao_snapshot` alimenta admissão, estimativa de espera e TTL de ring em `FilaService`.
+- [x] **Modelo & Provisionamento Atômico:** Entidade rica `ConfiguracaoPlantao` (`src/modules/telemetry/domain/models.py`) e `SqlConfigPlantaoRepository.obter_ou_criar_padrao()` com `INSERT ... ON CONFLICT (singleton_guard) DO NOTHING` (`src/modules/telemetry/infrastructure/config_plantao_repository.py`).
+- [x] **Entrada Direta sem Mapper Hell (ADR-008):** `ConfigPlantaoService.atualizar_configuracao` recebe `ConfigPlantaoInput` (`src/modules/telemetry/application/dtos.py`) diretamente de `ConfigPlantaoRequest` (sem `ConfigPlantaoCommand`/`to_command()`).
+- [x] **Consumo Desacoplado em `queue`:** `ShiftPolicyReaderPort` (`src/modules/queue/application/ports/shift_policy_reader_port.py`) adaptada por `TelemetryShiftPolicyReaderAdapter` (`src/modules/queue/composition.py`) sobre `src/modules/telemetry/composition.py:ler_politica_plantao_snapshot` alimenta admissão, estimativa de espera e TTL de ring em `FilaService` em modo read-only.
 - [x] **Migration Alembic:** Tabela singleton `configuracoes_plantao` criada em plataforma única (`migrations/versions/0001_initial_schema.py`).
-- [x] **Apresentação:** Router fino `telemetry_router.py` montado em `/api/v1/telemetria/config-plantao` com schemas `ConfigPlantaoRequest` / `ConfigPlantaoResponse` (`src/modules/telemetry/presentation/schemas.py`).
+- [x] **Apresentação:** Router fino `telemetry_router.py` montado em `/api/v1/telemetria/config-plantao` com schemas `ConfigPlantaoRequest` (11 campos obrigatórios) / `ConfigPlantaoResponse` (`src/modules/telemetry/presentation/schemas.py`).
 - [x] **Testes Automatizados:**
   - `tests/unit/test_telemetry_model.py`
+  - `tests/unit/test_telemetry_service.py`
+  - `tests/unit/test_telemetry_infra.py`
   - `tests/integration/test_telemetry_router.py`

@@ -30,11 +30,12 @@ class SqlTelemetryReader(TelemetryReaderPort):
             else datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         )
 
-        sla_1 = (config.sla_minutos_nivel_1 * 60) if config is not None else 0
-        sla_2 = (config.sla_minutos_nivel_2 * 60) if config is not None else 600
-        sla_3 = (config.sla_minutos_nivel_3 * 60) if config is not None else 3600
-        sla_4 = (config.sla_minutos_nivel_4 * 60) if config is not None else 7200
-        sla_5 = (config.sla_minutos_nivel_5 * 60) if config is not None else 14400
+        effective_config = config if config is not None else ConfiguracaoPlantao()
+        sla_1 = effective_config.obter_sla_segundos(1)
+        sla_2 = effective_config.obter_sla_segundos(2)
+        sla_3 = effective_config.obter_sla_segundos(3)
+        sla_4 = effective_config.obter_sla_segundos(4)
+        sla_5 = effective_config.obter_sla_segundos(5)
 
         query_agregados = text(
             """
@@ -166,9 +167,9 @@ class SqlTelemetryReader(TelemetryReaderPort):
         sla_conforme = sla_compliance >= 95.0
 
         # Concurrent metrics
-        medicos_tma = await self.obter_tma_por_medico(dt_inicio)
-        total_fila = await self.obter_contagem_fila()
-        medicos_ativos = await self.obter_medicos_ativos_count(dt_inicio)
+        medicos_tma = await self._obter_tma_por_medico(dt_inicio)
+        total_fila = await self._obter_contagem_fila()
+        medicos_ativos = await self._obter_medicos_ativos_count(dt_inicio)
 
         return PainelTelemetriaDTO(
             gerado_em=datetime.now(UTC),
@@ -189,7 +190,7 @@ class SqlTelemetryReader(TelemetryReaderPort):
             total_atendimentos=total_atendimentos,
         )
 
-    async def obter_tma_por_medico(
+    async def _obter_tma_por_medico(
         self,
         data_inicio: datetime | None = None,
     ) -> tuple[MedicoTMADTO, ...]:
@@ -245,7 +246,7 @@ class SqlTelemetryReader(TelemetryReaderPort):
 
         return tuple(resultado)
 
-    async def obter_contagem_fila(self) -> int:
+    async def _obter_contagem_fila(self) -> int:
         query = text(
             """
             SELECT COUNT(*) AS total_fila
@@ -257,7 +258,7 @@ class SqlTelemetryReader(TelemetryReaderPort):
         count_val = res.scalar()
         return int(count_val) if count_val is not None else 0
 
-    async def obter_medicos_ativos_count(
+    async def _obter_medicos_ativos_count(
         self,
         data_inicio: datetime | None = None,
     ) -> int:

@@ -38,7 +38,7 @@ Tabela resumo, detalhe por módulo abaixo.
 | queue | ordena e aloca | `TriagePort`, `ShiftPolicyReaderPort` | motor Valkey, fila e ausência | `src/modules/queue/application/ports/queue_engine_port.py` |
 | consultation | ato médico | resumo/conclusão de atendimento, BPA-I | evolução, PEP e presença WS | `src/modules/consultation/application/ports/atendimento_reader_port.py` |
 | ambulatory | produção SUS e qualificação | diretório BPA-I | consolidação BPA-I e qualificação | `src/modules/ambulatory/application/ports/eligibility_provider.py` |
-| telemetry | read model e parametrização | SQL somente-leitura e Valkey | painel e snapshot de política | `src/modules/telemetry/application/ports/telemetry_reader_port.py` |
+| telemetry | read model e parametrização | SQL somente-leitura e cache `telemetry:painel` | painel e snapshot SQL read-only de política | `src/modules/telemetry/application/ports/telemetry_reader_port.py` |
 
 ### 2.1 triage — origem, sem upstream
 
@@ -79,8 +79,8 @@ Expõe `build_producao_ambulatorial_service` (`src/modules/ambulatory/compositio
 Downstream analítico desacoplado e fonte de parâmetros operacionais de plantão sem ciclo de dependências no `tach.toml`.
 
 - **Papel**: Telemetria operacional agregada em tempo real (RF-10) e parametrização dinâmica do plantão da unidade (RF-09).
-- **Consome**: `TelemetryReaderPort` (`src/modules/telemetry/application/ports/telemetry_reader_port.py`) executando queries SQL somente-leitura nas tabelas transacionais de atendimentos, além de Valkey para estado volátil de filas (`fila:aptos`) e médicos ativos (`plantao:medicos_ativos`).
-- **Expõe**: Endpoints REST para gestores clínicos (`GET /api/v1/telemetria/painel`, `GET/PUT /api/v1/telemetria/config-plantao`) e leitor somente-leitura `ler_politica_plantao_snapshot` (`src/modules/telemetry/composition.py`) consumido por `queue` via `ShiftPolicyReaderPort`.
+- **Consome**: `TelemetryReaderPort` (`src/modules/telemetry/application/ports/telemetry_reader_port.py`, método único `obter_painel_telemetria`) executando queries SQL somente-leitura nas tabelas `atendimentos` e `profissionais`, além de `TelemetryCachePort` (`ValkeyTelemetryCache`) exclusivamente para cache volátil do painel na chave `telemetry:painel` (TTL 5s).
+- **Expõe**: Endpoints REST para gestores clínicos e médicos (`GET /api/v1/telemetria/painel`, `GET/PUT /api/v1/telemetria/config-plantao`) e leitor SQL somente-leitura `ler_politica_plantao_snapshot` (`src/modules/telemetry/composition.py`) consumido por `queue` via `ShiftPolicyReaderPort`.
 - **Relação com outros módulos**: `telemetry.application` e `telemetry.infrastructure` nunca importam `queue`; apenas `queue.composition` lê `telemetry.composition.ler_politica_plantao_snapshot` (grafo estritamente acíclico no `tach.toml`).
 
 ## 3. Regra de ouro

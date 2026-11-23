@@ -7,14 +7,17 @@ import queue as queue_module
 import re
 from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, cast
 from uuid import UUID
 
 from src.core.audit import AtorPapel, AtorTipo
+from src.core.audit.models import AuditEvent
 from src.core.authz.roles import Role
 from src.core.errors import ConflictError, NotFoundError, ValidationError
 from src.core.uuid7 import uuid7
+from src.modules.ambulatory.application.dtos import BpaRegistroDetalheDTO
+from src.modules.ambulatory.application.ports.bpa_directory_port import BpaDirectoryPort
 from src.modules.auth.application.ports.password_hasher_port import PasswordHasherPort
 from src.modules.auth.application.ports.patient_credential_repository_port import (
     PatientCredentialRepositoryPort,
@@ -59,6 +62,17 @@ from src.modules.scheduling.domain.models import (
     Agendamento,
     StatusAgendamento,
 )
+from src.modules.telemetry.application.dtos import PainelTelemetriaDTO
+from src.modules.telemetry.application.ports.config_plantao_port import (
+    ConfigPlantaoRepositoryPort,
+)
+from src.modules.telemetry.application.ports.telemetry_cache_port import (
+    TelemetryCachePort,
+)
+from src.modules.telemetry.application.ports.telemetry_reader_port import (
+    TelemetryReaderPort,
+)
+from src.modules.telemetry.domain.models import ConfiguracaoPlantao
 from src.modules.triage.application.ports.emergency_notifier import (
     EmergencyAlertDTO,
     EmergencyNotifierPort,
@@ -70,6 +84,28 @@ class FakeNoneMappings:
 
     def first(self) -> None:
         return None
+
+    def one_or_none(self) -> None:
+        return None
+
+    def all(self) -> list[dict[str, Any]]:
+        return []
+
+
+class FakeMappings:
+    """Scripted mappings returning rows for all(), first(), and one_or_none()."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = list(rows)
+
+    def all(self) -> list[dict[str, Any]]:
+        return list(self._rows)
+
+    def first(self) -> dict[str, Any] | None:
+        return self._rows[0] if self._rows else None
+
+    def one_or_none(self) -> dict[str, Any] | None:
+        return self._rows[0] if self._rows else None
 
 
 class FakeScalarResult:
@@ -101,8 +137,17 @@ class FakeScalarResult:
 class FakeResult:
     """Scripted session result supporting scalar and mappings access."""
 
-    def __init__(self, value: Any) -> None:
+    def __init__(
+        self,
+        value: Any = None,
+        *,
+        mappings_rows: list[dict[str, Any]] | None = None,
+    ) -> None:
         self._value = value
+        self._mappings_rows = mappings_rows
+
+    def scalar(self) -> Any:
+        return self._value
 
     def scalar_one_or_none(self) -> Any:
         return self._value
@@ -114,7 +159,9 @@ class FakeResult:
     def scalars(self) -> FakeScalarResult:
         return FakeScalarResult(self._value)
 
-    def mappings(self) -> FakeNoneMappings:
+    def mappings(self) -> FakeMappings | FakeNoneMappings:
+        if self._mappings_rows is not None:
+            return FakeMappings(self._mappings_rows)
         return FakeNoneMappings()
 
 
@@ -145,17 +192,21 @@ class FakeAsyncSession:
         entities: dict[Any, Any] | None = None,
         *,
         commit_error: Exception | None = None,
+        flush_error: Exception | None = None,
     ) -> None:
         self._results: list[Any] = list(results) if results is not None else []
         self.added: list[Any] = added if added is not None else []
         self._entities: dict[Any, Any] = dict(entities) if entities is not None else {}
         self.commit_error = commit_error
+        self.flush_error = flush_error
         self.commits: int = 0
         self.rollbacks: int = 0
+        self.savepoint_rollbacks: int = 0
         self.flushes: int = 0
         self.executes: int = 0
         self.refreshes: int = 0
         self.get_calls: list[dict[str, Any]] = []
+        self.executed_sql: list[tuple[str, Any]] = []
 
     async def get(self, entity_cls: Any, ident: Any, *args: Any, **kwargs: Any) -> Any:
         self.get_calls.append(
@@ -176,6 +227,8 @@ class FakeAsyncSession:
 
     async def execute(self, *args: Any, **kwargs: Any) -> Any:
         self.executes += 1
+        if args:
+            self.executed_sql.append((str(args[0]), args[1] if len(args) > 1 else None))
         if self._results:
             return self._results.pop(0)
         return FakeResult(None)
@@ -190,6 +243,8 @@ class FakeAsyncSession:
             self.add(obj)
 
     async def flush(self) -> None:
+        if self.flush_error is not None:
+            raise self.flush_error
         self.flushes += 1
         return None
 
@@ -207,7 +262,15 @@ class FakeAsyncSession:
 
     @asynccontextmanager
     async def begin_nested(self) -> AsyncGenerator["FakeAsyncSession", None]:
-        yield self
+        snapshot_added = list(self.added)
+        snapshot_entities = dict(self._entities)
+        try:
+            yield self
+        except Exception:
+            self.added = snapshot_added
+            self._entities = snapshot_entities
+            self.savepoint_rollbacks += 1
+            raise
 
 
 class FakePubSub:
@@ -304,6 +367,7 @@ class FakeValkey:
         self._queues: dict[str, queue_module.Queue[str]] = {}
         self._zsets: dict[str, dict[str, float]] = {}
         self._kv: dict[str, Any] = {}
+        self._ttl: dict[str, int] = {}
         self._sets: dict[str, set[str]] = {}
 
     def delete_sync(self, *keys: str) -> int:
@@ -311,6 +375,7 @@ class FakeValkey:
         for key in keys:
             if key in self._kv:
                 del self._kv[key]
+                self._ttl.pop(key, None)
                 deleted += 1
         return deleted
 
@@ -384,7 +449,15 @@ class FakeValkey:
         return self.exists_sync(*names)
 
     async def set(self, name: str, value: Any, *args: Any, **kwargs: Any) -> bool:
-        return self.set_sync(name, value, nx=bool(kwargs.get("nx", False)))
+        stored = self.set_sync(name, value, nx=bool(kwargs.get("nx", False)))
+        if stored and "ex" in kwargs and kwargs["ex"] is not None:
+            self._ttl[name] = int(kwargs["ex"])
+        return stored
+
+    async def ttl(self, name: str) -> int:
+        if name not in self._kv:
+            return -2
+        return self._ttl.get(name, -1)
 
     async def incr(self, name: str, amount: int = 1) -> int:
         cur = int(self._kv.get(name, 0) or 0)
@@ -672,31 +745,34 @@ class FakeAuditTrail:
         payload: dict[str, Any] | None = None,
         ip_origem: str | None = None,
     ) -> UUID:
-        event_id = uuid7()
-        raw_tipo: Any = ator_tipo
-        raw_papel: Any = ator_papel
-        tipo_str: str = (
-            str(raw_tipo.value) if hasattr(raw_tipo, "value") else str(raw_tipo)
-        )
-        papel_str: str = (
-            str(raw_papel.value) if hasattr(raw_papel, "value") else str(raw_papel)
+        event = AuditEvent(
+            atendimento_id=atendimento_id,
+            ator_tipo=ator_tipo,
+            ator_papel=ator_papel,
+            tipo_evento=tipo_evento,
+            ator_id=ator_id,
+            estado_anterior=estado_anterior,
+            novo_estado=novo_estado,
+            tcle_hash=tcle_hash,
+            payload=payload,
+            ip_origem=ip_origem,
         )
         self.events.append(
             {
-                "id": event_id,
-                "atendimento_id": atendimento_id,
-                "ator_tipo": tipo_str,
-                "ator_papel": papel_str,
-                "tipo_evento": tipo_evento,
-                "ator_id": ator_id,
-                "estado_anterior": estado_anterior,
-                "novo_estado": novo_estado,
-                "tcle_hash": tcle_hash,
-                "payload": payload or {},
-                "ip_origem": ip_origem,
+                "id": event.id,
+                "atendimento_id": event.atendimento_id,
+                "ator_tipo": event.ator_tipo,
+                "ator_papel": event.ator_papel,
+                "tipo_evento": event.tipo_evento,
+                "ator_id": event.ator_id,
+                "estado_anterior": event.estado_anterior,
+                "novo_estado": event.novo_estado,
+                "tcle_hash": event.tcle_hash,
+                "payload": event.payload,
+                "ip_origem": event.ip_origem,
             }
         )
-        return event_id
+        return event.id
 
     def get_events_by_type(self, tipo_evento: str) -> list[dict[str, Any]]:
         return [e for e in self.events if e["tipo_evento"] == tipo_evento]
@@ -1539,3 +1615,104 @@ class FakeSchedulingRepository(SchedulingRepositoryPort):
 
     def adicionar_agendamento(self, agendamento: Agendamento) -> None:
         self.agendamentos.append(agendamento)
+
+
+class FakeBpaDirectory(BpaDirectoryPort):
+    """Canonical in-memory BpaDirectoryPort double."""
+
+    def __init__(self, registros: Sequence[BpaRegistroDetalheDTO] = ()) -> None:
+        self.registros = list(registros)
+        self.calls: list[str] = []
+
+    async def buscar_detalhes_bpa_lote(
+        self,
+        competencia: str,
+    ) -> list[BpaRegistroDetalheDTO]:
+        self.calls.append(competencia)
+        return list(self.registros)
+
+
+class FakeTelemetryReader(TelemetryReaderPort):
+    """Canonical in-memory TelemetryReaderPort double."""
+
+    def __init__(self, painel: PainelTelemetriaDTO | None = None) -> None:
+        self.painel = painel
+        self.calls: list[dict[str, Any]] = []
+
+    async def obter_painel_telemetria(
+        self,
+        config: ConfiguracaoPlantao | None = None,
+        data_inicio: datetime | None = None,
+    ) -> PainelTelemetriaDTO:
+        self.calls.append({"config": config, "data_inicio": data_inicio})
+        if self.painel is not None:
+            return self.painel
+        return PainelTelemetriaDTO(
+            gerado_em=datetime.now(UTC),
+            tme_medio_segundos=0.0,
+            tme_nivel_1_segundos=0.0,
+            tme_nivel_2_segundos=0.0,
+            tme_nivel_3_segundos=0.0,
+            tme_nivel_4_segundos=0.0,
+            tme_nivel_5_segundos=0.0,
+            tma_medio_segundos=0.0,
+            medicos_tma=(),
+            no_show_rate=0.0,
+            evasao_rate=0.0,
+            sla_compliance_percentual=100.0,
+            sla_em_conformidade=True,
+            medicos_ativos_count=0,
+            total_pacientes_fila=0,
+            total_atendimentos=0,
+        )
+
+
+class FakeConfigPlantaoRepository(ConfigPlantaoRepositoryPort):
+    """Canonical in-memory ConfigPlantaoRepositoryPort double."""
+
+    def __init__(self, config: ConfiguracaoPlantao | None = None) -> None:
+        self.config = config
+        self.obter_atual_calls: int = 0
+        self.obter_ou_criar_calls: int = 0
+        self.salvos: list[ConfiguracaoPlantao] = []
+
+    async def obter_atual(self) -> ConfiguracaoPlantao | None:
+        self.obter_atual_calls += 1
+        return self.config
+
+    async def obter_ou_criar_padrao(self) -> ConfiguracaoPlantao:
+        self.obter_ou_criar_calls += 1
+        if self.config is None:
+            self.config = ConfiguracaoPlantao()
+        return self.config
+
+    async def salvar(self, configuracao: ConfiguracaoPlantao) -> ConfiguracaoPlantao:
+        self.config = configuracao
+        self.salvos.append(configuracao)
+        return configuracao
+
+
+class FakeTelemetryCache(TelemetryCachePort):
+    """Canonical in-memory TelemetryCachePort double with call tracking."""
+
+    def __init__(self, initial: PainelTelemetriaDTO | None = None) -> None:
+        self.painel: PainelTelemetriaDTO | None = initial
+        self.obter_calls: int = 0
+        self.salvar_calls: list[tuple[PainelTelemetriaDTO, int]] = []
+        self.invalidar_calls: int = 0
+
+    async def obter_painel(self) -> PainelTelemetriaDTO | None:
+        self.obter_calls += 1
+        return self.painel
+
+    async def salvar_painel(
+        self,
+        painel: PainelTelemetriaDTO,
+        ttl_segundos: int = 60,
+    ) -> None:
+        self.painel = painel
+        self.salvar_calls.append((painel, ttl_segundos))
+
+    async def invalidar_painel(self) -> None:
+        self.invalidar_calls += 1
+        self.painel = None

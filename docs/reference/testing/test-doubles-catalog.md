@@ -37,7 +37,12 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 | `FakeTriagePort` | `TriagePort` (`src.modules.queue`) | `avaliar_risco()`, `registrar_triagem()`, `obter_queixas_por_atendimentos()` | `avaliacoes: list[dict]`, `triagens_registradas: list[dict]`, `queixas: dict[UUID, str \| None]`, `error_avaliar`, `error_registrar`. |
 | `FakeShiftPolicyReader` | `ShiftPolicyReaderPort` (`src.modules.queue`) | `obter_politica_atual()` | `policy: ShiftPolicyDTO` configurável com `alpha_backpressure`, `cota_diaria_maxima`, `tma_padrao_segundos`, `tempo_tolerancia_ring_segundos`. |
 | `FakeQueueEngine` | `QueueEnginePort` (`src.modules.queue`) | `alocar_proximo()`, `alocar_atendimento()`, `promover_para_consulta()`, `liberar_ring()`, `liberar_consulta()`, `devolver_para_fila()`, `consumir_cota_ou_bloquear()`, `estornar_cota_diaria()`, `adquirir_lock_sweeper()`, `esta_bloqueado_para_reconciliacao()`, `publicar_evento_*()` | Estado completo em memória: `fila_scores`, `locks_medico`, `locks_atendimento`, `locks_consulta_ativa`, `medicos_ativos`, `cota_diaria_usada`, `sweeper_lock_held`, `published_fila`, `published_medico`, `alocar_*_calls`, `sweeper_checks`. |
-| `FakeValkey` / `FakePubSub` | Protocolo Valkey / Redis Pub/Sub | `publish(canal, msg)`, `pubsub()`, `subscribe()`, `listen()`, `zadd()`, `zrange()`, `incr()`, `decr()`, `sadd()` | Filas `queue.Queue`, `_zsets`, `_kv`, `_sets` e `FakePipeline` em memória sem infraestrutura externa. |
+| `FakeValkey` / `FakePubSub` | Protocolo Valkey / Redis Pub/Sub | `publish(canal, msg)`, `pubsub()`, `subscribe()`, `listen()`, `zadd()`, `zrange()`, `incr()`, `decr()`, `sadd()`, `ttl()` | Filas `queue.Queue`, `_zsets`, `_kv`, `_ttl`, `_sets` e `FakePipeline` em memória sem infraestrutura externa. |
+| `FakeAuditTrail` | `AuditTrailPort` (`src.core.audit`) | `record_event(...)`, `get_events_by_type()`, `clear()` | Valida estritamente `AtorTipo`/`AtorPapel` e demais invariantes via `AuditEvent(...)` (rejeitando `"WORKER"`), armazenando `events: list[dict]`. |
+| `FakeBpaDirectory` | `BpaDirectoryPort` (`src.modules.ambulatory`) | `buscar_detalhes_bpa_lote(competencia)` | `registros: list[BpaRegistroDetalheDTO]`, `calls: list[str]`. |
+| `FakeTelemetryReader` | `TelemetryReaderPort` (`src.modules.telemetry`) | `obter_painel_telemetria(config, data_inicio)` | `painel: PainelTelemetriaDTO \| None`, `calls: list[dict]`. |
+| `FakeConfigPlantaoRepository` | `ConfigPlantaoRepositoryPort` (`src.modules.telemetry`) | `obter_atual()`, `obter_ou_criar_padrao()`, `salvar()` | `config`, `obter_atual_calls`, `obter_ou_criar_calls`, `salvos`. |
+| `FakeTelemetryCache` | `TelemetryCachePort` (`src.modules.telemetry`) | `obter_painel()`, `salvar_painel()`, `invalidar_painel()` | `painel`, `obter_calls`, `salvar_calls`, `invalidar_calls`. |
 
 ### Detalhamento dos Dublês e Mecânica de Estado
 
@@ -99,8 +104,18 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Impl: `tests/doubles.py:MemoryChallengeStore`
 - Impl: `tests/doubles.py:FakeIdentityReader`
 - Impl: `tests/doubles.py:FakeIdentityWriter`
+- Impl: `tests/doubles.py:FakeAuditTrail`
+- Impl: `tests/doubles.py:FakeBpaDirectory`
+- Impl: `tests/doubles.py:FakeTelemetryReader`
+- Impl: `tests/doubles.py:FakeConfigPlantaoRepository`
+- Impl: `tests/doubles.py:FakeTelemetryCache`
 - Impl: `src/core/authz/revocation.py:MemoryTokenRevocation`
 - Impl: `src/modules/auth/infrastructure/fake_sms_adapter.py:FakeSmsSenderAdapter`
+- Spec: `src/core/audit/ports.py:AuditTrailPort`
+- Spec: `src/modules/ambulatory/application/ports/bpa_directory_port.py:BpaDirectoryPort`
+- Spec: `src/modules/telemetry/application/ports/telemetry_reader_port.py:TelemetryReaderPort`
+- Spec: `src/modules/telemetry/application/ports/config_plantao_port.py:ConfigPlantaoRepositoryPort`
+- Spec: `src/modules/telemetry/application/ports/telemetry_cache_port.py:TelemetryCachePort`
 - Spec: `src/modules/auth/application/ports/challenge_store_port.py:ChallengeStorePort`
 - Spec: `src/modules/auth/application/ports/sms_sender_port.py:SmsSenderPort`
 - Spec: `src/modules/identity/application/ports/identity_reader_port.py:IdentityReaderPort`
