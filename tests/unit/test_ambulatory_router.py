@@ -9,14 +9,21 @@ from src.core.authz.token import create_access_token
 from src.main import create_app
 from src.modules.ambulatory.application.dtos import (
     BpaArquivoExportadoDTO,
-    BpaProducaoDTO,
-    ListaProducaoAmbulatorialDTO,
+    BpaRegistroDetalheDTO,
+)
+from src.modules.ambulatory.application.services.producao_service import (
+    ProducaoAmbulatorialService,
 )
 from src.modules.ambulatory.composition import get_producao_ambulatorial_service
 from src.modules.ambulatory.domain.exceptions import (
     CompetenciaInvalidaError,
     ProducaoNaoEncontradaError,
 )
+from src.modules.ambulatory.domain.models.producao_ambulatorial import (
+    ProducaoAmbulatorial,
+)
+
+from tests.doubles import FakeAsyncSession, FakeAuditTrail, FakeBpaDirectory
 
 
 class FakeProducaoAmbulatorialService:
@@ -25,7 +32,7 @@ class FakeProducaoAmbulatorialService:
     def __init__(
         self,
         *,
-        lista_result: ListaProducaoAmbulatorialDTO | Exception | None = None,
+        lista_result: tuple[list[ProducaoAmbulatorial], int] | Exception | None = None,
         export_result: BpaArquivoExportadoDTO | Exception | None = None,
     ) -> None:
         self.lista_result = lista_result
@@ -37,18 +44,12 @@ class FakeProducaoAmbulatorialService:
         competencia: str,
         page: int = 1,
         size: int = 50,
-    ) -> ListaProducaoAmbulatorialDTO:
+    ) -> tuple[list[ProducaoAmbulatorial], int]:
         if isinstance(self.lista_result, Exception):
             raise self.lista_result
         if self.lista_result is not None:
             return self.lista_result
-        return ListaProducaoAmbulatorialDTO(
-            items=[],
-            total=0,
-            competencia=competencia,
-            page=page,
-            size=size,
-        )
+        return [], 0
 
     async def gerar_arquivo_bpa_i(
         self,
@@ -70,22 +71,16 @@ def _make_jwt_token(papel: str = "GESTOR_UNIDADE") -> str:
 async def test_listar_producao_200_ok() -> None:
     app = create_app()
     atend_id = uuid4()
-    item_dto = BpaProducaoDTO(
+    item_model = ProducaoAmbulatorial(
         atendimento_id=atend_id,
+        profissional_id=uuid4(),
+        paciente_id=uuid4(),
         cnes="2000001",
         codigo_sigtap="03.01.01.025-0",
         carater_atendimento="02",
-        consolidado_em=datetime.now(UTC),
+        competencia="202611",
     )
-    fake_service = FakeProducaoAmbulatorialService(
-        lista_result=ListaProducaoAmbulatorialDTO(
-            items=[item_dto],
-            total=1,
-            competencia="202611",
-            page=1,
-            size=50,
-        )
-    )
+    fake_service = FakeProducaoAmbulatorialService(lista_result=([item_model], 1))
     app.dependency_overrides[get_producao_ambulatorial_service] = lambda: fake_service
 
     token = _make_jwt_token(papel="GESTOR_UNIDADE")
@@ -202,3 +197,53 @@ async def test_ambulatory_papel_paciente_retorna_403() -> None:
     assert resp.status_code == 403
     data = resp.json()
     assert "PACIENTE" in data["detail"]
+
+
+@pytest.mark.asyncio
+async def test_exportar_bpa_read_only_com_pendencia_sem_record_event() -> None:
+    app = create_app()
+    fake_session = FakeAsyncSession()
+    fake_audit = FakeAuditTrail()
+    registro = BpaRegistroDetalheDTO(
+        producao_id=uuid4(),
+        atendimento_id=uuid4(),
+        profissional_id=uuid4(),
+        paciente_id=uuid4(),
+        cnes="2000001",
+        codigo_sigtap="03.01.01.025-0",
+        carater_atendimento="02",
+        competencia="202611",
+        consolidado_em=datetime.now(UTC),
+        paciente_nome="PACIENTE SEM CNS",
+        paciente_cns=None,
+        paciente_cpf="12345678900",
+        paciente_data_nascimento="20000101",
+        paciente_sexo="F",
+        paciente_ibge="355030",
+        medico_cns=None,
+        medico_cbo="225125",
+        unidade_nome="UPA DIGITAL UNICA",
+        unidade_sigla="MSYNC",
+        unidade_cnpj="12345678000199",
+        idade=0,
+    )
+    service = ProducaoAmbulatorialService(
+        session=fake_session,  # pyright: ignore[reportArgumentType]
+        audit_trail=fake_audit,
+        bpa_directory=FakeBpaDirectory([registro]),
+    )
+    app.dependency_overrides[get_producao_ambulatorial_service] = lambda: service
+
+    token = _make_jwt_token(papel="FATURAMENTO")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(
+            "/api/v1/ambulatory/producao/exportar?competencia=202611",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert resp.status_code == 200
+    assert fake_audit.events == []
+    assert fake_session.commits == 0
+    assert fake_session.flushes == 0
+    assert fake_session.added == []

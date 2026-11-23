@@ -1,13 +1,21 @@
 """Unit tests for SUS ambulatory domain: competence and BPA-I formatting."""
 
+from datetime import UTC, datetime
+from uuid import uuid4
+
 import pytest
 from src.modules.ambulatory.domain.bpa_formatter import (
     BpaHeaderData,
     BpaItemData,
     BpaPositionalFormatter,
+    BpaRegistroDetalheDTO,
     calcular_checksum_bpa,
     sanitizar_texto_ascii,
     validar_competencia,
+)
+from src.modules.ambulatory.domain.enums import (
+    CaraterAtendimento,
+    TipoProcedimentoAmbulatorial,
 )
 from src.modules.ambulatory.domain.exceptions import (
     CompetenciaInvalidaError,
@@ -67,8 +75,8 @@ class TestBpaPositionalFormatter:
             total_linhas=1,
             total_folhas=1,
             smt_vrf=1112,
-            org_nome="UPA DIGITAL CONSORCIO INTERMUNICIPAL",
-            org_sigla="MSYNC",
+            unidade_nome="UPA DIGITAL UNIDADE CENTRAL INTERMUNICIPAL",
+            unidade_sigla="MSYNC",
             cnpj="12345678000199",
             destino="SECRETARIA MUNICIPAL DE SAUDE",
             destino_tipo="M",
@@ -85,7 +93,7 @@ class TestBpaPositionalFormatter:
         assert linha[19:25] == "000001"
         assert linha[25:29] == "1112"
         assert (
-            linha[29:59] == "UPA DIGITAL CONSORCIO INTERMUN"
+            linha[29:59] == "UPA DIGITAL UNIDADE CENTRAL IN"
         )  # truncado a 30 caracteres
         assert linha[59:65] == "MSYNC "
         assert linha[65:79] == "12345678000199"
@@ -171,8 +179,8 @@ class TestBpaPositionalFormatter:
             total_linhas=0,
             total_folhas=0,
             smt_vrf=0,
-            org_nome="UPA DIGITAL CONSORCIO",
-            org_sigla="MSYNC",
+            unidade_nome="UPA DIGITAL MUNICIPAL",
+            unidade_sigla="MSYNC",
             cnpj="12345678000199",
             destino="SECRETARIA MUNICIPAL DE SAUDE",
             destino_tipo="M",
@@ -223,3 +231,103 @@ class TestDomainExceptions:
         err = ProducaoNaoEncontradaError(competencia="202611")
         assert "202611" in str(err)
         assert err.competencia == "202611"
+
+
+class TestCompilarRemessaBpaI:
+    """Validações de deepening em BpaPositionalFormatter.compilar_remessa."""
+
+    def _registro(self, **overrides: object) -> BpaRegistroDetalheDTO:
+        base: dict[str, object] = {
+            "producao_id": uuid4(),
+            "atendimento_id": uuid4(),
+            "profissional_id": uuid4(),
+            "paciente_id": uuid4(),
+            "cnes": "2000001",
+            "codigo_sigtap": "03.01.01.025-0",
+            "carater_atendimento": "02",
+            "competencia": "202611",
+            "consolidado_em": datetime(2026, 11, 10, 12, 0, tzinfo=UTC),
+            "paciente_nome": "MARIA DA SILVA",
+            "paciente_cns": "700000000000001",
+            "paciente_cpf": "12345678900",
+            "paciente_data_nascimento": "20000101",
+            "paciente_sexo": "F",
+            "paciente_ibge": "355030",
+            "medico_cns": "700000000000002",
+            "medico_cbo": "225125",
+            "unidade_nome": "UPA DIGITAL UNICA",
+            "unidade_sigla": "MSYNC",
+            "unidade_cnpj": "11222333000144",
+            "cid": "R509",
+            "idade": 26,
+        }
+        base.update(overrides)
+        return BpaRegistroDetalheDTO(**base)  # type: ignore[arg-type]
+
+    def test_compilar_remessa_lactente_idade_zero_e_20000101_sem_falso_positivo(
+        self,
+    ) -> None:
+        reg_2000 = self._registro(paciente_data_nascimento="20000101", idade=26)
+        reg_lactente = self._registro(
+            paciente_cns="700000000000003",
+            paciente_data_nascimento="20260601",
+            idade=0,
+        )
+
+        remessa = BpaPositionalFormatter.compilar_remessa(
+            "202611",
+            [reg_2000, reg_lactente],
+            destino="SECRETARIA ESTADUAL DE SAUDE",
+            destino_tipo="E",
+        )
+
+        assert remessa.pendencias == ()
+        assert remessa.total_registros == 2
+        assert remessa.total_folhas == 1
+        assert remessa.nome_arquivo == "BPA_I_202611_2000001.txt"
+        linhas = remessa.conteudo.splitlines()
+        assert len(linhas) == 3
+        assert linhas[0][79:119].strip() == "SECRETARIA ESTADUAL DE SAUDE"
+        assert linhas[0][119:120] == "E"
+        # Paciente nascido em 2000-01-01 preservado
+        assert linhas[1][142:150] == "20000101"
+        # Lactente com idade == 0 exporta 000 na posição [85:88]
+        assert linhas[2][85:88] == "000"
+
+    def test_compilar_remessa_sinaliza_pendencias_reais_sem_mascarar_cpf_como_cns(
+        self,
+    ) -> None:
+        reg_sem_cns = self._registro(
+            paciente_cns=None,
+            paciente_cpf="12345678909",
+            medico_cns=None,
+            medico_cbo="251510",
+        )
+
+        remessa = BpaPositionalFormatter.compilar_remessa("202611", [reg_sem_cns])
+
+        assert len(remessa.pendencias) == 1
+        assert set(remessa.pendencias[0].campos_ausentes) == {
+            "paciente_cns",
+            "medico_cns",
+        }
+        linha_detalhe = remessa.conteudo.splitlines()[1]
+        assert linha_detalhe[15:30] == "000000000000000"
+        assert linha_detalhe[30:36] == "251510"
+        assert linha_detalhe[59:74] == "000000000000000"
+        assert "12345678909" not in linha_detalhe
+
+    def test_compilar_remessa_paginacao_20_por_folha_e_erro_lote_vazio(self) -> None:
+        registros = [self._registro() for _ in range(21)]
+        remessa = BpaPositionalFormatter.compilar_remessa("202611", registros)
+        assert remessa.total_registros == 21
+        assert remessa.total_folhas == 2
+
+        with pytest.raises(ProducaoNaoEncontradaError, match="202611"):
+            BpaPositionalFormatter.compilar_remessa("202611", [])
+
+    def test_enums_mortos_removidos(self) -> None:
+        assert not hasattr(
+            TipoProcedimentoAmbulatorial, "CONSULTA_MEDICA_ATENCAO_ESPECIALIZADA"
+        )
+        assert not hasattr(CaraterAtendimento, "ELETIVO")

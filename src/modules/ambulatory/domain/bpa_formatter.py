@@ -3,8 +3,13 @@
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from datetime import datetime
+from uuid import UUID
 
-from src.modules.ambulatory.domain.exceptions import CompetenciaInvalidaError
+from src.modules.ambulatory.domain.exceptions import (
+    CompetenciaInvalidaError,
+    ProducaoNaoEncontradaError,
+)
 
 
 def validar_competencia(competencia: str) -> str:
@@ -47,8 +52,8 @@ class BpaHeaderData:
     total_linhas: int
     total_folhas: int
     smt_vrf: int
-    org_nome: str
-    org_sigla: str
+    unidade_nome: str
+    unidade_sigla: str
     cnpj: str
     destino: str
     destino_tipo: str = "M"
@@ -78,6 +83,82 @@ class BpaItemData:
     raca: str = "99"
 
 
+@dataclass(frozen=True)
+class BpaRegistroDetalheDTO:
+    """Visão desnormalizada de produção para composição do detalhe Tipo 03 do BPA-I."""
+
+    producao_id: UUID
+    atendimento_id: UUID
+    profissional_id: UUID
+    paciente_id: UUID
+    cnes: str | None
+    codigo_sigtap: str
+    carater_atendimento: str
+    competencia: str
+    consolidado_em: datetime
+    paciente_nome: str | None
+    paciente_cns: str | None
+    paciente_cpf: str | None
+    paciente_data_nascimento: str | None  # AAAAMMDD
+    paciente_sexo: str | None  # M ou F
+    paciente_ibge: str | None
+    medico_cns: str | None
+    medico_cbo: str | None
+    unidade_nome: str | None
+    unidade_sigla: str | None
+    unidade_cnpj: str | None
+    cid: str | None = None
+    idade: int | None = None
+
+
+@dataclass(frozen=True)
+class BpaPendenciaCadastral:
+    """Pendência cadastral real detectada durante a compilação da remessa BPA-I."""
+
+    producao_id: UUID
+    atendimento_id: UUID
+    campos_ausentes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BpaArquivoExportadoDTO:
+    """DTO com o conteúdo magnético SIA-SUS, metadados e pendências da remessa."""
+
+    conteudo: str
+    nome_arquivo: str
+    total_registros: int
+    total_folhas: int
+    competencia: str
+    pendencias: tuple[BpaPendenciaCadastral, ...] = ()
+
+
+def _detectar_pendencias_registro(registro: BpaRegistroDetalheDTO) -> tuple[str, ...]:
+    """Identifica campos obrigatórios ausentes sem falsos positivos."""
+    ausentes: list[str] = []
+    cnes_limpo = (registro.cnes or "").strip()
+    if not cnes_limpo or cnes_limpo == "0000000":
+        ausentes.append("cnes")
+    if not (registro.paciente_nome or "").strip():
+        ausentes.append("paciente_nome")
+    if not (registro.paciente_cns or "").replace("0", "").strip():
+        ausentes.append("paciente_cns")
+    if not (registro.paciente_data_nascimento or "").strip():
+        ausentes.append("paciente_data_nascimento")
+    if not (registro.paciente_sexo or "").strip():
+        ausentes.append("paciente_sexo")
+    if not (registro.paciente_ibge or "").strip():
+        ausentes.append("paciente_ibge")
+    if not (registro.medico_cns or "").replace("0", "").strip():
+        ausentes.append("medico_cns")
+    if not (registro.medico_cbo or "").strip():
+        ausentes.append("medico_cbo")
+    if not (registro.unidade_nome or "").strip():
+        ausentes.append("unidade_nome")
+    if not (registro.unidade_cnpj or "").replace("0", "").strip():
+        ausentes.append("unidade_cnpj")
+    return tuple(ausentes)
+
+
 class BpaPositionalFormatter:
     """Formatador de colunas fixas para arquivos magnéticos BPA-I do SIA-SUS/DATASUS.
 
@@ -93,8 +174,8 @@ class BpaPositionalFormatter:
         linhas = f"{data.total_linhas:06d}"
         folhas = f"{data.total_folhas:06d}"
         checksum = f"{data.smt_vrf:04d}"
-        nome_org = f"{sanitizar_texto_ascii(data.org_nome)[:30]:<30}"
-        sigla_org = f"{sanitizar_texto_ascii(data.org_sigla)[:6]:<6}"
+        nome_unidade = f"{sanitizar_texto_ascii(data.unidade_nome)[:30]:<30}"
+        sigla_unidade = f"{sanitizar_texto_ascii(data.unidade_sigla)[:6]:<6}"
         cnpj_limpo = f"{''.join(filter(str.isdigit, data.cnpj))[:14]:0>14}"
         destino = f"{sanitizar_texto_ascii(data.destino)[:40]:<40}"
         tipo_dest = data.destino_tipo[:1].upper() if data.destino_tipo else "M"
@@ -102,7 +183,7 @@ class BpaPositionalFormatter:
 
         linha = (
             f"01#BPA#{comp}{linhas}{folhas}{checksum}"
-            f"{nome_org}{sigla_org}{cnpj_limpo}{destino}{tipo_dest}{versao}"
+            f"{nome_unidade}{sigla_unidade}{cnpj_limpo}{destino}{tipo_dest}{versao}"
         )
         if len(linha) != 130:
             raise ValueError(
@@ -123,7 +204,7 @@ class BpaPositionalFormatter:
         sigtap_digitos = "".join(filter(str.isdigit, item.codigo_sigtap))
         pa = f"{sigtap_digitos[:10]:0>10}"
         cns_pac = f"{item.cns_paciente[:15]:0>15}"
-        sexo = item.sexo[:1].upper() if item.sexo else "M"
+        sexo = item.sexo[:1].upper() if item.sexo and item.sexo.strip() else " "
         ibge = f"{item.ibge_municipio[:6]:0>6}"
         cid = f"{sanitizar_texto_ascii(item.cid)[:4]:<4}"
         idade = f"{min(max(item.idade, 0), 999):03d}"
@@ -179,3 +260,87 @@ class BpaPositionalFormatter:
             linhas.append(cls.formatar_detalhe(item))
 
         return linhas
+
+    @classmethod
+    def compilar_remessa(
+        cls,
+        competencia: str,
+        registros: Sequence[BpaRegistroDetalheDTO],
+        *,
+        destino: str = "SECRETARIA MUNICIPAL DE SAUDE",
+        destino_tipo: str = "M",
+    ) -> BpaArquivoExportadoDTO:
+        """Compila remessa BPA-I validando pendências reais, paginação e checksum.
+
+        Regras: docs/explanation/domains/ambulatory-domain.md, US-11 e ADR-012.
+        """
+        comp_validada = validar_competencia(competencia)
+        if not registros:
+            raise ProducaoNaoEncontradaError(competencia=comp_validada)
+
+        pendencias: list[BpaPendenciaCadastral] = []
+        itens_formatados: list[BpaItemData] = []
+        for r in registros:
+            ausentes = _detectar_pendencias_registro(r)
+            if ausentes:
+                pendencias.append(
+                    BpaPendenciaCadastral(
+                        producao_id=r.producao_id,
+                        atendimento_id=r.atendimento_id,
+                        campos_ausentes=ausentes,
+                    )
+                )
+            itens_formatados.append(
+                BpaItemData(
+                    cnes=r.cnes or "",
+                    competencia=comp_validada,
+                    cns_medico=r.medico_cns or "",
+                    cbo=r.medico_cbo or "",
+                    data_atendimento=r.consolidado_em.strftime("%Y%m%d"),
+                    num_folha=0,
+                    num_seq=0,
+                    codigo_sigtap=r.codigo_sigtap,
+                    cns_paciente=r.paciente_cns or "",
+                    sexo=r.paciente_sexo or "",
+                    ibge_municipio=r.paciente_ibge or "",
+                    cid=r.cid or "",
+                    idade=r.idade if r.idade is not None else 0,
+                    carater_atendimento=r.carater_atendimento,
+                    paciente_nome=r.paciente_nome or "",
+                    data_nascimento=r.paciente_data_nascimento or "",
+                )
+            )
+
+        primeiro = registros[0]
+        total_registros = len(registros)
+        total_folhas = (total_registros + 19) // 20
+        header = BpaHeaderData(
+            competencia=comp_validada,
+            total_linhas=total_registros,
+            total_folhas=total_folhas,
+            smt_vrf=0,
+            unidade_nome=primeiro.unidade_nome or "",
+            unidade_sigla=primeiro.unidade_sigla or "MSYNC",
+            cnpj=primeiro.unidade_cnpj or "",
+            destino=destino,
+            destino_tipo=destino_tipo,
+            versao="03.01",
+        )
+
+        linhas = cls.gerar_arquivo_bpa(header, itens_formatados)
+        conteudo = "\r\n".join(linhas) + "\r\n"
+        cnes_arquivo = (
+            primeiro.cnes.strip()
+            if primeiro.cnes and primeiro.cnes.strip()
+            else "0000000"
+        )
+        nome_arquivo = f"BPA_I_{comp_validada}_{cnes_arquivo}.txt"
+
+        return BpaArquivoExportadoDTO(
+            conteudo=conteudo,
+            nome_arquivo=nome_arquivo,
+            total_registros=total_registros,
+            total_folhas=total_folhas,
+            competencia=comp_validada,
+            pendencias=tuple(pendencias),
+        )
