@@ -17,8 +17,8 @@ from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoResumoDTO,
     HistoricoAtendimentoReaderPort,
 )
-from src.modules.consultation.application.services.documento_service import (
-    DocumentoService,
+from src.modules.consultation.application.services.clinical_pdf_compiler import (
+    ClinicalPdfCompiler,
 )
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.composition import (
@@ -36,9 +36,6 @@ from src.modules.consultation.domain.models import (
 from src.modules.consultation.infrastructure.atendimento_reader_sql import (
     SqlAtendimentoReader,
 )
-from src.modules.consultation.infrastructure.memory_signed_cache import (
-    MemorySignedCache,
-)
 from src.modules.queue.application.ports.queue_store_port import (
     AtendimentoHistoricoQueueDTO,
     QueueStorePort,
@@ -55,7 +52,7 @@ from src.modules.triage.domain.models.triagem import Triagem
 from tests.doubles import (
     FakeAsyncSession,
     FakeAtendimentoReader,
-    FakeICPBrasilSigner,
+    FakeDocumentDirectory,
     FakeMemoryStorage,
     FakePDFGenerator,
     FakeResult,
@@ -133,21 +130,17 @@ def _build_pep_service(
     pdf_bytes: bytes = b"%PDF-1.4-paciente-portal%",
 ) -> PEPService:
     pdf_gen = FakePDFGenerator(content=pdf_bytes)
-    signer = FakeICPBrasilSigner()
     storage = FakeMemoryStorage()
-    doc_svc = DocumentoService(
-        session=cast("AsyncSession", session),
+    typed_session = cast("AsyncSession", session)
+    compiler = ClinicalPdfCompiler(
+        session=typed_session,
         pdf_generator=pdf_gen,
-        signer=signer,
         storage=storage,
-        cache=MemorySignedCache(),
+        directory=FakeDocumentDirectory(),
     )
     return PEPService(
-        session=cast("AsyncSession", session),
-        pdf_generator=pdf_gen,
-        signer=signer,
-        storage=storage,
-        documento_service=doc_svc,
+        session=typed_session,
+        pdf_compiler=compiler,
         atendimento_reader=reader,
     )
 

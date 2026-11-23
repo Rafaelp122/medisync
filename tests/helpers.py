@@ -14,6 +14,9 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession
     from src.modules.auth.application.services.auth_service import AuthService
+    from src.modules.consultation.application.services.documento_service import (
+        DocumentoService,
+    )
     from src.modules.consultation.application.services.pep_service import PEPService
     from src.modules.queue.application.services.alocacao_service import (
         AlocacaoChamadaService,
@@ -101,71 +104,105 @@ def make_auth_service(session: AsyncSession, **overrides: Any) -> AuthService:
     )
 
 
-def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
-    """Build PEPService with AsyncMock fakes unless overridden."""
+def _resolve_consultation_reader(
+    session: AsyncSession,
+    atendimento_reader: Any,
+) -> Any:
+    if atendimento_reader is not None:
+        return atendimento_reader
+    if isinstance(session, AsyncMock):
+        reader = AsyncMock()
+        reader.obter_resumo.return_value = None
+        return reader
+    from src.modules.consultation.composition import QueueStoreAtendimentoReaderAdapter
+    from src.modules.queue.composition import build_fila_service_for_session
+
+    queue_store: Any = build_fila_service_for_session(session=session)
+    return QueueStoreAtendimentoReaderAdapter(queue_store)
+
+
+def make_documento_service(session: AsyncSession, **overrides: Any) -> DocumentoService:
+    """Build DocumentoService with named fakes unless overridden."""
+    from src.modules.consultation.application.services.clinical_pdf_compiler import (
+        ClinicalPdfCompiler,
+    )
     from src.modules.consultation.application.services.documento_service import (
         DocumentoService,
     )
-    from src.modules.consultation.application.services.evolucao_service import (
-        EvolucaoService,
-    )
-    from src.modules.consultation.application.services.pep_service import PEPService
     from src.modules.consultation.infrastructure.memory_signed_cache import (
         MemorySignedCache,
     )
 
-    pdf_generator: Any = overrides.get("pdf_generator", AsyncMock())
-    signer: Any = overrides.get("signer", AsyncMock())
-    storage: Any = overrides.get("storage", AsyncMock())
+    from tests.doubles import (
+        FakeDocumentDirectory,
+        FakeICPBrasilSigner,
+        FakeMemoryStorage,
+        FakePDFGenerator,
+    )
+
+    pdf_generator: Any = overrides.get("pdf_generator", FakePDFGenerator())
+    signer: Any = overrides.get("signer", FakeICPBrasilSigner())
+    storage: Any = overrides.get("storage", FakeMemoryStorage())
     cache: Any = overrides.get("cache", MemorySignedCache())
-    atendimento_reader: Any = overrides.get("atendimento_reader")
-    if atendimento_reader is None:
-        if isinstance(session, AsyncMock):
-            atendimento_reader = AsyncMock()
-            atendimento_reader.obter_resumo.return_value = None
-        else:
-            from src.modules.consultation.composition import (
-                QueueStoreAtendimentoReaderAdapter,
-            )
-            from src.modules.queue.composition import build_fila_service_for_session
-
-            queue_store: Any = build_fila_service_for_session(session=session)
-            atendimento_reader = QueueStoreAtendimentoReaderAdapter(queue_store)
-
-    audit_trail: Any = overrides.get("audit_trail")
-    producao_port: Any = overrides.get("producao_port")
-    liveness_verifier: Any = overrides.get("liveness_verifier")
-    documento_service: Any = overrides.get("documento_service")
-    if documento_service is None:
-        directory: Any = overrides.get("directory")
-        documento_service = DocumentoService(
-            session=session,
-            pdf_generator=pdf_generator,
-            signer=signer,
-            storage=storage,
-            cache=cache,
-            atendimento_reader=atendimento_reader,
-            directory=directory,
-            audit_trail=audit_trail,
-            liveness_verifier=liveness_verifier,
-        )
-    evolucao_service: Any = overrides.get("evolucao_service")
-    if evolucao_service is None:
-        evolucao_service = EvolucaoService(
-            session=session,
-            reader=atendimento_reader,
-            audit_trail=audit_trail,
-        )
-    return PEPService(
+    directory: Any = overrides.get("directory")
+    if directory is None and "directory" not in overrides:
+        directory = FakeDocumentDirectory()
+    atendimento_reader = _resolve_consultation_reader(
+        session, overrides.get("atendimento_reader")
+    )
+    pdf_compiler: Any = overrides.get("pdf_compiler") or ClinicalPdfCompiler(
+        session=session,
+        pdf_generator=pdf_generator,
+        storage=storage,
+        directory=directory,
+    )
+    return DocumentoService(
         session=session,
         pdf_generator=pdf_generator,
         signer=signer,
         storage=storage,
-        documento_service=documento_service,
+        cache=cache,
         atendimento_reader=atendimento_reader,
-        evolucao_service=evolucao_service,
-        audit_trail=audit_trail,
-        producao_port=producao_port,
+        directory=directory,
+        audit_trail=overrides.get("audit_trail"),
+        liveness_verifier=overrides.get("liveness_verifier"),
+        pdf_compiler=pdf_compiler,
+    )
+
+
+def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
+    """Build deep PEPService with ClinicalPdfCompiler and named fakes."""
+    from src.modules.consultation.application.services.clinical_pdf_compiler import (
+        ClinicalPdfCompiler,
+    )
+    from src.modules.consultation.application.services.pep_service import PEPService
+
+    from tests.doubles import (
+        FakeDocumentDirectory,
+        FakeMemoryStorage,
+        FakePDFGenerator,
+    )
+
+    pdf_generator: Any = overrides.get("pdf_generator", FakePDFGenerator())
+    storage: Any = overrides.get("storage", FakeMemoryStorage())
+    directory: Any = overrides.get("directory")
+    if directory is None and "directory" not in overrides:
+        directory = FakeDocumentDirectory()
+    atendimento_reader = _resolve_consultation_reader(
+        session, overrides.get("atendimento_reader")
+    )
+    pdf_compiler: Any = overrides.get("pdf_compiler") or ClinicalPdfCompiler(
+        session=session,
+        pdf_generator=pdf_generator,
+        storage=storage,
+        directory=directory,
+    )
+    return PEPService(
+        session=session,
+        pdf_compiler=pdf_compiler,
+        atendimento_reader=atendimento_reader,
+        audit_trail=overrides.get("audit_trail"),
+        producao_port=overrides.get("producao_port"),
     )
 
 

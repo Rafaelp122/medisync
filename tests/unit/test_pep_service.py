@@ -1,261 +1,252 @@
-"""Unit tests for PEPService: single facade, compilar_pdf, assinar_documento."""
+"""Unit tests for deep PEPService: SOAP, ClinicalPdfCompiler and single commit."""
 
 import logging
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from typing import TYPE_CHECKING, Any, cast
+from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
-    DocumentoAssinadoResult,
     FinalizarConsultaCommand,
     HistoricoAtendimentoItemDTO,
     PacienteDocumentoItemDTO,
     RegistrarEvolucaoSOAPCommand,
 )
+from src.modules.consultation.application.policies.clinical_access_policy import (
+    ClinicalAccessPolicy,
+)
 from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoHistoricoDTO,
     AtendimentoReaderPort,
     AtendimentoResumoDTO,
     HistoricoAtendimentoReaderPort,
     is_atendimento_terminal,
 )
-from src.modules.consultation.application.ports.icp_brasil_signer_port import (
-    DoctorCertificateCredentials,
-    ICPBrasilSignerPort,
+from src.modules.consultation.application.ports.producao_ambulatorial_port import (
+    ProducaoAmbulatorialPort,
 )
-from src.modules.consultation.application.ports.pdf_generator_port import (
-    PDFGeneratorPort,
-)
-from src.modules.consultation.application.ports.storage_port import StoragePort
-from src.modules.consultation.application.services.documento_service import (
-    DocumentoService,
-)
-from src.modules.consultation.application.services.evolucao_service import (
-    EvolucaoService,
+from src.modules.consultation.application.services.clinical_pdf_compiler import (
+    ClinicalPdfCompiler,
 )
 from src.modules.consultation.application.services.pep_service import PEPService
-from src.modules.consultation.composition import build_pep_service_for_session
-from src.modules.consultation.domain.models import EvolucaoClinica
-from src.modules.consultation.infrastructure.memory_signed_cache import (
-    MemorySignedCache,
+from src.modules.consultation.composition import (
+    QueueStoreAtendimentoReaderAdapter,
+    build_pep_service_for_session,
 )
+from src.modules.consultation.domain.exceptions import (
+    ConsultaFinalizadaError,
+    ConsultaInvalidaError,
+    DocumentoClinicoNaoEncontradoError,
+    EvolucaoNaoEncontradaError,
+)
+from src.modules.consultation.domain.models import (
+    DocumentoClinico,
+    EvolucaoClinica,
+    TipoDocumentoClinico,
+)
+from src.modules.queue.application.ports.queue_store_port import AtendimentoSnapshotDTO
 
 from tests.doubles import (
     FakeAsyncSession,
     FakeAtendimentoReader,
-    FakeICPBrasilSigner,
+    FakeAuditTrail,
+    FakeDocumentDirectory,
     FakeMemoryStorage,
     FakePDFGenerator,
     FakeProducaoAmbulatorialPort,
     FakeResult,
 )
 
-
-@pytest.fixture
-def mock_session() -> AsyncMock:
-    return AsyncMock(spec=AsyncSession)
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
-@pytest.fixture
-def mock_pdf_generator() -> MagicMock:
-    return MagicMock(spec=PDFGeneratorPort)
-
-
-@pytest.fixture
-def mock_signer() -> AsyncMock:
-    return AsyncMock(spec=ICPBrasilSignerPort)
-
-
-@pytest.fixture
-def mock_storage() -> AsyncMock:
-    return AsyncMock(spec=StoragePort)
-
-
-@pytest.fixture
-def mock_documento_service() -> AsyncMock:
-    return AsyncMock(spec=DocumentoService)
-
-
-@pytest.fixture
-def mock_atendimento_reader() -> AsyncMock:
-    reader = AsyncMock(spec=AtendimentoReaderPort)
-    reader.obter_resumo.return_value = None
-    return reader
-
-
-@pytest.fixture
-def mock_evolucao_service() -> AsyncMock:
-    return AsyncMock(spec=EvolucaoService)
-
-
-@pytest.fixture
-def pep_service(
-    mock_session: AsyncMock,
-    mock_pdf_generator: MagicMock,
-    mock_signer: AsyncMock,
-    mock_storage: AsyncMock,
-    mock_documento_service: AsyncMock,
-    mock_atendimento_reader: AsyncMock,
-    mock_evolucao_service: AsyncMock,
+def _build_test_pep_service(
+    session: FakeAsyncSession,
+    *,
+    atendimento_reader: AtendimentoReaderPort | None = None,
+    producao_port: ProducaoAmbulatorialPort | None = None,
+    pdf_generator: FakePDFGenerator | None = None,
+    storage: FakeMemoryStorage | None = None,
+    audit_trail: FakeAuditTrail | None = None,
 ) -> PEPService:
+    typed_session = cast("AsyncSession", session)
+    compiler = ClinicalPdfCompiler(
+        session=typed_session,
+        pdf_generator=pdf_generator or FakePDFGenerator(),
+        storage=storage or FakeMemoryStorage(),
+        directory=FakeDocumentDirectory(),
+    )
     return PEPService(
-        session=mock_session,
-        pdf_generator=mock_pdf_generator,
-        signer=mock_signer,
-        storage=mock_storage,
-        documento_service=mock_documento_service,
-        atendimento_reader=mock_atendimento_reader,
-        evolucao_service=mock_evolucao_service,
+        session=typed_session,
+        pdf_compiler=compiler,
+        atendimento_reader=atendimento_reader,
+        audit_trail=audit_trail,
+        producao_port=producao_port,
     )
 
 
 @pytest.mark.asyncio
-async def test_pep_service_compilar_pdf(
-    pep_service: PEPService,
-    mock_documento_service: AsyncMock,
-) -> None:
-    """compilar_pdf delegates compilation to internal documento_service."""
-    doc_id = uuid4()
-    mock_documento_service.compilar_pdf.return_value = b"%PDF-test-bytes%"
+async def test_pep_service_compilar_pdf_e_bloqueio_idor() -> None:
+    """compilar_pdf enforces atendimento_id ownership via ClinicalPdfCompiler."""
+    atend_a = uuid7()
+    atend_b = uuid7()
+    med_id = uuid7()
+    doc_id = uuid7()
+    doc = DocumentoClinico(
+        id=doc_id,
+        atendimento_id=atend_a,
+        medico_id=med_id,
+        tipo_documento=TipoDocumentoClinico.RECEITA_SIMPLES,
+        chave_s3=f"consultations/{atend_a}/documents/{doc_id}.pdf",
+    )
+    storage = FakeMemoryStorage()
+    pdf_gen = FakePDFGenerator(content=b"%PDF-compiled-real%")
+    session = FakeAsyncSession(results=[FakeResult(doc), FakeResult(None)])
+    svc = _build_test_pep_service(session, pdf_generator=pdf_gen, storage=storage)
 
-    pdf_bytes = await pep_service.compilar_pdf(doc_id)
+    pdf_bytes = await svc.compilar_pdf(doc_id, atendimento_id=atend_a)
+    assert pdf_bytes == b"%PDF-compiled-real%"
 
-    assert pdf_bytes == b"%PDF-test-bytes%"
-    mock_documento_service.compilar_pdf.assert_awaited_once_with(doc_id)
+    # Mismatch atendimento_id raises 404 (IDOR protection)
+    session_idor = FakeAsyncSession(results=[FakeResult(doc)])
+    svc_idor = _build_test_pep_service(
+        session_idor, pdf_generator=pdf_gen, storage=storage
+    )
+    with pytest.raises(DocumentoClinicoNaoEncontradoError):
+        await svc_idor.compilar_pdf(doc_id, atendimento_id=atend_b)
 
 
 @pytest.mark.asyncio
-async def test_pep_service_assinar_documento(
-    pep_service: PEPService,
-    mock_documento_service: AsyncMock,
-) -> None:
-    """assinar_documento delegates ICP-Brasil signing to internal documento_service."""
-    doc_id = uuid4()
-    atend_id = uuid4()
-    creds = DoctorCertificateCredentials(token="tok-123", provider="fake")
-
-    expected_result = DocumentoAssinadoResult(
-        documento_id=doc_id,
-        tipo_documento="RECEITA_SIMPLES",
-        sha256_hash="a" * 64,
-        assinado_em=datetime.now(UTC),
-        tamanho_bytes=1024,
+async def test_pep_service_salvar_e_obter_evolucao_absorvidos() -> None:
+    """PEPService persists and loads EvolucaoClinica without EvolucaoService."""
+    atend_id = uuid7()
+    med_id = uuid7()
+    session = FakeAsyncSession(results=[FakeResult(None)])
+    reader = FakeAtendimentoReader(
+        resumo=AtendimentoResumoDTO(
+            atendimento_id=atend_id,
+            medico_id=med_id,
+            status="EM_ATENDIMENTO",
+            tcle_hash="a" * 64,
+            is_terminal=False,
+        )
     )
-    mock_documento_service.assinar.return_value = expected_result
-
-    result = await pep_service.assinar_documento(
-        documento_id=doc_id,
-        atendimento_id=atend_id,
-        credenciais=creds,
-    )
-
-    assert result == expected_result
-    mock_documento_service.assinar.assert_awaited_once_with(
-        documento_id=doc_id,
-        atendimento_id=atend_id,
-        credenciais=creds,
-    )
-
-
-@pytest.mark.asyncio
-async def test_pep_service_salvar_e_obter_evolucao(
-    pep_service: PEPService,
-    mock_evolucao_service: AsyncMock,
-) -> None:
-    """salvar_evolucao_soap and obter_evolucao delegate to evolucao_service."""
-    atend_id = uuid4()
+    svc = _build_test_pep_service(session, atendimento_reader=reader)
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atend_id,
-        medico_id=uuid4(),
+        medico_id=med_id,
         anamnese="Paciente com febre",
         conduta="Prescrito paracetamol",
+        codigo_sigtap="03.01.01.004-8",
     )
-    mock_evolucao = MagicMock(spec=EvolucaoClinica)
-    mock_evolucao_service.salvar_evolucao_soap.return_value = mock_evolucao
-    mock_evolucao_service.obter_evolucao.return_value = mock_evolucao
 
-    saved = await pep_service.salvar_evolucao_soap(cmd)
-    assert saved == mock_evolucao
-    mock_evolucao_service.salvar_evolucao_soap.assert_awaited_once_with(cmd)
+    saved = await svc.salvar_evolucao_soap(cmd)
+    assert saved.atendimento_id == atend_id
+    assert saved.codigo_sigtap == "03.01.01.004-8"
+    assert session.commits == 1
 
-    retrieved = await pep_service.obter_evolucao(atend_id)
-    assert retrieved == mock_evolucao
-    mock_evolucao_service.obter_evolucao.assert_awaited_once_with(atend_id)
+    # Updating with blank codigo_sigtap preserves existing code (Lean fix)
+    session_update = FakeAsyncSession(results=[FakeResult(saved)])
+    svc_update = _build_test_pep_service(session_update, atendimento_reader=reader)
+    updated = await svc_update.salvar_evolucao_soap(
+        RegistrarEvolucaoSOAPCommand(
+            atendimento_id=atend_id,
+            medico_id=med_id,
+            anamnese="Febre controlada",
+            conduta="Manter hidratacao",
+            codigo_sigtap="   ",
+        )
+    )
+    assert updated.codigo_sigtap == "03.01.01.004-8"
+
+    session_get = FakeAsyncSession(results=[FakeResult(saved)])
+    svc_get = _build_test_pep_service(session_get, atendimento_reader=reader)
+    retrieved = await svc_get.obter_evolucao(atend_id)
+    assert retrieved.id == saved.id
+
+    session_missing = FakeAsyncSession(results=[FakeResult(None)])
+    svc_missing = _build_test_pep_service(session_missing)
+    with pytest.raises(EvolucaoNaoEncontradaError):
+        await svc_missing.obter_evolucao(atend_id)
 
 
 @pytest.mark.asyncio
-async def test_pep_service_unified_is_terminal(
-    pep_service: PEPService,
-    mock_atendimento_reader: AsyncMock,
-) -> None:
-    """_is_terminal checks terminal state via unified reader."""
-    atend_id = uuid4()
-
-    # Terminal state
-    mock_atendimento_reader.obter_resumo.return_value = AtendimentoResumoDTO(
-        atendimento_id=atend_id,
-        medico_id=uuid4(),
-        status="CONCLUIDO",
-        tcle_hash="x" * 64,
-        is_terminal=True,
+async def test_pep_service_salvar_bloqueia_quando_atendimento_terminal() -> None:
+    """Ported from test_evolucao_service: terminal attendance blocks SOAP edits."""
+    atend_id = uuid7()
+    med_id = uuid7()
+    session = FakeAsyncSession(results=[FakeResult(None)])
+    reader = FakeAtendimentoReader(
+        resumo=AtendimentoResumoDTO(
+            atendimento_id=atend_id,
+            medico_id=med_id,
+            status="CONCLUIDO",
+            tcle_hash="a" * 64,
+            is_terminal=True,
+        )
     )
-    assert await pep_service._is_terminal(atend_id) is True  # pyright: ignore[reportPrivateUsage]
-
-    # Non-terminal state
-    mock_atendimento_reader.obter_resumo.return_value = AtendimentoResumoDTO(
+    svc = _build_test_pep_service(session, atendimento_reader=reader)
+    cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atend_id,
-        medico_id=uuid4(),
+        medico_id=med_id,
+        anamnese="a",
+        conduta="c",
+    )
+    with pytest.raises(ConsultaFinalizadaError):
+        await svc.salvar_evolucao_soap(cmd)
+
+
+@pytest.mark.asyncio
+async def test_pep_service_unified_is_terminal() -> None:
+    """_is_terminal checks terminal state via unified reader."""
+    atend_id = uuid7()
+    reader = FakeAtendimentoReader(
+        resumo=AtendimentoResumoDTO(
+            atendimento_id=atend_id,
+            medico_id=uuid7(),
+            status="CONCLUIDO",
+            tcle_hash="x" * 64,
+            is_terminal=True,
+        )
+    )
+    svc = _build_test_pep_service(FakeAsyncSession(), atendimento_reader=reader)
+    assert await svc._is_terminal(atend_id) is True  # pyright: ignore[reportPrivateUsage]
+
+    reader.resumo = AtendimentoResumoDTO(
+        atendimento_id=atend_id,
+        medico_id=uuid7(),
         status="EM_ATENDIMENTO",
         tcle_hash="x" * 64,
         is_terminal=False,
     )
-    assert await pep_service._is_terminal(atend_id) is False  # pyright: ignore[reportPrivateUsage]
+    assert await svc._is_terminal(atend_id) is False  # pyright: ignore[reportPrivateUsage]
 
-    # None state
-    mock_atendimento_reader.obter_resumo.return_value = None
-    assert await pep_service._is_terminal(atend_id) is False  # pyright: ignore[reportPrivateUsage]
+    reader.resumo = None
+    assert await svc._is_terminal(atend_id) is False  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
-async def test_is_atendimento_terminal_helper_handles_none_reader() -> None:
+async def test_is_atendimento_terminal_helper_handles_none_and_error() -> None:
     """is_atendimento_terminal returns False safely if reader is None or raises."""
     assert await is_atendimento_terminal(None, uuid4()) is False
 
-    failing_reader = AsyncMock(spec=AtendimentoReaderPort)
-    failing_reader.obter_resumo.side_effect = RuntimeError("database down")
+    failing_reader = FakeAtendimentoReader(error_obter_resumo=RuntimeError("db down"))
     assert await is_atendimento_terminal(failing_reader, uuid4()) is False
 
 
-def test_pep_service_defaults_evolucao_service(
-    mock_session: AsyncMock,
-    mock_pdf_generator: MagicMock,
-    mock_signer: AsyncMock,
-    mock_storage: AsyncMock,
-    mock_documento_service: AsyncMock,
-) -> None:
-    """PEPService constructs an internal EvolucaoService when none is given."""
-    svc = PEPService(
-        session=mock_session,
-        pdf_generator=mock_pdf_generator,
-        signer=mock_signer,
-        storage=mock_storage,
-        documento_service=mock_documento_service,
-        atendimento_reader=None,
-        evolucao_service=None,
-    )
-    assert isinstance(svc.evolucao_service, EvolucaoService)
-
-
-def test_build_pep_service_for_session(mock_session: AsyncMock) -> None:
-    """build_pep_service_for_session constructs a valid PEPService instance."""
-    svc = build_pep_service_for_session(session=mock_session)
+def test_build_pep_service_for_session_wires_deep_pep() -> None:
+    """build_pep_service_for_session wires ClinicalPdfCompiler without Signer."""
+    session = cast("AsyncSession", FakeAsyncSession())
+    svc = build_pep_service_for_session(session=session)
     assert isinstance(svc, PEPService)
-    assert isinstance(svc.documento_service, DocumentoService)
-    assert isinstance(svc.evolucao_service, EvolucaoService)
+    assert isinstance(svc._pdf_compiler, ClinicalPdfCompiler)  # pyright: ignore[reportPrivateUsage]
     assert isinstance(svc.atendimento_reader, AtendimentoReaderPort)
     assert isinstance(svc.atendimento_reader, HistoricoAtendimentoReaderPort)
     assert svc.producao_port is not None
+    assert not hasattr(svc, "evolucao_service")
+    assert not hasattr(svc, "documento_service")
 
 
 def test_pep_service_has_no_raw_sql_text_or_cross_module_table_queries() -> None:
@@ -293,7 +284,7 @@ def test_pep_service_has_no_raw_sql_text_or_cross_module_table_queries() -> None
 async def test_pep_service_finalizar_consulta_dispara_consolidacao_ambulatorial() -> (
     None
 ):
-    """finalizar_consulta triggers ambulatory BPA-I consolidation when port given."""
+    """finalizar_consulta triggers ambulatory BPA-I consolidation with 1 commit."""
     atend_id = uuid4()
     medico_id = uuid4()
     paciente_id = uuid4()
@@ -319,12 +310,8 @@ async def test_pep_service_finalizar_consulta_dispara_consolidacao_ambulatorial(
     fake_reader = FakeAtendimentoReader(resumo=resumo)
     fake_producao = FakeProducaoAmbulatorialPort()
 
-    svc = PEPService(
-        session=fake_session,  # pyright: ignore[reportArgumentType]
-        pdf_generator=MagicMock(spec=PDFGeneratorPort),
-        signer=AsyncMock(spec=ICPBrasilSignerPort),
-        storage=AsyncMock(spec=StoragePort),
-        documento_service=AsyncMock(spec=DocumentoService),
+    svc = _build_test_pep_service(
+        fake_session,
         atendimento_reader=fake_reader,
         producao_port=fake_producao,
     )
@@ -339,8 +326,8 @@ async def test_pep_service_finalizar_consulta_dispara_consolidacao_ambulatorial(
     assert result.atendimento_id == atend_id
     assert result.is_finalizado is True
     assert fake_session.commits == 1
+    assert len(fake_reader.obter_resumo_calls) == 1
 
-    # Verificação da consolidação ambulatorial BPA-I (ADR-012, US-11)
     assert len(fake_producao.consolidacoes) == 1
     consolidacao = fake_producao.consolidacoes[0]
     assert consolidacao["atendimento_id"] == atend_id
@@ -350,8 +337,8 @@ async def test_pep_service_finalizar_consulta_dispara_consolidacao_ambulatorial(
 
 
 @pytest.mark.asyncio
-async def test_pep_service_finalizar_consulta_tolera_falha_na_producao() -> None:
-    """finalizar_consulta completes even if ambulatory consolidation fails."""
+async def test_pep_service_finalizar_consulta_savepoint_rollback() -> None:
+    """Ambulatory failure rolls back savepoint without partial add or commit failure."""
     atend_id = uuid4()
     medico_id = uuid4()
     paciente_id = uuid4()
@@ -375,55 +362,105 @@ async def test_pep_service_finalizar_consulta_tolera_falha_na_producao() -> None
         is_terminal=False,
     )
     fake_reader = FakeAtendimentoReader(resumo=resumo)
-    failing_producao = AsyncMock(spec=FakeProducaoAmbulatorialPort)
-    failing_producao.consolidar_teleconsulta.side_effect = RuntimeError(
-        "BPA-I service error"
-    )
 
-    svc = PEPService(
-        session=fake_session,  # pyright: ignore[reportArgumentType]
-        pdf_generator=MagicMock(spec=PDFGeneratorPort),
-        signer=AsyncMock(spec=ICPBrasilSignerPort),
-        storage=AsyncMock(spec=StoragePort),
-        documento_service=AsyncMock(spec=DocumentoService),
+    class _PartialWriteFailingProducao(ProducaoAmbulatorialPort):
+        async def consolidar_teleconsulta(
+            self,
+            *,
+            atendimento_id: UUID,
+            profissional_id: UUID,
+            paciente_id: UUID,
+            cnes: str | None = None,
+            codigo_sigtap: str = "03.01.01.025-0",
+            carater_atendimento: str = "02",
+        ) -> None:
+            fake_session.add({"partial_bpa": atendimento_id})
+            raise RuntimeError("BPA-I service error")
+
+    svc = _build_test_pep_service(
+        fake_session,
         atendimento_reader=fake_reader,
-        producao_port=failing_producao,
+        producao_port=_PartialWriteFailingProducao(),
     )
 
-    cmd = FinalizarConsultaCommand(
-        atendimento_id=atend_id,
-        medico_id=medico_id,
+    result = await svc.finalizar_consulta(
+        FinalizarConsultaCommand(atendimento_id=atend_id, medico_id=medico_id)
     )
-
-    result = await svc.finalizar_consulta(cmd)
     assert result.is_finalizado is True
+    assert fake_session.savepoint_rollbacks == 1
+    assert fake_session.added == []
     assert fake_session.commits == 1
 
 
-def _build_test_pep_service(
-    session: FakeAsyncSession,
-    atendimento_reader: AtendimentoReaderPort | None = None,
-    producao_port: FakeProducaoAmbulatorialPort | None = None,
-) -> PEPService:
-    pdf_gen = FakePDFGenerator()
-    signer = FakeICPBrasilSigner()
-    storage = FakeMemoryStorage()
-    doc_svc = DocumentoService(
-        session=session,  # pyright: ignore[reportArgumentType]
-        pdf_generator=pdf_gen,
-        signer=signer,
-        storage=storage,
-        cache=MemorySignedCache(),
+@pytest.mark.asyncio
+async def test_clinical_access_plus_finalize_executes_single_queue_store_read() -> None:
+    """Shared QueueStoreAtendimentoReaderAdapter caches resumo across policy and PEP."""
+    atend_id = uuid7()
+    medico_id = uuid7()
+    paciente_id = uuid7()
+    now = datetime.now(UTC)
+
+    snapshot = AtendimentoSnapshotDTO(
+        id=atend_id,
+        paciente_id=paciente_id,
+        medico_id=medico_id,
+        status="EM_ATENDIMENTO",
+        prioridade_clinica=3,
+        tcle_hash="h" * 64,
+        data_entrada_fila=now,
+        criado_em=now,
+        is_terminal=False,
+        chamada_iniciada_em=now,
     )
-    return PEPService(
-        session=session,  # pyright: ignore[reportArgumentType]
-        pdf_generator=pdf_gen,
-        signer=signer,
-        storage=storage,
-        documento_service=doc_svc,
-        atendimento_reader=atendimento_reader,
-        producao_port=producao_port,
+
+    class _CountingQueueStore:
+        def __init__(self) -> None:
+            self.buscar_calls = 0
+
+        async def buscar_atendimento(
+            self, atendimento_id: UUID
+        ) -> AtendimentoSnapshotDTO | None:
+            self.buscar_calls += 1
+            return snapshot if atendimento_id == snapshot.id else None
+
+        async def concluir_atendimento(
+            self, atendimento_id: UUID, *, auto_commit: bool = True
+        ) -> UUID | None:
+            return medico_id
+
+        async def liberar_consulta_ativa_medico(self, medico_id_arg: UUID) -> None:
+            return None
+
+        async def atender_chamada(self, atendimento_id: UUID) -> None:
+            return None
+
+        async def listar_historico_paciente(self, paciente_id_arg: UUID) -> list[Any]:
+            return []
+
+    store = _CountingQueueStore()
+    adapter = QueueStoreAtendimentoReaderAdapter(store)  # pyright: ignore[reportArgumentType]
+
+    resumo_policy = await ClinicalAccessPolicy.validar_acesso_clinico(
+        atendimento_id=atend_id,
+        medico_id=medico_id,
+        reader=adapter,
+        is_mutation=True,
     )
+    assert resumo_policy.atendimento_id == atend_id
+
+    evolucao = EvolucaoClinica(
+        atendimento_id=atend_id,
+        medico_id=medico_id,
+        anamnese="Anamnese",
+        conduta="Conduta",
+        identidade_verificada=True,
+    )
+    fake_session = FakeAsyncSession(results=[FakeResult(evolucao), FakeResult([])])
+    svc = _build_test_pep_service(fake_session, atendimento_reader=adapter)
+    await svc.finalizar_consulta(
+        FinalizarConsultaCommand(atendimento_id=atend_id, medico_id=medico_id)
+    )
+    assert store.buscar_calls == 1
 
 
 @pytest.mark.asyncio
@@ -606,8 +643,6 @@ async def test_pep_warning_on_producao_failure_with_context(
 @pytest.mark.asyncio
 async def test_finalizar_consulta_bloqueia_sem_identidade_verificada_cfm() -> None:
     """CFM 2.314/2022 forbids finalizing consultation without identity verification."""
-    from src.modules.consultation.domain.exceptions import ConsultaInvalidaError
-
     atend_id = uuid4()
     medico_id = uuid4()
     evolucao = EvolucaoClinica(
@@ -631,15 +666,6 @@ async def test_finalizar_consulta_bloqueia_sem_identidade_verificada_cfm() -> No
 @pytest.mark.asyncio
 async def test_pep_service_patient_portal_empty_history_and_uuid7_docs() -> None:
     """Empty patient history skips DB queries and UUIDv7 docs extract criado_em."""
-    from src.core.uuid7 import uuid7
-    from src.modules.consultation.application.ports.atendimento_reader_port import (
-        AtendimentoHistoricoDTO,
-    )
-    from src.modules.consultation.domain.models import (
-        DocumentoClinico,
-        TipoDocumentoClinico,
-    )
-
     paciente_id_val = uuid7()
     medico_id = uuid7()
     atend_id = uuid7()

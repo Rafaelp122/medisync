@@ -23,7 +23,6 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from src.core.config import get_settings
 from src.modules.consultation.application.ports.pdf_generator_port import (
     DocumentoItemPDFDTO,
     DocumentoPDFPayload,
@@ -157,14 +156,11 @@ class ReportLabPDFGenerator(PDFGeneratorPort):
 
     def __init__(
         self,
-        validation_url_prefix: str | None = None,
+        validation_url_prefix: str = "https://medisync.app/validar",
         page_compression: int = 0,
     ) -> None:
         _register_pdfa_fonts()
-        settings = get_settings()
-        self._validation_url_prefix = (
-            validation_url_prefix or settings.DOCUMENTS_VALIDATION_URL_PREFIX
-        ).rstrip("/")
+        self._validation_url_prefix = validation_url_prefix.rstrip("/")
         self._page_compression = page_compression
 
     def gerar_pdf(self, payload: DocumentoPDFPayload) -> bytes:
@@ -384,10 +380,6 @@ class ReportLabPDFGenerator(PDFGeneratorPort):
             org_details.append(f"CNPJ: {payload.organizacao_cnpj}")
         if payload.organizacao_cnes:
             org_details.append(f"CNES: {payload.organizacao_cnes}")
-        if payload.organizacao_endereco:
-            org_details.append(payload.organizacao_endereco)
-        if payload.organizacao_telefone:
-            org_details.append(f"Tel: {payload.organizacao_telefone}")
 
         org_subtitle_str = (
             " • ".join(org_details)
@@ -902,35 +894,3 @@ class ReportLabPDFGenerator(PDFGeneratorPort):
         qr_io.seek(0)
 
         return Image(qr_io, width=54, height=54)
-
-
-class FakePDFGenerator(PDFGeneratorPort):
-    """In-memory stub returning deterministic PDF bytes for lightweight testing."""
-
-    def __init__(
-        self, validation_url_prefix: str = "https://medisync.app/validar"
-    ) -> None:
-        self._validation_url_prefix = validation_url_prefix.rstrip("/")
-        self.last_payload: DocumentoPDFPayload | None = None
-
-    def gerar_pdf(self, payload: DocumentoPDFPayload) -> bytes:
-        """Return synthetic valid PDF/A bytes embedding payload metadata."""
-        self.last_payload = payload
-        validation_url = payload.validation_url or (
-            f"{self._validation_url_prefix}/{payload.documento_id}"
-        )
-
-        # Synthetic minimal valid PDF with XMP pdfaid:part=1 and GTS_PDFA1 marker
-        header = b"%PDF-1.4\n"
-        metadata = (
-            f"% MediSync Fake PDF/A Generator\n"
-            f"% doc_id: {payload.documento_id}\n"
-            f"% validation_url: {validation_url}\n"
-            f"% tipo: {payload.tipo_documento}\n"
-            f"% pdfaid:part=1 pdfaid:conformance=B\n"
-            f"% OutputIntent: GTS_PDFA1 sRGB IEC61966-2.1\n"
-        ).encode()
-        body = b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
-        trailer = b"trailer\n<< /Root 1 0 R >>\n%%EOF\n"
-
-        return header + metadata + body + trailer

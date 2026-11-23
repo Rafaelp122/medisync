@@ -1,11 +1,9 @@
 """Clinical document lifecycle service with canonical storage keys.
 
-Owns emitir/compilar/assinar for DocumentoClinico using the canonical
-``consultations/...`` key builder plus SignedCachePort.
+Owns validar_prescricao/emitir/compilar/assinar for DocumentoClinico using
+ClinicalPdfCompiler and SignedCachePort with DB authoritative fallback.
 """
 
-import asyncio
-import contextlib
 import hashlib
 import hmac
 from datetime import UTC, datetime
@@ -16,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
-from src.core.errors import NotFoundError
 from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
     DocumentoAssinadoResult,
@@ -25,7 +22,7 @@ from src.modules.consultation.application.dtos import (
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoReaderPort,
-    is_atendimento_terminal,
+    AtendimentoResumoDTO,
 )
 from src.modules.consultation.application.ports.document_directory_port import (
     DocumentDirectoryPort,
@@ -40,14 +37,15 @@ from src.modules.consultation.application.ports.liveness_verification_port impor
     LivenessVerificationResultDTO,
 )
 from src.modules.consultation.application.ports.pdf_generator_port import (
-    DocumentoItemPDFDTO,
-    DocumentoPDFPayload,
     PDFGeneratorPort,
 )
 from src.modules.consultation.application.ports.signed_cache_port import (
     SignedCachePort,
 )
 from src.modules.consultation.application.ports.storage_port import StoragePort
+from src.modules.consultation.application.services.clinical_pdf_compiler import (
+    ClinicalPdfCompiler,
+)
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     ConsultaInvalidaError,
@@ -89,6 +87,20 @@ def _is_valid_liveness_hash(value: str) -> bool:
     return len(value) == 64 and all(c in "0123456789abcdefABCDEF" for c in value)
 
 
+def _calcular_duracao_chamada_segundos(
+    chamada_iniciada_em: datetime | None,
+) -> float:
+    """Compute elapsed consultation seconds strictly from call-start timestamp."""
+    if chamada_iniciada_em is None:
+        return 0.0
+    inicio_utc = (
+        chamada_iniciada_em
+        if chamada_iniciada_em.tzinfo is not None
+        else chamada_iniciada_em.replace(tzinfo=UTC)
+    )
+    return max(0.0, (datetime.now(UTC) - inicio_utc).total_seconds())
+
+
 class DocumentoService:
     """Application service owning clinical document emit/compile/sign."""
 
@@ -103,6 +115,7 @@ class DocumentoService:
         directory: DocumentDirectoryPort | None = None,
         audit_trail: AuditTrailPort | None = None,
         liveness_verifier: LivenessVerificationPort | None = None,
+        pdf_compiler: ClinicalPdfCompiler | None = None,
     ) -> None:
         self._session = session
         self._pdf_generator = pdf_generator
@@ -113,6 +126,20 @@ class DocumentoService:
         self._directory = directory
         self._audit_trail = audit_trail
         self._liveness_verifier = liveness_verifier
+        self._pdf_compiler = pdf_compiler or ClinicalPdfCompiler(
+            session=session,
+            pdf_generator=pdf_generator,
+            storage=storage,
+            directory=directory,
+        )
+
+    def validar_prescricao(self, medicamento: str) -> None:
+        """Valida emissão digital de medicamento sob Portaria SVS/MS nº 344/98.
+
+        Rejeita substâncias das Listas A/B que exigem talonário físico.
+        Regras: Portaria 344/98 e docs/explanation/domains/consultation-domain.md.
+        """
+        validar_substancia_permitida_telemedicina(medicamento)
 
     async def solicitar_desafio_liveness(
         self, atendimento_id: UUID
@@ -196,13 +223,11 @@ class DocumentoService:
             },
         )
 
-    async def _requer_liveness_controle_especial(
-        self, tipo_str: str, command: EmitirDocumentoClinicoCommand
+    @staticmethod
+    def _requer_liveness_controle_especial(
+        tipo_str: str, command: EmitirDocumentoClinicoCommand
     ) -> bool:
-        if self._atendimento_reader is not None:
-            resumo = await self._atendimento_reader.obter_resumo(command.atendimento_id)
-            if resumo is not None and not resumo.exige_liveness_controle_especial:
-                return False
+        """Verify whether prescription requires active facial liveness (US-15)."""
         if tipo_str == str(TipoDocumentoClinico.RECEITA_CONTROLE_ESPECIAL_C1):
             return True
         return any(
@@ -266,82 +291,110 @@ class DocumentoService:
         return self._directory
 
     async def is_assinado(self, doc: DocumentoClinico) -> bool:
-        """Verifica se o documento possui assinatura digital ICP-Brasil ativa no cache.
+        """Verifica assinatura ativa em SignedCachePort com fallback no banco.
 
-        Consulta o SignedCachePort para assegurar integridade PAdES sob ADR-006.
+        Evita falsa expiração após TTL de 24h aquecendo o cache no hit em banco.
         Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
         """
-        return await self._cache.is_assinado(doc.id)
+        if await self._cache.is_assinado(doc.id):
+            return True
+        assinado_em_banco = doc.assinado_em is not None and bool(
+            (doc.sha256_hash or "").strip()
+        )
+        if assinado_em_banco:
+            await self._cache.marcar_assinado(doc.id)
+        return assinado_em_banco
 
-    async def _verificar_atendimento_finalizado(self, atendimento_id: UUID) -> bool:
-        """Check whether the underlying attendance reached terminal status in DB."""
-        return await is_atendimento_terminal(self._atendimento_reader, atendimento_id)
+    async def _obter_resumo_atendimento(
+        self, atendimento_id: UUID
+    ) -> AtendimentoResumoDTO | None:
+        if self._atendimento_reader is None:
+            return None
+        return await self._atendimento_reader.obter_resumo(atendimento_id)
+
+    async def _registrar_evento_trava_atestado(
+        self,
+        command: EmitirDocumentoClinicoCommand,
+        duracao_segundos: float,
+        justificativa: str,
+        *,
+        aceita: bool,
+    ) -> None:
+        if self._audit_trail is None:
+            return
+        await self._audit_trail.record_event(
+            tipo_evento="TRAVA_TEMPORAL_ATESTADO_VIOLADA",
+            ator_tipo=AtorTipo.PROFISSIONAL.value,
+            ator_papel=AtorPapel.MEDICO.value,
+            ator_id=command.medico_id,
+            atendimento_id=command.atendimento_id,
+            payload={
+                "duracao_segundos": duracao_segundos,
+                "justificativa": justificativa,
+                "justificativa_aceita": aceita,
+            },
+        )
 
     async def _validar_trava_antifraude_atestado(
-        self, command: EmitirDocumentoClinicoCommand
+        self,
+        command: EmitirDocumentoClinicoCommand,
+        resumo: AtendimentoResumoDTO | None,
     ) -> None:
-        """Aplica piso temporal de 180s sob CFM 2.314/2022 para prevenção de fraudes.
+        """Aplica piso temporal real de 180s (chamada_iniciada_em) sob CFM 2.314/2022.
 
-        Regras: CFM nº 2.314/2022, RN06 e
+        Regras: CFM nº 2.314/2022, RN09 e
         docs/explanation/domains/consultation-domain.md.
         """
-        if self._atendimento_reader is None:
+        if self._atendimento_reader is None or resumo is None:
             return
 
-        resumo = await self._atendimento_reader.obter_resumo(command.atendimento_id)
-        if resumo is None:
-            return
-
-        inicio_raw = resumo.chamada_iniciada_em or resumo.criado_em
-        if inicio_raw is None:
-            return
-
-        inicio_utc = (
-            inicio_raw
-            if inicio_raw.tzinfo is not None
-            else inicio_raw.replace(tzinfo=UTC)
+        duracao_segundos = _calcular_duracao_chamada_segundos(
+            resumo.chamada_iniciada_em
         )
-        now = datetime.now(UTC)
-        duracao_segundos = max(0.0, (now - inicio_utc).total_seconds())
-
         if duracao_segundos >= 180.0:
             return
 
         justificativa = (command.justificativa_tempo_inferior or "").strip()
         if len(justificativa) >= 15:
-            if self._audit_trail is not None:
-                await self._audit_trail.record_event(
-                    tipo_evento="TRAVA_TEMPORAL_ATESTADO_VIOLADA",
-                    ator_tipo=AtorTipo.PROFISSIONAL.value,
-                    ator_papel=AtorPapel.MEDICO.value,
-                    ator_id=command.medico_id,
-                    atendimento_id=command.atendimento_id,
-                    payload={
-                        "duracao_segundos": duracao_segundos,
-                        "justificativa": justificativa,
-                        "justificativa_aceita": True,
-                    },
-                )
+            await self._registrar_evento_trava_atestado(
+                command, duracao_segundos, justificativa, aceita=True
+            )
             return
 
-        if self._audit_trail is not None:
-            await self._audit_trail.record_event(
-                tipo_evento="TRAVA_TEMPORAL_ATESTADO_VIOLADA",
-                ator_tipo=AtorTipo.PROFISSIONAL.value,
-                ator_papel=AtorPapel.MEDICO.value,
-                ator_id=command.medico_id,
-                atendimento_id=command.atendimento_id,
-                payload={
-                    "duracao_segundos": duracao_segundos,
-                    "justificativa": justificativa,
-                    "justificativa_aceita": False,
-                },
-            )
+        await self._registrar_evento_trava_atestado(
+            command, duracao_segundos, justificativa, aceita=False
+        )
         raise TravaAntiFraudeAtestadoError(
             f"Emissão de atestado bloqueada: consulta durou "
-            f"{duracao_segundos:.0f}s (inferior ao piso de 180s) e "
+            f"{duracao_segundos:.0f}s (inferior ao piso de 180s; "
+            f"chamada_iniciada_em={resumo.chamada_iniciada_em!r}) e "
             f"justificativa '{justificativa}' é insuficiente; "
             "esperado mínimo de 15 caracteres circunstanciando a emissão célere."
+        )
+
+    async def _registrar_auditoria_emissao(
+        self,
+        doc: DocumentoClinico,
+        command: EmitirDocumentoClinicoCommand,
+        liveness_excecao: str | None,
+    ) -> None:
+        if self._audit_trail is None:
+            return
+        audit_payload: dict[str, object] = {
+            "documento_id": str(doc.id),
+            "tipo_documento": str(doc.tipo_documento),
+            "itens_qtd": len(command.itens),
+        }
+        if liveness_excecao is not None:
+            audit_payload["excecao_liveness"] = True
+            audit_payload["justificativa_excecao_liveness"] = liveness_excecao
+        await self._audit_trail.record_event(
+            tipo_evento="DOCUMENTO_CLINICO_EMITIDO",
+            ator_tipo=AtorTipo.PROFISSIONAL.value,
+            ator_papel=AtorPapel.MEDICO.value,
+            ator_id=command.medico_id,
+            atendimento_id=command.atendimento_id,
+            payload=audit_payload,
         )
 
     async def emitir_documento(
@@ -349,8 +402,8 @@ class DocumentoService:
     ) -> DocumentoClinico:
         """Emite documento clínico validando substâncias da Portaria 344/98.
 
-        Bloqueia receitas proibidas na telemedicina e valida estado terminal.
-        Regras: Portaria 344/98 e ADR-006.
+        Bloqueia receitas proibidas, aplica trava RN09 e valida estado terminal.
+        Regras: Portaria 344/98, RN09 e ADR-006.
         """
         tipo_str = str(command.tipo_documento).strip().upper()
         if tipo_str in _PROHIBITED_DOC_TYPES:
@@ -362,24 +415,29 @@ class DocumentoService:
                 f"(tipos restritos: {sorted(_PROHIBITED_DOC_TYPES)})."
             )
 
-        if tipo_str in {TipoDocumentoClinico.ATESTADO_MEDICO, "ATESTADO"}:
-            await self._validar_trava_antifraude_atestado(command)
+        resumo = await self._obter_resumo_atendimento(command.atendimento_id)
+        if tipo_str == TipoDocumentoClinico.ATESTADO_MEDICO:
+            await self._validar_trava_antifraude_atestado(command, resumo)
 
         liveness_hash: str | None = None
         liveness_excecao: str | None = None
-        if await self._requer_liveness_controle_especial(tipo_str, command):
+        if self._requer_liveness_controle_especial(tipo_str, command):
             (
                 liveness_hash,
                 liveness_excecao,
             ) = await self._validar_prova_de_vida_controle_especial(command)
 
-        # Check if consultation is already finalized
         stmt = select(EvolucaoClinica).where(
             EvolucaoClinica.atendimento_id == command.atendimento_id
         )
         res = await self._session.execute(stmt)
         evolucao = res.scalar_one_or_none()
-        is_term = await self._verificar_atendimento_finalizado(command.atendimento_id)
+        is_term = bool(
+            resumo is not None
+            and (
+                resumo.is_terminal or resumo.status.strip().upper() in _STATUS_TERMINAIS
+            )
+        )
 
         if (evolucao is not None and evolucao.is_finalizado) or is_term:
             if evolucao is not None:
@@ -402,17 +460,29 @@ class DocumentoService:
                 "antes da emissão de documentos clínicos."
             )
 
-        # Pre-validate all items before persistence
-        for item in command.itens:
-            validar_substancia_permitida_telemedicina(item.medicamento)
-
         new_doc_id = uuid7()
+        # Valida cada item uma única vez via DocumentoItem.__init__ (Portaria 344/98)
+        item_entities = [
+            DocumentoItem(
+                documento_id=new_doc_id,
+                medicamento=item_dto.medicamento,
+                dosagem=item_dto.dosagem,
+                posologia=item_dto.posologia,
+                duracao=item_dto.duracao,
+                controle_especial=(
+                    item_dto.controle_especial
+                    or tipo_str
+                    == str(TipoDocumentoClinico.RECEITA_CONTROLE_ESPECIAL_C1)
+                ),
+            )
+            for item_dto in command.itens
+        ]
+
         chave_s3 = (
             command.chave_s3.strip()
             if command.chave_s3 and command.chave_s3.strip()
             else build_signed_document_key(command.atendimento_id, new_doc_id)
         )
-
         sha256_hash = (
             command.sha256_hash.strip().lower()
             if command.sha256_hash and command.sha256_hash.strip()
@@ -430,155 +500,30 @@ class DocumentoService:
             justificativa_excecao_liveness=liveness_excecao,
             id=new_doc_id,
         )
-        self._session.add(doc)
-        await self._session.flush()
-
-        for item_dto in command.itens:
-            is_c1 = (
-                item_dto.controle_especial
-                or doc.tipo_documento
-                == TipoDocumentoClinico.RECEITA_CONTROLE_ESPECIAL_C1
-            )
-            item_entity = DocumentoItem(
-                documento_id=doc.id,
-                medicamento=item_dto.medicamento,
-                dosagem=item_dto.dosagem,
-                posologia=item_dto.posologia,
-                duracao=item_dto.duracao,
-                controle_especial=is_c1,
-            )
+        for item_entity in item_entities:
             doc.adicionar_item(item_entity)
-            self._session.add(item_entity)
 
+        self._session.add(doc)
+        self._session.add_all(item_entities)
         await self._session.flush()
-        if self._audit_trail is not None:
-            audit_payload: dict[str, object] = {
-                "documento_id": str(doc.id),
-                "tipo_documento": str(doc.tipo_documento),
-                "itens_qtd": len(command.itens),
-            }
-            if liveness_excecao is not None:
-                audit_payload["excecao_liveness"] = True
-                audit_payload["justificativa_excecao_liveness"] = liveness_excecao
-            await self._audit_trail.record_event(
-                tipo_evento="DOCUMENTO_CLINICO_EMITIDO",
-                ator_tipo=AtorTipo.PROFISSIONAL.value,
-                ator_papel=AtorPapel.MEDICO.value,
-                ator_id=command.medico_id,
-                atendimento_id=command.atendimento_id,
-                payload=audit_payload,
-            )
+        await self._registrar_auditoria_emissao(doc, command, liveness_excecao)
         await self._session.commit()
-        # Reload with itens eagerly (selectin) so Pydantic model_validate
-        # stays sync-safe; expire_on_commit=False keeps columns, no refresh.
-        reload_stmt = (
-            select(DocumentoClinico)
-            .where(DocumentoClinico.id == doc.id)
-            .options(selectinload(DocumentoClinico.itens))
-        )
-        reload_res = await self._session.execute(reload_stmt)
-        reloaded = reload_res.scalar_one()
-        return reloaded
+        return doc
 
-    async def compilar_pdf(self, documento_id: UUID) -> bytes:
-        """Compila binário PDF/A-1b com QR Code de validação pública ITI.
+    async def compilar_pdf(
+        self,
+        documento_id: UUID,
+        *,
+        atendimento_id: UUID | None = None,
+    ) -> bytes:
+        """Compila binário PDF/A-1b com QR Code ITI via ClinicalPdfCompiler.
 
-        Garante conformidade com PAdES e padrões de telemedicina do CFM nº 2.314/2022.
+        Garante conformidade com PAdES, CFM nº 2.314/2022 e isolamento Anti-IDOR.
         Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
         """
-        stmt = (
-            select(DocumentoClinico)
-            .where(DocumentoClinico.id == documento_id)
-            .options(selectinload(DocumentoClinico.itens))
+        return await self._pdf_compiler.compilar(
+            documento_id, atendimento_id=atendimento_id
         )
-        res = await self._session.execute(stmt)
-        doc = res.scalar_one_or_none()
-        if doc is None:
-            raise DocumentoClinicoNaoEncontradoError(
-                f"Documento clínico '{documento_id}' não encontrado."
-            )
-
-        if doc.chave_s3:
-            with contextlib.suppress(Exception):
-                return await self._storage.obter_documento(doc.chave_s3)
-
-        org_nome = "MediSync Pronto-Atendimento Virtual"
-        org_cnpj: str | None = None
-        org_cnes: str | None = None
-        org_end: str | None = None
-        org_tel: str | None = None
-
-        medico_nome = "Médico Assistente"
-        medico_crm = "00000"
-        medico_crm_uf = "BR"
-        medico_rqe: str | None = None
-
-        paciente_nome = "Paciente"
-        paciente_cpf = "000.000.000-00"
-        paciente_nasc: str | None = None
-        paciente_end: str | None = None
-
-        if self._directory is not None:
-            with contextlib.suppress(Exception):
-                dir_data = await self._directory.obter_dados_verificacao(
-                    medico_id=doc.medico_id,
-                    atendimento_id=doc.atendimento_id,
-                )
-                org_nome = dir_data.organizacao_nome
-                org_cnpj = dir_data.organizacao_cnpj
-                org_cnes = dir_data.cnes
-                medico_nome = dir_data.medico_nome
-                medico_crm = dir_data.medico_crm
-                medico_crm_uf = dir_data.medico_crm_uf
-                paciente_nome = dir_data.paciente_nome
-                paciente_cpf = dir_data.paciente_cpf
-                paciente_nasc = dir_data.paciente_data_nascimento
-                paciente_end = dir_data.paciente_endereco
-
-        cid10: str | None = None
-        with contextlib.suppress(Exception):
-            ev_stmt = select(EvolucaoClinica.cid10_principal).where(
-                EvolucaoClinica.atendimento_id == doc.atendimento_id
-            )
-            ev_res = await self._session.execute(ev_stmt)
-            cid10_val = ev_res.scalar_one_or_none()
-            if cid10_val:
-                cid10 = str(cid10_val)
-
-        itens_pdf = [
-            DocumentoItemPDFDTO(
-                medicamento=it.medicamento,
-                dosagem=it.dosagem,
-                posologia=it.posologia,
-                duracao=it.duracao,
-                controle_especial=it.controle_especial,
-            )
-            for it in doc.itens
-        ]
-
-        payload = DocumentoPDFPayload(
-            documento_id=doc.id,
-            tipo_documento=doc.tipo_documento,
-            data_emissao=doc.assinado_em or datetime.now(UTC),
-            organizacao_nome=org_nome,
-            organizacao_cnpj=org_cnpj,
-            organizacao_cnes=org_cnes,
-            organizacao_endereco=org_end,
-            organizacao_telefone=org_tel,
-            medico_nome=medico_nome,
-            medico_crm=medico_crm,
-            medico_crm_uf=medico_crm_uf,
-            medico_rqe=medico_rqe,
-            paciente_nome=paciente_nome,
-            paciente_cpf=paciente_cpf,
-            paciente_data_nascimento=paciente_nasc,
-            paciente_endereco=paciente_end,
-            itens=itens_pdf,
-            cid10=cid10,
-            sha256_hash=doc.sha256_hash,
-        )
-
-        return await asyncio.to_thread(self._pdf_generator.gerar_pdf, payload)
 
     async def assinar(
         self,
@@ -599,15 +544,23 @@ class DocumentoService:
         res = await self._session.execute(stmt)
         doc = res.scalar_one_or_none()
         if doc is None:
-            raise NotFoundError(f"Documento clínico '{documento_id}' não encontrado.")
+            raise DocumentoClinicoNaoEncontradoError(
+                f"Documento clínico '{documento_id}' não encontrado."
+            )
 
         if doc.atendimento_id != atendimento_id:
-            raise NotFoundError(
+            raise DocumentoClinicoNaoEncontradoError(
                 f"Documento '{documento_id}' não pertence ao "
                 f"atendimento '{atendimento_id}'."
             )
 
-        is_term = await self._verificar_atendimento_finalizado(doc.atendimento_id)
+        resumo = await self._obter_resumo_atendimento(doc.atendimento_id)
+        is_term = bool(
+            resumo is not None
+            and (
+                resumo.is_terminal or resumo.status.strip().upper() in _STATUS_TERMINAIS
+            )
+        )
         if doc.is_finalizado or is_term:
             status_desc = "terminal" if is_term else "documento_finalizado"
             raise ConsultaFinalizadaError(
@@ -615,7 +568,9 @@ class DocumentoService:
                 f"consulta já finalizada (status atual: '{status_desc}')."
             )
 
-        pdf_bytes = await self.compilar_pdf(documento_id)
+        pdf_bytes = await self.compilar_pdf(
+            documento_id, atendimento_id=doc.atendimento_id
+        )
         signed_bytes = await self._signer.assinar_pdf(pdf_bytes, credenciais)
 
         new_hash = hashlib.sha256(signed_bytes).hexdigest()

@@ -52,29 +52,6 @@ class LiveKitTokenResult:
 
 
 @dataclass(frozen=True)
-class LiveKitTokenRequestDTO:
-    """Request DTO to generate a LiveKit room access token."""
-
-    atendimento_id: UUID
-    participant_id: UUID
-    role: Literal["medico", "paciente"]
-    participant_name: str | None = None
-    is_publisher: bool = True
-    ttl_seconds: int = 3600
-
-
-@dataclass(frozen=True)
-class LiveKitTokenResponseDTO:
-    """Response DTO containing LiveKit access token and connection metadata."""
-
-    token: str
-    room_name: str
-    participant_identity: str
-    server_url: str
-    expires_in: int
-
-
-@dataclass(frozen=True)
 class RegistrarEvolucaoSOAPCommand:
     """Command to record or update medical SOAP clinical notes."""
 

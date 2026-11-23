@@ -58,7 +58,7 @@ O schema da trilha de auditoria é normalizado conforme o modelo `AuditEvent`:
 ### Especificação dos Payloads Forenses Críticos
 
 #### `IA_DECISAO_MEDICA_REGISTRADA` (CFM nº 2.454/2026, RN08)
-Registrado em `src/modules/consultation/application/services/evolucao_service.py` no método `salvar_evolucao_soap`:
+Registrado em `src/modules/consultation/application/services/pep_service.py` no método `salvar_evolucao_soap`:
 - **Ator**: `PROFISSIONAL` / `MEDICO` (`ator_id` = UUID do médico plantonista).
 - **Atendimento**: `atendimento_id` = UUID do atendimento ativo.
 - **Payload (`dict[str, Any]` em JSONB)**:
@@ -83,7 +83,6 @@ Registrado em `src/modules/consultation/application/services/documento_service.p
 - Impl: `src/core/audit/models.py:AuditEvent`
 - Impl: `src/modules/queue/application/services/fila_service.py:FilaService`
 - Impl: `src/modules/consultation/application/services/pep_service.py:PEPService`
-- Impl: `src/modules/consultation/application/services/evolucao_service.py:EvolucaoService`
 - Impl: `src/modules/consultation/application/services/documento_service.py:DocumentoService`
 - Impl: `src/modules/auth/application/services/patient_webauthn_service.py:PatientWebAuthnService`
 - Prova viva: `tests/integration/test_clinical_audit_integration.py:test_pep_workflow_full_audit_trail_reconstruction`
