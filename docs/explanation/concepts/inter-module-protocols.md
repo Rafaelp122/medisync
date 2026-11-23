@@ -43,14 +43,14 @@ confirmado via busca de imports no código.
 | `src/modules/auth/application/ports/doctor_presence_port.py` | auth | `src/modules/auth/application/services/auth_service.py`, `src/modules/auth/composition.py` |
 | `src/modules/ambulatory/application/ports/eligibility_provider.py` | ambulatory | `src/modules/ambulatory/application/services/eligibility_service.py`, `src/modules/ambulatory/composition.py` |
 | `src/modules/ambulatory/application/ports/eligibility_notifier.py` | ambulatory | `src/modules/ambulatory/application/services/eligibility_service.py`, `src/modules/ambulatory/composition.py` |
-| `src/modules/consultation/application/ports/atendimento_reader_port.py` | consultation | `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/application/services/evolucao_service.py`, `src/modules/consultation/application/policies/clinical_access_policy.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/atendimento_reader_sql.py` |
+| `src/modules/consultation/application/ports/atendimento_reader_port.py` | consultation | `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/policies/clinical_access_policy.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/atendimento_reader_sql.py` |
 | `src/modules/consultation/application/ports/producao_ambulatorial_port.py` | consultation | `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/composition.py` |
 | `src/modules/consultation/application/ports/signed_cache_port.py` | consultation | `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/services/document_validation_service.py`, `src/modules/consultation/composition.py` |
-| `src/modules/consultation/application/ports/pdf_generator_port.py` | consultation | `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/pdf_generator.py` |
-| `src/modules/consultation/application/ports/document_directory_port.py` | consultation | `src/modules/consultation/application/services/document_validation_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/document_directory_sql.py` |
-| `src/modules/consultation/application/ports/icp_brasil_signer_port.py` | consultation | `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/pyhanko_signer.py`, `src/modules/consultation/presentation/routers/consultation_router.py` |
+| `src/modules/consultation/application/ports/pdf_generator_port.py` | consultation | `src/modules/consultation/application/services/clinical_pdf_compiler.py`, `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/pdf_generator.py` |
+| `src/modules/consultation/application/ports/document_directory_port.py` | consultation | `src/modules/consultation/application/services/clinical_pdf_compiler.py`, `src/modules/consultation/application/services/document_validation_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/document_directory_sql.py` |
+| `src/modules/consultation/application/ports/icp_brasil_signer_port.py` | consultation | `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/pyhanko_signer.py`, `src/modules/consultation/presentation/routers/consultation_router.py` |
 | `src/modules/consultation/application/ports/livekit_media_port.py` | consultation | `src/modules/consultation/composition.py`, `src/modules/consultation/application/services/teleconsulta_service.py` |
-| `src/modules/consultation/application/ports/storage_port.py` | consultation | `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/services/pep_service.py`, `src/modules/consultation/application/services/document_validation_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/s3_storage.py` |
+| `src/modules/consultation/application/ports/storage_port.py` | consultation | `src/modules/consultation/application/services/clinical_pdf_compiler.py`, `src/modules/consultation/application/services/documento_service.py`, `src/modules/consultation/application/services/document_validation_service.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/s3_storage.py` |
 | `src/modules/consultation/application/ports/validation_rate_limiter_port.py` | consultation | `src/modules/consultation/presentation/dependencies.py`, `src/modules/consultation/composition.py`, `src/modules/consultation/infrastructure/valkey_validation_rate_limiter.py` |
 | `src/modules/triage/application/ports/emergency_notifier.py` | triage | `src/modules/triage/application/services/triage_service.py`, `src/modules/triage/composition.py`, `src/modules/triage/infrastructure/adapters/samu_emergency_notifier_adapter.py` |
 | `src/modules/auth/application/ports/auth_rate_limiter_port.py` | auth | `src/modules/auth/application/services/auth_service.py`, `src/modules/auth/composition.py`, `src/modules/auth/infrastructure/valkey_rate_limiter.py` |
@@ -73,10 +73,10 @@ dentro da fila. Mesmo vale para consulta, triagem e auth:
 - `src/modules/queue/application/services/alocacao_service.py` consome `queue_engine_port` e `notification_port`.
 - `src/modules/queue/application/services/fila_service.py` consome `queue_engine_port`, `shift_policy_reader_port`, `paciente_ausente_notifier` e `triage_port` (seam único de risco, persistência 1:1 e leitura de queixas).
 - `src/modules/queue/application/services/controle_admissao_service.py` consome `queue_engine_port`.
-- `src/modules/consultation/application/services/pep_service.py` consome `atendimento_reader_port`, `icp_brasil_signer_port`, `pdf_generator_port`, `producao_ambulatorial_port` e `storage_port`.
-- `src/modules/consultation/application/services/documento_service.py` consome `icp_brasil_signer_port`, `pdf_generator_port`, `signed_cache_port` e `storage_port`.
+- `src/modules/consultation/application/services/pep_service.py` consome `atendimento_reader_port` e `producao_ambulatorial_port`.
+- `src/modules/consultation/application/services/clinical_pdf_compiler.py` consome `document_directory_port`, `pdf_generator_port` e `storage_port`.
+- `src/modules/consultation/application/services/documento_service.py` consome `atendimento_reader_port`, `document_directory_port`, `icp_brasil_signer_port`, `pdf_generator_port`, `signed_cache_port` e `storage_port`.
 - `src/modules/consultation/application/services/document_validation_service.py` consome `document_directory_port`, `signed_cache_port` e `storage_port`.
-- `src/modules/consultation/application/services/evolucao_service.py` consome `atendimento_reader_port`.
 - `src/modules/ambulatory/application/services/eligibility_service.py` consome `eligibility_provider` e `eligibility_notifier` do próprio ambulatory.
 - `src/modules/triage/application/services/triage_service.py` consome `emergency_notifier` do próprio triage.
 - `src/modules/auth/application/services/auth_service.py` consome `auth_rate_limiter_port`, `doctor_presence_port`, `password_hasher_port` e `token_service_port`.
@@ -132,18 +132,18 @@ flowchart LR
     fila_service --> paciente_ausente_notifier
     controle_admissao_service --> queue_engine_port
     documento_service --> icp_brasil_signer_port
-    documento_service --> pdf_generator_port
+    clinical_pdf_compiler --> document_directory_port
+    clinical_pdf_compiler --> pdf_generator_port
+    clinical_pdf_compiler --> storage_port
+    documento_service --> atendimento_reader_port
+    documento_service --> icp_brasil_signer_port
     documento_service --> signed_cache_port
     documento_service --> storage_port
     document_validation_service --> document_directory_port
     document_validation_service --> signed_cache_port
     document_validation_service --> storage_port
     pep_service --> atendimento_reader_port
-    pep_service --> icp_brasil_signer_port
-    pep_service --> pdf_generator_port
     pep_service --> producao_ambulatorial_port
-    pep_service --> storage_port
-    evolucao_service --> atendimento_reader_port
     eligibility_service --> eligibility_provider
     eligibility_service --> eligibility_notifier
     auth_service --> auth_rate_limiter_port

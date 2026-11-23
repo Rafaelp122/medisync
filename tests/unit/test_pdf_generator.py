@@ -12,9 +12,10 @@ from src.modules.consultation.domain.models.documento_clinico import (
     TipoDocumentoClinico,
 )
 from src.modules.consultation.infrastructure.pdf_generator import (
-    FakePDFGenerator,
     ReportLabPDFGenerator,
 )
+
+from tests.doubles import FakePDFGenerator
 
 
 def _build_sample_payload(
@@ -36,8 +37,6 @@ def _build_sample_payload(
         organizacao_nome="Clínica São Rafael de Telemedicina",
         organizacao_cnpj="12.345.678/0001-90",
         organizacao_cnes="7654321",
-        organizacao_endereco="Av. Paulista, 1000, São Paulo - SP",
-        organizacao_telefone="(11) 3333-4444",
         medico_nome="Dr. Roberto Carlos",
         medico_crm="123456",
         medico_crm_uf="SP",
@@ -224,13 +223,11 @@ def test_gerar_pdf_tipo_documento_como_string() -> None:
 
 
 def test_fake_pdf_generator() -> None:
-    fake = FakePDFGenerator(validation_url_prefix="https://test.medisync.app/validar")
+    fake = FakePDFGenerator()
     payload = _build_sample_payload(TipoDocumentoClinico.RECEITA_SIMPLES)
 
     fake_bytes = fake.gerar_pdf(payload)
 
-    assert fake_bytes.startswith(b"%PDF-1.4\n")
-    assert str(payload.documento_id).encode() in fake_bytes
-    assert b"pdfaid:part=1" in fake_bytes
-    assert b"GTS_PDFA1" in fake_bytes
-    assert fake.last_payload == payload
+    assert fake_bytes.startswith(b"%PDF-1.4")
+    assert fake.calls == 1
+    assert fake.payloads == [payload]

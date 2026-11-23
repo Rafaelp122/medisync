@@ -14,7 +14,7 @@ from src.modules.consultation.application.dtos import (
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
 )
-from src.modules.consultation.composition import PEPServiceDep
+from src.modules.consultation.composition import DocumentoServiceDep, PEPServiceDep
 from src.modules.consultation.presentation.dependencies import (
     AtendimentoIdPath,
     ClinicalAccessMutationDep,
@@ -188,7 +188,7 @@ async def validar_prescricao_medicamento(
     atendimento_id: AtendimentoIdPath,
     request: Annotated[ValidarPrescricaoRequest, Body()],
     _user: ClinicalAccessMutationDep,
-    service: PEPServiceDep,
+    service: DocumentoServiceDep,
 ) -> ValidarPrescricaoResponse:
     """Verifica se o medicamento exige talonário físico (Listas A/B)."""
     service.validar_prescricao(request.medicamento)
@@ -208,7 +208,7 @@ async def emitir_documento_clinico(
     atendimento_id: AtendimentoIdPath,
     request: Annotated[EmitirDocumentoRequest, Body()],
     current_user: ClinicalAccessMutationDep,
-    service: PEPServiceDep,
+    service: DocumentoServiceDep,
 ) -> DocumentoClinicoResponse:
     """Emite receita ou atestado aplicando salvaguardas da Portaria 344/98."""
     cmd = EmitirDocumentoClinicoCommand(
@@ -236,7 +236,7 @@ async def emitir_documento_clinico(
 async def solicitar_desafio_liveness_prescricao(
     atendimento_id: AtendimentoIdPath,
     current_actor: LivenessChallengeMedicoDep,
-    service: PEPServiceDep,
+    service: DocumentoServiceDep,
 ) -> LivenessChallengeResponse:
     """Emite instruções ativas de prova de vida facial para receita especial."""
     challenge = await service.solicitar_desafio_liveness(atendimento_id)
@@ -252,7 +252,7 @@ async def verificar_liveness_prescricao(
     atendimento_id: AtendimentoIdPath,
     request: Annotated[LivenessVerifyRequest, Body()],
     current_actor: LivenessVerifyPacienteDep,
-    service: PEPServiceDep,
+    service: DocumentoServiceDep,
 ) -> LivenessVerifyResponse:
     """Avalia vivacidade facial e devolve hash SHA-256 auditável para Lista C1."""
     cmd = VerificarLivenessCommand(
@@ -339,7 +339,7 @@ async def obter_documento_pdf(
     service: PEPServiceDep,
 ) -> Response:
     """Retorna o documento clínico compilado em PDF/A com QR Code de verificação."""
-    pdf_bytes = await service.compilar_pdf(documento_id)
+    pdf_bytes = await service.compilar_pdf(documento_id, atendimento_id=atendimento_id)
 
     return Response(
         content=pdf_bytes,
@@ -361,7 +361,7 @@ async def assinar_documento(
     documento_id: DocumentoIdPath,
     payload: Annotated[AssinarDocumentoRequest, Body()],
     _user: ClinicalAccessMutationDep,
-    service: PEPServiceDep,
+    service: DocumentoServiceDep,
 ) -> AssinarDocumentoResponse:
     """Executa a assinatura digital PAdES em nuvem via PSC (CFM 2.314/2022)."""
     creds = DoctorCertificateCredentials(
@@ -369,7 +369,7 @@ async def assinar_documento(
         provider=payload.provider,
         certificate_alias=payload.certificate_alias,
     )
-    result = await service.assinar_documento(
+    result = await service.assinar(
         documento_id=documento_id,
         atendimento_id=atendimento_id,
         credenciais=creds,

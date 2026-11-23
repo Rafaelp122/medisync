@@ -157,8 +157,8 @@ async def test_validar_assinado_vs_emitido() -> None:
         id=doc_id,
         atendimento_id=atend_id,
         medico_id=med_id,
-        chave_s3="s3://medisync-docs/7/atendimentos/x/receita.pdf",
-        assinado_em=datetime.now(UTC),
+        chave_s3=f"consultations/{atend_id}/documents/{doc_id}.pdf",
+        assinado_em=None,
     )
     svc2 = _service(doc_emitido)
     res2 = await svc2.validar_documento(str(doc_id))
@@ -169,7 +169,7 @@ async def test_validar_assinado_vs_emitido() -> None:
 
 @pytest.mark.asyncio
 async def test_validar_chave_canonica_sem_cache_e_emitido() -> None:
-    """Canonical key alone must not imply signed status (Task 8 regression)."""
+    """Canonical key without DB signature or cache stays EMITIDO."""
     doc_id = uuid4()
     atend_id = uuid4()
     doc = FakeDoc(
@@ -177,13 +177,39 @@ async def test_validar_chave_canonica_sem_cache_e_emitido() -> None:
         atendimento_id=atend_id,
         medico_id=uuid4(),
         chave_s3=f"consultations/{atend_id}/documents/{doc_id}.pdf",
-        assinado_em=datetime.now(UTC),
+        assinado_em=None,
     )
     svc = _service(doc, cache=MemorySignedCache())
     res = await svc.validar_documento(str(doc_id))
     assert res.status_documento == "EMITIDO"
     assert res.assinatura_digital_valida is False
     assert res.assinado_em is None
+
+
+@pytest.mark.asyncio
+async def test_validar_pos_24h_cache_miss_com_db_assinado_e_reaquecimento() -> None:
+    """Cache miss after 24h TTL falls back to Postgres fields and reheats cache."""
+    doc_id = uuid4()
+    atend_id = uuid4()
+    signed_at = datetime.now(UTC)
+    doc = FakeDoc(
+        id=doc_id,
+        atendimento_id=atend_id,
+        medico_id=uuid4(),
+        chave_s3=f"consultations/{atend_id}/documents/{doc_id}.pdf",
+        assinado_em=signed_at,
+    )
+    cache = MemorySignedCache()
+    assert await cache.is_assinado(doc_id) is False
+
+    svc = _service(doc, cache=cache)
+    res = await svc.validar_documento(str(doc_id))
+
+    assert res.status_documento == "ASSINADO"
+    assert res.assinatura_digital_valida is True
+    assert res.conformidade_icp_brasil is True
+    assert res.assinado_em == signed_at
+    assert await cache.is_assinado(doc_id) is True
 
 
 @pytest.mark.asyncio

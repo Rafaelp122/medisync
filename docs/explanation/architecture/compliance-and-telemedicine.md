@@ -76,7 +76,7 @@ O sistema modela 5 tipos de documentos emitíveis via telemedicina e veda a pres
 * **Proibidos Digitalmente (Exigência Legal de Talonário Físico)**:
   * `NOTIFICACAO_RECEITA_A` (Talonário Amarelo - Entorpecentes como Morfina, Fentanil).
   * `NOTIFICACAO_RECEITA_B` (Talonário Azul - Psicotrópicos como Clonazepam, Diazepam).
-  * A tentativa de prescrição dessas substâncias dispara `PrescricaoFisicaObrigatoriaException`, retornando HTTP 422 ao médico com orientações legais.
+  * A tentativa de prescrição dessas substâncias dispara `PrescricaoFisicaObrigatoriaError`, retornando HTTP 422 ao médico com orientações legais.
 
 ---
 
@@ -86,7 +86,7 @@ O sistema modela 5 tipos de documentos emitíveis via telemedicina e veda a pres
 sequenceDiagram
     autonumber
     actor Med as Médico (Frontend)
-    participant PEP as PEP Service (Backend)
+    participant PEP as Documento/PEP Service (Backend)
     participant Rep as ReportLab Adapter
     participant PSC as PSC Cloud (OAuth2)
     participant S3 as StoragePort (S3/MinIO)
@@ -96,7 +96,7 @@ sequenceDiagram
     Med->>PEP: Conclui Consulta & Solicita Emissão Documentos
     PEP->>PEP: Valida Medicamentos (Portaria 344/98)
     alt Medicamento Proibido Digitalmente
-        PEP-->>Med: 422 Unprocessable (PrescricaoFisicaObrigatoriaException)
+        PEP-->>Med: 422 Unprocessable (PrescricaoFisicaObrigatoriaError)
     else Medicamentos Válidos
         PEP->>Rep: Compilar PDF/A com dados do paciente e QR Code
         Rep-->>PEP: Binário PDF Bruto

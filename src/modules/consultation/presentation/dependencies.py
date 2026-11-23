@@ -29,7 +29,6 @@ from src.core.authz import (
     require_role,
     resolve_bearer_principal,
 )
-from src.core.database import DbSessionDep
 from src.core.errors import (
     ConflictError,
     ForbiddenError,
@@ -84,7 +83,7 @@ DocumentoIdPath = Annotated[
 async def require_clinical_read_access(
     atendimento_id: AtendimentoIdPath,
     current_user: MedicoUserDep,
-    session: DbSessionDep,
+    reader: Annotated[AtendimentoReaderPort, Depends(get_atendimento_reader)],
 ) -> AuthenticatedUser:
     """Enforce Tier 3 Clinical ABAC/ReBAC context for reading records.
 
@@ -94,10 +93,10 @@ async def require_clinical_read_access(
     3. Caller is the physician assigned to this attendance.
     4. Attendance status allows reading (active or CONCLUIDO).
     """
-    await ClinicalAccessPolicy.validar_acesso_clinico(
+    _resumo = await ClinicalAccessPolicy.validar_acesso_clinico(
         atendimento_id=atendimento_id,
         medico_id=current_user.usuario_id,
-        reader=get_atendimento_reader(session),
+        reader=reader,
         is_mutation=False,
     )
     return current_user
@@ -106,7 +105,7 @@ async def require_clinical_read_access(
 async def require_clinical_mutation_access(
     atendimento_id: AtendimentoIdPath,
     current_user: MedicoUserDep,
-    session: DbSessionDep,
+    reader: Annotated[AtendimentoReaderPort, Depends(get_atendimento_reader)],
 ) -> AuthenticatedUser:
     """Enforce Tier 3 Clinical ABAC/ReBAC context for mutating records.
 
@@ -116,10 +115,10 @@ async def require_clinical_mutation_access(
     3. Caller is the physician assigned to this attendance.
     4. Attendance is in active state (EM_ATENDIMENTO or CHAMANDO_PACIENTE).
     """
-    await ClinicalAccessPolicy.validar_acesso_clinico(
+    _resumo = await ClinicalAccessPolicy.validar_acesso_clinico(
         atendimento_id=atendimento_id,
         medico_id=current_user.usuario_id,
-        reader=get_atendimento_reader(session),
+        reader=reader,
         is_mutation=True,
     )
     return current_user

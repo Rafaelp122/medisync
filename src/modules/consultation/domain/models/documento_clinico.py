@@ -24,9 +24,6 @@ from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     ConsultaInvalidaError,
 )
-from src.modules.consultation.domain.models._substances import (
-    validar_substancia_permitida_telemedicina,
-)
 from src.modules.consultation.domain.models.documento_item import DocumentoItem
 
 _SHA256_HEX_REGEX = re.compile(r"^[a-fA-F0-9]{64}$")
@@ -235,9 +232,6 @@ class DocumentoClinico(Base):
                 f"Não é permitido adicionar itens ao documento clínico '{self.id}' "
                 "de consulta finalizada (is_finalizado=True)."
             )
-
-        # Regra sanitária Portaria 344/98 Listas A e B
-        validar_substancia_permitida_telemedicina(item.medicamento)
 
         if self.tipo_documento == TipoDocumentoClinico.RECEITA_CONTROLE_ESPECIAL_C1:
             item.controle_especial = True

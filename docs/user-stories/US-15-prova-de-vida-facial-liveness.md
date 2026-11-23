@@ -19,8 +19,7 @@
 ## 2. Critérios de Aceite Formais (Gherkin)
 
 ### Cenário 1: Acionamento automático da prova de vida para substâncias de controle especial (Caso Feliz)
-- **Dado que** o médico prescreve um medicamento de controle especial (ex: Lista C1/C5 da Portaria 344/98 permitida com receita digital),
-- **E** a organização possui política ativa de verificação biométrica para receituário de controle,
+- **Dado que** o médico prescreve um medicamento de controle especial (ex: Lista C1/C5 da Portaria 344/98 permitida com receita digital, política global ativa sem flag por unidade/atendimento),
 - **Quando** o médico clica em *"Emitir e Assinar Receita de Controle Especial"*,
 - **Então** o sistema suspende temporariamente a emissão e solicita a verificação facial da paciente em `POST /api/v1/consultations/{id}/prescriptions/liveness/challenge`,
 - **E** abre na tela da paciente uma janela segura guiada para captura da prova de vida com verificação de vivacidade ativa (piscar, sorrir ou movimento de cabeça),

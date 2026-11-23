@@ -43,6 +43,9 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 | `FakeTelemetryReader` | `TelemetryReaderPort` (`src.modules.telemetry`) | `obter_painel_telemetria(config, data_inicio)` | `painel: PainelTelemetriaDTO \| None`, `calls: list[dict]`. |
 | `FakeConfigPlantaoRepository` | `ConfigPlantaoRepositoryPort` (`src.modules.telemetry`) | `obter_atual()`, `obter_ou_criar_padrao()`, `salvar()` | `config`, `obter_atual_calls`, `obter_ou_criar_calls`, `salvos`. |
 | `FakeTelemetryCache` | `TelemetryCachePort` (`src.modules.telemetry`) | `obter_painel()`, `salvar_painel()`, `invalidar_painel()` | `painel`, `obter_calls`, `salvar_calls`, `invalidar_calls`. |
+| `FakeDocumentDirectory` | `DocumentDirectoryPort` (`src.modules.consultation`) | `obter_dados_verificacao(medico_id, atendimento_id)` | `dados: DadosVerificacaoDirectory`, `error`, `calls: list[tuple]`. |
+| `FakeS3Session` | Sessão `aioboto3.Session` | `client()`, `put_object()`, `get_object()`, `generate_presigned_url()` | `objects`, `put_calls`, `get_calls`, `presign_calls`, `get_error`. |
+| `FakeCloudPSCOAuth2Client` | `CloudPSCOAuth2Client` (`src.modules.consultation`) | `obter_info_credencial()`, `assinar_hash()` | Gera certificado X.509/CMS real para validar `ExternalSigner`, rastreia `info_calls`/`sign_calls`. |
 
 ### Detalhamento dos Dublês e Mecânica de Estado
 
@@ -109,6 +112,9 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Impl: `tests/doubles.py:FakeTelemetryReader`
 - Impl: `tests/doubles.py:FakeConfigPlantaoRepository`
 - Impl: `tests/doubles.py:FakeTelemetryCache`
+- Impl: `tests/doubles.py:FakeDocumentDirectory`
+- Impl: `tests/doubles.py:FakeS3Session`
+- Impl: `tests/doubles.py:FakeCloudPSCOAuth2Client`
 - Impl: `src/core/authz/revocation.py:MemoryTokenRevocation`
 - Impl: `src/modules/auth/infrastructure/fake_sms_adapter.py:FakeSmsSenderAdapter`
 - Spec: `src/core/audit/ports.py:AuditTrailPort`

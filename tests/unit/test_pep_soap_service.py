@@ -1,7 +1,7 @@
 """Unit tests for PEP SOAP workflow, Portaria 344/98 safeguards, and RN06."""
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import pytest
@@ -9,7 +9,11 @@ from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
     CriarItemPrescricaoDTO,
     EmitirDocumentoClinicoCommand,
+    RegistrarEvolucaoSOAPCommand,
     TMAStatusDTO,
+)
+from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoResumoDTO,
 )
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
@@ -17,16 +21,20 @@ from src.modules.consultation.domain.exceptions import (
     PrescricaoFisicaObrigatoriaError,
 )
 
+from tests.doubles import FakeAsyncSession, FakeAtendimentoReader
 from tests.factories.consultation import (
     make_documento_clinico,
     make_evolucao_clinica,
 )
-from tests.helpers import make_pep_service
+from tests.helpers import make_documento_service, make_pep_service
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def test_validar_prescricao_permitida() -> None:
     """Ensure permitted telemedicine drugs pass validation without error."""
-    service = make_pep_service(AsyncMock())
+    service = make_documento_service(cast("AsyncSession", FakeAsyncSession()))
 
     # Simple prescription and antimicrobials
     service.validar_prescricao("Dipirona Monoidratada 500mg")
@@ -66,7 +74,7 @@ def test_validar_prescricao_permitida() -> None:
 )
 def test_validar_prescricao_proibida_portaria_344(substancia_proibida: str) -> None:
     """Ensure yellow/blue pad drugs raise PrescricaoFisicaObrigatoriaError."""
-    service = make_pep_service(AsyncMock())
+    service = make_documento_service(cast("AsyncSession", FakeAsyncSession()))
 
     with pytest.raises(PrescricaoFisicaObrigatoriaError) as exc_info:
         service.validar_prescricao(substancia_proibida)
@@ -83,7 +91,7 @@ def test_validar_prescricao_proibida_portaria_344(substancia_proibida: str) -> N
 @pytest.mark.asyncio
 async def test_emitir_documento_tipo_proibido_falha(tipo_proibido: str) -> None:
     """Ensure requesting yellow or blue notification pad types fails with HTTP 422."""
-    service = make_pep_service(AsyncMock())
+    service = make_documento_service(cast("AsyncSession", FakeAsyncSession()))
 
     cmd = EmitirDocumentoClinicoCommand(
         atendimento_id=uuid7(),
@@ -107,7 +115,7 @@ async def test_emitir_documento_tipo_proibido_falha(tipo_proibido: str) -> None:
 
 def test_tma_sovereign_medical_act_preservation() -> None:
     """Ensure RN06: exceeding TMA emits visual indicator but never forces disconnect."""
-    service = make_pep_service(AsyncMock())
+    service = make_pep_service(cast("AsyncSession", FakeAsyncSession()))
     atend_id = uuid4()
 
     # Scenario 1: Inside planned TMA (e.g. 5 minutes into a 15-minute slot)
@@ -179,24 +187,7 @@ def test_finalized_consultation_immutability() -> None:
 
 @pytest.mark.asyncio
 async def test_salvar_evolucao_soap_persiste_gate_identidade_cfm_2314() -> None:
-    """Verify CFM 2.314/2022 identity gate fields persist via EvolucaoService."""
-    from typing import TYPE_CHECKING, cast
-
-    from src.modules.consultation.application.dtos import (
-        RegistrarEvolucaoSOAPCommand,
-    )
-    from src.modules.consultation.application.ports.atendimento_reader_port import (
-        AtendimentoResumoDTO,
-    )
-    from src.modules.consultation.application.services.evolucao_service import (
-        EvolucaoService,
-    )
-
-    from tests.doubles import FakeAsyncSession, FakeAtendimentoReader
-
-    if TYPE_CHECKING:
-        from sqlalchemy.ext.asyncio import AsyncSession
-
+    """Verify CFM 2.314/2022 identity gate fields persist via PEPService."""
     atendimento_id = uuid7()
     medico_id = uuid7()
     session = FakeAsyncSession()
@@ -209,7 +200,7 @@ async def test_salvar_evolucao_soap_persiste_gate_identidade_cfm_2314() -> None:
             is_terminal=False,
         )
     )
-    svc = EvolucaoService(session=cast("AsyncSession", session), reader=reader)
+    svc = make_pep_service(cast("AsyncSession", session), atendimento_reader=reader)
 
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
