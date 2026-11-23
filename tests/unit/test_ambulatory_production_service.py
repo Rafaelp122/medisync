@@ -422,7 +422,8 @@ class TestAmbulatoryProducaoAdapter:
             cnes="7654321",
         )
 
-        assert fake_session.commits == 1
+        assert fake_session.commits == 0
+        assert fake_session.flushes == 1
         assert len(fake_session.added) == 1
         assert fake_session.added[0].cnes == "7654321"
 
@@ -474,7 +475,8 @@ class TestAmbulatoryProducaoAdapter:
             cnes=None,
         )
 
-        assert fake_session.commits == 1
+        assert fake_session.commits == 0
+        assert fake_session.flushes == 1
         assert len(fake_session.added) == 1
         assert fake_session.added[0].cnes == "3333333"
 
@@ -497,7 +499,8 @@ class TestAmbulatoryProducaoAdapter:
             cnes=None,
         )
 
-        assert fake_session.commits == 1
+        assert fake_session.commits == 0
+        assert fake_session.flushes == 1
         assert len(fake_session.added) == 1
         assert fake_session.added[0].cnes == "0000000"
 

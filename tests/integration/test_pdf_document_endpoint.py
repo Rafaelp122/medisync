@@ -79,3 +79,17 @@ async def test_obter_documento_pdf_endpoint(
         f"/api/v1/consultations/{cenario.atendimento.id}/documents/{non_existent_id}/pdf"
     )
     assert not_found_resp.status_code == 404
+
+    # 4. IDOR horizontal: médico de outro atendimento B tentando baixar PDF de A -> 404
+    cenario_b = await seed_clinical_scenario(
+        db_session,
+        unidade_cnpj="44444444000103",
+        paciente_cpf="55555555502",
+        medico_cpf="66666666602",
+        medico_email="medico.b.idor@medisync.local",
+    )
+    client.headers.update(auth_headers(Role.MEDICO, cenario_b.medico.id))
+    idor_resp = await client.get(
+        f"/api/v1/consultations/{cenario_b.atendimento.id}/documents/{doc_id}/pdf"
+    )
+    assert idor_resp.status_code == 404

@@ -4,14 +4,12 @@ import io
 import json
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import httpx
 import pytest
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.sign.validation import async_validate_pdf_signature
-from src.core.config import get_settings
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
     ICPBrasilSignerPort,
@@ -24,10 +22,13 @@ from src.modules.consultation.application.ports.pdf_generator_port import (
 from src.modules.consultation.domain.exceptions import AssinaturaDigitalInvalidaError
 from src.modules.consultation.infrastructure.pdf_generator import ReportLabPDFGenerator
 from src.modules.consultation.infrastructure.pyhanko_signer import (
+    DEFAULT_PSC_ENDPOINTS,
     CloudPSCOAuth2Client,
     FakeICPBrasilSigner,
     PyHankoSigner,
 )
+
+from tests.doubles import FakeCloudPSCOAuth2Client
 
 
 def _build_valid_pdf() -> bytes:
@@ -87,7 +88,6 @@ async def test_fake_icp_brasil_signer_success() -> None:
     assert b"%%EOF" in signed_bytes
     assert b"/ByteRange" in signed_bytes
     assert b"/Contents" in signed_bytes
-    # Parse and cryptographically validate signature with PyHanko
     reader = PdfFileReader(io.BytesIO(signed_bytes))
     assert len(reader.embedded_signatures) == 1
     sig = reader.embedded_signatures[0]
@@ -95,8 +95,6 @@ async def test_fake_icp_brasil_signer_success() -> None:
     status = await async_validate_pdf_signature(sig)
     assert status.intact is True
     assert status.valid is True
-
-    # Validate signer state records
     assert signer.last_credentials == creds
     assert signer.last_metadata == metadata
     assert signer.last_signed_bytes == signed_bytes
@@ -141,92 +139,86 @@ async def test_fake_icp_brasil_signer_rejects_empty_token() -> None:
 
 
 def test_cloud_psc_oauth2_client_url_resolution() -> None:
-    """Verify correct endpoint resolution for Brazilian trust providers."""
-    client = CloudPSCOAuth2Client()
-    settings = get_settings()
+    """Verify endpoint resolution uses injected mapping without global Settings."""
+    default_client = CloudPSCOAuth2Client()
+    assert (
+        default_client.get_provider_base_url("birdid")
+        == DEFAULT_PSC_ENDPOINTS["birdid"]
+    )
+    assert (
+        default_client.get_provider_base_url("safeid")
+        == DEFAULT_PSC_ENDPOINTS["safeid"]
+    )
+    assert (
+        default_client.get_provider_base_url("vidaas")
+        == DEFAULT_PSC_ENDPOINTS["vidaas"]
+    )
 
-    assert client.get_provider_base_url(
-        "birdid"
-    ) == settings.PSC_BIRDID_ENDPOINT.rstrip("/")
-    assert client.get_provider_base_url(
-        "safeid"
-    ) == settings.PSC_SAFEID_ENDPOINT.rstrip("/")
-    assert client.get_provider_base_url(
-        "vidaas"
-    ) == settings.PSC_VIDAAS_ENDPOINT.rstrip("/")
+    custom_client = CloudPSCOAuth2Client(
+        provider_endpoints={"birdid": "https://custom.birdid.local/"}
+    )
+    assert (
+        custom_client.get_provider_base_url("birdid") == "https://custom.birdid.local"
+    )
 
     with pytest.raises(
         AssinaturaDigitalInvalidaError, match="Provedor PSC não suportado"
     ):
-        client.get_provider_base_url("unsupported_psc_provider")
+        default_client.get_provider_base_url("unsupported_psc_provider")
 
 
 @pytest.mark.asyncio
 async def test_cloud_psc_oauth2_client_obter_info_credencial() -> None:
-    """Test CSC credentials info query with mocked HTTP responses."""
-    client = CloudPSCOAuth2Client()
-
-    # Success case (200 OK)
-    mock_resp = httpx.Response(
-        200,
-        json={"credentialID": "alias-1", "key": {"status": "enabled"}},
-        request=httpx.Request(
-            "POST", "https://psc.birdid.com.br/csc/v1/credentials/info"
-        ),
+    """Test CSC credentials info query via MockTransport without patching httpx."""
+    ok_client = CloudPSCOAuth2Client(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(
+                200,
+                json={"credentialID": "alias-1", "key": {"status": "enabled"}},
+                request=req,
+            )
+        )
     )
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = mock_resp
-        info = await client.obter_info_credencial("birdid", "valid-token", "alias-1")
-        assert info.get("credentialID") == "alias-1"
+    info = await ok_client.obter_info_credencial("birdid", "valid-token", "alias-1")
+    assert info.get("credentialID") == "alias-1"
 
-    # Expired token case (401 Unauthorized)
-    mock_401 = httpx.Response(
-        401,
-        request=httpx.Request(
-            "POST", "https://psc.birdid.com.br/csc/v1/credentials/info"
-        ),
+    unauth_client = CloudPSCOAuth2Client(
+        transport=httpx.MockTransport(lambda req: httpx.Response(401, request=req))
     )
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = mock_401
-        with pytest.raises(
-            AssinaturaDigitalInvalidaError,
-            match="Token de autorização do médico expirado",
-        ):
-            await client.obter_info_credencial("birdid", "expired-token")
+    with pytest.raises(
+        AssinaturaDigitalInvalidaError,
+        match="Token de autorização do médico expirado",
+    ):
+        await unauth_client.obter_info_credencial("birdid", "expired-token")
 
-    # Network failure case
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.side_effect = httpx.ConnectError("Connection refused")
-        with pytest.raises(
-            AssinaturaDigitalInvalidaError, match="Falha de comunicação"
-        ):
-            await client.obter_info_credencial("birdid", "some-token")
+    def _raise_connect(req: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("Connection refused", request=req)
+
+    net_err_client = CloudPSCOAuth2Client(transport=httpx.MockTransport(_raise_connect))
+    with pytest.raises(AssinaturaDigitalInvalidaError, match="Falha de comunicação"):
+        await net_err_client.obter_info_credencial("birdid", "some-token")
 
 
 @pytest.mark.asyncio
 async def test_cloud_psc_oauth2_client_assinar_hash() -> None:
-    """Test CSC signHash remote signing with mocked HTTP responses."""
-    client = CloudPSCOAuth2Client()
-
-    # Success case
-    mock_resp = httpx.Response(
-        200,
-        json={"signatures": ["b64_signature_raw_bytes_value"]},
-        request=httpx.Request(
-            "POST", "https://psc.birdid.com.br/csc/v1/signatures/signHash"
-        ),
-    )
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = mock_resp
-        sig = await client.assinar_hash(
-            provider="birdid",
-            token="token-xyz",
-            credential_id="cred-1",
-            hash_b64="c2hhMjU2aGFzaA==",
+    """Test CSC signHash remote signing via MockTransport."""
+    list_client = CloudPSCOAuth2Client(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(
+                200,
+                json={"signatures": ["b64_signature_raw_bytes_value"]},
+                request=req,
+            )
         )
-        assert sig == "b64_signature_raw_bytes_value"
+    )
+    sig = await list_client.assinar_hash(
+        provider="birdid",
+        token="token-xyz",
+        credential_id="cred-1",
+        hash_b64="c2hhMjU2aGFzaA==",
+    )
+    assert sig == "b64_signature_raw_bytes_value"
 
-    # Success case with CMS response format and singular signature key via MockTransport
     captured_req: list[httpx.Request] = []
 
     def handle_cms_post(req: httpx.Request) -> httpx.Response:
@@ -253,44 +245,31 @@ async def test_cloud_psc_oauth2_client_assinar_hash() -> None:
     assert sent_body.get("hashAlgorithmOID") == "2.16.840.1.101.3.4.2.1"
     assert sent_body.get("signAlgo") == "1.2.840.113549.1.1.1"
 
-    # Malformed response (missing signatures)
-    mock_malformed = httpx.Response(
-        200,
-        json={"other": "field"},
-        request=httpx.Request(
-            "POST", "https://psc.birdid.com.br/csc/v1/signatures/signHash"
-        ),
+    malformed_client = CloudPSCOAuth2Client(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"other": "field"}, request=req)
+        )
     )
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = mock_malformed
-        with pytest.raises(
-            AssinaturaDigitalInvalidaError, match="Resposta inválida do PSC"
-        ):
-            await client.assinar_hash(
-                provider="birdid",
-                token="token-xyz",
-                credential_id="cred-1",
-                hash_b64="c2hhMjU2aGFzaA==",
-            )
+    with pytest.raises(
+        AssinaturaDigitalInvalidaError, match="Resposta inválida do PSC"
+    ):
+        await malformed_client.assinar_hash(
+            provider="birdid",
+            token="token-xyz",
+            credential_id="cred-1",
+            hash_b64="c2hhMjU2aGFzaA==",
+        )
 
-    # Access denied (403 Forbidden)
-    mock_403 = httpx.Response(
-        403,
-        request=httpx.Request(
-            "POST", "https://psc.birdid.com.br/csc/v1/signatures/signHash"
-        ),
+    denied_client = CloudPSCOAuth2Client(
+        transport=httpx.MockTransport(lambda req: httpx.Response(403, request=req))
     )
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = mock_403
-        with pytest.raises(
-            AssinaturaDigitalInvalidaError, match="Acesso negado pelo PSC"
-        ):
-            await client.assinar_hash(
-                provider="birdid",
-                token="bad-token",
-                credential_id="cred-1",
-                hash_b64="c2hhMjU2aGFzaA==",
-            )
+    with pytest.raises(AssinaturaDigitalInvalidaError, match="Acesso negado pelo PSC"):
+        await denied_client.assinar_hash(
+            provider="birdid",
+            token="bad-token",
+            credential_id="cred-1",
+            hash_b64="c2hhMjU2aGFzaA==",
+        )
 
 
 @pytest.mark.asyncio
@@ -320,13 +299,17 @@ async def test_pyhanko_signer_rejects_fake_when_disallowed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pyhanko_signer_cloud_provider_flow() -> None:
-    """Verify PyHankoSigner coordinates signHash with PSC client for cloud providers."""
+async def test_pyhanko_signer_cloud_provider_embeds_cms_via_external_signer() -> None:
+    """PyHankoSigner embeds genuine Cloud PSC CMS SignedData without Fake fallback."""
     pdf_bytes = _build_valid_pdf()
-    mock_psc = AsyncMock(spec=CloudPSCOAuth2Client)
-    mock_psc.assinar_hash.return_value = "remote_sig_base64"
+    fake_psc = FakeCloudPSCOAuth2Client()
+    fake_in_memory = FakeICPBrasilSigner()
 
-    signer = PyHankoSigner(psc_client=mock_psc)
+    signer = PyHankoSigner(
+        psc_client=fake_psc,  # pyright: ignore[reportArgumentType]
+        fake_signer=fake_in_memory,
+        allow_fake=False,
+    )
     creds = DoctorCertificateCredentials(
         token="real-doctor-bearer-token",
         provider="birdid",
@@ -336,12 +319,48 @@ async def test_pyhanko_signer_cloud_provider_flow() -> None:
     signed = await signer.assinar_pdf(pdf_bytes, creds)
     assert signed.startswith(b"%PDF-")
     assert b"/ByteRange" in signed
+    assert fake_in_memory.last_signed_bytes is None
 
-    mock_psc.assinar_hash.assert_awaited_once()
-    call_kwargs: dict[str, Any] = mock_psc.assinar_hash.await_args.kwargs
-    assert call_kwargs["provider"] == "birdid"
-    assert call_kwargs["token"] == "real-doctor-bearer-token"
-    assert call_kwargs["credential_id"] == "medico_crm_sp_123456"
+    assert len(fake_psc.info_calls) == 1
+    assert len(fake_psc.sign_calls) == 1
+    assert fake_psc.sign_calls[0]["provider"] == "birdid"
+    assert fake_psc.sign_calls[0]["token"] == "real-doctor-bearer-token"
+    assert fake_psc.sign_calls[0]["credential_id"] == "medico_crm_sp_123456"
+    assert fake_psc.sign_calls[0]["response_format"] == "cms"
+
+    reader = PdfFileReader(io.BytesIO(signed))
+    assert len(reader.embedded_signatures) == 1
+    status = await async_validate_pdf_signature(reader.embedded_signatures[0])
+    assert status.intact is True
+    assert status.valid is True
+
+
+@pytest.mark.asyncio
+async def test_pyhanko_signer_cloud_rejeita_cms_invalido_sem_fallback_fake() -> None:
+    """Invalid CMS or absent certificate raises AssinaturaDigitalInvalidaError."""
+    pdf_bytes = _build_valid_pdf()
+    fake_in_memory = FakeICPBrasilSigner()
+
+    bad_cms_psc = FakeCloudPSCOAuth2Client(cms_signature_b64="cmVtb3RlX3NpZ19iYXNlNjQ=")
+    signer_prod = PyHankoSigner(
+        psc_client=bad_cms_psc,  # pyright: ignore[reportArgumentType]
+        fake_signer=fake_in_memory,
+        allow_fake=False,
+    )
+    creds = DoctorCertificateCredentials(token="tok", provider="birdid")
+    with pytest.raises(AssinaturaDigitalInvalidaError, match="Container CMS inválido"):
+        await signer_prod.assinar_pdf(pdf_bytes, creds)
+    assert fake_in_memory.last_signed_bytes is None
+
+    no_cert_psc = FakeCloudPSCOAuth2Client(cert_info={"credentialID": "alias-1"})
+    signer_no_cert = PyHankoSigner(
+        psc_client=no_cert_psc,  # pyright: ignore[reportArgumentType]
+        fake_signer=fake_in_memory,
+        allow_fake=True,
+    )
+    with pytest.raises(AssinaturaDigitalInvalidaError, match="Cadeia de certificados"):
+        await signer_no_cert.assinar_pdf(pdf_bytes, creds)
+    assert fake_in_memory.last_signed_bytes is None
 
 
 @pytest.mark.asyncio

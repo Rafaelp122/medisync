@@ -8,8 +8,11 @@ import re
 from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from asn1crypto import x509 as asn1_x509
 
 from src.core.audit import AtorPapel, AtorTipo
 from src.core.audit.models import AuditEvent
@@ -797,8 +800,10 @@ class FakeAtendimentoReader(AtendimentoReaderPort):
         self.atendimento_concluido = False
         self.last_auto_commit: bool | None = None
         self.liberados_consulta: list[UUID] = []
+        self.obter_resumo_calls: list[UUID] = []
 
     async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
+        self.obter_resumo_calls.append(atendimento_id)
         if self.error_obter_resumo is not None:
             raise self.error_obter_resumo
         if self.resumo is not None and self.resumo.atendimento_id == atendimento_id:
@@ -834,7 +839,6 @@ class FakeAtendimentoReader(AtendimentoReaderPort):
                 is_terminal=self.resumo.is_terminal,
                 chamada_iniciada_em=self.resumo.chamada_iniciada_em,
                 criado_em=self.resumo.criado_em,
-                exige_liveness_controle_especial=self.resumo.exige_liveness_controle_especial,
             )
 
 
@@ -893,7 +897,7 @@ class FakeIdentityReader(IdentityReaderPort):
             medico_crm_uf="SP",
             paciente_id=paciente_id,
             paciente_nome="Paciente Teste",
-            paciente_cpf=None,
+            paciente_cpf="00011122233",
             paciente_data_nascimento=None,
             paciente_endereco=None,
         )
@@ -1716,3 +1720,259 @@ class FakeTelemetryCache(TelemetryCachePort):
     async def invalidar_painel(self) -> None:
         self.invalidar_calls += 1
         self.painel = None
+
+
+class FakeDocumentDirectory:
+    """In-memory DocumentDirectoryPort double returning deterministic metadata."""
+
+    def __init__(
+        self,
+        dados: Any | None = None,
+        *,
+        error: Exception | None = None,
+    ) -> None:
+        from src.modules.consultation.application.ports.document_directory_port import (
+            DadosVerificacaoDirectory,
+        )
+
+        self.dados = dados or DadosVerificacaoDirectory(
+            organizacao_nome="Unidade SUS Telemedicina",
+            medico_nome="Dr. Medico Teste",
+            medico_crm="123456",
+            medico_crm_uf="SP",
+            paciente_nome="Paciente Teste",
+            paciente_cpf="111.222.333-44",
+            organizacao_cnpj="11222333000144",
+            cnes="2695251",
+        )
+        self.error = error
+        self.calls: list[tuple[UUID, UUID]] = []
+
+    async def obter_dados_verificacao(
+        self,
+        medico_id: UUID,
+        atendimento_id: UUID,
+    ) -> Any:
+        self.calls.append((medico_id, atendimento_id))
+        if self.error is not None:
+            raise self.error
+        return self.dados
+
+
+class _FakeS3Body:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    async def read(self) -> bytes:
+        return self._data
+
+
+class _FakeS3Client:
+    def __init__(self, session: "FakeS3Session") -> None:
+        self._session = session
+
+    async def __aenter__(self) -> "_FakeS3Client":
+        return self
+
+    async def __aexit__(self, *_args: object) -> None:
+        return None
+
+    async def put_object(
+        self,
+        *,
+        Bucket: str,
+        Key: str,
+        Body: bytes,
+        ContentType: str,
+    ) -> None:
+        self._session.put_calls.append(
+            {
+                "Bucket": Bucket,
+                "Key": Key,
+                "Body": Body,
+                "ContentType": ContentType,
+            }
+        )
+        self._session.objects[(Bucket, Key)] = Body
+
+    async def get_object(self, *, Bucket: str, Key: str) -> dict[str, Any]:
+        self._session.get_calls.append({"Bucket": Bucket, "Key": Key})
+        if self._session.get_error is not None:
+            raise self._session.get_error
+        data = self._session.objects.get((Bucket, Key), b"")
+        return {"Body": _FakeS3Body(data)}
+
+    async def generate_presigned_url(
+        self,
+        *,
+        ClientMethod: str,
+        Params: dict[str, str],
+        ExpiresIn: int,
+    ) -> str:
+        self._session.presign_calls.append(
+            {
+                "ClientMethod": ClientMethod,
+                "Params": Params,
+                "ExpiresIn": ExpiresIn,
+            }
+        )
+        if self._session.presigned_url is not None:
+            return self._session.presigned_url
+        bucket = Params.get("Bucket", "bucket")
+        key = Params.get("Key", "key")
+        return f"https://s3.medisync.local/{bucket}/{key}?ExpiresIn={ExpiresIn}"
+
+
+class FakeS3Session:
+    """In-memory aioboto3 Session replacement for S3StorageAdapter tests."""
+
+    def __init__(
+        self,
+        *,
+        objects: dict[tuple[str, str], bytes] | None = None,
+        get_error: Exception | None = None,
+        presigned_url: str | None = None,
+    ) -> None:
+        self.objects: dict[tuple[str, str], bytes] = dict(objects) if objects else {}
+        self.get_error = get_error
+        self.presigned_url = presigned_url
+        self.put_calls: list[dict[str, Any]] = []
+        self.get_calls: list[dict[str, Any]] = []
+        self.presign_calls: list[dict[str, Any]] = []
+        self.client_kwargs: list[dict[str, Any]] = []
+
+    def client(self, service_name: str, **kwargs: Any) -> _FakeS3Client:
+        self.client_kwargs.append({"service_name": service_name, **kwargs})
+        return _FakeS3Client(self)
+
+
+class FakeCloudPSCOAuth2Client:
+    """In-memory CloudPSCOAuth2Client double signing digests with real CMS or script."""
+
+    def __init__(
+        self,
+        *,
+        cert_info: dict[str, Any] | None = None,
+        cms_signature_b64: str | None = None,
+        error_on_info: Exception | None = None,
+        error_on_sign: Exception | None = None,
+    ) -> None:
+        self.cert_info = cert_info
+        self.cms_signature_b64 = cms_signature_b64
+        self.error_on_info = error_on_info
+        self.error_on_sign = error_on_sign
+        self.info_calls: list[dict[str, Any]] = []
+        self.sign_calls: list[dict[str, Any]] = []
+        self._key_pem: bytes | None = None
+        self._cert_b64: str | None = None
+
+    def _ensure_cert_pair(self) -> tuple[str, bytes]:
+        if self._cert_b64 is not None and self._key_pem is not None:
+            return self._cert_b64, self._key_pem
+
+        import base64
+        from datetime import timedelta
+
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        name = x509.Name(
+            [
+                x509.NameAttribute(NameOID.COUNTRY_NAME, "BR"),
+                x509.NameAttribute(NameOID.COMMON_NAME, "DR. CLOUD PSC TESTE:123456"),
+            ]
+        )
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(name)
+            .issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(datetime.now(UTC) - timedelta(days=1))
+            .not_valid_after(datetime.now(UTC) + timedelta(days=365))
+            .add_extension(
+                x509.BasicConstraints(ca=False, path_length=None), critical=True
+            )
+            .sign(key, hashes.SHA256())
+        )
+        cert_der = cert.public_bytes(serialization.Encoding.DER)
+        self._cert_b64 = base64.b64encode(cert_der).decode("ascii")
+        self._key_pem = key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        return self._cert_b64, self._key_pem
+
+    async def obter_info_credencial(
+        self,
+        provider: str,
+        token: str,
+        credential_id: str | None = None,
+    ) -> dict[str, Any]:
+        self.info_calls.append(
+            {"provider": provider, "token": token, "credential_id": credential_id}
+        )
+        if self.error_on_info is not None:
+            raise self.error_on_info
+        if self.cert_info is not None:
+            return self.cert_info
+        cert_b64, _ = self._ensure_cert_pair()
+        return {"cert": {"certificates": [cert_b64]}}
+
+    async def assinar_hash(
+        self,
+        provider: str,
+        token: str,
+        credential_id: str,
+        hash_b64: str,
+        sign_algo: str = "1.2.840.113549.1.1.1",
+        response_format: str | None = None,
+    ) -> str:
+        self.sign_calls.append(
+            {
+                "provider": provider,
+                "token": token,
+                "credential_id": credential_id,
+                "hash_b64": hash_b64,
+                "sign_algo": sign_algo,
+                "response_format": response_format,
+            }
+        )
+        if self.error_on_sign is not None:
+            raise self.error_on_sign
+        if self.cms_signature_b64 is not None:
+            return self.cms_signature_b64
+
+        import base64
+
+        from pyhanko.keys.pemder import (
+            load_certs_from_pemder_data,
+            load_private_key_from_pemder_data,
+        )
+        from pyhanko.sign import signers
+        from pyhanko_certvalidator.registry import SimpleCertificateStore
+
+        cert_b64, key_pem = self._ensure_cert_pair()
+        cert_pem = (
+            "-----BEGIN CERTIFICATE-----\n" + cert_b64 + "\n-----END CERTIFICATE-----\n"
+        ).encode("ascii")
+        certs_list = cast(
+            "list[asn1_x509.Certificate]",
+            list(load_certs_from_pemder_data(cert_pem)),  # pyright: ignore[reportUnknownArgumentType]
+        )
+        a_cert = certs_list[0]
+        a_key: Any = load_private_key_from_pemder_data(key_pem, passphrase=None)
+        store = SimpleCertificateStore()
+        store.register(a_cert)
+        signer = signers.SimpleSigner(
+            signing_cert=a_cert, signing_key=a_key, cert_registry=store
+        )
+        digest_bytes = base64.b64decode(hash_b64)
+        cms_obj: Any = await signer.async_sign(  # pyright: ignore[reportUnknownMemberType]
+            digest_bytes, digest_algorithm="sha256", use_pades=True
+        )
+        return base64.b64encode(cast("bytes", cms_obj.dump())).decode("ascii")

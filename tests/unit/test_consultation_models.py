@@ -7,7 +7,6 @@ from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     ConsultaInvalidaError,
     PrescricaoFisicaObrigatoriaError,
-    PrescricaoFisicaObrigatoriaException,
 )
 from src.modules.consultation.domain.models._substances import (
     validar_substancia_permitida_telemedicina,
@@ -19,7 +18,6 @@ def test_consultation_exceptions_hierarchy_and_attributes() -> None:
     assert isinstance(err_presc, ValidationError)
     assert err_presc.status_code == 422
     assert err_presc.code == "PRESCRICAO_FISICA_OBRIGATORIA"
-    assert PrescricaoFisicaObrigatoriaException is PrescricaoFisicaObrigatoriaError
 
     err_fin = ConsultaFinalizadaError(
         "Não é permitido alterar ou excluir registros de consulta finalizada."

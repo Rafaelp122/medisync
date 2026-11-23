@@ -17,7 +17,7 @@ Escopo termina no registro. Fila decide ordem, triagem decide prioridade, ambula
 - **RN06 — Ato médico nunca interrompido por tempo.** `marcar_finalizado`/`validar_pode_excluir` travam registro, nunca derrubam chamada; backend emite JWT através de `TeleconsultaService` desacoplado do SFU. [Fonte](../product-specification.md) (RN06)
 - **RN07 — PEP append-only com UTC e prova criptográfica.** `EvolucaoClinica`/`DocumentoClinico` carimbam `registrado_em`/`assinado_em` em UTC, hash SHA-256 de 64 hex, assinatura PAdES; guarda canônica em `src/modules/consultation/domain/s3_keys.py`. Casos de uso (`salvar_evolucao_soap`, `emitir_documento`, `assinar`, `finalizar_consulta`) persistem atomicamente eventos na tabela `audit_events` via `AuditTrailPort` (`SqlAuditTrailAdapter`) antes do `commit()`. Catálogo canônico: [Catálogo de Eventos](../../reference/audit/event-catalog.md). Provas vivas: `tests/unit/test_consultation_audit_events.py` e `tests/integration/test_clinical_audit_integration.py`. [Fonte](../product-specification.md) (RN07)
 - **RN08 — Governança de IA no Prontuário e Supervisão Humana (CFM nº 2.454/2026).** Sugestões de notas SOAP, hipóteses CID-10 e prescrições emitidas por IA copiloto atuam exclusivamente como auxílio orientativo. Ao salvar a evolução clínica, o sistema calcula atomicamente o diff unificado (`unified_diff`) entre a sugestão bruta da IA e a conduta ratificada pelo profissional, persistindo o evento forense `IA_DECISAO_MEDICA_REGISTRADA` com o modelo de IA ratificado (`ia_modelo`), o indicador de ratificação (`ia_ratificada`) e o texto completo do `diff_forense`. Prova viva: `tests/unit/test_clinical_ai_governance.py`. [Fonte](../product-specification.md) (RN08)
-- **RN09 — Trava Temporal Anti-Fraude em Atestados (CFM nº 2.314/2022 e RDC Anvisa nº 1.000/2025).** A emissão de atestado exige tempo decorrido $\ge 180\text{ s}$ (3 minutos) de teleconsulta. Tentativa anterior a 180s exige justificativa clínica circunstanciada com no mínimo 15 caracteres ($\ge 15$), disparando obrigatoriamente o evento forense `TRAVA_TEMPORAL_ATESTADO_VIOLADA` com `duracao_segundos`, `justificativa` e `justificativa_aceita = True`. Justificativas ausentes ou com menos de 15 caracteres são bloqueadas com erro HTTP 422 `TRAVA_TEMPORAL_ATESTADO_VIOLADA` e evento forense gravado com `justificativa_aceita = False`. Prova viva: `tests/unit/test_trava_antifraude_atestado.py`. [Fonte](../product-specification.md) (RN09)
+- **RN09 — Trava Temporal Anti-Fraude em Atestados (CFM nº 2.314/2022 e RDC Anvisa nº 1.000/2025).** A emissão de atestado exige tempo decorrido $\ge 180\text{ s}$ (3 minutos) de teleconsulta medidos estritamente a partir de `chamada_iniciada_em` (sem fallback silencioso para `criado_em` em fila). Tentativa anterior a 180s (ou sem início de chamada registrado) exige justificativa clínica circunstanciada com no mínimo 15 caracteres ($\ge 15$), disparando obrigatoriamente o evento forense `TRAVA_TEMPORAL_ATESTADO_VIOLADA` com `duracao_segundos`, `justificativa` e `justificativa_aceita = True`. Justificativas ausentes ou com menos de 15 caracteres são bloqueadas com erro HTTP 422 `TRAVA_TEMPORAL_ATESTADO_VIOLADA` e evento forense gravado com `justificativa_aceita = False`. Prova viva: `tests/unit/test_trava_antifraude_atestado.py`. [Fonte](../product-specification.md) (RN09)
 - **Procedimento SIGTAP 03.01.01.025-0 no Plano SOAP.** O registro do Plano terapêutico inclui a codificação SIGTAP da teleconsulta na Atenção Primária para integração com o BPA-I e SISAB (Nota Técnica nº 11/2024-MS). [Fonte](../product-specification.md) (RF-07)
 
 Guardiões: `__init__` rejeita anamnese/conduta vazias, CID-10 fora do padrão, `chave_s3` vazia, hash fora de 64 hex (`ConsultaInvalidaError`).
@@ -41,7 +41,7 @@ stateDiagram-v2
     FinalizadoDocumento --> [*]
 ```
 
-`marcar_finalizado` grava `finalizado_em = datetime.now(UTC)` e liga `_is_finalizado = True` em `src/modules/consultation/domain/models/evolucao_clinica.py` e `src/modules/consultation/domain/models/documento_clinico.py`. Serviço chama quando consulta é concluída e delega a transição do atendimento para `QueueStorePort.concluir_atendimento`.
+`marcar_finalizado` grava `finalizado_em = datetime.now(UTC)` em `src/modules/consultation/domain/models/evolucao_clinica.py` e `src/modules/consultation/domain/models/documento_clinico.py` (estado derivado via `@property is_finalizado`). Serviço chama quando consulta é concluída e delega a transição do atendimento para `QueueStorePort.concluir_atendimento`.
 
 `adicionar_item` só antes de finalizar: serviço bloqueia emissão e mutação quando `is_finalizado` ou atendimento terminal; direto no agregado, itens vinculam `documento_id` após checar Portaria 344/98.
 
@@ -51,25 +51,26 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 
 ## 4. Relações
 
-- Lê atendimento e histórico sem importar queue nem executar SQL crua cross-module. `src/modules/consultation/application/ports/atendimento_reader_port.py` define `AtendimentoReaderPort` (`obter_resumo`, `concluir_atendimento(..., auto_commit=True)`, `liberar_consulta_ativa_medico`, `atender_chamada`) e `HistoricoAtendimentoReaderPort` (`listar_historico_paciente`), ambos adaptados em `src/modules/consultation/composition.py` via `QueueStoreAtendimentoReaderAdapter` sobre `QueueStorePort` (que por sua vez consulta `TriagePort.obter_queixas_por_atendimentos` em `FilaService` sem SQL crua cross-module).
+- Lê atendimento e histórico sem importar queue nem executar SQL crua cross-module. `src/modules/consultation/application/ports/atendimento_reader_port.py` define `AtendimentoReaderPort` (`obter_resumo`, `concluir_atendimento(..., auto_commit=True)`, `liberar_consulta_ativa_medico`, `atender_chamada`) e `HistoricoAtendimentoReaderPort` (`listar_historico_paciente`), adaptados em `src/modules/consultation/composition.py` via `QueueStoreAtendimentoReaderAdapter` com memoização por requisição (1 leitura por request propagada de `ClinicalAccessPolicy.validar_acesso_clinico`) e preenchimento de `chamada_iniciada_em`.
 - Presença médica em tempo real no plantão. O WebSocket `/ws/doctor/{medico_id}` (`src/modules/consultation/presentation/routers/doctor_ws_router.py`) injeta `DoctorPresenceDep` (`build_doctor_presence_engine` $\to$ `QueueEnginePort`) para registrar o médico conectado em `plantao:medicos_ativos` antes de iniciar o streaming Pub/Sub.
-- Portal do Cidadão protegido por Anti-IDOR (`PacienteAutenticadoDep` com `Role.PACIENTE`). `consultation_router.py` expõe `GET /api/v1/consultations/me/historico` (`PEPService.listar_historico_paciente`, omitindo evoluções SOAP não finalizadas), `GET /api/v1/consultations/me/documentos` (`PEPService.listar_documentos_paciente`, omitindo chaves S3 internas) e `GET /api/v1/consultations/me/documents/{documento_id}/pdf` (`PEPService.compilar_pdf_para_paciente`, validando titularidade via `_validar_titularidade_documento`).
-- Emite PDF via porta abstrata. `src/modules/consultation/application/ports/pdf_generator_port.py` recebe `DocumentoPDFPayload` e devolve bytes PDF/A com QR de verificação ITI.
-- Assina via porta abstrata. `src/modules/consultation/application/ports/icp_brasil_signer_port.py` aplica PAdES com `DoctorCertificateCredentials` (PSC OAuth2); infra PyHanko pluga sem tocar serviço.
+- Portal do Cidadão protegido por Anti-IDOR (`PacienteAutenticadoDep` com `Role.PACIENTE`). `consultation_router.py` expõe `GET /api/v1/consultations/me/historico`, `GET /api/v1/consultations/me/documentos` e `GET /api/v1/consultations/me/documents/{documento_id}/pdf` (`PEPService.compilar_pdf_para_paciente`).
+- Compilação compartilhada e Anti-IDOR de PDF. `ClinicalPdfCompiler` (`src/modules/consultation/application/services/clinical_pdf_compiler.py`) é compartilhado entre `PEPService`, `DocumentoService` e `DocumentValidationService` sem carregar Signer ou Liveness, validando `doc.atendimento_id == atendimento_id` (`DocumentoClinicoNaoEncontradoError`) e exigindo dados cadastrais reais do `DocumentDirectoryPort` (`DocumentoIntegridadeError` sem placeholders fictícios ou `contextlib.suppress`).
+- Assina via porta abstrata. `src/modules/consultation/application/ports/icp_brasil_signer_port.py` aplica PAdES com `DoctorCertificateCredentials` (PSC OAuth2); `PyHankoSigner` (`ExternalSigner` + `PdfTBSDocument`) incorpora o contêiner CMS retornado pelo PSC ou falha explicitamente com `AssinaturaDigitalInvalidaError` quando `allow_fake=False`.
+- Prova de vida facial US-15 para Lista C1/C5. `DocumentoService` exige hash de vivacidade aprovado (`LivenessVerificationPort`) ou justificativa clínica de exceção com $\ge 10$ caracteres para receituário de controle especial.
 - Guarda bytes via porta abstrata. `src/modules/consultation/application/ports/storage_port.py` persiste em `chave_s3` canônica e gera URL pré-assinada de 300s para download.
 - Persiste em três tabelas (`evolucoes_clinicas`, `documentos_clinicos`, `documento_itens`, com `RESTRICT` nas FKs clínicas e `CASCADE` de documento para itens). [Modelo](../architecture/data-model.md)
 - Orquestra mídia sem transportar mídia. `TeleconsultaService` orquestra geração de JWT e ciclo de sala sobre `LiveKitMediaPort`; SFU LiveKit carrega áudio/vídeo, Python só sinaliza.
 - Valida acesso à mídia com distinção clínica de No-Show. `src/modules/consultation/presentation/dependencies.py` (`validar_acesso_livekit`) rejeita atendimento finalizado por no-show (`PACIENTE_AUSENTE`) com HTTP 409 Conflict (`ATENDIMENTO_EXPIRADO_NO_SHOW`), e outros status terminais com HTTP 403 Forbidden.
-- Finalização centralizada em transação única no PEP (ADR-001 §6). `PEPService.finalizar_consulta` (`src/modules/consultation/application/services/pep_service.py`) marca evolução e documentos, chama `concluir_atendimento(atendimento_id, auto_commit=False)` via `AtendimentoReaderPort` (que realiza `flush()` no `Atendimento` carregado com `with_for_update=True`), consolida produção BPA-I, registra `CONSULTA_FINALIZADA`, executa **1 único `await self._session.commit()`** e só então libera `lock:consulta_ativa:medico:{id}` pós-commit via `liberar_consulta_ativa_medico`. Falhas periféricas no leitor ou na consolidação ambulatorial SUS são capturadas e registradas com structured logging (`logger.warning` com contexto forense), preservando a integridade primária do ato médico.
+- Módulo profundo PEP com transação única (ADR-001 §6). `PEPService` (`src/modules/consultation/application/services/pep_service.py`) absorve `salvar_evolucao_soap` e `obter_evolucao` (eliminando `EvolucaoService`), enquanto `finalizar_consulta` marca evolução e documentos, executa `concluir_atendimento(..., auto_commit=False)` e `consolidar_teleconsulta` (`auto_commit=False` no `AmbulatoryProducaoAdapter`) protegidos por savepoints `begin_nested()` (impedindo `PendingRollbackError` no PostgreSQL), registra `CONSULTA_FINALIZADA`, realiza **1 único `await self._session.commit()`** e libera `lock:consulta_ativa:medico:{id}` pós-commit. `consultation_router.py` roteia emissão, validação, liveness e assinatura diretamente para `DocumentoServiceDep`.
 
 ## 5. Peculiaridades
 
-- Cache distribuído de documentos assinados (ADR-006). `SignedCachePort` opera sobre Valkey distribuído (`ValkeySignedCache` com TTL de 24h e prefixo `doc:assinado:`) ou memória em testes (`MemorySignedCache`), selecionado dinamicamente via `SIGNED_CACHE_BACKEND`.
+- Cache fast-path + verdade autoritativa pós-24h (ADR-006). `SignedCachePort` (`ValkeySignedCache` com TTL de 24h ou `MemorySignedCache`) atua como fast-path em `DocumentValidationService._is_assinado` e `DocumentoService.is_assinado`, com fallback autoritativo para o PostgreSQL (`doc.assinado_em is not None and doc.sha256_hash is not None`) reaquecendo o cache quando há miss após 24h.
 - Mídia nunca passa pelo Python. Backend gera JWT e gerencia sala via Twirp RPC; pacotes WebRTC fluem paciente ↔ SFU, nunca por FastAPI.
 - `finalizado_em` é coluna persistida com timezone. Presente tanto em `evolucoes_clinicas` quanto em `documentos_clinicos`; a imutabilidade jurídica é garantida no banco e refletida na property `is_finalizado`.
 - Documentos clínicos nascem em rascunho com `sha256_hash` e `assinado_em` nulos, sendo preenchidos atomicamente pelo método rico `registrar_assinatura` apenas após assinatura ICP-Brasil válida.
-- Chave S3 canônica única. `build_signed_document_key` monta `consultations/{atendimento}/documents/{documento}.pdf` (preservando leitura compatível de `doc.chave_s3` para prefixos históricos); fonte da verdade de assinatura é `SignedCachePort`.
-- Portaria 344/98 no domínio. `validar_substancia_permitida_telemedicina` barra Listas A e B em `DocumentoItem.__init__` e em `adicionar_item`; entorpecente via teleconsulta nem chega ao PDF.
+- Chave S3 canônica única. `build_signed_document_key` monta `consultations/{atendimento}/documents/{documento}.pdf` (preservando leitura compatível de `doc.chave_s3` para prefixos históricos); apenas `DocumentoNaoEncontradoNoStorageError` aciona recompilação em fallback.
+- Portaria 344/98 no domínio em ponto único. `validar_substancia_permitida_telemedicina` barra Listas A e B uma única vez em `DocumentoItem.__init__`; entorpecente via teleconsulta nem chega ao flush nem ao PDF.
 - UTC sempre, relógio do cliente nunca. `registrado_em`, `assinado_em` e `finalizado_em` usam `datetime.now(UTC)` como default; auditoria RN07 depende desse carimbo.
 - Erros de domínio tipados. `ConsultaFinalizadaError` para mutação/exclusão pós-trava, `ConsultaInvalidaError` para dado inválido; borda converte em 4xx sem vazar stack.
 - Gate CFM nº 2.314/2022 na Estação Médica. O frontend bloqueia preventivamente a emissão de receitas digitais e a finalização da consulta até que o médico confirme a conferência visual de RG/CNH/CNS em vídeo ou registre justificativa clínica formal em caso de emergência.
@@ -88,13 +89,16 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - `src/modules/consultation/application/ports/pdf_generator_port.py`
 - `src/modules/consultation/application/ports/icp_brasil_signer_port.py`
 - `src/modules/consultation/application/ports/livekit_media_port.py`
-- `src/modules/consultation/application/services/evolucao_service.py`
+- `src/modules/consultation/application/services/clinical_pdf_compiler.py`
 - `src/modules/consultation/application/services/documento_service.py`
+- `src/modules/consultation/application/services/document_validation_service.py`
 - `src/modules/consultation/application/services/pep_service.py`
 - `src/modules/consultation/presentation/dependencies.py`
 - `src/modules/consultation/presentation/routers/consultation_router.py`
+- `src/modules/consultation/presentation/routers/doctor_ws_router.py`
 - `src/modules/consultation/composition.py`
 - `src/modules/consultation/infrastructure/livekit_adapter.py`
+- `src/modules/consultation/infrastructure/pyhanko_signer.py`
 - `frontend/src/features/consultation/components/doctor-workstation.tsx`
 - `frontend/src/features/consultation/components/cfm-identity-gate.tsx`
 - `frontend/src/features/consultation/components/prescription-builder.tsx`
@@ -103,20 +107,22 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - `tests/unit/test_consultation_models.py`
 - `tests/unit/test_consultation_patient_portal.py`
 - `tests/unit/test_pep_service.py`
-- `tests/unit/test_evolucao_service.py`
 - `tests/unit/test_documento_service.py`
+- `tests/unit/test_document_validation_service.py`
+- `tests/unit/test_pyhanko_signer.py`
 - `tests/unit/test_clinical_ai_governance.py`
 - `tests/unit/test_trava_antifraude_atestado.py`
+- `tests/unit/test_prescription_liveness.py`
 - `tests/unit/test_livekit_token.py`
 - `tests/unit/test_livekit_dependencies.py`
 
 Prova viva:
 
 ```bash
-ls tests/unit | rg -i "consultation|evolucao|documento|livekit"
+ls tests/unit | rg -i "consultation|pep|documento|livekit|liveness"
 # test_consultation_models.py
 # test_documento_service.py
-# test_evolucao_service.py
+# test_pep_service.py
 # test_livekit_token.py
 ```
 

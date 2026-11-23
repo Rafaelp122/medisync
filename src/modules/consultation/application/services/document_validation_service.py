@@ -64,8 +64,15 @@ class DocumentValidationService:
             raise NotFoundError(_MSG_VALIDACAO_INVALIDA) from err
 
     async def _is_assinado(self, doc: DocumentoClinico) -> bool:
-        """Return True only when SignedCachePort holds a mark for the doc."""
-        return await self._cache.is_assinado(doc.id)
+        """Fast-path SignedCachePort com fallback autoritativo no PostgreSQL (>24h)."""
+        if await self._cache.is_assinado(doc.id):
+            return True
+        assinado_em_banco = doc.assinado_em is not None and bool(
+            (doc.sha256_hash or "").strip()
+        )
+        if assinado_em_banco:
+            await self._cache.marcar_assinado(doc.id)
+        return assinado_em_banco
 
     @staticmethod
     def build_s3_key(atendimento_id: UUID, doc_id: UUID) -> str:

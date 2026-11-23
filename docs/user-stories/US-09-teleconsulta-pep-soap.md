@@ -60,26 +60,29 @@
 
 * **Endpoint:** `POST /api/v1/consultations/{atendimento_id}/soap`
 * **Headers:** `Authorization: Bearer <jwt_medico>`
-* **Payload de Entrada (`SoapNotesRequest`):**
+* **Payload de Entrada (`RegistrarSOAPRequest`):**
   ```json
   {
     "anamnese": "Paciente refere dor de garganta, febre aferida em 38.5C e tosse seca.",
     "exame_fisico_virtual": "Orofaringe hiperemiada com exsudato purulento amigdaliano.",
     "cid10_principal": "J03.0",
     "conduta": "Prescrito Amoxicilina 500mg por 7 dias e repouso.",
+    "codigo_sigtap": "03.01.01.025-0",
+    "ia_utilizada": false,
+    "ia_ratificada_pelo_medico": true,
     "identidade_verificada": true,
     "tipo_documento_verificado": "RG",
     "justificativa_excecao_identidade": null
   }
   ```
-* **Resposta Esperada (`200 OK`):** Retorna o objeto da evolução clínica persistida.
+* **Resposta Esperada (`200 OK`, `EvolucaoSOAPResponse`):** Retorna o objeto da evolução clínica persistida.
 
 ---
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Modelo:** Entidade `EvolucaoClinica` com campos SOAP, CID-10, campos de conferência de identidade e flags de finalização (`src/modules/consultation/domain/models/evolucao_clinica.py`).
-- [x] **Imutabilidade e Salvaguarda:** Guardas de finalização bloqueiam alterações pós-fechamento e exigem verificação de identidade antes da emissão de prescrição digital (`PEPService.salvar_soap()`).
+- [x] **Modelo:** Entidade `EvolucaoClinica` com campos SOAP, CID-10, `codigo_sigtap`, campos de conferência de identidade e `finalizado_em` (`src/modules/consultation/domain/models/evolucao_clinica.py`).
+- [x] **Imutabilidade e Salvaguarda:** Guardas de finalização bloqueiam alterações pós-fechamento e exigem verificação de identidade antes da emissão de prescrição digital (`PEPService.salvar_evolucao_soap()`).
 - [x] **Apresentação Backend:** Router fino `consultation_router.py` integrado em `/api/v1/consultations`.
 - [x] **Frontend Workstation Single-Pane:**
   - Rotas dedicadas: `/medico` (`frontend/src/routes/medico.tsx`), `/chamada` (`frontend/src/routes/chamada.tsx`) e `/pos-consulta` (`frontend/src/routes/pos-consulta.tsx`) (Issue #141)

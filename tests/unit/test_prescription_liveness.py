@@ -429,13 +429,12 @@ async def test_lista_c5_exige_liveness_quando_politica_org_ativa() -> None:
         ],
     )
 
-    resumo_ativa = AtendimentoResumoDTO(
+    resumo = AtendimentoResumoDTO(
         atendimento_id=atendimento_id,
         medico_id=medico_id,
         status="EM_ATENDIMENTO",
         tcle_hash="a" * 64,
         is_terminal=False,
-        exige_liveness_controle_especial=True,
     )
     svc_ativa = DocumentoService(
         session=cast("AsyncSession", FakeAsyncSession([])),
@@ -443,13 +442,12 @@ async def test_lista_c5_exige_liveness_quando_politica_org_ativa() -> None:
         signer=FakeICPBrasilSigner(),
         storage=FakeMemoryStorage(),
         cache=MemorySignedCache(),
-        atendimento_reader=FakeAtendimentoReader(resumo=resumo_ativa),
+        atendimento_reader=FakeAtendimentoReader(resumo=resumo),
         liveness_verifier=MockLivenessAdapter(isolated=True),
     )
     with pytest.raises(ProvaDeVidaObrigatoriaError):
         await svc_ativa.emitir_documento(cmd_c5)
 
-    added: list[Any] = []
     evolucao = EvolucaoClinica(
         atendimento_id=atendimento_id,
         medico_id=medico_id,
@@ -457,28 +455,28 @@ async def test_lista_c5_exige_liveness_quando_politica_org_ativa() -> None:
         conduta="Monitorizacao laboratorial periodica",
         identidade_verificada=True,
     )
-    resumo_desativada = AtendimentoResumoDTO(
+    cmd_excecao = EmitirDocumentoClinicoCommand(
         atendimento_id=atendimento_id,
         medico_id=medico_id,
-        status="EM_ATENDIMENTO",
-        tcle_hash="a" * 64,
-        is_terminal=False,
-        exige_liveness_controle_especial=False,
+        tipo_documento="RECEITA_SIMPLES",
+        itens=cmd_c5.itens,
+        justificativa_excecao_liveness="Paciente sem câmera frontal em chamada de voz.",
     )
-    svc_desativada = DocumentoService(
+    svc_excecao = DocumentoService(
         session=cast(
             "AsyncSession",
-            FakeAsyncSession([FakeResult(evolucao), FakeAddedResult(added)], added),
+            FakeAsyncSession([FakeResult(evolucao)]),
         ),
         pdf_generator=FakePDFGenerator(),
         signer=FakeICPBrasilSigner(),
         storage=FakeMemoryStorage(),
         cache=MemorySignedCache(),
-        atendimento_reader=FakeAtendimentoReader(resumo=resumo_desativada),
+        atendimento_reader=FakeAtendimentoReader(resumo=resumo),
         liveness_verifier=MockLivenessAdapter(isolated=True),
     )
-    doc = await svc_desativada.emitir_documento(cmd_c5)
+    doc = await svc_excecao.emitir_documento(cmd_excecao)
     assert doc.liveness_verificacao_hash is None
+    assert doc.justificativa_excecao_liveness is not None
 
 
 @pytest.mark.asyncio

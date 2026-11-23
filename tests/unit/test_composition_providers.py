@@ -99,8 +99,11 @@ def test_get_auth_service_wires_real_adapters(
 def test_get_pep_service_wires_real_adapters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PEP composition must wire pdf generator, signer and fake storage."""
+    """PEP composition must wire ClinicalPdfCompiler and FakeStorage without Signer."""
     from src.modules.consultation import composition
+    from src.modules.consultation.application.services.clinical_pdf_compiler import (
+        ClinicalPdfCompiler,
+    )
     from src.modules.consultation.infrastructure.pdf_generator import (
         ReportLabPDFGenerator,
     )
@@ -114,14 +117,26 @@ def test_get_pep_service_wires_real_adapters(
     )
     session = AsyncMock(spec=AsyncSession)
     service = composition.get_pep_service(cast("AsyncSession", session))
-    assert isinstance(service._pdf_generator, ReportLabPDFGenerator)  # pyright: ignore[reportPrivateUsage]
-    assert isinstance(service._signer, PyHankoSigner)  # pyright: ignore[reportPrivateUsage]
-    assert isinstance(service._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(service._pdf_compiler, ClinicalPdfCompiler)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(service._pdf_compiler._pdf_generator, ReportLabPDFGenerator)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(service._pdf_compiler._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
+    assert not hasattr(service, "_signer")
+    assert not hasattr(service, "_pdf_generator")
 
     built = composition.build_pep_service_for_session(cast("AsyncSession", session))
-    assert isinstance(built._pdf_generator, ReportLabPDFGenerator)  # pyright: ignore[reportPrivateUsage]
-    assert isinstance(built._signer, PyHankoSigner)  # pyright: ignore[reportPrivateUsage]
-    assert isinstance(built._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(built._pdf_compiler, ClinicalPdfCompiler)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(built._pdf_compiler._pdf_generator, ReportLabPDFGenerator)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(built._pdf_compiler._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
+
+    doc_service = composition.get_documento_service(cast("AsyncSession", session))
+    assert isinstance(doc_service._signer, PyHankoSigner)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(doc_service._pdf_compiler, ClinicalPdfCompiler)  # pyright: ignore[reportPrivateUsage]
+
+    val_service = composition.get_document_validation_service(
+        cast("AsyncSession", session)
+    )
+    assert isinstance(val_service._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
+    assert val_service._compilador_pdf.__self__ is not doc_service  # pyright: ignore[reportFunctionMemberAccess,reportPrivateUsage]
 
 
 def test_build_fila_service_injects_queue_engine_and_shift_policy() -> None:
