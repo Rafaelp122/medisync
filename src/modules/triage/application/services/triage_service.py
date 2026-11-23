@@ -1,3 +1,4 @@
+import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -17,12 +18,35 @@ from src.modules.triage.application.ports.emergency_notifier import (
 from src.modules.triage.domain.classification import (
     calcular_hash_tcle,
     classificar_risco_clinico,
+    normalizar_sintomas,
 )
-from src.modules.triage.domain.exceptions import EmergenciaCriticaSamuError
+from src.modules.triage.domain.exceptions import (
+    EmergenciaCriticaSamuError,
+    TriagemInvalidaError,
+)
 from src.modules.triage.domain.models.triagem import Triagem
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
+_TCLE_HASH_REGEX = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _resolver_tcle_hash(tcle_texto: str, tcle_hash: str | None) -> str:
+    if tcle_hash is not None and tcle_hash.strip():
+        cleaned = tcle_hash.strip().lower()
+        if not _TCLE_HASH_REGEX.match(cleaned):
+            raise ValidationError(
+                f"Hash TCLE '{tcle_hash}' inválido; esperado digest SHA-256 "
+                "hexadecimal de 64 caracteres (formato ^[0-9a-f]{64}$)."
+            )
+        return cleaned
+    if tcle_texto and tcle_texto.strip():
+        return calcular_hash_tcle(tcle_texto)
+    raise ValidationError(
+        "Consentimento TCLE obrigatório (texto ou hash). "
+        f"Recebido tcle_texto='{tcle_texto}' e tcle_hash='{tcle_hash}'."
+    )
 
 
 class TriageService:
@@ -44,7 +68,7 @@ class TriageService:
     async def avaliar_risco(
         self,
         queixa_principal: str,
-        sintomas: list[str],
+        sintomas: Sequence[str],
         escala_dor: int = 0,
         tcle_texto: str = "",
         tcle_hash: str | None = None,
@@ -57,19 +81,12 @@ class TriageService:
         Regras: docs/explanation/domains/triage-domain.md.
         História: docs/user-stories/US-01-acolhimento-triagem-tcle.md.
         """
-        tcle_hash_final = tcle_hash.strip().lower() if tcle_hash else None
-        if not tcle_hash_final:
-            if tcle_texto and tcle_texto.strip():
-                tcle_hash_final = calcular_hash_tcle(tcle_texto)
-            else:
-                raise ValidationError(
-                    "Consentimento TCLE obrigatório (texto ou hash). "
-                    f"Recebido tcle_texto='{tcle_texto}' e tcle_hash='{tcle_hash}'."
-                )
+        tcle_hash_final = _resolver_tcle_hash(tcle_texto, tcle_hash)
+        sintomas_norm = normalizar_sintomas(sintomas)
 
         prioridade = classificar_risco_clinico(
             queixa_principal=queixa_principal,
-            sintomas=sintomas,
+            sintomas=sintomas_norm,
             escala_dor=escala_dor,
         )
 
@@ -79,7 +96,7 @@ class TriageService:
                 alerta = EmergencyAlertDTO(
                     atendimento_id=resolved_atend_id,
                     queixa_principal=queixa_principal,
-                    sintomas_alerta=sintomas,
+                    sintomas_alerta=sintomas_norm,
                 )
                 await self._notifier.notificar_emergencia_samu(alerta)
 
@@ -108,8 +125,8 @@ class TriageService:
         self,
         atendimento_id: UUID,
         queixa_principal: str,
-        sintomas: list[str],
-        prioridade_calculada: int,
+        sintomas: Sequence[str],
+        prioridade_calculada: int | None = None,
         alerta_samu_disparado: bool = False,
         escala_dor: int = 0,
     ) -> UUID:
@@ -124,14 +141,23 @@ class TriageService:
                 f"Triagem do atendimento '{atendimento_id}'."
             )
 
-        triagem = Triagem(
+        triagem = Triagem.criar_avaliada(
             atendimento_id=atendimento_id,
             queixa_principal=queixa_principal,
-            prioridade_calculada=prioridade_calculada,
-            sintomas_alerta=sintomas,
-            alerta_samu_disparado=alerta_samu_disparado,
+            sintomas=sintomas,
             escala_dor=escala_dor,
+            alerta_samu_disparado=alerta_samu_disparado,
         )
+        if (
+            prioridade_calculada is not None
+            and int(prioridade_calculada) != triagem.prioridade_calculada
+        ):
+            raise TriagemInvalidaError(
+                f"Prioridade calculada '{prioridade_calculada}' incoerente com a "
+                "queixa e sintomas informados; esperado "
+                f"'{triagem.prioridade_calculada}'."
+            )
+
         self._session.add(triagem)
         await self._session.flush()
         return triagem.id

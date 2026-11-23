@@ -88,8 +88,7 @@ async def comunicar_piora_clinica(
     _auth: PosseAtendimentoPioraAuthDep,
 ) -> PioraClinicaResponse:
     """Execute clinical re-evaluation and queue re-prioritization on deterioration."""
-    cmd = body.to_command()
-    result = await fila_service.processar_piora_clinica(cmd)
+    result = await fila_service.processar_piora_clinica(body)
     return PioraClinicaResponse.model_validate(result)
 
 

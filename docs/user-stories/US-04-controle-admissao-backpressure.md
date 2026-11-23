@@ -29,18 +29,18 @@
 - **E** atualiza atomicamente o contador diário de atendimentos da unidade.
 
 ### Cenário 2: Bloqueio por atingimento da Cota Diária Máxima
-- **Dado que** a unidade atingiu o limite máximo da cota diária de atendimentos autorizados,
+- **Dado que** a unidade atingiu o limite máximo da cota diária autorizada em `ConfiguracaoPlantao` (`cota_diaria_maxima`),
 - **Quando** um novo paciente tenta se admitir,
-- **Então** o sistema rejeita a requisição preventivamente informando serviço temporariamente indisponível (HTTP 503 Service Unavailable),
-- **E** emite o evento de saturação e transbordo operacional (`QUEUE_OVERFLOW_TRANSIT`),
+- **Então** a reserva atômica em `ValkeyQueueEngine.consumir_cota_ou_bloquear` reverte imediatamente o incremento e rejeita a requisição (HTTP 503 Service Unavailable, `code: "ADMISSAO_FILA_SUSPENSA"`),
+- **E** registra log estruturado de saturação (`motivo="COTA_ATINGIDA"`),
 - **E** exibe orientação clara instruindo a busca por unidade de atendimento presencial ou retorno no próximo turno.
 
 ### Cenário 3: Bloqueio preventivo por extrapolação da capacidade estocástica ($\alpha$)
-- **Dado que** restam 60 minutos de plantão, com 2 médicos ativos e TMA médio de 15 minutos,
+- **Dado que** restam 60 minutos de plantão, com 2 médicos ativos em `plantao:medicos_ativos` e TMA de 15 minutos,
 - **E** já existem 10 pacientes aguardando na fila, resultando em:
   $$\frac{10 \times 15 \times 1{,}25}{2} = 93{,}75\text{ minutos} > 60\text{ minutos}$$
 - **Quando** um novo paciente tenta entrar na fila,
-- **Então** o serviço barra a admissão com HTTP 503, protegendo o encerramento seguro do plantão e os limites de segurança assistencial.
+- **Então** o serviço estorna a cota reservada (`estornar_cota_diaria`) e barra a admissão com HTTP 503 (`motivo="CAPACIDADE_EXCEDIDA"`), protegendo o encerramento seguro do plantão e os limites de segurança assistencial.
 
 ---
 
@@ -50,10 +50,11 @@
 * **Resposta em Caso de Bloqueio por Capacidade (`503 Service Unavailable`):**
   ```json
   {
-    "type": "https://medisync.org/errors/capacidade-esgotada",
-    "title": "Capacidade Máxima de Atendimento Atingida",
+    "type": "about:blank",
+    "title": "Admissão na Fila Suspensa",
     "status": 503,
-    "detail": "A unidade atingiu o limite de capacidade operacional para o plantão atual. Busque uma unidade física ou retorne no próximo turno.",
+    "detail": "O acolhimento virtual está temporariamente suspenso no momento pois a capacidade do plantão atual foi atingida (previsão de atendimento excede o tempo de plantão restante). Por favor, procure uma unidade de atendimento presencial ou tente novamente no próximo turno.",
+    "code": "ADMISSAO_FILA_SUSPENSA",
     "instance": "/api/v1/fila/admissao"
   }
   ```
@@ -62,9 +63,10 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Cota Diária Atômica:** Chave Valkey `queue:admissoes:{today}` consultada e incrementada atomicamente (`src/modules/queue/application/services/controle_admissao_service.py`).
-- [x] **Fórmula Estocástica $\alpha$:** Avaliação de $\alpha \in [1{,}20; 1{,}30]$ implementada em `ControleAdmissaoService.avaliar_capacidade()`.
-- [x] **Evento de Transbordo:** Emissão de `QUEUE_OVERFLOW_TRANSIT` disparada ao exceder limites.
+- [x] **Presença Real & Política de Plantão:** Contagem de médicos ativos lida de `plantao:medicos_ativos` via `QueueEnginePort.obter_medicos_ativos_count()` e parâmetros lidos de `ConfiguracaoPlantao` via `ShiftPolicyReaderPort` (sem confiar em `medicos_ativos` do cliente).
+- [x] **Cota Diária Atômica e Estorno:** Chave Valkey `queue:admissoes:{data}` reservada atomicamente via `consumir_cota_ou_bloquear()` com estorno via `estornar_cota_diaria()` em rollback de banco (`src/modules/queue/infrastructure/valkey_queue_engine.py`, `src/modules/queue/application/services/fila_service.py`).
+- [x] **Fórmula Estocástica $\alpha$:** Avaliação implementada em `avaliar_capacidade_admissao()` e `ControleAdmissaoService.avaliar_admissao()` (`src/modules/queue/application/services/controle_admissao_service.py`).
+- [x] **Telemetria de Transbordo:** Log estruturado em `ControleAdmissaoService.avaliar_admissao` e exceção RFC 7807 `AdmissaoFilaSuspensaError` (HTTP 503).
 - [x] **Testes Automatizados:**
   - `tests/unit/test_controle_admissao.py`
   - `tests/unit/test_queue_cota_diaria.py`

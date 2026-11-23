@@ -1,14 +1,13 @@
 """Presentation schemas for queue admission and triage endpoints."""
 
 from datetime import datetime
-from typing import Annotated, Self
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoCommand,
-    PioraClinicaCommand,
     RegularizacaoFilaCommand,
 )
 
@@ -35,11 +34,6 @@ class AdmissaoRequest(BaseModel):
     tcle_hash: str | None = Field(
         default=None, min_length=64, max_length=64, description="Hash SHA-256 do TCLE"
     )
-    medicos_ativos: int = Field(
-        default=1,
-        ge=1,
-        description="Médicos ativos no plantão para cálculo de backpressure",
-    )
     cpf: str | None = Field(default=None, description="CPF do paciente (opcional)")
     cns: str | None = Field(default=None, description="Cartão Nacional de Saúde (SUS)")
 
@@ -55,7 +49,6 @@ class AdmissaoRequest(BaseModel):
             escala_dor=self.escala_dor,
             tcle_texto=self.tcle_texto,
             tcle_hash=self.tcle_hash,
-            medicos_ativos=self.medicos_ativos,
             cpf=self.cpf,
             cns=self.cns,
             ip_origem=ip_origem,
@@ -106,7 +99,7 @@ class ChamarProximoResponse(BaseModel):
 
 
 class PosicaoFilaResponse(BaseModel):
-    """Resposta com a posição ordinal e estimativa de espera na fila."""
+    """Resposta com posição ordinal, timer de chamada e estimativa de espera."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -118,6 +111,17 @@ class PosicaoFilaResponse(BaseModel):
     total_aguardando: int = Field(description="Total de pacientes aguardando na fila")
     tempo_estimado_segundos: int | None = Field(
         description="Tempo de espera estimado em segundos"
+    )
+    prioridade_clinica: int = Field(
+        description="Classificação de risco Manchester (1=Emergência a 5=Não Urgente)"
+    )
+    chamada_iniciada_em: datetime | None = Field(
+        default=None,
+        description="Timestamp de início do toque de chamada (para countdown após F5)",
+    )
+    ttl_segundos: int | None = Field(
+        default=None,
+        description="Tolerância em segundos da janela de toque ativa",
     )
 
 
@@ -165,15 +169,6 @@ class PioraClinicaRequest(BaseModel):
         description="Descrição dos novos sintomas ou agravamento do quadro clínico",
     )
 
-    def to_command(self) -> PioraClinicaCommand:
-        """Converte a requisição em comando da camada de aplicação."""
-        return PioraClinicaCommand(
-            atendimento_id=self.atendimento_id,
-            novos_sintomas=self.novos_sintomas,
-            escala_dor=self.escala_dor,
-            queixa_adicional=self.queixa_adicional,
-        )
-
 
 class PioraClinicaResponse(BaseModel):
     """Resposta com resultado da reavaliação de risco e salvaguardas clínicas."""
@@ -182,11 +177,7 @@ class PioraClinicaResponse(BaseModel):
 
     atendimento_id: UUID = Field(description="ID do atendimento")
     prioridade_clinica: int = Field(
-        description="Nova prioridade clínica pós-reavaliação"
-    )
-    nova_prioridade: int | None = Field(
-        default=None,
-        description="Nova prioridade clínica pós-reavaliação (canônico US-06)",
+        description="Prioridade clínica consolidada pós-reavaliação"
     )
     status_atendimento: str | None = Field(
         default=None,
@@ -206,18 +197,6 @@ class PioraClinicaResponse(BaseModel):
         default=None,
         description="Instruções de redirecionamento ou emergência imediata",
     )
-    orientacoes_emergencia: str | None = Field(
-        default=None,
-        description="Instruções de emergência imediata (canônico US-06)",
-    )
-
-    @model_validator(mode="after")
-    def _harmonizar_campos_canonicos(self) -> Self:
-        if self.nova_prioridade is None:
-            self.nova_prioridade = self.prioridade_clinica
-        if self.orientacoes_emergencia is None and self.redirecionado_emergencia:
-            self.orientacoes_emergencia = self.instrucoes
-        return self
 
 
 class RegularizacaoFilaRequest(BaseModel):

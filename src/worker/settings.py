@@ -11,32 +11,28 @@ from arq.worker import Function, func
 
 from src.core.config import get_settings
 from src.core.database import dispose_engine, get_engine, get_session_factory
-from src.core.valkey import close_valkey_pool, get_valkey_pool
+from src.core.logging import setup_logging
+from src.core.telemetry import setup_telemetry
+from src.core.valkey import (
+    close_valkey_pool,
+    create_arq_redis_settings,
+    get_valkey_pool,
+)
 from src.worker.tasks import (
     on_job_failure,
     ping_task,
     reconciliar_fila_orphans_task,
     resolver_ring_timeout_task,
-    validar_elegibilidade_task,
 )
 
 logger = logging.getLogger("medisync.worker")
 
 
-def create_redis_settings() -> RedisSettings:
-    """Create RedisSettings matching application Valkey configuration."""
-    settings = get_settings()
-    return RedisSettings(
-        host=settings.VALKEY_HOST,
-        port=settings.VALKEY_PORT,
-        conn_timeout=int(settings.VALKEY_CONNECT_TIMEOUT),
-        max_connections=settings.VALKEY_MAX_CONNECTIONS,
-    )
-
-
 async def startup(ctx: dict[Any, Any]) -> None:
-    """Initialize shared connections in worker context upon startup."""
+    """Initialize logging, OpenTelemetry, and shared pools on worker startup."""
     settings = get_settings()
+    setup_logging(level="DEBUG" if settings.DEBUG else "INFO")
+    setup_telemetry()
     ctx["settings"] = settings
     ctx["db_engine"] = get_engine()
     ctx["db_session_factory"] = get_session_factory()
@@ -71,10 +67,6 @@ class WorkerSettings:
             cast("Any", reconciliar_fila_orphans_task),
             name="reconciliar_fila_orphans_task",
         ),
-        func(
-            cast("Any", validar_elegibilidade_task),
-            name="validar_elegibilidade_task",
-        ),
     ]
     cron_jobs: Sequence[CronJob] = [
         cron(
@@ -88,7 +80,7 @@ class WorkerSettings:
     on_shutdown = staticmethod(shutdown)
     on_job_failure = staticmethod(on_job_failure)
 
-    redis_settings: RedisSettings = create_redis_settings()
+    redis_settings: RedisSettings = create_arq_redis_settings()
     queue_name: str = _app_settings.ARQ_QUEUE_NAME
 
     max_jobs: int = _app_settings.ARQ_MAX_JOBS

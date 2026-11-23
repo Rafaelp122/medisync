@@ -147,6 +147,8 @@ depends_on = [
     "src.modules.queue.application",
     "src.modules.queue.domain",
     "src.modules.queue.infrastructure",
+    "src.modules.telemetry.application",
+    "src.modules.telemetry.composition",
     "src.modules.triage.application",
     "src.modules.triage.composition",
 ]
@@ -188,10 +190,6 @@ depends_on = [
     "src.modules.queue.domain",
     "src.modules.queue.infrastructure",
     "src.modules.queue.composition",
-    "src.modules.ambulatory.application",
-    "src.modules.ambulatory.domain",
-    "src.modules.ambulatory.composition",
-
     "src.modules.identity.application",
     "src.modules.identity.composition",
 ]

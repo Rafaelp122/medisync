@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.audit import AuditTrailPort, SqlAuditTrailAdapter
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
-from src.core.valkey import get_valkey_client, get_valkey_pool
+from src.core.valkey import ValkeyDep, get_valkey_client, get_valkey_pool
 from src.modules.ambulatory.application.dtos import ConsolidarTeleconsultaCommand
 from src.modules.ambulatory.application.services.producao_service import (
     ProducaoAmbulatorialService,
@@ -104,8 +104,12 @@ from src.modules.identity.application.ports.identity_reader_port import (
     IdentityReaderPort,
 )
 from src.modules.identity.composition import get_identity_reader
+from src.modules.queue.application.ports.queue_engine_port import QueueEnginePort
 from src.modules.queue.application.ports.queue_store_port import QueueStorePort
-from src.modules.queue.composition import build_fila_service_for_session
+from src.modules.queue.composition import (
+    build_doctor_presence_engine,
+    build_fila_service_for_session,
+)
 
 logger = logging.getLogger("medisync.consultation.composition")
 
@@ -130,8 +134,19 @@ class QueueStoreAtendimentoReaderAdapter:
             criado_em=snapshot.criado_em,
         )
 
-    async def concluir_atendimento(self, atendimento_id: UUID) -> None:
-        await self._queue_store.concluir_atendimento(atendimento_id)
+    async def concluir_atendimento(
+        self,
+        atendimento_id: UUID,
+        *,
+        auto_commit: bool = True,
+    ) -> UUID | None:
+        return await self._queue_store.concluir_atendimento(
+            atendimento_id,
+            auto_commit=auto_commit,
+        )
+
+    async def liberar_consulta_ativa_medico(self, medico_id: UUID) -> None:
+        await self._queue_store.liberar_consulta_ativa_medico(medico_id)
 
     async def atender_chamada(self, atendimento_id: UUID) -> None:
         await self._queue_store.atender_chamada(atendimento_id)
@@ -301,10 +316,16 @@ def get_signed_cache() -> SignedCachePort:
     return ValkeySignedCache()
 
 
-def get_atendimento_reader(session: DbSessionDep) -> AtendimentoReaderPort:
-    """Provide attendance reader adapting QueueStorePort with ORM models."""
+def build_atendimento_reader_for_session(
+    session: AsyncSession,
+    valkey: Redis | None = None,
+) -> AtendimentoReaderPort:
+    """Build attendance reader adapting QueueStorePort with optional Valkey client."""
     try:
-        queue_store: QueueStorePort = build_fila_service_for_session(session=session)
+        queue_store: QueueStorePort = build_fila_service_for_session(
+            session=session,
+            valkey=valkey,
+        )
         return QueueStoreAtendimentoReaderAdapter(queue_store)
     except Exception as exc:
         logger.warning(
@@ -313,6 +334,19 @@ def get_atendimento_reader(session: DbSessionDep) -> AtendimentoReaderPort:
             exc,
         )
         return SqlAtendimentoReader(session)
+
+
+def get_atendimento_reader(session: DbSessionDep) -> AtendimentoReaderPort:
+    """Provide attendance reader adapting QueueStorePort with ORM models."""
+    return build_atendimento_reader_for_session(session=session)
+
+
+def get_doctor_presence_registrar(valkey: ValkeyDep) -> QueueEnginePort:
+    """Provide QueueEnginePort for registering connected doctors on WS connect."""
+    return build_doctor_presence_engine(valkey=valkey)
+
+
+DoctorPresenceDep = Annotated[QueueEnginePort, Depends(get_doctor_presence_registrar)]
 
 
 def get_document_directory(session: DbSessionDep) -> DocumentDirectoryPort:
@@ -395,12 +429,13 @@ def build_pep_service_for_session(
     audit_trail: AuditTrailPort | None = None,
     producao_port: ProducaoAmbulatorialPort | None = None,
     liveness_verifier: LivenessVerificationPort | None = None,
+    valkey: Redis | None = None,
 ) -> PEPService:
     """Build PEPService with all mandatory ports wired (outside request scope)."""
     reader = (
         atendimento_reader
         if atendimento_reader is not None
-        else get_atendimento_reader(session)
+        else build_atendimento_reader_for_session(session, valkey=valkey)
     )
     directory = (
         document_directory
@@ -474,6 +509,7 @@ def get_pep_service(
     return build_pep_service_for_session(
         session,
         liveness_verifier=get_liveness_verifier(valkey),
+        valkey=valkey,
     )
 
 

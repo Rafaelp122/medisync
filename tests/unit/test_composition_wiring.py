@@ -1,8 +1,12 @@
 """Unit tests verifying adapter resolution wiring in module composition roots."""
 
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
 from src.core.authz.revocation import (
     MemoryTokenRevocation,
     ValkeyTokenRevocation,
@@ -230,18 +234,23 @@ def test_queue_notification_adapter_noop_returns_none() -> None:
 
 
 def test_queue_alocacao_service_build_wiring_with_valkey() -> None:
+    from typing import cast
     from unittest.mock import AsyncMock
 
+    from src.modules.consultation.application.realtime_channels import (
+        channel_doctor_calls,
+    )
     from src.modules.queue.composition import build_alocacao_service_for_session
     from src.modules.queue.infrastructure.notifications import (
         RateLimitedNotificationAdapter,
     )
+    from src.modules.queue.infrastructure.valkey_queue_engine import ValkeyQueueEngine
 
     mock_valkey = AsyncMock()
     mock_session = AsyncMock()
 
     service = build_alocacao_service_for_session(
-        valkey=mock_valkey, session=mock_session
+        valkey=cast("Redis", mock_valkey), session=mock_session
     )
     assert isinstance(
         service._notification_adapter,  # pyright: ignore[reportPrivateUsage]
@@ -251,11 +260,13 @@ def test_queue_alocacao_service_build_wiring_with_valkey() -> None:
         service._notification_adapter._rate_limiter._valkey  # pyright: ignore[reportPrivateUsage]
         is mock_valkey
     )
-    from src.modules.queue.composition import ValkeyDoctorCallNotifier
-
     assert isinstance(
-        service._doctor_notifier,  # pyright: ignore[reportPrivateUsage]
-        ValkeyDoctorCallNotifier,
+        service._queue_engine,  # pyright: ignore[reportPrivateUsage]
+        ValkeyQueueEngine,
+    )
+    assert (
+        service._queue_engine._doctor_channel_fn  # pyright: ignore[reportPrivateUsage]
+        is channel_doctor_calls
     )
 
 
@@ -294,26 +305,42 @@ def test_auth_and_identity_session_factories() -> None:
 
 
 @pytest.mark.asyncio
-async def test_valkey_doctor_call_notifier_dispatches_event() -> None:
-    from unittest.mock import AsyncMock
+async def test_valkey_queue_engine_publicar_evento_medico_dispatches_event() -> None:
+    import json
+    from typing import cast
     from uuid import uuid4
 
-    from src.modules.queue.composition import ValkeyDoctorCallNotifier
+    from src.modules.consultation.application.realtime_channels import (
+        channel_doctor_calls,
+    )
+    from src.modules.queue.composition import build_queue_engine
 
-    mock_valkey = AsyncMock()
-    notifier = ValkeyDoctorCallNotifier(valkey=mock_valkey)
+    from tests.doubles import FakeValkey
+
+    fake_valkey = FakeValkey()
+    engine = build_queue_engine(valkey=cast("Redis", fake_valkey))
     med_id = uuid4()
     atend_id = uuid4()
 
-    await notifier.notificar_chamada_iniciada(
-        medico_id=med_id,
-        atendimento_id=atend_id,
-        ttl_segundos=45,
-        chamada_iniciada_em="2026-10-18T00:00:00Z",
+    pubsub = fake_valkey.pubsub()
+    await pubsub.subscribe(channel_doctor_calls(med_id))
+
+    await engine.publicar_evento_medico(
+        med_id,
+        {
+            "event": "INCOMING_CALL",
+            "atendimento_id": str(atend_id),
+            "medico_id": str(med_id),
+            "ttl_segundos": 45,
+            "chamada_iniciada_em": "2026-10-18T00:00:00Z",
+        },
     )
 
-    mock_valkey.publish.assert_called_once()
-    call_args = mock_valkey.publish.call_args[0]
-    assert call_args[0] == f"medisync:pubsub:doctor:{med_id}"
-    assert '"event": "INCOMING_CALL"' in call_args[1]
-    assert str(atend_id) in call_args[1]
+    received: dict[str, object] = {}
+    async for msg in pubsub.listen():
+        received = json.loads(str(msg["data"]))
+        break
+
+    assert received["event"] == "INCOMING_CALL"
+    assert received["atendimento_id"] == str(atend_id)
+    assert received["medico_id"] == str(med_id)

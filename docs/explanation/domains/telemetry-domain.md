@@ -64,7 +64,7 @@ Auto-provisionamento: na ausência de registro singleton prévio em `configuraco
 
 ## 4. Relações
 
-- Consumo por outros domínios: o módulo `queue` utiliza as diretrizes de `ConfiguracaoPlantao` para balizar o cálculo de backpressure estocástico ($\alpha$), saturação de admissão e tolerância de no-show (ring 45s).
+- Consumo por outros domínios: o módulo `queue` lê as diretrizes de `ConfiguracaoPlantao` em tempo real via `ShiftPolicyReaderPort` (`src/modules/queue/application/ports/shift_policy_reader_port.py`), adaptada em `src/modules/queue/composition.py` (`TelemetryShiftPolicyReaderAdapter`) sobre `src/modules/telemetry/composition.py:ler_politica_plantao_snapshot` (`PoliticaPlantaoSnapshotDTO`), governando `alpha_backpressure`, `cota_diaria_maxima`, `tma_padrao_segundos` (estimativa de espera e cálculo de saturação) e `tempo_tolerancia_ring_segundos` (TTL de ring 45s) sem ciclos no `tach.toml`.
 - Projeção de leitura desacoplada: `SqlTelemetryReader` consulta tabelas `atendimentos` e `profissionais` exclusivamente via projeções de agregação (`SELECT ... FILTER ...`), sem dependência de escrita ou acoplamento com modelos de outros módulos.
 - Cache desacoplado via porta: `TelemetryCachePort` é implementada por `ValkeyTelemetryCache` em produção e `MemoryTelemetryCache` em testes de unidade em memória.
 - Repositório de persistência: `ConfigPlantaoRepositoryPort` persiste e recupera `ConfiguracaoPlantao` via `SqlConfigPlantaoRepository`.

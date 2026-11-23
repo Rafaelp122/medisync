@@ -11,12 +11,9 @@ from src.core.database import get_session_factory
 from src.core.security import create_intake_token
 from src.main import app
 from src.modules.queue.application.dtos import AlocarChamadaCommand
-from src.modules.queue.application.services.alocacao_service import (
-    AlocacaoChamadaService,
-)
+from src.modules.queue.composition import build_alocacao_service_for_session
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
-from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 from src.worker.settings import WorkerSettings
 
 from tests.factories.scenarios import seed_clinical_scenario
@@ -158,10 +155,9 @@ async def test_alocar_chamada_schedules_arq_job_in_valkey() -> None:
         await pool.zadd(k_fila, {str(atendimento.id): 100.0})
 
         async with get_session_factory()() as session:
-            service = AlocacaoChamadaService(
+            service = build_alocacao_service_for_session(
                 valkey=pool,
-                db_session=session,
-                lua_manager=get_lua_script_manager(),
+                session=session,
                 arq_pool=pool,
             )
             cmd = AlocarChamadaCommand(

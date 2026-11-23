@@ -9,6 +9,9 @@ from src.modules.auth.application.ports.auth_rate_limiter_port import (
 from src.modules.auth.application.ports.challenge_store_port import (
     ChallengeStorePort,
 )
+from src.modules.auth.application.ports.doctor_presence_port import (
+    DoctorPresencePort,
+)
 from src.modules.auth.application.ports.identity_reader_port import (
     IdentityReaderPort,
     PacienteAuthLookupDTO,
@@ -35,6 +38,7 @@ __all__ = [
     "ActiveAttendanceLookupPort",
     "AuthRateLimiterPort",
     "ChallengeStorePort",
+    "DoctorPresencePort",
     "IdentityReaderPort",
     "IdentityWriterPort",
     "PacienteAuthLookupDTO",

@@ -43,12 +43,11 @@ from src.modules.queue.application.ports.queue_store_port import (
     AtendimentoHistoricoQueueDTO,
     QueueStorePort,
 )
-from src.modules.queue.application.ports.triage_port import (
-    TriageQueixaReaderPort,
-)
+from src.modules.queue.application.ports.triage_port import TriagePort
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
+from src.modules.queue.infrastructure.valkey_queue_engine import ValkeyQueueEngine
 from src.modules.triage.application.dtos import TriageRiskEvaluationDTO
 from src.modules.triage.application.services.triage_service import TriageService
 from src.modules.triage.domain.models.triagem import Triagem
@@ -106,7 +105,15 @@ class _FakeHistoricoAtendimentoReader(AtendimentoReaderPort):
     async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
         return self._resumos.get(atendimento_id)
 
-    async def concluir_atendimento(self, atendimento_id: UUID) -> None:
+    async def concluir_atendimento(
+        self,
+        atendimento_id: UUID,
+        *,
+        auto_commit: bool = True,
+    ) -> UUID | None:
+        return None
+
+    async def liberar_consulta_ativa_medico(self, medico_id: UUID) -> None:
         return None
 
     async def atender_chamada(self, atendimento_id: UUID) -> None:
@@ -397,7 +404,7 @@ async def test_triage_service_obter_queixas_por_atendimentos() -> None:
     )
     triage_session = FakeAsyncSession(results=[FakeResult([triagem_1])])
     svc = TriageService(session=cast("AsyncSession", triage_session))
-    assert isinstance(svc, TriageQueixaReaderPort)
+    assert isinstance(svc, TriagePort)
 
     queixas = await svc.obter_queixas_por_atendimentos([atend_1, atend_2])
     assert queixas == {atend_1: "Dor de garganta leve"}
@@ -441,7 +448,7 @@ async def test_hexagonal_chain_pep_queue_triage_without_raw_sql() -> None:
         session=cast("AsyncSession", FakeAsyncSession(results=[FakeResult([triagem])]))
     )
     fila_svc = FilaService(
-        valkey=cast("Redis", FakeValkey()),
+        queue_engine=ValkeyQueueEngine(valkey=cast("Redis", FakeValkey())),
         db_session=cast(
             "AsyncSession", FakeAsyncSession(results=[FakeResult([atendimento])])
         ),
@@ -466,8 +473,8 @@ async def test_hexagonal_chain_pep_queue_triage_without_raw_sql() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fila_service_listar_historico_tolerates_plain_triage_port() -> None:
-    """FilaService keeps working with FakeTriagePort lacking TriageQueixaReaderPort."""
+async def test_fila_service_listar_historico_com_fake_triage_port_unificado() -> None:
+    """FilaService queries unified FakeTriagePort without isinstance splits."""
     paciente_id = uuid7()
     atend_id = uuid7()
     now = datetime.now(UTC)
@@ -484,12 +491,13 @@ async def test_fila_service_listar_historico_tolerates_plain_triage_port() -> No
         evaluation=TriageRiskEvaluationDTO(
             prioridade_clinica=3,
             tcle_hash="b" * 64,
-        )
+        ),
+        queixas={atend_id: "Cefaleia intensa"},
     )
-    assert not isinstance(fake_triage, TriageQueixaReaderPort)
+    assert isinstance(fake_triage, TriagePort)
 
     fila_svc = FilaService(
-        valkey=cast("Redis", FakeValkey()),
+        queue_engine=ValkeyQueueEngine(valkey=cast("Redis", FakeValkey())),
         db_session=cast(
             "AsyncSession", FakeAsyncSession(results=[FakeResult([atendimento])])
         ),
@@ -498,7 +506,7 @@ async def test_fila_service_listar_historico_tolerates_plain_triage_port() -> No
     items = await fila_svc.listar_historico_paciente(paciente_id)
     assert len(items) == 1
     assert items[0].atendimento_id == atend_id
-    assert items[0].queixa_principal is None
+    assert items[0].queixa_principal == "Cefaleia intensa"
 
 
 @pytest.mark.asyncio

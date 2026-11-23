@@ -35,14 +35,6 @@ class AtendimentoNaoEncontradoError(NotFoundError):
     code: str = "ATENDIMENTO_NAO_ENCONTRADO"
 
 
-class FilaVaziaError(DomainError):
-    """Raised when the queue has no eligible patients waiting."""
-
-    status_code: int = 404
-    title: str = "Fila Vazia"
-    code: str = "FILA_VAZIA"
-
-
 class AdmissaoFilaSuspensaError(DomainError):
     """Raised when queue admission is suspended due to backpressure or quotas (RN05)."""
 

@@ -6,16 +6,11 @@ from src.modules.queue.application.dtos import (
     AlocarChamadaCommand,
     AvaliacaoAdmissaoResult,
     AvaliarAdmissaoCommand,
-    IngressarFilaComBackpressureCommand,
     IngressarFilaCommand,
     IngressarFilaResult,
+    PioraClinicaInput,
     RegularizacaoFilaCommand,
     RegularizacaoFilaResult,
-)
-from src.modules.queue.application.ports import (
-    LoggingQueueOverflowNotifier,
-    QueueOverflowEvent,
-    QueueOverflowNotifierPort,
 )
 from src.modules.queue.application.services import (
     AlocacaoChamadaService,
@@ -33,12 +28,9 @@ __all__ = [
     "AvaliarAdmissaoCommand",
     "ControleAdmissaoService",
     "FilaService",
-    "IngressarFilaComBackpressureCommand",
     "IngressarFilaCommand",
     "IngressarFilaResult",
-    "LoggingQueueOverflowNotifier",
-    "QueueOverflowEvent",
-    "QueueOverflowNotifierPort",
+    "PioraClinicaInput",
     "RegularizacaoFilaCommand",
     "RegularizacaoFilaResult",
     "avaliar_capacidade_admissao",

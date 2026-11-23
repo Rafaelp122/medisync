@@ -1,13 +1,15 @@
 """Unit tests for composition providers (DI Fase 3 without infra defaults)."""
 
 from collections.abc import Generator
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock
 
 import pytest
-from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import Settings
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
 
 
 @pytest.fixture(autouse=True)
@@ -21,13 +23,15 @@ def _clear_composition_cache() -> Generator[None, None, None]:
     composition.get_signed_cache.cache_clear()
 
 
-def test_lua_script_manager_satisfies_lua_script_port() -> None:
-    """LuaScriptManager must structurally satisfy the application port."""
-    from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
-    from src.modules.queue.infrastructure.lua_loader import LuaScriptManager
+def test_valkey_queue_engine_satisfies_queue_engine_port() -> None:
+    """ValkeyQueueEngine must structurally satisfy QueueEnginePort."""
+    from src.modules.queue.application.ports.queue_engine_port import QueueEnginePort
+    from src.modules.queue.infrastructure.valkey_queue_engine import ValkeyQueueEngine
 
-    manager = LuaScriptManager()
-    assert isinstance(manager, LuaScriptPort)
+    from tests.doubles import FakeValkey
+
+    engine = ValkeyQueueEngine(valkey=cast("Redis", FakeValkey()))
+    assert isinstance(engine, QueueEnginePort)
 
 
 def test_get_storage_returns_fake_by_default(
@@ -120,15 +124,24 @@ def test_get_pep_service_wires_real_adapters(
     assert isinstance(built._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
 
 
-def test_get_alocacao_service_injects_lua_port() -> None:
-    """Queue composition must inject a LuaScriptPort-compliant manager."""
-    from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
-    from src.modules.queue.composition import get_alocacao_service
+def test_build_fila_service_injects_queue_engine_and_shift_policy() -> None:
+    """Queue composition must inject QueueEnginePort and ShiftPolicyReaderPort."""
+    from src.modules.queue.application.ports.queue_engine_port import QueueEnginePort
+    from src.modules.queue.application.ports.shift_policy_reader_port import (
+        ShiftPolicyReaderPort,
+    )
+    from src.modules.queue.composition import build_fila_service_for_session
 
-    valkey = cast("Redis", AsyncMock(spec=Redis))
-    session = AsyncMock(spec=AsyncSession)
-    service = get_alocacao_service(valkey, cast("AsyncSession", session))
-    assert isinstance(service._lua_manager, LuaScriptPort)  # pyright: ignore[reportPrivateUsage]
+    from tests.doubles import FakeAsyncSession, FakeValkey
+
+    valkey = cast("Redis", FakeValkey())
+    session = cast("AsyncSession", FakeAsyncSession())
+    service = build_fila_service_for_session(session=session, valkey=valkey)
+    assert isinstance(service._queue_engine, QueueEnginePort)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(
+        service._shift_policy_reader,  # pyright: ignore[reportPrivateUsage]
+        ShiftPolicyReaderPort,
+    )
 
 
 def test_get_livekit_adapter_from_composition() -> None:

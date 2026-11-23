@@ -32,8 +32,8 @@ rg -n "new WebSocket|/ws/queue/" frontend/src/features/queue/api/use-queue-socke
 
 ### 3. Comunicação de Deterioração Clínica (RF-06)
 Quando o paciente relata piora através do `PioraClinicaModal`, a mutação `useComunicarPiora` envia o payload ao backend (`POST /api/v1/fila/piora`):
-- Se `alerta_samu_disparado: true` ou `nova_prioridade: 1`: o estado local ativa o `SamuEmergencyModal`, oferecendo discagem rápida `tel:192` e bloqueando ações virtuais.
-- Se `nova_prioridade: 2` (Laranja): a posição na fila é recalculada e atualizada na tela imediatamente.
+- Se `alerta_samu_disparado: true` ou `prioridade_clinica: 1`: o estado local ativa o `SamuEmergencyModal`, oferecendo discagem rápida `tel:192` e bloqueando ações virtuais.
+- Se `prioridade_clinica: 2` (Laranja): a posição na fila (`nova_posicao`) é recalculada pós-commit e atualizada na tela imediatamente.
 
 ### 4. Atendimento da Chamada e Ingresso na Teleconsulta (RF-03)
 Ao receber o evento `CALLED` ou `CHAMANDO_PACIENTE`:

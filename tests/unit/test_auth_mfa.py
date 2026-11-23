@@ -26,6 +26,9 @@ from src.modules.auth.application.dtos import (
 from src.modules.auth.application.ports.auth_rate_limiter_port import (
     AuthRateLimiterPort,
 )
+from src.modules.auth.application.ports.doctor_presence_port import (
+    DoctorPresencePort,
+)
 from src.modules.auth.application.ports.identity_reader_port import (
     PacienteAuthLookupData,
 )
@@ -109,6 +112,7 @@ def _make_auth_service(
     token_service: JWTTokenService | None = None,
     hasher: FakePasswordHasher | None = None,
     revocation: MemoryTokenRevocation | None = None,
+    doctor_presence: DoctorPresencePort | None = None,
 ) -> AuthService:
     return AuthService(
         session=cast("AsyncSession", session),
@@ -116,6 +120,7 @@ def _make_auth_service(
         token_service=token_service or JWTTokenService(secret_key=TEST_JWT_SECRET),
         rate_limiter=FakeAuthRateLimiter(),
         revocation=revocation or MemoryTokenRevocation(),
+        doctor_presence=doctor_presence,
     )
 
 
@@ -133,6 +138,37 @@ def test_totp_generation_and_verification() -> None:
     assert verify_totp_code(secret, "000000") is False
     assert verify_totp_code(secret, "abcdef") is False
     assert verify_totp_code(secret, "") is False
+
+
+@pytest.mark.asyncio
+async def test_mfa_login_e_logout_sincronizam_presenca_medico_ativo() -> None:
+    """MFA verify registers MEDICO in DoctorPresencePort and logout unregisters."""
+    from tests.doubles import FakeQueueEngine
+
+    medico_id = uuid7()
+    secret = generate_totp_secret()
+    cred = _make_credencial(
+        usuario_id=medico_id,
+        papel="MEDICO",
+        mfa_secret=secret,
+        mfa_ativo=True,
+    )
+    engine = FakeQueueEngine()
+    token_svc = JWTTokenService(secret_key=TEST_JWT_SECRET)
+    temp_token = token_svc.gerar_mfa_token(usuario_id=medico_id, papel="MEDICO")
+    session = FakeAsyncSession(results=[FakeResult(cred)])
+    service = _make_auth_service(
+        session, token_service=token_svc, doctor_presence=engine
+    )
+
+    pair = await service.verificar_mfa_login(temp_token, generate_totp_code(secret))
+    assert medico_id in engine.medicos_ativos
+
+    await service.revogar_sessao(
+        refresh_token=pair.refresh_token,
+        access_token=pair.access_token,
+    )
+    assert medico_id not in engine.medicos_ativos
 
 
 def test_totp_uri_building() -> None:

@@ -68,18 +68,21 @@
     "queixa_principal": "Febre moderada e dor de cabeça há 2 dias",
     "sintomas": ["febre", "cefaleia"],
     "escala_dor": 4,
-    "tcle_texto": "Texto integral do termo de consentimento apresentado ao paciente...",
-    "medicos_ativos": 2
+    "tcle_texto": "Texto integral do termo de consentimento apresentado ao paciente..."
   }
   ```
+  *(Nota: `medicos_ativos` não é aceito no payload HTTP; a contagem é lida no servidor em `plantao:medicos_ativos` e os parâmetros de plantão vêm de `ConfiguracaoPlantao` via `ShiftPolicyReaderPort`. Quando `tcle_hash` for informado diretamente, deve cumprir `^[0-9a-f]{64}$`.)*
 * **Resposta Esperada (`201 Created`):**
   ```json
   {
     "atendimento_id": "018f3a5b-...",
+    "triagem_id": "018f3a5b-...",
+    "paciente_id": "018f3a5b-...",
     "prioridade_clinica": 3,
     "status_atendimento": "APTO_PARA_CHAMADA",
-    "tcle_hash": "a1b2c3d4...",
-    "alerta_samu_disparado": false
+    "alerta_samu_disparado": false,
+    "instrucoes": null,
+    "tcle_hash": "a1b2c3d4..."
   }
   ```
 
@@ -87,10 +90,10 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Domínio:** Entidade rica `Triagem` com cálculo de prioridade aberta ACR (`src/modules/triage/domain/classification.py`).
-- [x] **Hash TCLE:** Hash SHA-256 gerado e armazenado com timestamp UTC (`src/modules/triage/domain/classification.py`).
-- [x] **Aplicação:** `FilaService.admitir_paciente()` orquestra persistência atômica direta em `APTO_PARA_CHAMADA` e inserção no ZSET do Valkey `fila:aptos` (`src/modules/queue/application/services/fila_service.py`).
-- [x] **Apresentação:** Router fino `admissao_router.py` montado em `/api/v1/fila/admissao` com `AdmissaoResponse` expondo `tcle_hash` validado via `model_validate` (ADR-001).
+- [x] **Domínio (`triage`):** `normalizar_sintomas` e `classificar_risco_clinico` (`src/modules/triage/domain/classification.py`) mapeiam Red Flags canônicas (`dor_toracica_irradiada`, `dispneia_grave`, `inconsciencia`, `confusao_mental`, `hemorragia_grave`, `febre`) e aliases de UI (`dor_no_peito`, `falta_de_ar`, `tontura_desmaio`, `sangramento_grave`, `febre_alta`), descartando entradas em branco; `Triagem.criar_avaliada()` (`src/modules/triage/domain/models/triagem.py`) classifica 1x e sinaliza SAMU no Nível 1.
+- [x] **Hash TCLE e Validação:** Hash SHA-256 gerado por `calcular_hash_tcle` (`classification.py`) e validado contra `^[0-9a-f]{64}$` em `TriageService.avaliar_risco` (`src/modules/triage/application/services/triage_service.py`).
+- [x] **Aplicação (`queue`):** `FilaService.admitir_paciente()` lê `ShiftPolicyReaderPort` e `plantao:medicos_ativos`, reserva cota diária atomicamente (`consumir_cota_ou_bloquear` com estorno em rollback), persiste `Atendimento` + `Triagem` via `TriagePort` e insere no ZSET `fila:aptos` pós-commit (`src/modules/queue/application/services/fila_service.py`).
+- [x] **Apresentação:** Router fino `admissao_router.py` montado em `/api/v1/fila/admissao` com `AdmissaoRequest` (sem `medicos_ativos`) e `AdmissaoResponse` validado via `model_validate` (ADR-001).
 - [x] **Frontend (Fase 1 & TCLE):** `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx`, `frontend/src/features/onboarding/components/pain-scale-selector.tsx` (alvos de toque >= 44x44px em grid responsivo), `frontend/src/components/samu-emergency-modal.tsx` (safe area inset e saída acessível via Escape sem keyboard trap) e `frontend/src/features/onboarding/components/tcle-dialog.tsx` com cálculo de hash forense nativo Web Crypto API (`frontend/src/lib/validators.ts:calcularHashTcle`).
 - [x] **Frontend Hooks:** `frontend/src/features/onboarding/api/use-intake-fase1.ts` e `frontend/src/features/onboarding/api/use-admitir-paciente.ts`.
 - [x] **Sessão & Roteamento (Issue #113, Issue #141):** Persistência em `frontend/src/lib/session-storage.ts`, rota autenticada pós-portal `/triagem` (`frontend/src/routes/triagem.tsx`, `beforeLoad` exige sessão de cidadão em `/entrar`) e rota `/fila` (`frontend/src/routes/fila.tsx`) com guard `beforeLoad` e orquestração em `frontend/src/router.tsx`.

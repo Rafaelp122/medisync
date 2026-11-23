@@ -51,7 +51,8 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 
 ## 4. Relações
 
-- Lê atendimento e histórico sem importar queue nem executar SQL crua cross-module. `src/modules/consultation/application/ports/atendimento_reader_port.py` define `AtendimentoReaderPort` (`obter_resumo`, `is_terminal`) e `HistoricoAtendimentoReaderPort` (`listar_historico_paciente`), ambos adaptados em `src/modules/consultation/composition.py` via `QueueStoreAtendimentoReaderAdapter` sobre `QueueStorePort` (que por sua vez consulta `TriageQueixaReaderPort` em `FilaService` sem SQL crua cross-module).
+- Lê atendimento e histórico sem importar queue nem executar SQL crua cross-module. `src/modules/consultation/application/ports/atendimento_reader_port.py` define `AtendimentoReaderPort` (`obter_resumo`, `concluir_atendimento(..., auto_commit=True)`, `liberar_consulta_ativa_medico`, `atender_chamada`) e `HistoricoAtendimentoReaderPort` (`listar_historico_paciente`), ambos adaptados em `src/modules/consultation/composition.py` via `QueueStoreAtendimentoReaderAdapter` sobre `QueueStorePort` (que por sua vez consulta `TriagePort.obter_queixas_por_atendimentos` em `FilaService` sem SQL crua cross-module).
+- Presença médica em tempo real no plantão. O WebSocket `/ws/doctor/{medico_id}` (`src/modules/consultation/presentation/routers/doctor_ws_router.py`) injeta `DoctorPresenceDep` (`build_doctor_presence_engine` $\to$ `QueueEnginePort`) para registrar o médico conectado em `plantao:medicos_ativos` antes de iniciar o streaming Pub/Sub.
 - Portal do Cidadão protegido por Anti-IDOR (`PacienteAutenticadoDep` com `Role.PACIENTE`). `consultation_router.py` expõe `GET /api/v1/consultations/me/historico` (`PEPService.listar_historico_paciente`, omitindo evoluções SOAP não finalizadas), `GET /api/v1/consultations/me/documentos` (`PEPService.listar_documentos_paciente`, omitindo chaves S3 internas) e `GET /api/v1/consultations/me/documents/{documento_id}/pdf` (`PEPService.compilar_pdf_para_paciente`, validando titularidade via `_validar_titularidade_documento`).
 - Emite PDF via porta abstrata. `src/modules/consultation/application/ports/pdf_generator_port.py` recebe `DocumentoPDFPayload` e devolve bytes PDF/A com QR de verificação ITI.
 - Assina via porta abstrata. `src/modules/consultation/application/ports/icp_brasil_signer_port.py` aplica PAdES com `DoctorCertificateCredentials` (PSC OAuth2); infra PyHanko pluga sem tocar serviço.
@@ -59,7 +60,7 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - Persiste em três tabelas (`evolucoes_clinicas`, `documentos_clinicos`, `documento_itens`, com `RESTRICT` nas FKs clínicas e `CASCADE` de documento para itens). [Modelo](../architecture/data-model.md)
 - Orquestra mídia sem transportar mídia. `TeleconsultaService` orquestra geração de JWT e ciclo de sala sobre `LiveKitMediaPort`; SFU LiveKit carrega áudio/vídeo, Python só sinaliza.
 - Valida acesso à mídia com distinção clínica de No-Show. `src/modules/consultation/presentation/dependencies.py` (`validar_acesso_livekit`) rejeita atendimento finalizado por no-show (`PACIENTE_AUSENTE`) com HTTP 409 Conflict (`ATENDIMENTO_EXPIRADO_NO_SHOW`), e outros status terminais com HTTP 403 Forbidden.
-- Finalização centralizada e resiliente no PEP. `src/modules/consultation/application/services/pep_service.py` marca evolução + documentos de forma atômica e conclui o atendimento via `QueueStorePort`. Falhas periféricas no leitor ou na consolidação ambulatorial SUS são capturadas e registradas com structured logging (`logger.warning` com contexto forense e valores ofensivos), preservando a integridade primária do ato médico.
+- Finalização centralizada em transação única no PEP (ADR-001 §6). `PEPService.finalizar_consulta` (`src/modules/consultation/application/services/pep_service.py`) marca evolução e documentos, chama `concluir_atendimento(atendimento_id, auto_commit=False)` via `AtendimentoReaderPort` (que realiza `flush()` no `Atendimento` carregado com `with_for_update=True`), consolida produção BPA-I, registra `CONSULTA_FINALIZADA`, executa **1 único `await self._session.commit()`** e só então libera `lock:consulta_ativa:medico:{id}` pós-commit via `liberar_consulta_ativa_medico`. Falhas periféricas no leitor ou na consolidação ambulatorial SUS são capturadas e registradas com structured logging (`logger.warning` com contexto forense), preservando a integridade primária do ato médico.
 
 ## 5. Peculiaridades
 
@@ -101,6 +102,7 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - `frontend/src/features/consultation/tests/consultation-workstation.test.tsx`
 - `tests/unit/test_consultation_models.py`
 - `tests/unit/test_consultation_patient_portal.py`
+- `tests/unit/test_pep_service.py`
 - `tests/unit/test_evolucao_service.py`
 - `tests/unit/test_documento_service.py`
 - `tests/unit/test_clinical_ai_governance.py`
