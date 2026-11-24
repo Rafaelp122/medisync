@@ -16,7 +16,7 @@ Três níveis, do mais lento/completo ao mais rápido/focado:
 2. **`just test-unit`** — testes unitários e de arquitetura com cobertura (`pytest tests/unit tests/architecture --cov=src`).
 3. **`just test-integration`** — testes de integração sobre infraestrutura real (`pytest tests/integration`).
 4. **`just test`** — suite completa com cobertura (`pytest tests/unit tests/architecture tests/integration --cov=src --cov-report=term-missing`). Canônico pré-commit e pré-PR (roda dentro de `just check`).
-5. **Arquivo único** — `pytest tests/unit/test_alocacao_service.py -v` (prova viva da fila, 6 testes, ~2s, sem infra). Iteração focada e TDD: rode o arquivo do módulo que você tocou antes da suite.
+5. **Arquivo único** — `pytest tests/unit/test_alocacao_service.py -v` (prova viva da fila, 9 testes, ~1s, sem infra). Iteração focada e TDD: rode o arquivo do módulo que você tocou antes da suite.
 
 Regra: falhou? Isole no arquivo único primeiro; só suba de nível quando o foco estiver verde. Suite completa verde local antes de `just check`.
 
@@ -39,7 +39,7 @@ Expected: `testpaths = ["tests"]` + `asyncio_mode = "auto"`.
 rg -n "def test_" tests/unit/test_alocacao_service.py
 ```
 
-Expected: 6 testes (alocação 409/rollback/sucesso + locks).
+Expected: 9 testes (alocação 409/rollback/sucesso + `lock:consulta_ativa` + fila vazia).
 
 ## Verificação
 
@@ -49,7 +49,7 @@ Run (focado, sem infra):
 uv run pytest tests/unit/test_alocacao_service.py -v --no-cov
 ```
 
-Expected: 6 passed em ~2s.
+Expected: 9 passed em ~1s.
 
 Run (unit completo, infra up mas sem DB):
 
@@ -57,7 +57,7 @@ Run (unit completo, infra up mas sem DB):
 uv run pytest tests/unit --no-cov -q
 ```
 
-Expected: 404 passed em ~12s.
+Expected: 978 passed em memória.
 
 Run (suite completa paralela):
 
@@ -67,13 +67,13 @@ just test-fast
 
 Expected: suite verde, exit 0.
 
-Resultado observado com a pirâmide de testes segregada:
+Resultado observado na suíte segregada:
 
-- Arquivo único: **6 passed in 1.62s**, exit 0.
-- `tests/unit`: **418 passed em 12.17s**, exit 0.
-- Guarda AST: **5 passed em 0.38s**, exit 0.
-- `just test-fast`: **423 passed em ~14s**, 100% em memória, zero Docker, exit 0.
-- `just test-integration`: **140 passed em ~25s**, infra real, exit 0.
+- Arquivo único (`test_alocacao_service.py`): **9 passed**, exit 0.
+- `tests/unit`: **978 testes** em memória, exit 0.
+- Guarda AST (`tests/architecture`): **16 testes**, exit 0.
+- `just test-fast`: **994 testes**, 100% em memória, zero Docker, exit 0.
+- `just test-integration`: **200 testes**, infra real, exit 0.
 
 ## Ver também
 

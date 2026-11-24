@@ -1,8 +1,6 @@
 """Unit tests for deterministic 45s ring timeout task and no-show resolution (RN02)."""
 
 import logging
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
@@ -17,7 +15,6 @@ from src.modules.queue.application.dtos import AlocarChamadaCommand
 from src.modules.queue.application.ports import (
     LoggingPacienteAusenteNotifier,
     PacienteAusenteEvent,
-    PacienteAusenteNotifierPort,
 )
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
@@ -29,6 +26,8 @@ from src.worker.tasks.ring_timeout import resolver_ring_timeout_task
 from tests.doubles import (
     FakeArqPool,
     FakeAsyncSession,
+    FakeAsyncSessionFactory,
+    FakePacienteAusenteNotifier,
     FakeQueueEngine,
     FakeValkey,
 )
@@ -36,29 +35,12 @@ from tests.doubles import (
 _SAMPLE_TCLE = "a" * 64
 
 
-class _FakeSessionFactory:
-    def __init__(self, session: FakeAsyncSession) -> None:
-        self._session = session
-
-    @asynccontextmanager
-    async def __call__(self) -> AsyncGenerator[FakeAsyncSession, None]:
-        yield self._session
-
-
-class _FakePacienteAusenteNotifier(PacienteAusenteNotifierPort):
-    def __init__(self) -> None:
-        self.events: list[PacienteAusenteEvent] = []
-
-    async def emitir_paciente_ausente(self, event: PacienteAusenteEvent) -> None:
-        self.events.append(event)
-
-
 def _create_worker_context(
     session: FakeAsyncSession,
     valkey: FakeValkey,
 ) -> dict[str, Any]:
     return {
-        "db_session_factory": _FakeSessionFactory(session),
+        "db_session_factory": FakeAsyncSessionFactory(session),
         "valkey_client": valkey,
     }
 
@@ -82,7 +64,7 @@ async def test_resolver_ring_timeout_records_no_show_when_chamando_paciente() ->
     await fake_valkey.set(f"lock:medico:{medico_id}", str(atend_id))
     await fake_valkey.set(f"lock:atendimento:{atend_id}", str(medico_id))
 
-    notifier = _FakePacienteAusenteNotifier()
+    notifier = FakePacienteAusenteNotifier()
     ctx = _create_worker_context(fake_session, fake_valkey)
 
     result: dict[str, Any] = await resolver_ring_timeout_task(
@@ -126,7 +108,7 @@ async def test_resolver_ring_timeout_promotes_lock_when_em_atendimento() -> None
     await fake_valkey.set(f"lock:medico:{medico_id}", str(atend_id))
     await fake_valkey.set(f"lock:atendimento:{atend_id}", str(medico_id))
 
-    notifier = _FakePacienteAusenteNotifier()
+    notifier = FakePacienteAusenteNotifier()
     ctx = _create_worker_context(fake_session, fake_valkey)
 
     result: dict[str, Any] = await resolver_ring_timeout_task(

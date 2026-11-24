@@ -70,7 +70,7 @@ flowchart TD
     Sys["🏥 MediSync Express<br/>[Sistema Central de PA Virtual]"]
     LiveKit["🎥 LiveKit SFU<br/>[Servidor de Mídia WebRTC]"]
     PSC["🔑 Provedor PSC / ICP-Brasil<br/>[Assinatura Digital em Nuvem]"]
-    GovPay["💳 Gateway de Convênio / SUS<br/>[Validação de Elegibilidade]"]
+    GovPay["🪪 CADSUS / Gov.br<br/>[Qualificação Cadastral 100% SUS]"]
     SAMU["🚑 Central SAMU 192<br/>[Serviço Pré-Hospitalar Físico]"]
 
     Pac -->|Acolhimento, TCLE, Vídeo| Sys
@@ -78,7 +78,7 @@ flowchart TD
     Ges -->|Telemetria e Parametrização| Sys
     Sys -->|Streaming Criptografado| LiveKit
     Sys -->|Assinatura PAdES de Receituário| PSC
-    Sys -->|Autorização Assíncrona| GovPay
+    Sys -->|Qualificação Cadastral SUS| GovPay
     Sys -.->|Desvio de Emergência Crítica| SAMU
 ```
 

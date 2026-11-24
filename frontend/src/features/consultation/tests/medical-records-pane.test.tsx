@@ -1,9 +1,13 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import type React from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  handleObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGet,
+  handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet,
+} from "@/api/generated/msw.gen";
 import { server } from "@/mocks/server";
 import { createTestQueryClient } from "@/test/utils";
 import { MedicalRecordsPane } from "../components/medical-records-pane";
@@ -11,16 +15,19 @@ import {
   createDocumentoClinicoResponse,
   createProntuarioResponse,
   MOCK_ATENDIMENTO_ID,
-  MOCK_DOC_ID,
 } from "./fixtures";
 
 describe("MedicalRecordsPane Triage Fidelity (Portaria GM/MS nº 2.048/2002, US-09)", () => {
   beforeEach(() => {
     server.use(
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/prontuario`, () => {
-        return HttpResponse.json(createProntuarioResponse());
+      handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet({
+        body: createProntuarioResponse(),
       }),
     );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("IT-MRP-01: mapeia rigidamente prioridades clínicas 1 a 5 para variantes nivel1 a nivel5 com tokens semânticos", () => {
@@ -60,23 +67,21 @@ describe("MedicalRecordsPane Triage Fidelity (Portaria GM/MS nº 2.048/2002, US-
   it("IT-MRP-02: renderiza documento clínico emitido e aciona download de PDF via hook headless", async () => {
     let downloadEndpointCalled = false;
     server.use(
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/prontuario`, () => {
-        return HttpResponse.json(
-          createProntuarioResponse({
-            documentos: [createDocumentoClinicoResponse({ assinado_em: "2026-11-01T12:00:00Z" })],
-          }),
-        );
+      handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet({
+        body: createProntuarioResponse({
+          documentos: [createDocumentoClinicoResponse({ assinado_em: "2026-11-01T12:00:00Z" })],
+        }),
       }),
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/documents/${MOCK_DOC_ID}/pdf`, () => {
+      handleObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGet(() => {
         downloadEndpointCalled = true;
-        return new HttpResponse(new Blob(["%PDF-mock"], { type: "application/pdf" }), {
+        return new HttpResponse(new Blob(["%PDF-mock"], { type: "application/pdf" }) as never, {
           headers: { "Content-Type": "application/pdf" },
         });
       }),
     );
 
-    window.URL.createObjectURL = vi.fn(() => "blob:http://localhost/test-url");
-    window.URL.revokeObjectURL = vi.fn();
+    vi.spyOn(window.URL, "createObjectURL").mockReturnValue("blob:http://localhost/test-url");
+    vi.spyOn(window.URL, "revokeObjectURL").mockImplementation(() => {});
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
     const user = userEvent.setup();

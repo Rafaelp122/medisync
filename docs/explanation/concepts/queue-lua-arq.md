@@ -7,9 +7,9 @@ de fundo fecham o ciclo quando ninguém atende.
 Regra de ouro: Valkey decide velocidade; postgres
 decide verdade; worker decide prazo.
 
-Regras clínicas fonte moram no futuro
-[queue-domain](../domains/queue-domain.md) (planejado,
-detentor de RN01, RN02 e RN05); este conceito não
+Regras clínicas fonte moram em
+[queue-domain](../domains/queue-domain.md) (detentor
+de RN01, RN02 e RN05); este conceito não
 recopia regras, só o mecanismo que as executa.
 Motor em
 `docs/explanation/architecture/concurrency-and-queues.md`,

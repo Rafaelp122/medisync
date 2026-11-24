@@ -74,7 +74,7 @@ async def test_regularizar_contingencia_sucesso_restaura_score_original_no_valke
     cmd = RegularizacaoFilaCommand(
         atendimento_id=paciente_1.id,
         tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
-        motivo="Indisponibilidade gateway operadora",
+        motivo="Indisponibilidade temporária na validação CADSUS",
     )
 
     result = await fila_service.regularizar_atendimento(cmd)

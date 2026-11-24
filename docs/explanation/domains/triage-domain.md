@@ -96,6 +96,9 @@ ls tests/unit | rg -i triag
 rg -n "def classificar_risco_clinico|def normalizar_sintomas|def criar_avaliada" src/modules/triage/
 # classification.py:57 normalizar_sintomas, :86 classificar_risco_clinico; triagem.py:129 criar_avaliada
 
+rg -n "class TriageRiskEvaluationDTO|class TriagePort" src/modules/triage/ src/modules/queue/application/ports/
+# triage/application/dtos.py:TriageRiskEvaluationDTO | queue/application/ports/triage_port.py:TriagePort
+
 uv run pytest tests/unit/test_triage_model.py -q --no-cov
 ```
 

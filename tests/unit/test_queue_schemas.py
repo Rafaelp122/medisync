@@ -33,17 +33,17 @@ def test_admissao_response_model_validate_com_tcle_hash() -> None:
         atendimento_id=uuid4(),
         triagem_id=uuid4(),
         paciente_id=uuid4(),
-        status_atendimento="TRIADO_AGUARDANDO_ELEGIBILIDADE",
+        status_atendimento="APTO_PARA_CHAMADA",
         prioridade_clinica=3,
         alerta_samu_disparado=False,
-        instrucoes="Aguarde validação de elegibilidade",
+        instrucoes=None,
         tcle_hash=tcle_hash,
     )
     resp = AdmissaoResponse.model_validate(result)
     assert resp.tcle_hash == tcle_hash
     assert resp.atendimento_id == result.atendimento_id
     assert resp.prioridade_clinica == 3
-    assert resp.status_atendimento == "TRIADO_AGUARDANDO_ELEGIBILIDADE"
+    assert resp.status_atendimento == "APTO_PARA_CHAMADA"
 
 
 def test_posicao_fila_response_serializa_timer_e_prioridade() -> None:

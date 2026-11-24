@@ -4,7 +4,7 @@
 
 ## 1. Persistência & Segurança de Dados
 - [Database Schema](database/schema.md) — Catálogo físico das 16 tabelas de plataforma única, chaves primárias UUIDv7 e invariantes estruturais de integridade.
-- [Catálogo de Eventos de Auditoria Clínica](audit/event-catalog.md) — Taxonomia dos 11 eventos auditáveis append-only sob ADR-007, CFM nº 2.314/2022 e LGPD.
+- [Catálogo de Eventos de Auditoria Clínica](audit/event-catalog.md) — Taxonomia dos 21 eventos auditáveis append-only sob ADR-007, CFM nº 2.314/2022 e LGPD.
 
 ## 2. Cache, Concorrência & Atomicidade
 - [Valkey Keys Dictionary](valkey/keys-dictionary.md) — Namespaces de chaves, tipos de dados (ZSET/HASH/STRING), TTLs e políticas de evicção.
