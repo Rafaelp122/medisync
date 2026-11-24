@@ -43,7 +43,7 @@ O MediSync Express utiliza o Granian como servidor de aplicação ASGI:
 * **Throughput Assíncrono:** Construído em Rust sobre o Hyper, o Granian oferece alta taxa de requisições por segundo e baixo overhead de memória, ideal para a alta concorrência médica exigida no PA Digital.
 * **Modelo ASGI vs WSGI:** No modo ASGI, o Granian opera diretamente com o loop de eventos assíncrono do Python (`anyio` / `asyncio`), sem necessidade de pools de threads bloqueantes (`blocking-threads`). O escalonamento horizontal ocorre via múltiplos processos (`workers`) gerenciados pelo supervisor do Granian.
 * **Segurança e Conformidade Clínica:** A imagem de produção não executa como `root`. O usuário não-privilegiado `appuser` (UID 1000) possui permissões restritas ao diretório `/app`, mitigando riscos de escape de contêiner em ambientes Kubernetes e Cloud Run.
-* **Probes de Inicialização e Liveness:** O servidor inicia imediatamente sem overhead de compilação em runtime, permitindo que orquestradores (como Google Cloud Run) atendam probes de startup em menos de 1 segundo através do endpoint `/health`.
+* **Probes de Inicialização e Liveness:** O servidor inicia imediatamente sem overhead de compilação em runtime, permitindo que orquestradores (como Google Cloud Run) atendam probes de startup em menos de 1 segundo através do endpoint `/healthz`.
 
 ### 5. Isolamento de Contexto e Proteção de Segredos (`.dockerignore`)
 

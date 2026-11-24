@@ -82,7 +82,7 @@ async def test_e2e_regularizacao_contingencia_restaura_antiguidade() -> None:
             # Paciente 1 agora aciona regularização por contingência assistencial
             cmd_regularizar = RegularizacaoFilaCommand(
                 atendimento_id=atend_1.id,
-                motivo="Indisponibilidade temporária de autorização da operadora",
+                motivo="Indisponibilidade temporária na validação CADSUS",
                 tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
             )
             res_1 = await service.regularizar_atendimento(cmd_regularizar)
@@ -134,7 +134,7 @@ async def test_e2e_corrida_concorrente_retorno_worker_e_contingencia() -> None:
             # Primeira chamada: regularização
             cmd = RegularizacaoFilaCommand(
                 atendimento_id=atend.id,
-                motivo="Aprovação simultânea da operadora",
+                motivo="Qualificação simultânea no CADSUS",
                 tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
             )
             res_first = await service.regularizar_atendimento(cmd)

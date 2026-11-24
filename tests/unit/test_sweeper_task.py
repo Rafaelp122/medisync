@@ -1,7 +1,5 @@
 """Unit tests for periodic self-healing sweeper task (RN03)."""
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -16,18 +14,14 @@ from src.modules.queue.infrastructure.valkey_queue_engine import (
 )
 from src.worker.tasks.sweeper import reconciliar_fila_orphans_task
 
-from tests.doubles import FakeAsyncSession, FakeResult, FakeValkey
+from tests.doubles import (
+    FakeAsyncSession,
+    FakeAsyncSessionFactory,
+    FakeResult,
+    FakeValkey,
+)
 
 _SAMPLE_TCLE = "a" * 64
-
-
-class _FakeSessionFactory:
-    def __init__(self, session: FakeAsyncSession) -> None:
-        self._session = session
-
-    @asynccontextmanager
-    async def __call__(self) -> AsyncGenerator[FakeAsyncSession, None]:
-        yield self._session
 
 
 def _create_worker_context(
@@ -35,7 +29,7 @@ def _create_worker_context(
     valkey: FakeValkey,
 ) -> dict[str, Any]:
     return {
-        "db_session_factory": _FakeSessionFactory(session),
+        "db_session_factory": FakeAsyncSessionFactory(session),
         "valkey_client": valkey,
     }
 

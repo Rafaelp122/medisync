@@ -9,8 +9,22 @@ import {
 } from "@tanstack/react-router";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  handleAssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPost,
+  handleChamarProximoPacienteApiV1FilaChamarProximoPost,
+  handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost,
+  handleFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePost,
+  handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost,
+  handleLogoutApiV1AuthLogoutPost,
+  handleObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGet,
+  handleObterPainelTelemetriaApiV1TelemetriaPainelGet,
+  handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet,
+  handleObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGet,
+  handleSalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPost,
+  handleValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost,
+} from "@/api/generated/msw.gen";
 import { clearAccessToken, setAccessToken } from "@/lib/auth-token";
 import { server } from "@/mocks/server";
 import { createTestQueryClient, renderWithProviders } from "@/test/utils";
@@ -26,7 +40,6 @@ import {
   createProntuarioResponse,
   createTmaStatusResponse,
   MOCK_ATENDIMENTO_ID,
-  MOCK_DOC_ID,
 } from "./fixtures";
 
 describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)", () => {
@@ -37,31 +50,31 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     clearAccessToken();
   });
 
   beforeEach(() => {
     // Configura os handlers padrão para teleconsulta
     server.use(
-      http.post("*/api/v1/fila/chamar-proximo", () => {
-        return HttpResponse.json(createChamarProximoResponse());
+      handleChamarProximoPacienteApiV1FilaChamarProximoPost({
+        body: createChamarProximoResponse(),
       }),
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/livekit/token`, () => {
-        return HttpResponse.json(createLiveKitTokenResponse());
+      handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost({
+        body: createLiveKitTokenResponse(),
       }),
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/prontuario`, () => {
-        return HttpResponse.json(createProntuarioResponse());
+      handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet({
+        body: createProntuarioResponse(),
       }),
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/soap`, () => {
-        return HttpResponse.json(createEvolucaoSoapResponse());
+      handleObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGet({
+        body: createEvolucaoSoapResponse(),
       }),
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/soap`, () => {
-        return HttpResponse.json(createEvolucaoSoapResponse());
+      handleSalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPost({
+        body: createEvolucaoSoapResponse(),
       }),
-      http.post(
-        `*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/prescriptions/validate`,
+      handleValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost(
         async ({ request }) => {
-          const body = (await request.json()) as { medicamento: string };
+          const body = await request.json();
           if (
             body.medicamento.toLowerCase().includes("zolpidem") ||
             body.medicamento.toLowerCase().includes("clonazepam")
@@ -74,7 +87,7 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
                 code: "PRESCRICAO_FISICA_OBRIGATORIA",
               },
               { status: 422 },
-            );
+            ) as never;
           }
           return HttpResponse.json({
             status: "PERMITIDO",
@@ -83,25 +96,23 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
           });
         },
       ),
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/documents`, () => {
-        return HttpResponse.json(createDocumentoClinicoResponse(), { status: 201 });
+      handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost({
+        status: 201,
+        body: createDocumentoClinicoResponse(),
       }),
-      http.post(
-        `*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/documents/${MOCK_DOC_ID}/sign`,
-        () => {
-          return HttpResponse.json(createAssinarDocumentoResponse());
-        },
-      ),
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/tma-status`, () => {
-        return HttpResponse.json(createTmaStatusResponse());
+      handleAssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPost({
+        body: createAssinarDocumentoResponse(),
       }),
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/finalize`, () => {
-        return HttpResponse.json({
+      handleObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGet({
+        body: createTmaStatusResponse(),
+      }),
+      handleFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePost({
+        body: {
           status: "FINALIZADO",
           atendimento_id: MOCK_ATENDIMENTO_ID,
           is_finalizado: true,
           mensagem: "Consulta finalizada com sucesso. Registros PEP travados de forma imutável.",
-        });
+        },
       }),
     );
   });
@@ -362,14 +373,14 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
 
   it("IT-DOC-08: Fila vazia exibe aviso amigável sem quebrar o estado", async () => {
     server.use(
-      http.get("*/api/v1/telemetria/painel", () => {
-        return HttpResponse.json(createPainelTelemetriaResponse({ total_pacientes_fila: 0 }));
+      handleObterPainelTelemetriaApiV1TelemetriaPainelGet({
+        body: createPainelTelemetriaResponse({ total_pacientes_fila: 0 }),
       }),
-      http.post("*/api/v1/fila/chamar-proximo", () => {
-        return HttpResponse.json({
+      handleChamarProximoPacienteApiV1FilaChamarProximoPost({
+        body: {
           alocado: false,
           mensagem: "Fila vazia. Não há pacientes aguardando atendimento no momento.",
-        });
+        },
       }),
     );
 
@@ -424,7 +435,7 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
   it("IT-DOC-10: Estouro de TMA exibe aviso passivo sem desconectar videoconferência (RN06)", async () => {
     // Simula chamada alocada com início há 16 minutos (960 segundos > 900)
     server.use(
-      http.post("*/api/v1/fila/chamar-proximo", () => {
+      handleChamarProximoPacienteApiV1FilaChamarProximoPost(() => {
         return HttpResponse.json(
           createChamarProximoResponse({
             chamada_iniciada_em: new Date(Date.now() - 960 * 1000).toISOString(),
@@ -476,15 +487,15 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
     const capturedAuthHeaders: Array<string | null> = [];
 
     server.use(
-      http.get("*/api/v1/telemetria/painel", ({ request }) => {
+      handleObterPainelTelemetriaApiV1TelemetriaPainelGet(({ request }) => {
         capturedAuthHeaders.push(request.headers.get("Authorization"));
         return HttpResponse.json(createPainelTelemetriaResponse());
       }),
-      http.post("*/api/v1/fila/chamar-proximo", ({ request }) => {
+      handleChamarProximoPacienteApiV1FilaChamarProximoPost(({ request }) => {
         capturedAuthHeaders.push(request.headers.get("Authorization"));
         return HttpResponse.json(createChamarProximoResponse());
       }),
-      http.post("*/api/v1/auth/logout", () => {
+      handleLogoutApiV1AuthLogoutPost(() => {
         return new HttpResponse(null, { status: 204 });
       }),
     );
@@ -555,7 +566,7 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
     let callCount = 0;
 
     server.use(
-      http.post("*/api/v1/fila/chamar-proximo", () => {
+      handleChamarProximoPacienteApiV1FilaChamarProximoPost(() => {
         callCount += 1;
         if (callCount === 1) {
           return HttpResponse.json(
@@ -572,17 +583,25 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
           }),
         );
       }),
-      http.post(`*/api/v1/consultations/${ATENDIMENTO_B}/livekit/token`, () =>
-        HttpResponse.json(createLiveKitTokenResponse({ room_name: `room_${ATENDIMENTO_B}` })),
+      handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost(
+        ({ params }) =>
+          HttpResponse.json(
+            createLiveKitTokenResponse({
+              room_name:
+                params.atendimento_id === ATENDIMENTO_B
+                  ? `room_${ATENDIMENTO_B}`
+                  : `atend_${ATENDIMENTO_A}`,
+            }),
+          ),
       ),
-      http.get(`*/api/v1/consultations/${ATENDIMENTO_B}/prontuario`, () =>
-        HttpResponse.json(createProntuarioResponse({ atendimento_id: ATENDIMENTO_B })),
+      handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet(({ params }) =>
+        HttpResponse.json(createProntuarioResponse({ atendimento_id: params.atendimento_id })),
       ),
-      http.get(`*/api/v1/consultations/${ATENDIMENTO_B}/soap`, () =>
-        HttpResponse.json(createEvolucaoSoapResponse({ atendimento_id: ATENDIMENTO_B })),
+      handleObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGet(({ params }) =>
+        HttpResponse.json(createEvolucaoSoapResponse({ atendimento_id: params.atendimento_id })),
       ),
-      http.get(`*/api/v1/consultations/${ATENDIMENTO_B}/tma-status`, () =>
-        HttpResponse.json(createTmaStatusResponse()),
+      handleObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGet(({ params }) =>
+        HttpResponse.json(createTmaStatusResponse({ atendimento_id: params.atendimento_id })),
       ),
     );
 
@@ -667,21 +686,21 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
     const SCHEDULED_PAC_ID = "018f3a5b-8888-4b2c-8b2c-018f3a5b8888";
 
     server.use(
-      http.get("*/api/v1/telemetria/painel", () =>
-        HttpResponse.json(createPainelTelemetriaResponse()),
-      ),
-      http.post(`*/api/v1/consultations/${SCHEDULED_ATEND_ID}/livekit/token`, () =>
-        HttpResponse.json(createLiveKitTokenResponse({ room_name: `room_${SCHEDULED_ATEND_ID}` })),
-      ),
-      http.get(`*/api/v1/consultations/${SCHEDULED_ATEND_ID}/prontuario`, () =>
-        HttpResponse.json(createProntuarioResponse({ atendimento_id: SCHEDULED_ATEND_ID })),
-      ),
-      http.get(`*/api/v1/consultations/${SCHEDULED_ATEND_ID}/soap`, () =>
-        HttpResponse.json(createEvolucaoSoapResponse({ atendimento_id: SCHEDULED_ATEND_ID })),
-      ),
-      http.get(`*/api/v1/consultations/${SCHEDULED_ATEND_ID}/tma-status`, () =>
-        HttpResponse.json(createTmaStatusResponse()),
-      ),
+      handleObterPainelTelemetriaApiV1TelemetriaPainelGet({
+        body: createPainelTelemetriaResponse(),
+      }),
+      handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost({
+        body: createLiveKitTokenResponse({ room_name: `room_${SCHEDULED_ATEND_ID}` }),
+      }),
+      handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet({
+        body: createProntuarioResponse({ atendimento_id: SCHEDULED_ATEND_ID }),
+      }),
+      handleObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGet({
+        body: createEvolucaoSoapResponse({ atendimento_id: SCHEDULED_ATEND_ID }),
+      }),
+      handleObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGet({
+        body: createTmaStatusResponse({ atendimento_id: SCHEDULED_ATEND_ID }),
+      }),
     );
 
     const user = userEvent.setup();
@@ -737,7 +756,7 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
     const tokenBDeferred: { resolve: (() => void) | null } = { resolve: null };
 
     server.use(
-      http.post("*/api/v1/fila/chamar-proximo", () => {
+      handleChamarProximoPacienteApiV1FilaChamarProximoPost(() => {
         callCount += 1;
         if (callCount === 1) {
           return HttpResponse.json(
@@ -754,30 +773,32 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
           }),
         );
       }),
-      http.post(`*/api/v1/consultations/${ATENDIMENTO_A}/livekit/token`, () =>
-        HttpResponse.json(
-          createLiveKitTokenResponse({
-            room_name: ROOM_A,
-            token: "livekit-token-a",
-          }),
-        ),
+      handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost(
+        ({ params }) => {
+          if (params.atendimento_id === ATENDIMENTO_B) {
+            return new Promise<Response>((resolve) => {
+              tokenBDeferred.resolve = () =>
+                resolve(
+                  HttpResponse.json({ detail: "Falha ao emitir token SFU" }, { status: 500 }),
+                );
+            }) as never;
+          }
+          return HttpResponse.json(
+            createLiveKitTokenResponse({
+              room_name: ROOM_A,
+              token: "livekit-token-a",
+            }),
+          );
+        },
       ),
-      http.post(
-        `*/api/v1/consultations/${ATENDIMENTO_B}/livekit/token`,
-        () =>
-          new Promise<Response>((resolve) => {
-            tokenBDeferred.resolve = () =>
-              resolve(HttpResponse.json({ detail: "Falha ao emitir token SFU" }, { status: 500 }));
-          }),
+      handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet(({ params }) =>
+        HttpResponse.json(createProntuarioResponse({ atendimento_id: params.atendimento_id })),
       ),
-      http.get(`*/api/v1/consultations/${ATENDIMENTO_B}/prontuario`, () =>
-        HttpResponse.json(createProntuarioResponse({ atendimento_id: ATENDIMENTO_B })),
+      handleObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGet(({ params }) =>
+        HttpResponse.json(createEvolucaoSoapResponse({ atendimento_id: params.atendimento_id })),
       ),
-      http.get(`*/api/v1/consultations/${ATENDIMENTO_B}/soap`, () =>
-        HttpResponse.json(createEvolucaoSoapResponse({ atendimento_id: ATENDIMENTO_B })),
-      ),
-      http.get(`*/api/v1/consultations/${ATENDIMENTO_B}/tma-status`, () =>
-        HttpResponse.json(createTmaStatusResponse()),
+      handleObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGet(({ params }) =>
+        HttpResponse.json(createTmaStatusResponse({ atendimento_id: params.atendimento_id })),
       ),
     );
 

@@ -170,7 +170,7 @@ async def test_assinar_documento_records_documento_assinado_audit_event(
             FakeResult(doc),  # query do assinar
             FakeResult(doc),  # query do compilar_pdf
             FakeResult(None),  # query evolucao
-            FakeResult(None),  # query organizacao
+            FakeResult(None),  # query configuracao_unidade
             FakeResult(None),  # query paciente
             FakeResult(None),  # query medico
         ],

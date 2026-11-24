@@ -99,7 +99,7 @@ sequenceDiagram
 
 ### Camada 1: Macro-Autorização na Borda da API (RBAC)
 * **Objetivo:** Filtrar o acesso a endpoints baseado nas atribuições funcionais (*roles*).
-* **Implementação:** Injeção de dependências nativa do FastAPI (`Depends(require_role("MEDICO"))`, `Depends(require_permission("prontuario:view"))` e `resolve_bearer_principal` em `src/core/authz/dependencies.py`), que unifica o parsing de tokens híbridos (HMAC 2-partes e JWT 3-partes), a verificação fail-closed contra `TokenRevocationPort` (`src/core/authz/revocation.py`) e o mapeamento de falhas HTTP (`401`/`403`/`503`) e WebSocket (`4401`/`4403`/`1013`).
+* **Implementação:** Injeção de dependências nativa do FastAPI (`Depends(require_role("MEDICO"))`, `Depends(require_permission("prontuario:view"))` e `resolve_bearer_principal` em `src/core/authz/dependencies.py`), que unifica o parsing de tokens híbridos (HMAC 2-partes e JWT 3-partes), a verificação fail-closed contra `TokenRevocationPort` (`src/core/authz/revocation.py`) e o mapeamento de falhas HTTP (`401`/`403`/`503`) e WebSocket (`4401`/`4403`/`1013`). A matriz de permissões finas em `src/core/authz/roles.py` (`Permission` e `ROLE_PERMISSIONS`) associa explicitamente `queue:call` (`Permission.QUEUE_CALL`) a `Role.MEDICO` (junto de `queue:view`, `prontuario:view`, `prontuario:edit` e `doc:sign`).
 * **Regra OWASP:** *Deny by Default*. Rotas protegidas rejeitam requisições sem claims explícitas válidas e abortam com `503 Service Unavailable` caso o Valkey esteja inacessível (*fail-closed*).
 
 ### Camada 2: Segurança Horizontal Anti-IDOR por Titularidade (ADR-013)
@@ -180,7 +180,7 @@ No endpoint `POST /consultations/{atendimento_id}/livekit/token`:
 | **Configurar TMA / Parâmetros da Unidade** | Sim | Não | Não | Não |
 | **Cadastrar / Desativar Profissionais** | Sim | Não | Não | Não |
 | **Visualizar Fila Geral da Unidade** | Sim | Sim | Não | Não |
-| **Chamar Próximo Paciente da Fila** | Não | Sim | Não | Não |
+| **Chamar Próximo Paciente da Fila (`queue:call` / `Permission.QUEUE_CALL`)** | Não | Sim (`Role.MEDICO`) | Não | Não |
 | **Visualizar / Editar Prontuário Ativo** | Não | Sim (se alocado) | Não | Não |
 | **Assinar Receitas e Atestados (ICP)** | Não | Sim (se alocado) | Não | Não |
 | **Consolidar Lotes de Faturamento** | Sim | Não | Sim | Não |

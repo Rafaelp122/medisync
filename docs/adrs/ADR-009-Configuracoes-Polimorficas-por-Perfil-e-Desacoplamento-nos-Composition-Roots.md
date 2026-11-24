@@ -26,7 +26,7 @@ No entanto, o gerenciamento de configurações e injeção de dependências apre
 
 * **Segurança Fail-Fast em Produção**: Garantir em tempo de inicialização (startup) que credenciais fracas, URLs de teste e modos de depuração não sejam aceitos em ambiente produtivo.
 * **Isolamento e Concorrência Segura de Testes**: Eliminar qualquer estado global mutável em nível de módulo para viabilizar execução paralela veloz e determinística (`just test-fast`).
-* **Testabilidade e Execução Sem Docker**: Permitir a alternância declarativa de adaptadores de infraestrutura para implementações em memória (`in_memory`) sem modificar o código de produção.
+* **Testabilidade e Execução Sem Docker**: Permitir a alternância declarativa de adaptadores de infraestrutura para implementações em memória ou falsas (`memory` / `fake`) sem modificar o código de produção.
 * **Hexagonal Pragmático Rigoroso**: Centralizar a resolução de dependências técnicas e leitura de ambiente exclusivamente na camada de composição (`composition.py`), mantendo os serviços de aplicação 100% puros e agnósticos ao runtime.
 
 ---
@@ -58,7 +58,7 @@ Adotamos a **Opção 3: Hierarquia Polimórfica com Pydantic Settings e Fiação
 1. **Perfis Polimórficos e Fail-Fast (`src/core/config.py`)**:
    - `CommonSettings`: Contém a definição canônica de todos os campos com valores seguros de desenvolvimento.
    - `DevelopmentSettings`: Ativa `DEBUG=True` e defaults amigáveis para Docker Compose local.
-   - `TestSettings`: Define `ENVIRONMENT="test"`, `DEBUG=False` e configura seletores para `in_memory`.
+   - `TestSettings`: Define `ENVIRONMENT="test"`, `DEBUG=True` e configura seletores em memória/teste (`RATE_LIMIT_BACKEND="memory"`, `TOKEN_REVOCATION_BACKEND="memory"`, `VALIDATION_RATE_LIMIT_BACKEND="memory"`, `SIGNED_CACHE_BACKEND="memory"`, `TELEMETRY_CACHE_BACKEND="memory"`, `STORAGE_BACKEND="fake"`, `NOTIFICATION_PROVIDER="fake"`, `LIVENESS_PROVIDER="mock"`).
    - `ProductionSettings`: Desativa `DEBUG=False` e impõe `@model_validator(mode="after")` que aborta imediatamente a execução se encontrar senhas padrão de teste, segredos fracos ou webhooks inseguros.
    - `get_settings()` instancia e armazena em cache (`@lru_cache`) a classe especializada correspondente ao valor de `ENVIRONMENT`.
 

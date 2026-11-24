@@ -1,7 +1,7 @@
 """SignedCachePort contract: memory adapter with TTL."""
 
 import asyncio
-from unittest.mock import AsyncMock
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 from src.modules.consultation.application.ports.signed_cache_port import (
@@ -13,6 +13,11 @@ from src.modules.consultation.infrastructure.memory_signed_cache import (
 from src.modules.consultation.infrastructure.valkey_signed_cache import (
     ValkeySignedCache,
 )
+
+from tests.doubles import FakeValkey
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
 
 
 async def test_memory_cache_marca_e_expira() -> None:
@@ -31,12 +36,16 @@ async def test_memory_cache_respeita_protocolo() -> None:
 
 
 async def test_valkey_cache_usa_set_com_ttl_e_exists() -> None:
-    client = AsyncMock()
-    client.exists.return_value = 1
-    cache = ValkeySignedCache(valkey=client)
+    client = FakeValkey()
+    cache = ValkeySignedCache(valkey=cast("Redis", client))
     doc_id = uuid4()
     assert isinstance(cache, SignedCachePort)
-    assert await cache.is_assinado(doc_id) is True
-    client.exists.assert_awaited_once_with(f"doc:assinado:{doc_id}")
+    assert await cache.is_assinado(doc_id) is False
     await cache.marcar_assinado(doc_id, ttl_segundos=60)
-    client.set.assert_awaited_once_with(f"doc:assinado:{doc_id}", "1", ex=60)
+    assert await cache.is_assinado(doc_id) is True
+    assert client.set_calls == [(f"doc:assinado:{doc_id}", "1", 60)]
+    assert client.exists_calls == [
+        (f"doc:assinado:{doc_id}",),
+        (f"doc:assinado:{doc_id}",),
+    ]
+    assert await client.ttl(f"doc:assinado:{doc_id}") == 60
