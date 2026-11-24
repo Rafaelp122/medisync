@@ -12,6 +12,8 @@ beforeAll(() => {
 afterEach(() => {
   server.resetHandlers();
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 afterAll(() => {

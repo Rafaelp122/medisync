@@ -2,7 +2,6 @@
 
 from datetime import UTC, datetime
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -10,9 +9,10 @@ from httpx import ASGITransport, AsyncClient
 from src.core.authz.token import create_access_token
 from src.main import create_app
 from src.modules.queue.application.dtos import AlocacaoChamadaResult
-from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.composition import get_fila_service
 from src.modules.queue.domain.exceptions import MedicoOcupadoError
+
+from tests.doubles import FakeFilaService
 
 
 def _make_jwt_token(user_id: UUID, papel: str = "MEDICO") -> str:
@@ -27,9 +27,8 @@ async def test_chamar_proximo_sucesso_com_paciente_alocado() -> None:
     atendimento_id = uuid4()
     paciente_id = uuid4()
 
-    mock_service = MagicMock(spec=FilaService)
-    mock_service.adquirir_proximo_paciente = AsyncMock(
-        return_value=AlocacaoChamadaResult(
+    fake_service = FakeFilaService(
+        adquirir_result=AlocacaoChamadaResult(
             atendimento_id=atendimento_id,
             medico_id=medico_id,
             status="CHAMADO",
@@ -41,7 +40,7 @@ async def test_chamar_proximo_sucesso_com_paciente_alocado() -> None:
             mensagem="Paciente alocado com sucesso para chamada.",
         )
     )
-    app.dependency_overrides[get_fila_service] = lambda: mock_service
+    app.dependency_overrides[get_fila_service] = lambda: fake_service
 
     try:
         token = _make_jwt_token(medico_id, papel="MEDICO")
@@ -61,7 +60,7 @@ async def test_chamar_proximo_sucesso_com_paciente_alocado() -> None:
             assert data["status"] == "CHAMADO"
             assert data["ttl_segundos"] == 45
             assert data["mensagem"] == "Paciente alocado com sucesso para chamada."
-            mock_service.adquirir_proximo_paciente.assert_awaited_once()
+            assert len(fake_service.adquirir_calls) == 1
     finally:
         app.dependency_overrides.clear()
 
@@ -72,9 +71,8 @@ async def test_chamar_proximo_fila_vazia_retorna_200_com_alocado_false() -> None
     app = create_app()
     medico_id = uuid4()
 
-    mock_service = MagicMock(spec=FilaService)
-    mock_service.adquirir_proximo_paciente = AsyncMock(return_value=None)
-    app.dependency_overrides[get_fila_service] = lambda: mock_service
+    fake_service = FakeFilaService(adquirir_result=None)
+    app.dependency_overrides[get_fila_service] = lambda: fake_service
 
     try:
         token = _make_jwt_token(medico_id, papel="MEDICO")
@@ -128,11 +126,10 @@ async def test_chamar_proximo_medico_ocupado_retorna_409() -> None:
     app = create_app()
     medico_id = uuid4()
 
-    mock_service = MagicMock(spec=FilaService)
-    mock_service.adquirir_proximo_paciente = AsyncMock(
-        side_effect=MedicoOcupadoError("Médico possui chamada ativa.")
+    fake_service = FakeFilaService(
+        adquirir_result=MedicoOcupadoError("Médico possui chamada ativa.")
     )
-    app.dependency_overrides[get_fila_service] = lambda: mock_service
+    app.dependency_overrides[get_fila_service] = lambda: fake_service
 
     try:
         token = _make_jwt_token(medico_id, papel="MEDICO")

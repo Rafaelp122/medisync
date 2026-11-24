@@ -44,7 +44,7 @@ def test_docs_and_ssot_guardrails_pass() -> None:
 
 
 def test_readme_contains_all_bounded_contexts() -> None:
-    """Ensure all 7 Bounded Contexts in src/modules/ are documented in README.md."""
+    """Ensure all 8 Bounded Contexts in src/modules/ are documented in README.md."""
     modules_dir = REPO_ROOT / "src" / "modules"
     readme_text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
@@ -55,8 +55,9 @@ def test_readme_contains_all_bounded_contexts() -> None:
             if d.is_dir() and not d.name.startswith((".", "__"))
         ]
     )
-    assert len(actual_modules) >= 7, (
-        f"Expected at least 7 modules, found {len(actual_modules)}"
+    assert len(actual_modules) == 8, (
+        f"Expected 8 bounded context modules, found {len(actual_modules)}: "
+        f"{actual_modules}"
     )
 
     missing_modules: list[str] = []

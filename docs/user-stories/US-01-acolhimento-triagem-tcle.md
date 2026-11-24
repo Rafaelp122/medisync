@@ -27,7 +27,7 @@
 - **E** admite o atendimento diretamente como apto para chamada (`APTO_PARA_CHAMADA`) pelo Art. 196 da CF/88 (ADR-012),
 - **E** calcula o score determinístico de 64 bits e insere atomicamente no ZSET do Valkey `fila:aptos`,
 - **E** persiste atomicamente o evento auditável 'ADMISSAO_PACIENTE' na trilha append-only (ADR-007 / CFM nº 2.314/2022),
-- **E** retorna confirmação de admissão (HTTP 201 Created) com status `APTO_PARA_CHAMADA`, identificador do atendimento e credencial provisória de acesso.
+- **E** retorna confirmação de admissão (HTTP 201 Created) com status `APTO_PARA_CHAMADA` e identificadores do atendimento e da triagem (`AdmissaoResponse`), enquanto a credencial provisória de acesso (`token`) para fluxos sem sessão prévia é emitida na etapa de identificação (`POST /api/v1/onboarding/fase-1` $\to$ `Fase1Response`).
 
 ### Cenário 2: Detecção de Emergência Iminente (Salvaguarda SAMU 192)
 - **Dado que** minhas respostas na triagem inicial acusam sinais clínicos de Nível 1 (Risco Crítico / Vermelho),
@@ -43,7 +43,7 @@
 - **Então** o sistema rejeita a admissão com HTTP 422 e mensagem explicativa sobre a obrigatoriedade legal do consentimento (LGPD Art. 11 / CFM 2.314).
 
 ### Cenário 4: Rota declarativa `/fila`, persistência local da sessão e proteção contra abandono (Issue #113, Issue #141)
-- **Dado que** concluí com sucesso a triagem e recebi o identificador do atendimento e a credencial provisória de acesso,
+- **Dado que** concluí com sucesso a etapa de identificação (JWT cidadão ou `token` provisório de `POST /api/v1/onboarding/fase-1`) e a admissão (`POST /api/v1/fila/admissao`) retornou o `atendimento_id`,
 - **Quando** a admissão é confirmada,
 - **Então** o sistema navega declarativamente para a rota `/fila` (`frontend/src/routes/fila.tsx`),
 - **E** quando recarrego a página acidentalmente (F5) ou fecho temporariamente a aba do navegador,

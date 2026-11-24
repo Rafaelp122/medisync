@@ -3,7 +3,7 @@
 > **Requisito Base:** RF-02  
 > **Invariantes Relacionadas:** RN03, RN-REG-02 (CFM 1.821/2007 e 2.314/2022)  
 > **Personas:** Juliana Silva (Paciente) e Patrícia Mendes (Coordenação de Regulação e Produção Ambulatorial)  
-> **Módulos:** `identity`, `ambulatory`, `queue`, `worker`  
+> **Módulos:** `identity`, `ambulatory`, `queue`  
 
 > **Status de Qualidade:** 🟢 **Conforme**
 
@@ -12,7 +12,7 @@
 ## 1. Narrativa da História (User Voice)
 
 **Como** paciente aguardando atendimento na fila virtual ou acessando meu perfil no portal SUS (Juliana Silva),  
-**Quero** completar os dados regulatórios exigidos pelo Conselho Federal de Medicina (nome social, nome da mãe, sexo biológico e CEP) enquanto o sistema realiza a qualificação cadastral SUS em segundo plano,  
+**Quero** completar os dados regulatórios exigidos pelo Conselho Federal de Medicina (nome social, nome da mãe, sexo biológico e CEP) enquanto já aguardo apto na fila SUS sem dependência de worker assíncrono,  
 **Para que** meu prontuário esteja legalmente conforme sem bloqueios burocráticos ou financeiros ao atendimento.
 
 ---
@@ -47,13 +47,13 @@
 
 * **Endpoint:** `POST /api/v1/onboarding/fase-2`
 * **Headers:** `Authorization: Bearer <token_intake_ou_jwt>`
-* **Payload de Entrada (`OnboardingFase2Request`):**
+* **Payload de Entrada (`Fase2Request`):**
   ```json
   {
     "paciente_id": "018f3a5b-...",
     "nome_social": "Juliana Santos Silva",
     "nome_mae": "Maria Aparecida Silva",
-    "sexo_biologico": "FEMININO",
+    "sexo_biologico": "F",
     "cep": "01310-100",
     "logradouro": "Avenida Paulista",
     "numero": "1000",
@@ -62,7 +62,7 @@
     "estado": "SP"
   }
   ```
-* **Resposta Esperada (`200 OK`):** Retorna DTO atualizado do paciente enriquecido.
+* **Resposta Esperada (`200 OK` — `Fase2Response`):** Retorna DTO atualizado do paciente enriquecido (aceita `"M"`/`"F"` e normaliza `"MASCULINO"`/`"FEMININO"` em `Fase2Request._normalizar_sexo`).
 
 ---
 
