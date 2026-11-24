@@ -1,8 +1,14 @@
-import { createRoute, redirect } from "@tanstack/react-router";
-import { PostConsultationPage } from "@/features/consultation/pages/post-consultation-page";
+import { createRoute, lazyRouteComponent, redirect } from "@tanstack/react-router";
+import { Suspense } from "react";
+import { RoutePendingFallback } from "@/components/route-fallbacks";
 import { CitizenShellLayout } from "@/layouts/citizen-shell-layout";
 import { getStoredSession, type StoredPatientSession } from "@/lib/session-storage";
 import { rootRoute } from "./root";
+
+const LazyPostConsultationPage = lazyRouteComponent(
+  () => import("@/features/consultation/pages/post-consultation-page"),
+  "PostConsultationPage",
+);
 
 export const posConsultaRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -21,7 +27,9 @@ export const posConsultaRoute = createRoute({
     const { session } = posConsultaRoute.useRouteContext() as { session: StoredPatientSession };
     return (
       <CitizenShellLayout session={session}>
-        <PostConsultationPage session={session} />
+        <Suspense fallback={<RoutePendingFallback />}>
+          <LazyPostConsultationPage session={session} />
+        </Suspense>
       </CitizenShellLayout>
     );
   },

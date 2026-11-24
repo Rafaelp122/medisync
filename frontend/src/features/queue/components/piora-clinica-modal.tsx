@@ -59,10 +59,10 @@ export function PioraClinicaModal({
     onSuccess: (data) => {
       onOpenChange(false);
       if (data.alerta_samu_disparado || data.redirecionado_emergencia) {
-        onEmergenciaSamu(data.orientacoes_emergencia || data.instrucoes);
+        onEmergenciaSamu(data.instrucoes);
       } else {
         onReclassificado({
-          novaPrioridade: data.nova_prioridade ?? data.prioridade_clinica,
+          novaPrioridade: data.prioridade_clinica,
           novaPosicao: data.nova_posicao,
           instrucoes: data.instrucoes,
         });

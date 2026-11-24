@@ -1,6 +1,80 @@
 import type { AdmissaoResponse, LiveKitTokenResponse } from "@/api/generated/types.gen";
 import { settings } from "@/config/settings";
 
+export interface StorageSlot<T> {
+  get: () => T | null;
+  save: (value: T) => void;
+  clear: () => void;
+}
+
+export interface CreateStorageSlotOptions<T> {
+  key: string;
+  storage: () => Storage | null;
+  isValid: (parsed: Partial<T>) => parsed is T;
+}
+
+/**
+ * Cria um slot tipado de Web Storage com proteção SSR, parsing seguro e limpeza defensiva.
+ */
+export function createStorageSlot<T>({
+  key,
+  storage,
+  isValid,
+}: CreateStorageSlotOptions<T>): StorageSlot<T> {
+  const clear = (): void => {
+    const store = storage();
+    if (!store) return;
+    try {
+      store.removeItem(key);
+    } catch {
+      // Ignora erros de storage restrito
+    }
+  };
+
+  const get = (): T | null => {
+    const store = storage();
+    if (!store) return null;
+
+    try {
+      const raw = store.getItem(key);
+      if (!raw) return null;
+
+      const parsed = JSON.parse(raw) as Partial<T>;
+      if (!parsed || typeof parsed !== "object" || !isValid(parsed)) {
+        clear();
+        return null;
+      }
+
+      return parsed;
+    } catch {
+      clear();
+      return null;
+    }
+  };
+
+  const save = (value: T): void => {
+    const store = storage();
+    if (!store) return;
+    try {
+      store.setItem(key, JSON.stringify(value));
+    } catch {
+      // Tratamento silencioso para QuotaExceededError em modo anônimo restritivo
+    }
+  };
+
+  return { get, save, clear };
+}
+
+function getLocalStorage(): Storage | null {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  return window.localStorage;
+}
+
+function getSessionStorage(): Storage | null {
+  if (typeof window === "undefined" || !window.sessionStorage) return null;
+  return window.sessionStorage;
+}
+
 export const MEDISYNC_SESSION_KEY = settings.storage.patientSession;
 
 /**
@@ -17,80 +91,25 @@ export interface StoredPatientSession {
   status?: AdmissaoResponse["status_atendimento"];
 }
 
-/**
- * Recupera com segurança a sessão persistida no localStorage do navegador.
- * Possui guard clauses contra SSR, parsing corrompido e payload incompleto.
- */
-export function getStoredSession(): StoredPatientSession | null {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return null;
-  }
+const patientSessionSlot = createStorageSlot<StoredPatientSession>({
+  key: MEDISYNC_SESSION_KEY,
+  storage: getLocalStorage,
+  isValid: (parsed): parsed is StoredPatientSession =>
+    typeof parsed.token === "string" &&
+    typeof parsed.pacienteId === "string" &&
+    typeof parsed.role === "string" &&
+    (parsed.tipo === "acolhimento" || parsed.tipo === "otp") &&
+    parsed.token.trim().length > 0 &&
+    parsed.pacienteId.trim().length > 0,
+});
 
-  try {
-    const raw = window.localStorage.getItem(MEDISYNC_SESSION_KEY);
-    if (!raw) {
-      return null;
-    }
+export const getStoredSession = (): StoredPatientSession | null => patientSessionSlot.get();
+export const saveStoredSession = (session: StoredPatientSession): void =>
+  patientSessionSlot.save(session);
+export const clearStoredSession = (): void => patientSessionSlot.clear();
 
-    const parsed = JSON.parse(raw) as Partial<StoredPatientSession>;
-
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      typeof parsed.token !== "string" ||
-      typeof parsed.pacienteId !== "string" ||
-      typeof parsed.role !== "string" ||
-      (parsed.tipo !== "acolhimento" && parsed.tipo !== "otp") ||
-      !parsed.token.trim() ||
-      !parsed.pacienteId.trim()
-    ) {
-      clearStoredSession();
-      return null;
-    }
-
-    return parsed as StoredPatientSession;
-  } catch {
-    clearStoredSession();
-    return null;
-  }
-}
-
-/**
- * Persiste a sessão do paciente no localStorage sob a chave canônica medisync_session.
- */
-export function saveStoredSession(session: StoredPatientSession): void {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(MEDISYNC_SESSION_KEY, JSON.stringify(session));
-  } catch {
-    // Tratamento silencioso para QuotaExceededError em modo anônimo restritivo
-  }
-}
-
-/**
- * Remove atomicamente a sessão persistida do paciente.
- */
-export function clearStoredSession(): void {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return;
-  }
-
-  try {
-    window.localStorage.removeItem(MEDISYNC_SESSION_KEY);
-  } catch {
-    // Ignora erros de storage
-  }
-}
-
-/**
- * Helper enxuto para extração direta do token de autenticação ativo.
- */
 export function getStoredToken(): string | null {
-  const session = getStoredSession();
-  return session?.token ?? null;
+  return getStoredSession()?.token ?? null;
 }
 
 export const MEDISYNC_DOCTOR_SESSION_KEY = settings.storage.doctorSession;
@@ -103,76 +122,28 @@ export interface StoredDoctorSession {
   medicoNome: string;
   crmUf: string;
   identificador: string;
+  papel?: string;
 }
 
-/**
- * Recupera com segurança a sessão persistida do médico.
- */
-export function getStoredDoctorSession(): StoredDoctorSession | null {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return null;
-  }
+const doctorSessionSlot = createStorageSlot<StoredDoctorSession>({
+  key: MEDISYNC_DOCTOR_SESSION_KEY,
+  storage: getLocalStorage,
+  isValid: (parsed): parsed is StoredDoctorSession =>
+    typeof parsed.medicoId === "string" &&
+    typeof parsed.medicoNome === "string" &&
+    parsed.medicoId.trim().length > 0 &&
+    parsed.medicoNome.trim().length > 0,
+});
 
-  try {
-    const raw = window.localStorage.getItem(MEDISYNC_DOCTOR_SESSION_KEY);
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as Partial<StoredDoctorSession>;
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      typeof parsed.medicoId !== "string" ||
-      typeof parsed.medicoNome !== "string" ||
-      !parsed.medicoId.trim() ||
-      !parsed.medicoNome.trim()
-    ) {
-      clearStoredDoctorSession();
-      return null;
-    }
-
-    return parsed as StoredDoctorSession;
-  } catch {
-    clearStoredDoctorSession();
-    return null;
-  }
-}
-
-/**
- * Persiste a sessão do médico no localStorage.
- */
-export function saveStoredDoctorSession(session: StoredDoctorSession): void {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(MEDISYNC_DOCTOR_SESSION_KEY, JSON.stringify(session));
-  } catch {
-    // Tratamento silencioso para storage restrito
-  }
-}
-
-/**
- * Remove atomicamente a sessão persistida do médico.
- */
-export function clearStoredDoctorSession(): void {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return;
-  }
-
-  try {
-    window.localStorage.removeItem(MEDISYNC_DOCTOR_SESSION_KEY);
-  } catch {
-    // Ignora erros de storage
-  }
-}
+export const getStoredDoctorSession = (): StoredDoctorSession | null => doctorSessionSlot.get();
+export const saveStoredDoctorSession = (session: StoredDoctorSession): void =>
+  doctorSessionSlot.save(session);
+export const clearStoredDoctorSession = (): void => doctorSessionSlot.clear();
 
 export const MEDISYNC_MANAGER_SESSION_KEY = settings.storage.managerSession;
 
 /**
- * Contrato da sessão do gestor municipal / regulação persistida no navegador.
+ * Contrato da sessão do gestor da unidade persistida no navegador.
  */
 export interface StoredManagerSession {
   usuarioId: string;
@@ -181,125 +152,35 @@ export interface StoredManagerSession {
   papel: string;
 }
 
-/**
- * Recupera com segurança a sessão persistida do gestor.
- */
-export function getStoredManagerSession(): StoredManagerSession | null {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return null;
-  }
+const managerSessionSlot = createStorageSlot<StoredManagerSession>({
+  key: MEDISYNC_MANAGER_SESSION_KEY,
+  storage: getLocalStorage,
+  isValid: (parsed): parsed is StoredManagerSession =>
+    typeof parsed.usuarioId === "string" &&
+    typeof parsed.email === "string" &&
+    typeof parsed.papel === "string" &&
+    parsed.usuarioId.trim().length > 0 &&
+    parsed.email.trim().length > 0 &&
+    parsed.papel.trim().length > 0,
+});
 
-  try {
-    const raw = window.localStorage.getItem(MEDISYNC_MANAGER_SESSION_KEY);
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as Partial<StoredManagerSession>;
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      typeof parsed.usuarioId !== "string" ||
-      typeof parsed.email !== "string" ||
-      !parsed.usuarioId.trim() ||
-      !parsed.email.trim()
-    ) {
-      clearStoredManagerSession();
-      return null;
-    }
-
-    return parsed as StoredManagerSession;
-  } catch {
-    clearStoredManagerSession();
-    return null;
-  }
-}
-
-/**
- * Persiste a sessão do gestor no localStorage.
- */
-export function saveStoredManagerSession(session: StoredManagerSession): void {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(MEDISYNC_MANAGER_SESSION_KEY, JSON.stringify(session));
-  } catch {
-    // Tratamento silencioso para storage restrito
-  }
-}
-
-/**
- * Remove atomicamente a sessão persistida do gestor.
- */
-export function clearStoredManagerSession(): void {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return;
-  }
-
-  try {
-    window.localStorage.removeItem(MEDISYNC_MANAGER_SESSION_KEY);
-  } catch {
-    // Ignora erros de storage
-  }
-}
+export const getStoredManagerSession = (): StoredManagerSession | null => managerSessionSlot.get();
+export const saveStoredManagerSession = (session: StoredManagerSession): void =>
+  managerSessionSlot.save(session);
+export const clearStoredManagerSession = (): void => managerSessionSlot.clear();
 
 export const MEDISYNC_CALL_DATA_KEY = settings.storage.callData;
 
-/**
- * Recupera dados de conexão WebRTC da chamada ativa persistidos no sessionStorage.
- */
-export function getStoredCallData(): LiveKitTokenResponse | null {
-  if (typeof window === "undefined" || !window.sessionStorage) {
-    return null;
-  }
+const callDataSlot = createStorageSlot<LiveKitTokenResponse>({
+  key: MEDISYNC_CALL_DATA_KEY,
+  storage: getSessionStorage,
+  isValid: (parsed): parsed is LiveKitTokenResponse =>
+    typeof parsed.token === "string" &&
+    typeof parsed.server_url === "string" &&
+    parsed.token.trim().length > 0 &&
+    parsed.server_url.trim().length > 0,
+});
 
-  try {
-    const raw = window.sessionStorage.getItem(MEDISYNC_CALL_DATA_KEY);
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as Partial<LiveKitTokenResponse>;
-    if (!parsed || typeof parsed !== "object" || !parsed.token || !parsed.server_url) {
-      clearStoredCallData();
-      return null;
-    }
-
-    return parsed as LiveKitTokenResponse;
-  } catch {
-    clearStoredCallData();
-    return null;
-  }
-}
-
-/**
- * Persiste temporariamente os dados de conexão WebRTC no sessionStorage.
- */
-export function saveStoredCallData(data: LiveKitTokenResponse): void {
-  if (typeof window === "undefined" || !window.sessionStorage) {
-    return;
-  }
-
-  try {
-    window.sessionStorage.setItem(MEDISYNC_CALL_DATA_KEY, JSON.stringify(data));
-  } catch {
-    // Tratamento silencioso
-  }
-}
-
-/**
- * Remove atomicamente os dados da chamada encerrada do sessionStorage.
- */
-export function clearStoredCallData(): void {
-  if (typeof window === "undefined" || !window.sessionStorage) {
-    return;
-  }
-
-  try {
-    window.sessionStorage.removeItem(MEDISYNC_CALL_DATA_KEY);
-  } catch {
-    // Ignora erros
-  }
-}
+export const getStoredCallData = (): LiveKitTokenResponse | null => callDataSlot.get();
+export const saveStoredCallData = (data: LiveKitTokenResponse): void => callDataSlot.save(data);
+export const clearStoredCallData = (): void => callDataSlot.clear();

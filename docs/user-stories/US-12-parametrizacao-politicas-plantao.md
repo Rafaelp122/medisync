@@ -19,8 +19,8 @@
 ## 2. Critérios de Aceite Formais (Gherkin)
 
 ### Cenário 1: Atualização dos parâmetros do plantão com sucesso (Caso Feliz)
-- **Dado que** estou autenticado como gestor clínico da unidade (`Role.GESTOR_UNIDADE` / `Permission.TMA_CONFIG`),
-- **Quando** envio uma requisição `PUT /api/v1/telemetria/config-plantao` com novos valores de cota diária (ex: 250), fator `alpha_backpressure = 1.25`, `tma_padrao_segundos = 720`, `tempo_tolerancia_ring_segundos = 45` e `medicos_ativos_planejados = 5`,
+- **Dado que** estou autenticado como **Gestor da Unidade** (`Role.GESTOR_UNIDADE` / `Permission.TMA_CONFIG`) via `GET /api/v1/auth/me`,
+- **Quando** envio no `ConfigPlantaoCard` uma requisição `PUT /api/v1/telemetria/config-plantao` com todos os 11 campos completos (incluindo `cota_diaria_maxima` numérica ou `null` via **"Cota Livre SUS"**), fator `alpha_backpressure = 1.25`, `tma_padrao_segundos = 720`, `tempo_tolerancia_ring_segundos = 45`, `medicos_ativos_planejados = 5` e metas `sla_minutos_nivel_1..5`,
 - **Então** o sistema valida que os valores atendem os limites operacionais permitidos ($1{,}20 \le \alpha \le 1{,}30$, `tma_padrao_segundos >= 60`, `tempo_tolerancia_ring_segundos >= 10` e `medicos_ativos_planejados >= 1`),
 - **E** atualiza os parâmetros operacionais da unidade com efeito imediato nas novas admissões, estimativas de espera e janela de ring via `ShiftPolicyReaderPort`,
 - **E** renova o cache de telemetria operacional,
@@ -66,6 +66,7 @@
 - [x] **Consumo Desacoplado em `queue`:** `ShiftPolicyReaderPort` (`src/modules/queue/application/ports/shift_policy_reader_port.py`) adaptada por `TelemetryShiftPolicyReaderAdapter` (`src/modules/queue/composition.py`) sobre `src/modules/telemetry/composition.py:ler_politica_plantao_snapshot` alimenta admissão, estimativa de espera e TTL de ring em `FilaService` em modo read-only.
 - [x] **Migration Alembic:** Tabela singleton `configuracoes_plantao` criada em plataforma única (`migrations/versions/0001_initial_schema.py`).
 - [x] **Apresentação:** Router fino `telemetry_router.py` montado em `/api/v1/telemetria/config-plantao` com schemas `ConfigPlantaoRequest` (11 campos obrigatórios) / `ConfigPlantaoResponse` (`src/modules/telemetry/presentation/schemas.py`).
+- [x] **Frontend Parametrização (Issue #167):** Formulário apresentacional `ConfigPlantaoCard` (`frontend/src/features/telemetry/components/painel/config-plantao-card.tsx`) validado por `configPlantaoFormSchema` (`frontend/src/features/telemetry/schemas/telemetry-schema.ts`), suportando opção **"Cota Livre SUS"** (`cota_diaria_maxima: null`), `tempo_tolerancia_ring_segundos` e `sla_minutos_nivel_1..5` sobre sessão **"Gestor da Unidade"**.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_telemetry_model.py`
   - `tests/unit/test_telemetry_service.py`

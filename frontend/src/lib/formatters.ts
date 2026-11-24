@@ -72,11 +72,10 @@ export interface StatusBadgeInfo {
   variant: StatusBadgeVariant;
 }
 
-const STATUS_BADGE_MAP: Record<string, StatusBadgeInfo> = {
+export const STATUS_BADGE_MAP: Record<string, StatusBadgeInfo> = {
   AGENDADO: { label: "Agendado", variant: "default" },
   CONFIRMADO: { label: "Confirmado", variant: "success" },
   EM_ATENDIMENTO: { label: "Em atendimento", variant: "warning" },
-  CHAMADO: { label: "Chamado", variant: "warning" },
   CHAMANDO_PACIENTE: { label: "Chamando", variant: "warning" },
   AGUARDANDO_CHAMADA: { label: "Aguardando chamada", variant: "default" },
   APTO_PARA_CHAMADA: { label: "Aguardando chamada", variant: "default" },
@@ -87,9 +86,7 @@ const STATUS_BADGE_MAP: Record<string, StatusBadgeInfo> = {
   CANCELADO: { label: "Cancelado", variant: "destructive" },
   CANCELADO_PACIENTE: { label: "Cancelado", variant: "destructive" },
   FALTA: { label: "Falta", variant: "destructive" },
-  NO_SHOW: { label: "Ausência", variant: "destructive" },
   PACIENTE_AUSENTE: { label: "Ausência", variant: "destructive" },
-  EVADIDO: { label: "Evasão", variant: "destructive" },
 };
 
 /**
@@ -132,17 +129,6 @@ export function formatarPosicaoOrdinal(posicao: number | null | undefined): stri
   return `${posicao}º na fila`;
 }
 
-/**
- * Verifica de forma silenciosa e resiliente se o navegador/dispositivo possui suporte à Web Authentication API.
- * Regras: US-14 (Passkeys / WebAuthn - Detecção silenciosa sem lançar exceções).
- */
-export function isWebAuthnSupported(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  return Boolean(window.PublicKeyCredential && typeof window.PublicKeyCredential === "function");
-}
-
 export function formatarDataHoraBR(iso?: string | null): string {
   if (!iso) return "—";
   const parsed = new Date(iso);
@@ -165,9 +151,9 @@ export function formatarHorarioSlot(isoDateTime: string): string {
 }
 
 export function formatarDataIso(date: Date): string {
-  const ano = date.getFullYear();
-  const mes = String(date.getMonth() + 1).padStart(2, "0");
-  const dia = String(date.getDate()).padStart(2, "0");
+  const ano = date.getUTCFullYear();
+  const mes = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dia = String(date.getUTCDate()).padStart(2, "0");
   return `${ano}-${mes}-${dia}`;
 }
 

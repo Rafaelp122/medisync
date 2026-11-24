@@ -2,7 +2,7 @@
 
 import { http, type HttpHandler, HttpResponse, type HttpResponseResolver, type RequestHandlerOptions as RequestHandlerOptions2 } from 'msw';
 
-import type { AdmitirPacienteApiV1FilaAdmissaoPostData, AdmitirPacienteApiV1FilaAdmissaoPostResponses, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostData, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostResponses, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutData, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses, CadastrarDependenteApiV1PacientesIdDependentesPostData, CadastrarDependenteApiV1PacientesIdDependentesPostResponses, CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostData, CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostResponses, CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostResponses, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostData, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostResponses, ChamarProximoPacienteApiV1FilaChamarProximoPostResponses, ClientOptions, ComunicarPioraClinicaApiV1FilaPioraPostData, ComunicarPioraClinicaApiV1FilaPioraPostResponses, CriarAgendamentoApiV1SchedulingAgendamentosPostData, CriarAgendamentoApiV1SchedulingAgendamentosPostResponses, DownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGetResponses, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostData, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostResponses, EnrichmentFase2ApiV1OnboardingFase2PostData, EnrichmentFase2ApiV1OnboardingFase2PostResponses, ExportarBpaApiV1AmbulatoryProducaoExportarGetResponses, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostData, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostResponses, GetAuthPatientMethodsResponses, HealthcheckHealthzGetResponses, IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostData, IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponses, IntakeFase1ApiV1OnboardingFase1PostData, IntakeFase1ApiV1OnboardingFase1PostResponses, ListarAgendaDiaApiV1SchedulingAgendaDiaGetResponses, ListarDependentesApiV1PacientesIdDependentesGetResponses, ListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetResponses, ListarEspecialidadesApiV1SchedulingEspecialidadesGetResponses, ListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetResponses, ListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetResponses, ListarProducaoApiV1AmbulatoryProducaoGetResponses, ListarSlotsApiV1SchedulingSlotsGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostResponses, MeApiV1AuthMeGetResponses, MfaActivateApiV1AuthMfaActivatePostData, MfaActivateApiV1AuthMfaActivatePostResponses, MfaSetupApiV1AuthMfaSetupPostResponses, MfaVerifyApiV1AuthMfaVerifyPostData, MfaVerifyApiV1AuthMfaVerifyPostResponses, ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetResponses, ObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGetResponses, ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetResponses, ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetResponses, ObterPainelTelemetriaApiV1TelemetriaPainelGetResponses, ObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGetResponses, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetResponses, ObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGetResponses, PostAuthPacienteCadsusData, PostAuthPacienteCadsusResponses, PostAuthPatientIdentifyData, PostAuthPatientIdentifyResponses, PostAuthPatientLoginPasswordData, PostAuthPatientLoginPasswordResponses, PostAuthPatientRegisterData, PostAuthPatientRegisterResponses, PostAuthPatientWebauthnAuthenticateOptionsData, PostAuthPatientWebauthnAuthenticateOptionsResponses, PostAuthPatientWebauthnAuthenticateVerifyData, PostAuthPatientWebauthnAuthenticateVerifyResponses, PostAuthPatientWebauthnRegisterOptionsResponses, PostAuthPatientWebauthnRegisterVerifyData, PostAuthPatientWebauthnRegisterVerifyResponses, RefreshTokenApiV1AuthRefreshPostData, RefreshTokenApiV1AuthRefreshPostResponses, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostData, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostResponses, RequestOtpApiV1AuthPatientOtpRequestPostData, RequestOtpApiV1AuthPatientOtpRequestPostResponses, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostData, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostResponses, SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponses, ValidarDocumentoApiV1DocumentsValidateTokenValidacaoGetResponses, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostData, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostResponses, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostData, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses, VerifyOtpApiV1AuthPatientOtpVerifyPostData, VerifyOtpApiV1AuthPatientOtpVerifyPostResponses } from './types.gen';
+import type { AdmitirPacienteApiV1FilaAdmissaoPostData, AdmitirPacienteApiV1FilaAdmissaoPostResponses, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostData, AssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPostResponses, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutData, AtualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPutResponses, CadastrarDependenteApiV1PacientesIdDependentesPostData, CadastrarDependenteApiV1PacientesIdDependentesPostResponses, CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostData, CadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPostResponses, CancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPostResponses, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostData, CancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPostResponses, ChamarProximoPacienteApiV1FilaChamarProximoPostResponses, ClientOptions, ComunicarPioraClinicaApiV1FilaPioraPostData, ComunicarPioraClinicaApiV1FilaPioraPostResponses, ConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostResponses, CriarAgendamentoApiV1SchedulingAgendamentosPostData, CriarAgendamentoApiV1SchedulingAgendamentosPostResponses, DownloadDocumentoPresignedApiV1DocumentsDownloadTokenValidacaoGetResponses, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostData, EmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPostResponses, EnrichmentFase2ApiV1OnboardingFase2PostData, EnrichmentFase2ApiV1OnboardingFase2PostResponses, ExportarBpaApiV1AmbulatoryProducaoExportarGetResponses, FinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePostResponses, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostData, GenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPostResponses, GetAuthPatientMethodsResponses, HealthcheckHealthzGetResponses, IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostData, IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponses, IntakeFase1ApiV1OnboardingFase1PostData, IntakeFase1ApiV1OnboardingFase1PostResponses, ListarAgendaDiaApiV1SchedulingAgendaDiaGetResponses, ListarDependentesApiV1PacientesIdDependentesGetResponses, ListarDocumentosPacienteApiV1ConsultationsMeDocumentosGetResponses, ListarEspecialidadesApiV1SchedulingEspecialidadesGetResponses, ListarHistoricoPacienteApiV1ConsultationsMeHistoricoGetResponses, ListarMeusAgendamentosApiV1SchedulingAgendamentosMeGetResponses, ListarProducaoApiV1AmbulatoryProducaoGetResponses, ListarSlotsApiV1SchedulingSlotsGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostResponses, MarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostResponses, MeApiV1AuthMeGetResponses, MfaActivateApiV1AuthMfaActivatePostData, MfaActivateApiV1AuthMfaActivatePostResponses, MfaSetupApiV1AuthMfaSetupPostResponses, MfaVerifyApiV1AuthMfaVerifyPostData, MfaVerifyApiV1AuthMfaVerifyPostResponses, ObterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGetResponses, ObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGetResponses, ObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGetResponses, ObterEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapGetResponses, ObterPainelTelemetriaApiV1TelemetriaPainelGetResponses, ObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGetResponses, ObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGetResponses, ObterTmaStatusApiV1ConsultationsAtendimentoIdTmaStatusGetResponses, PostAuthPacienteCadsusData, PostAuthPacienteCadsusResponses, PostAuthPatientIdentifyData, PostAuthPatientIdentifyResponses, PostAuthPatientLoginPasswordData, PostAuthPatientLoginPasswordResponses, PostAuthPatientRegisterData, PostAuthPatientRegisterResponses, PostAuthPatientWebauthnAuthenticateOptionsData, PostAuthPatientWebauthnAuthenticateOptionsResponses, PostAuthPatientWebauthnAuthenticateVerifyData, PostAuthPatientWebauthnAuthenticateVerifyResponses, PostAuthPatientWebauthnRegisterOptionsResponses, PostAuthPatientWebauthnRegisterVerifyData, PostAuthPatientWebauthnRegisterVerifyResponses, RefreshTokenApiV1AuthRefreshPostData, RefreshTokenApiV1AuthRefreshPostResponses, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostData, RegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPostResponses, RequestOtpApiV1AuthPatientOtpRequestPostData, RequestOtpApiV1AuthPatientOtpRequestPostResponses, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostData, SalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPostResponses, SolicitarDesafioLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessChallengePostResponses, ValidarDocumentoApiV1DocumentsValidateTokenValidacaoGetResponses, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostData, ValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePostResponses, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostData, VerificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPostResponses, VerifyOtpApiV1AuthPatientOtpVerifyPostData, VerifyOtpApiV1AuthPatientOtpVerifyPostResponses } from './types.gen';
 
 export type RequestHandlerOptions = RequestHandlerOptions2 & {
     baseUrl?: ClientOptions['baseUrl'];
@@ -1694,6 +1694,68 @@ export function handleIniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgend
     }, options);
 }
 
+export type HandleConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostResponse = {
+    body: ConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostResponses[200];
+    status?: 200;
+};
+
+/**
+ * Handler for the `POST /api/v1/scheduling/agendamentos/{agendamento_id}/concluir` operation.
+ */
+export function handleConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPost(response?: HandleConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostResponse | HttpResponseResolver<{
+    agendamento_id: string;
+}, never>, options?: RequestHandlerOptions): HttpHandler {
+    return http.post<{
+        agendamento_id: string;
+    }, never>(`${options?.baseUrl ?? '*'}/api/v1/scheduling/agendamentos/:agendamento_id/concluir`, info => {
+        if (typeof response === 'function') {
+            return response(info);
+        }
+        const body = response?.body;
+        if (body !== undefined) {
+            return HttpResponse.json(body, { status: response?.status ?? 200 });
+        }
+        if (options?.responseFallback === 'passthrough') {
+            return;
+        }
+        return new Response('Not Implemented', {
+            status: 501,
+            statusText: 'Not Implemented'
+        });
+    }, options);
+}
+
+export type HandleMarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostResponse = {
+    body: MarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostResponses[200];
+    status?: 200;
+};
+
+/**
+ * Handler for the `POST /api/v1/scheduling/agendamentos/{agendamento_id}/falta` operation.
+ */
+export function handleMarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPost(response?: HandleMarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostResponse | HttpResponseResolver<{
+    agendamento_id: string;
+}, never>, options?: RequestHandlerOptions): HttpHandler {
+    return http.post<{
+        agendamento_id: string;
+    }, never>(`${options?.baseUrl ?? '*'}/api/v1/scheduling/agendamentos/:agendamento_id/falta`, info => {
+        if (typeof response === 'function') {
+            return response(info);
+        }
+        const body = response?.body;
+        if (body !== undefined) {
+            return HttpResponse.json(body, { status: response?.status ?? 200 });
+        }
+        if (options?.responseFallback === 'passthrough') {
+            return;
+        }
+        return new Response('Not Implemented', {
+            status: 501,
+            statusText: 'Not Implemented'
+        });
+    }, options);
+}
+
 export type MswHandlerFactories = {
     /**
      * Handler for the `GET /healthz` operation.
@@ -1931,6 +1993,14 @@ export type MswHandlerFactories = {
      * Handler for the `POST /api/v1/scheduling/agendamentos/{agendamento_id}/iniciar` operation.
      */
     iniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPost: typeof handleIniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPost;
+    /**
+     * Handler for the `POST /api/v1/scheduling/agendamentos/{agendamento_id}/concluir` operation.
+     */
+    concluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPost: typeof handleConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPost;
+    /**
+     * Handler for the `POST /api/v1/scheduling/agendamentos/{agendamento_id}/falta` operation.
+     */
+    marcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPost: typeof handleMarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPost;
 };
 
 export type CreateMswHandlersResult = {
@@ -2006,7 +2076,9 @@ export function createMswHandlers(config: RequestHandlerOptions = {}): CreateMsw
         cancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPost: wrap(handleCancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPost),
         cadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPost: wrap(handleCadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPost),
         listarAgendaDiaApiV1SchedulingAgendaDiaGet: wrap(handleListarAgendaDiaApiV1SchedulingAgendaDiaGet),
-        iniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPost: wrap(handleIniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPost)
+        iniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPost: wrap(handleIniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPost),
+        concluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPost: wrap(handleConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPost),
+        marcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPost: wrap(handleMarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPost)
     };
     const all: CreateMswHandlersResult['all'] = (options = {}) => {
         type OverrideValue<R> = R | [
@@ -2032,6 +2104,8 @@ export function createMswHandlers(config: RequestHandlerOptions = {}): CreateMsw
             invoke(pick.regularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPost, overrides.regularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPost),
             invoke(pick.cancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPost, overrides.cancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPost),
             invoke(pick.iniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPost, overrides.iniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPost),
+            invoke(pick.concluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPost, overrides.concluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPost),
+            invoke(pick.marcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPost, overrides.marcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPost),
             invoke(pick.generateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost, overrides.generateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost),
             invoke(pick.validarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost, overrides.validarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost),
             invoke(pick.mfaSetupApiV1AuthMfaSetupPost, overrides.mfaSetupApiV1AuthMfaSetupPost),

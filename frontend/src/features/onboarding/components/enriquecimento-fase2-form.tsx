@@ -16,6 +16,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { mascararCEP } from "@/lib/validators";
 import { useEnrichmentFase2 } from "../api/use-enrichment-fase2";
 import { useViaCep } from "../api/use-via-cep";
@@ -405,7 +406,7 @@ export function EnriquecimentoFase2Form({
 
             {/* Alergias Medicamentosas */}
             <div className="space-y-2">
-              <FormLabel>Alergias Medicamentosas Conhecidas</FormLabel>
+              <Label>Alergias Medicamentosas Conhecidas</Label>
               <div className="flex flex-wrap gap-1.5">
                 {ALERGIAS_COMUNS.map((alergia) => {
                   const ativa = alergiasSelecionadas.includes(alergia);

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  formatarPosicaoOrdinal,
-  formatarTempoEstimado,
-  isWebAuthnSupported,
-} from "@/lib/formatters";
+import { formatarPosicaoOrdinal, formatarTempoEstimado } from "@/lib/formatters";
+import { isWebAuthnSupported } from "@/lib/webauthn";
 
 describe("Queue Unit Formatters & Helpers", () => {
   describe("formatarTempoEstimado", () => {

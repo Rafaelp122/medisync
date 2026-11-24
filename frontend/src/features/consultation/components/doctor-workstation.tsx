@@ -2,13 +2,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Lock, LogOut, PhoneCall, Users } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import type { ChamarProximoResponse, DocumentoClinicoResponse } from "@/api/generated/types.gen";
+import {
+  PAINEL_TELEMETRIA_QUERY_KEY_PREFIX,
+  usePainelTelemetria,
+} from "@/api/hooks/use-painel-telemetria";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { useChamarProximo } from "../api/use-chamar-proximo";
 import { useLiveKitToken } from "../api/use-livekit-token";
-import { usePainelTelemetria } from "../api/use-painel-telemetria";
 import type { LivenessChannelMessage, LivenessResultMessage } from "../lib/liveness-channel";
 import type { CfmIdentityGateData } from "../schemas/consultation-schema";
 import { CfmIdentityGate } from "./cfm-identity-gate";
@@ -100,7 +103,9 @@ export function DoctorWorkstation({
   );
 
   const queryClient = useQueryClient();
-  const { data: painelTelemetria, isLoading: isCarregandoPainel } = usePainelTelemetria(token);
+  const { data: painelTelemetria, isLoading: isCarregandoPainel } = usePainelTelemetria({
+    refetchInterval: 10_000,
+  });
   const totalPacientesFila = painelTelemetria?.total_pacientes_fila ?? 0;
 
   const { mutate: chamarProximo, isPending: isCallingNext } = useChamarProximo();
@@ -146,7 +151,7 @@ export function DoctorWorkstation({
           );
         },
         onSettled: () => {
-          void queryClient.invalidateQueries({ queryKey: ["telemetria-painel"] });
+          void queryClient.invalidateQueries({ queryKey: [...PAINEL_TELEMETRIA_QUERY_KEY_PREFIX] });
         },
       },
     );

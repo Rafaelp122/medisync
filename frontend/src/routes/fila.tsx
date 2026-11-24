@@ -1,9 +1,19 @@
-import { createRoute, redirect } from "@tanstack/react-router";
-import { EnriquecimentoFase2Form } from "@/features/onboarding/components/enriquecimento-fase2-form";
-import { QueuePage } from "@/features/queue/pages/queue-page";
+import { createRoute, lazyRouteComponent, redirect } from "@tanstack/react-router";
+import { Suspense } from "react";
+import { RoutePendingFallback } from "@/components/route-fallbacks";
 import { CitizenShellLayout } from "@/layouts/citizen-shell-layout";
 import { getStoredSession, type StoredPatientSession } from "@/lib/session-storage";
 import { rootRoute } from "./root";
+
+const LazyQueuePage = lazyRouteComponent(
+  () => import("@/features/queue/pages/queue-page"),
+  "QueuePage",
+);
+
+const LazyEnriquecimentoFase2Form = lazyRouteComponent(
+  () => import("@/features/onboarding/components/enriquecimento-fase2-form"),
+  "EnriquecimentoFase2Form",
+);
 
 export const filaRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -22,17 +32,21 @@ export const filaRoute = createRoute({
     const { session } = filaRoute.useRouteContext() as { session: StoredPatientSession };
     return (
       <CitizenShellLayout session={session}>
-        <QueuePage
-          session={session}
-          renderComplementarForm={({ pacienteId, token, onConcluido, onPular }) => (
-            <EnriquecimentoFase2Form
-              pacienteId={pacienteId}
-              token={token}
-              onConcluido={onConcluido}
-              onPular={onPular}
-            />
-          )}
-        />
+        <Suspense fallback={<RoutePendingFallback />}>
+          <LazyQueuePage
+            session={session}
+            renderComplementarForm={({ pacienteId, token, onConcluido, onPular }) => (
+              <Suspense fallback={<RoutePendingFallback />}>
+                <LazyEnriquecimentoFase2Form
+                  pacienteId={pacienteId}
+                  token={token}
+                  onConcluido={onConcluido}
+                  onPular={onPular}
+                />
+              </Suspense>
+            )}
+          />
+        </Suspense>
       </CitizenShellLayout>
     );
   },
