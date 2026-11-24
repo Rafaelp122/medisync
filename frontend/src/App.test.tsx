@@ -1,15 +1,17 @@
 import { createMemoryHistory } from "@tanstack/react-router";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http, ws } from "msw";
+import { HttpResponse, ws } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   handleAdmitirPacienteApiV1FilaAdmissaoPost,
+  handleCancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPost,
   handleGetAuthPatientMethods,
   handleListarAgendaDiaApiV1SchedulingAgendaDiaGet,
   handleListarEspecialidadesApiV1SchedulingEspecialidadesGet,
   handleListarMeusAgendamentosApiV1SchedulingAgendamentosMeGet,
   handleLogoutApiV1AuthLogoutPost,
+  handleObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet,
 } from "@/api/generated/msw.gen";
 import { App } from "./App";
 import {
@@ -62,17 +64,15 @@ describe("App (Orquestração de Rotas Declarativas, Portal Fechado e Guards)", 
         body: [],
       }),
       handleLogoutApiV1AuthLogoutPost(() => new HttpResponse(null, { status: 204 })),
-      http.get("*/api/v1/fila/posicao/:atendimentoId", () => {
-        return HttpResponse.json(
-          {
-            atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2d",
-            status: "APTO_PARA_CHAMADA",
-            posicao: 2,
-            total_aguardando: 3,
-            tempo_estimado_segundos: 600,
-          },
-          { status: 200 },
-        );
+      handleObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet({
+        body: {
+          atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2d",
+          status: "APTO_PARA_CHAMADA",
+          posicao: 2,
+          total_aguardando: 3,
+          tempo_estimado_segundos: 600,
+          prioridade_clinica: 2,
+        },
       }),
     );
   });
@@ -145,10 +145,10 @@ describe("App (Orquestração de Rotas Declarativas, Portal Fechado e Guards)", 
 
   it("IT-APP-04: Restaura automaticamente sessão com atendimentoId em /fila e volta para /home ao desistir", async () => {
     server.use(
-      http.post("*/api/v1/fila/cancelar/:atendimentoId", () => {
+      handleCancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPost(() => {
         return HttpResponse.json(
           {
-            atendimento_id: activeEncounterSession.atendimentoId,
+            atendimento_id: activeEncounterSession.atendimentoId ?? "",
             status: "CANCELADO_PACIENTE",
             cancelado_em: new Date().toISOString(),
             motivo: "Desistência voluntária pelo paciente",
@@ -256,8 +256,7 @@ describe("App (Orquestração de Rotas Declarativas, Portal Fechado e Guards)", 
   });
 
   it("IT-APP-11: Cidadão autenticado com JWT 3-partes navega de /home para /triagem sem redigitar dados civis e preserva o JWT em medisync_session", async () => {
-    const validThreePartJwt =
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMThmM2E1Yi03YjJjLTRiMmMtOGIyYy0wMThmM2E1YjdiMmMiLCJyb2xlIjoiUEFDSUVOVEUifQ.sig-app-preserve";
+    const validThreePartJwt = "fake-header.fake-payload.fake-signature";
     saveStoredSession({
       ...basePatientSession,
       token: validThreePartJwt,
@@ -270,7 +269,7 @@ describe("App (Orquestração de Rotas Declarativas, Portal Fechado e Guards)", 
             atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2d",
             triagem_id: "018f3a5b-1111-4b2c-8b2c-018f3a5b7b2c",
             paciente_id: basePatientSession.pacienteId,
-            status_atendimento: "TRIADO_AGUARDANDO_ELEGIBILIDADE",
+            status_atendimento: "APTO_PARA_CHAMADA",
             prioridade_clinica: 3,
             alerta_samu_disparado: false,
             instrucoes: null,

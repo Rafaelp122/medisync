@@ -45,7 +45,11 @@ from src.modules.auth.presentation.schemas import (
     VerificarOtpRequest,
 )
 
-from tests.doubles import FakeIdentityReader, MemoryChallengeStore
+from tests.doubles import (
+    FakeActiveAttendanceLookup,
+    FakeIdentityReader,
+    MemoryChallengeStore,
+)
 
 _TEST_JWT_SECRET = "test-patient-auth-secret-key-min-32-chars"
 
@@ -525,15 +529,11 @@ async def test_autenticar_cadsus_cpf_com_cns_sanitizado_e_atendimento_ativo(
         data_nascimento=date(1988, 3, 10),
     )
 
-    class _FakeLookup(ActiveAttendanceLookupPort):
-        async def buscar_atendimento_ativo_paciente(
-            self, paciente_id: UUID
-        ) -> UUID | None:
-            return atendimento_ativo_id
-
     service = _make_service(
         identity_reader=fake_identity_reader,
-        active_attendance_lookup=_FakeLookup(),
+        active_attendance_lookup=FakeActiveAttendanceLookup(
+            {paciente_id: atendimento_ativo_id}
+        ),
     )
 
     res = await service.autenticar_cadsus_govbr(
@@ -582,16 +582,12 @@ async def test_verificar_otp_sucesso_retorna_atendimento_ativo_quando_existente(
     fake_identity_reader.paciente = paciente
     atendimento_ativo_id = uuid7()
 
-    class _FakeLookup(ActiveAttendanceLookupPort):
-        async def buscar_atendimento_ativo_paciente(
-            self, paciente_id: UUID
-        ) -> UUID | None:
-            return atendimento_ativo_id if paciente_id == paciente.id else None
-
     service = _make_service(
         identity_reader=fake_identity_reader,
         sms_sender=fake_sms,
-        active_attendance_lookup=_FakeLookup(),
+        active_attendance_lookup=FakeActiveAttendanceLookup(
+            {paciente.id: atendimento_ativo_id}
+        ),
         expose_debug_otp=True,
     )
     req_out = await service.solicitar_otp(

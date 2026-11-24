@@ -27,9 +27,9 @@ Rode para verificar:
 uv run pytest tests/unit/test_atendimento_model.py -v --no-cov
 ```
 
-### Exemplo: Testando Services com Mocks de Sessão
+### Exemplo: Testando Services com Fakes de Sessão
 
-Para testar métodos de aplicação e regras de serviço que recebem uma `AsyncSession`, utilize a fixture compartilhada `mock_db_session` ou helpers de construção com mocks:
+Para testar métodos de aplicação e regras de serviço que recebem uma `AsyncSession`, utilize a fixture compartilhada `fake_db_session` (`FakeAsyncSession` em `tests/doubles.py`) ou helpers de construção com Fakes nomeados:
 
 - Impl: `src/modules/consultation/application/services/pep_service.py:PEPService`
 - Spec: `src/modules/consultation/domain/exceptions.py:ConsultaFinalizadaError`

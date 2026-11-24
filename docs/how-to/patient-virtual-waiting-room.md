@@ -9,7 +9,7 @@ A sala de espera virtual (`frontend/src/features/queue/`) é o ponto focal da ex
 O componente orquestrador (`VirtualWaitingRoom`) encapsula quatro salvaguardas essenciais:
 1. **Acompanhamento Transparente:** Exibição da posição ordinal atual e estimativa de espera calculada pelo TMA dos médicos ativos.
 2. **Salvaguarda de Piora Clínica (RF-06):** Botão acessível que permite relatar agravamento dos sintomas; se classificado em Nível 1 (Vermelho), aciona imediatamente a salvaguarda SAMU 192 (`SamuEmergencyModal`) com compensação de safe area e tecla Escape destravada.
-3. **Convocação Médica e Ring Modal de 45s (RN02, WCAG 2.1.2):** Ao ser convocado pelo médico, exibe modal fullscreen com alerta sonoro Web Audio API (chime 523Hz/659Hz), compensação de safe area (`env(safe-area-inset-bottom)`), botão acessível de recusa (`aria-label="Recusar chamada médica"`), saída via `Escape` sem keyboard trap e contagem regressiva determinística de 45 segundos para ingresso na teleconsulta WebRTC.
+3. **Convocação Médica e Ring Modal de 45s (RN02, WCAG 2.1.2):** Ao ser convocado pelo médico, exibe modal fullscreen com alerta sonoro Web Audio API (chime 523Hz/659Hz), compensação de safe area (`env(safe-area-inset-bottom)`), botão acessível de recusa (`aria-label="Não posso atender agora (Recusar chamada médica)"`), saída via `Escape` sem keyboard trap e contagem regressiva determinística de 45 segundos para ingresso na teleconsulta WebRTC.
 4. **Resolução de No-Show:** Se os 45 segundos expirarem sem confirmação, transiciona deterministicamente para o estado `PACIENTE_AUSENTE` sem travamento da aplicação, preservando a árvore e restaurando o foco na fila.
 
 ## Procedimento

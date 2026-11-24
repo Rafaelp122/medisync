@@ -1,10 +1,11 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpResponse } from "msw";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleListarDocumentosPacienteApiV1ConsultationsMeDocumentosGet,
   handleObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGet,
+  handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet,
 } from "@/api/generated/msw.gen";
 import type { PacienteDocumentoItemResponse } from "@/api/generated/types.gen";
 import { server } from "@/mocks/server";
@@ -40,14 +41,18 @@ describe("PosConsultaSummary Integration Tests (/me/documentos, C1/Antimicrobian
   const prontuarioProibidoSpy = vi.fn();
   const mePdfDownloadSpy = vi.fn();
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     prontuarioProibidoSpy.mockClear();
     mePdfDownloadSpy.mockClear();
 
     server.use(
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/prontuario`, () => {
+      handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet(() => {
         prontuarioProibidoSpy();
-        return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+        return HttpResponse.json({ detail: "Forbidden" }, { status: 403 }) as never;
       }),
       handleListarDocumentosPacienteApiV1ConsultationsMeDocumentosGet(() => {
         return HttpResponse.json(mockDocumentosPaciente);
@@ -118,9 +123,10 @@ describe("PosConsultaSummary Integration Tests (/me/documentos, C1/Antimicrobian
   });
 
   it("IT-POST-04: Baixar PDF usa /api/v1/consultations/me/documents/{documento_id}/pdf", async () => {
-    const createObjectURLMock = vi.fn().mockReturnValue("blob:http://localhost/mock-pdf-url");
-    window.URL.createObjectURL = createObjectURLMock;
-    window.URL.revokeObjectURL = vi.fn();
+    const createObjectURLMock = vi
+      .spyOn(window.URL, "createObjectURL")
+      .mockReturnValue("blob:http://localhost/mock-pdf-url");
+    vi.spyOn(window.URL, "revokeObjectURL").mockImplementation(() => {});
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
     renderWithProviders(<PosConsultaSummary atendimentoId={MOCK_ATENDIMENTO_ID} />);

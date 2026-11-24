@@ -1,8 +1,9 @@
 import { fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProblemDetailsError } from "@/api/errors";
+import { handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost } from "@/api/generated/msw.gen";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
 import { IncomingCallRingModal } from "../components/incoming-call-ring-modal";
@@ -27,14 +28,21 @@ function IsolatedParentHost({ onRender }: { onRender: () => void }) {
 }
 
 describe("IncomingCallRingModal (Toque de Chamada Médica & 45s No-Show - RN02, RF-03)", () => {
-  const mockStart = vi.fn();
-  const mockStop = vi.fn();
-  const mockSetValueAtTime = vi.fn();
-  const mockExponentialRampToValueAtTime = vi.fn();
-  const mockConnect = vi.fn();
-  const mockClose = vi.fn().mockResolvedValue(undefined);
+  let mockStart: ReturnType<typeof vi.fn>;
+  let mockStop: ReturnType<typeof vi.fn>;
+  let mockSetValueAtTime: ReturnType<typeof vi.fn>;
+  let mockExponentialRampToValueAtTime: ReturnType<typeof vi.fn>;
+  let mockConnect: ReturnType<typeof vi.fn>;
+  let mockClose: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    mockStart = vi.fn();
+    mockStop = vi.fn();
+    mockSetValueAtTime = vi.fn();
+    mockExponentialRampToValueAtTime = vi.fn();
+    mockConnect = vi.fn();
+    mockClose = vi.fn().mockResolvedValue(undefined);
+
     class FakeAudioContext {
       currentTime = 0;
       destination = {};
@@ -65,6 +73,7 @@ describe("IncomingCallRingModal (Toque de Chamada Médica & 45s No-Show - RN02, 
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -99,8 +108,8 @@ describe("IncomingCallRingModal (Toque de Chamada Médica & 45s No-Show - RN02, 
     const handleNoShow = vi.fn();
 
     server.use(
-      http.post("*/api/v1/consultations/:atendimentoId/livekit/token", () => {
-        return HttpResponse.json(MOCK_LIVEKIT_TOKEN_RESPONSE, { status: 200 });
+      handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost({
+        body: MOCK_LIVEKIT_TOKEN_RESPONSE,
       }),
     );
 
@@ -159,7 +168,7 @@ describe("IncomingCallRingModal (Toque de Chamada Médica & 45s No-Show - RN02, 
     const handleNoShow = vi.fn();
 
     server.use(
-      http.post("*/api/v1/consultations/:atendimentoId/livekit/token", () => {
+      handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost(() => {
         return HttpResponse.json(
           {
             type: "about:blank",
@@ -169,7 +178,7 @@ describe("IncomingCallRingModal (Toque de Chamada Médica & 45s No-Show - RN02, 
             code: "ATENDIMENTO_EXPIRADO_NO_SHOW",
           },
           { status: 409 },
-        );
+        ) as never;
       }),
     );
 
