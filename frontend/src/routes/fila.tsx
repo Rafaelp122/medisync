@@ -1,6 +1,7 @@
 import { createRoute, lazyRouteComponent, redirect } from "@tanstack/react-router";
 import { Suspense } from "react";
 import { RoutePendingFallback } from "@/components/route-fallbacks";
+import { usePasskeyRegister } from "@/features/auth/api/use-passkey-register";
 import { CitizenShellLayout } from "@/layouts/citizen-shell-layout";
 import { getStoredSession, type StoredPatientSession } from "@/lib/session-storage";
 import { rootRoute } from "./root";
@@ -30,11 +31,13 @@ export const filaRoute = createRoute({
   },
   component: function RouteComponent() {
     const { session } = filaRoute.useRouteContext() as { session: StoredPatientSession };
+    const registerPasskey = usePasskeyRegister();
     return (
       <CitizenShellLayout session={session}>
         <Suspense fallback={<RoutePendingFallback />}>
           <LazyQueuePage
             session={session}
+            onRegisterPasskey={(params) => registerPasskey.mutateAsync(params)}
             renderComplementarForm={({ pacienteId, token, onConcluido, onPular }) => (
               <Suspense fallback={<RoutePendingFallback />}>
                 <LazyEnriquecimentoFase2Form

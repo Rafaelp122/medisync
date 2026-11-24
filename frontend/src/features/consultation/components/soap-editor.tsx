@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useSalvarSoap, useSoapEvolucao } from "../api/use-soap-evolucao";
+import { useOptionalConsultationEncounter } from "../context/consultation-encounter-provider";
 import {
   type CfmIdentityGateData,
   type SoapFormData,
@@ -18,23 +19,27 @@ import {
 
 export interface SoapEditorProps {
   atendimentoId: string;
-  isReadOnly?: boolean;
+  accessMode?: "editable" | "readonly";
   token?: string;
   dadosIdentidade?: CfmIdentityGateData | null;
 }
 
 /**
  * Editor estruturado de evolução clínica PEP no padrão SOAP (Subjetivo, Objetivo, Avaliação, Plano).
- * Garante imutabilidade pós-encerramento conforme CFM nº 1.821/2007 e RN06.
- * Regras: RF-07, US-09.
+ * Propaga `shouldValidate`/`shouldDirty` no CID-10 e consome `ConsultationEncounterProvider`.
+ * Regras: RF-07, US-09, CFM nº 1.821/2007 e CFM nº 2.314/2022.
  */
-export function SoapEditor({
-  atendimentoId,
-  isReadOnly = false,
-  token,
-  dadosIdentidade,
-}: SoapEditorProps) {
-  const { data: soapExistente, isLoading: isLoadingSoap } = useSoapEvolucao(atendimentoId, token);
+export function SoapEditor({ atendimentoId, accessMode, token, dadosIdentidade }: SoapEditorProps) {
+  const encounter = useOptionalConsultationEncounter();
+  const isLocked =
+    (accessMode ?? (encounter?.isFinalizado ? "readonly" : "editable")) === "readonly";
+  const resolvedToken = token ?? encounter?.atendimento.token;
+  const resolvedIdentity = dadosIdentidade ?? encounter?.dadosIdentidade ?? null;
+
+  const { data: soapExistente, isLoading: isLoadingSoap } = useSoapEvolucao(
+    atendimentoId,
+    resolvedToken,
+  );
   const { mutate: salvarSoap, isPending: isSaving } = useSalvarSoap(atendimentoId);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -75,7 +80,7 @@ export function SoapEditor({
   }, [soapExistente, reset]);
 
   const onSubmit = (formData: SoapFormData) => {
-    if (isReadOnly) return;
+    if (isLocked) return;
     if (successTimerRef.current) {
       clearTimeout(successTimerRef.current);
       successTimerRef.current = null;
@@ -84,21 +89,21 @@ export function SoapEditor({
 
     salvarSoap(
       {
-        token,
+        token: resolvedToken,
         anamnese: formData.anamnese,
         exame_fisico_virtual: formData.exame_fisico_virtual || null,
         cid10_principal: formData.cid10_principal ? formData.cid10_principal.toUpperCase() : null,
         conduta: formData.conduta,
         identidade_verificada:
-          dadosIdentidade?.identidade_verificada ?? soapExistente?.identidade_verificada ?? false,
+          resolvedIdentity?.identidade_verificada ?? soapExistente?.identidade_verificada ?? false,
         tipo_documento_verificado:
-          dadosIdentidade?.tipo_documento_apresentado ??
+          resolvedIdentity?.tipo_documento_apresentado ??
           (soapExistente?.tipo_documento_verificado as
             | CfmIdentityGateData["tipo_documento_apresentado"]
             | undefined) ??
           null,
         justificativa_excecao_identidade:
-          dadosIdentidade?.justificativa_excecao ??
+          resolvedIdentity?.justificativa_excecao ??
           soapExistente?.justificativa_excecao_identidade ??
           null,
       },
@@ -115,7 +120,10 @@ export function SoapEditor({
   };
 
   const handleCid10Change = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setValue("cid10_principal", e.target.value.toUpperCase());
+    setValue("cid10_principal", e.target.value.toUpperCase(), {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
   };
 
   return (
@@ -126,7 +134,7 @@ export function SoapEditor({
             <FileText className="size-4 text-primary" />
             <span>Registro Clínico Estruturado (PEP SOAP)</span>
           </CardTitle>
-          {isReadOnly && (
+          {isLocked && (
             <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground font-medium">
               Somente Leitura (Finalizado)
             </span>
@@ -141,7 +149,6 @@ export function SoapEditor({
           </div>
         ) : (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-3.5">
-            {/* Subjetivo (S) */}
             <div className="space-y-1">
               <Label htmlFor="soap-anamnese" className="text-xs font-semibold text-foreground">
                 Subjetivo (S) — Queixa e Anamnese Clínica:
@@ -149,7 +156,7 @@ export function SoapEditor({
               <Textarea
                 id="soap-anamnese"
                 placeholder="Descreva a queixa principal, evolução dos sintomas, histórico clínico e medicações em uso…"
-                disabled={isReadOnly}
+                disabled={isLocked}
                 className="text-xs min-h-[70px] resize-y"
                 {...register("anamnese")}
               />
@@ -160,7 +167,6 @@ export function SoapEditor({
               )}
             </div>
 
-            {/* Objetivo (O) */}
             <div className="space-y-1">
               <Label htmlFor="soap-exame" className="text-xs font-semibold text-foreground">
                 Objetivo (O) — Exame Físico Virtual / Telepropedêutica:
@@ -168,13 +174,12 @@ export function SoapEditor({
               <Textarea
                 id="soap-exame"
                 placeholder="Inspeção visual em vídeo, estado geral, padrão respiratório, fácies e telepropedêutica…"
-                disabled={isReadOnly}
+                disabled={isLocked}
                 className="text-xs min-h-[60px] resize-y"
                 {...register("exame_fisico_virtual")}
               />
             </div>
 
-            {/* Avaliação (A) - CID-10 */}
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <Label htmlFor="soap-cid10" className="text-xs font-semibold text-foreground">
@@ -185,7 +190,7 @@ export function SoapEditor({
               <Input
                 id="soap-cid10"
                 placeholder="Código CID-10 (ex: J03.0)"
-                disabled={isReadOnly}
+                disabled={isLocked}
                 className="h-8 text-xs uppercase"
                 {...register("cid10_principal")}
                 onChange={handleCid10Change}
@@ -197,7 +202,6 @@ export function SoapEditor({
               )}
             </div>
 
-            {/* Plano (P) */}
             <div className="space-y-1">
               <Label htmlFor="soap-conduta" className="text-xs font-semibold text-foreground">
                 Plano (P) — Conduta Terapêutica e Orientações:
@@ -205,7 +209,7 @@ export function SoapEditor({
               <Textarea
                 id="soap-conduta"
                 placeholder="Prescrições médicas, orientações de isolamento, repouso e sinais de alerta para reavaliação…"
-                disabled={isReadOnly}
+                disabled={isLocked}
                 className="text-xs min-h-[70px] resize-y"
                 {...register("conduta")}
               />
@@ -221,7 +225,7 @@ export function SoapEditor({
               </Alert>
             )}
 
-            {!isReadOnly && (
+            {!isLocked && (
               <Button
                 type="submit"
                 size="sm"

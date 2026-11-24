@@ -4,11 +4,11 @@ import { pioraClinicaFormSchema } from "./piora-clinica-schema";
 describe("pioraClinicaFormSchema", () => {
   const validUuid = "11111111-1111-4111-a111-111111111111";
 
-  it("deve validar com sucesso quando houver novos sintomas e escala de dor válida", () => {
+  it("deve validar com sucesso quando houver novos sintomas canônicos e escala de dor válida", () => {
     const input = {
       atendimento_id: validUuid,
       escala_dor: 7,
-      novos_sintomas: ["falta_de_ar"],
+      novos_sintomas: ["dispneia_grave", "dor_toracica_irradiada"],
       queixa_adicional: "Dor no peito irradiando para o braço",
     };
 

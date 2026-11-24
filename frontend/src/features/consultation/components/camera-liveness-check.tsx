@@ -18,7 +18,7 @@ export interface CameraLivenessCheckProps {
   onJustificativaChange: (value: string) => void;
   onSendChallenge?: (challenge: LivenessChallengeResponse) => void;
   remoteResult?: LivenessResultMessage | null;
-  isReadOnly?: boolean;
+  accessMode?: "editable" | "readonly";
 }
 
 const INSTRUCTION_LABELS: Record<string, string> = {
@@ -39,8 +39,9 @@ export function CameraLivenessCheck({
   onJustificativaChange,
   onSendChallenge,
   remoteResult,
-  isReadOnly = false,
+  accessMode = "editable",
 }: CameraLivenessCheckProps) {
+  const isLocked = accessMode === "readonly";
   const [challenge, setChallenge] = useState<LivenessChallengeResponse | null>(null);
   const [modoContingencia, setModoContingencia] = useState(false);
   const [erroCamera, setErroCamera] = useState<string | null>(null);
@@ -164,7 +165,7 @@ export function CameraLivenessCheck({
               type="button"
               size="sm"
               variant="secondary"
-              disabled={isReadOnly || solicitarDesafio.isPending}
+              disabled={isLocked || solicitarDesafio.isPending}
               onClick={handleIniciarDesafio}
               className="w-full h-8 text-xs gap-1.5"
             >
@@ -200,7 +201,7 @@ export function CameraLivenessCheck({
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={isReadOnly || solicitarDesafio.isPending}
+                    disabled={isLocked || solicitarDesafio.isPending}
                     onClick={handleIniciarDesafio}
                     className="w-full h-7 text-[11px]"
                   >
@@ -211,7 +212,7 @@ export function CameraLivenessCheck({
                 <Button
                   type="button"
                   size="sm"
-                  disabled={isReadOnly || verificarLiveness.isPending}
+                  disabled={isLocked || verificarLiveness.isPending}
                   onClick={() => void handleCapturarEValidar()}
                   className="w-full h-8 text-xs gap-1.5"
                 >
@@ -231,7 +232,7 @@ export function CameraLivenessCheck({
           <div className="pt-1 border-t border-amber-200/70 space-y-1.5">
             <button
               type="button"
-              disabled={isReadOnly}
+              disabled={isLocked}
               onClick={() => setModoContingencia((prev) => !prev)}
               className="text-[11px] underline text-muted-foreground hover:text-foreground"
             >
@@ -249,7 +250,7 @@ export function CameraLivenessCheck({
                   id="justificativa-excecao-liveness"
                   value={justificativaExcecao}
                   onChange={(e) => onJustificativaChange(e.target.value)}
-                  disabled={isReadOnly}
+                  disabled={isLocked}
                   rows={2}
                   placeholder="Ex: Paciente acamado em domicílio sem câmera frontal operante"
                   className="text-xs resize-none"
