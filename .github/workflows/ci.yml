@@ -54,7 +54,7 @@ jobs:
   code-quality:
     name: Code Quality (Lint, Typecheck, Tach & Audits)
     needs: [detect-changes]
-    if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.docs == 'true'
+    if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -140,7 +140,7 @@ jobs:
   frontend-quality:
     name: Frontend Quality (Lint, Types & OpenAPI Sync)
     needs: [detect-changes]
-    if: (needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.backend == 'true') && hashFiles('frontend/package.json') != ''
+    if: needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -166,7 +166,7 @@ jobs:
   frontend-tests:
     name: Frontend Component & Screen Tests
     needs: [detect-changes]
-    if: needs.detect-changes.outputs.frontend == 'true' && hashFiles('frontend/package.json') != ''
+    if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -181,7 +181,7 @@ jobs:
   frontend-e2e:
     name: Frontend End-to-End Tests (Playwright)
     needs: [detect-changes]
-    if: (needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.backend == 'true') && hashFiles('frontend/package.json') != ''
+    if: needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
