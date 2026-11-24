@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { extractProblemDetail } from "@/api/errors";
 import type { LiveKitTokenResponse } from "@/api/generated/types.gen";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,10 +10,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Progress } from "@/components/ui/progress";
 import { settings } from "@/config/settings";
 import { useAtenderChamada } from "../api/use-atender-chamada";
 import { iniciarToqueChamadaMedica } from "../lib/audio-chime";
+import { RingCountdown } from "./ring-countdown";
 
 export interface IncomingCallRingModalProps {
   open: boolean;
@@ -24,18 +25,14 @@ export interface IncomingCallRingModalProps {
   chamadaIniciadaEm?: string | null;
   onAtendido: (data: LiveKitTokenResponse) => void;
   onNoShow: () => void;
+  onRecusar?: () => void | Promise<void>;
+  isRecusando?: boolean;
 }
 
 /**
  * Modal Fullscreen de Convocação Médica com Tolerância de 45s (RF-03, RN02).
- *
- * Emite sinal sonoro contínuo sintetizado via Web Audio API e gerencia a contagem
- * regressiva estrita de 45 segundos. Ao expirar, realiza auto-dismiss determinístico
- * para o estado de PACIENTE_AUSENTE (No-Show).
- *
- * @see docs/user-stories/US-07-alocacao-chamada-medica.md
+ * Delega o tick de 1s para `<RingCountdown />` e integra recusa com o backend.
  * @see docs/user-stories/US-08-atendimento-chamada-no-show.md
- * @see docs/how-to/patient-virtual-waiting-room.md
  */
 export function IncomingCallRingModal({
   open,
@@ -47,9 +44,11 @@ export function IncomingCallRingModal({
   chamadaIniciadaEm,
   onAtendido,
   onNoShow,
+  onRecusar,
+  isRecusando = false,
 }: IncomingCallRingModalProps) {
-  const [segundosRestantes, setSegundosRestantes] = useState<number>(ttlSegundos);
   const [erroAtendimento, setErroAtendimento] = useState<string | null>(null);
+  const [expirado, setExpirado] = useState(false);
   const pararToqueRef = useRef<(() => void) | null>(null);
 
   const silenciarChime = useCallback(() => {
@@ -77,58 +76,24 @@ export function IncomingCallRingModal({
     },
   });
 
-  const onNoShowRef = useRef(onNoShow);
-  onNoShowRef.current = onNoShow;
-
-  // Gerenciamento do Áudio Chime
   useEffect(() => {
     if (!open) {
+      setExpirado(false);
       silenciarChime();
       return;
     }
 
-    // Inicia toque sonoro contínuo
     pararToqueRef.current = iniciarToqueChamadaMedica();
-
     return () => {
       silenciarChime();
     };
   }, [open, silenciarChime]);
 
-  // Contagem Regressiva Determinística de 45s (RN02 / RF-03)
-  useEffect(() => {
-    if (!open) return;
-
-    // Calcula tempo inicial com base no timestamp da chamada (se fornecido)
-    let initialSeconds = ttlSegundos;
-    if (chamadaIniciadaEm) {
-      const inicioMs = new Date(chamadaIniciadaEm).getTime();
-      const decorrido = Math.floor((Date.now() - inicioMs) / 1000);
-      initialSeconds = Math.max(0, ttlSegundos - decorrido);
-    }
-    setSegundosRestantes(initialSeconds);
-
-    if (initialSeconds <= 0) {
-      silenciarChime();
-      onNoShowRef.current();
-      return;
-    }
-
-    let remaining = initialSeconds;
-    const timer = setInterval(() => {
-      remaining -= 1;
-      setSegundosRestantes(Math.max(0, remaining));
-      if (remaining <= 0) {
-        clearInterval(timer);
-        silenciarChime();
-        onNoShowRef.current();
-      }
-    }, 1000);
-
-    return () => {
-      clearInterval(timer);
-    };
-  }, [open, ttlSegundos, chamadaIniciadaEm, silenciarChime]);
+  const handleExpire = useCallback(() => {
+    setExpirado(true);
+    silenciarChime();
+    onNoShow();
+  }, [onNoShow, silenciarChime]);
 
   const handleEntrarConsulta = () => {
     setErroAtendimento(null);
@@ -138,6 +103,38 @@ export function IncomingCallRingModal({
       nomePaciente,
       token,
     });
+  };
+
+  const handleRecusar = async () => {
+    setErroAtendimento(null);
+    silenciarChime();
+    if (!onRecusar) {
+      onNoShow();
+      return;
+    }
+
+    try {
+      await onRecusar();
+    } catch (err) {
+      const status =
+        typeof err === "object" && err !== null && "status" in err
+          ? (err as { status?: unknown }).status
+          : undefined;
+      const code =
+        typeof err === "object" && err !== null && "code" in err
+          ? (err as { code?: unknown }).code
+          : undefined;
+      if (status === 409 || code === "ATENDIMENTO_EXPIRADO_NO_SHOW") {
+        setErroAtendimento(
+          "O prazo de 45 segundos para resposta expirou. O atendimento foi encerrado por ausência.",
+        );
+        onNoShow();
+        return;
+      }
+      setErroAtendimento(
+        extractProblemDetail(err, "Não foi possível recusar a chamada médica. Tente novamente."),
+      );
+    }
   };
 
   return (
@@ -169,47 +166,12 @@ export function IncomingCallRingModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs font-semibold px-1">
-            <span className="text-muted-foreground uppercase tracking-wider">
-              Tempo para Resposta
-            </span>
-            <span
-              role="timer"
-              aria-label={`${segundosRestantes} segundos restantes`}
-              data-testid="ring-timer"
-              className={
-                segundosRestantes <= 10
-                  ? "text-destructive font-black text-base animate-pulse"
-                  : "text-primary font-bold text-base"
-              }
-            >
-              {segundosRestantes}s
-            </span>
-          </div>
-
-          {segundosRestantes === 10 && (
-            <div role="status" aria-live="assertive" className="sr-only">
-              Atenção: restam 10 segundos para atender a chamada médica.
-            </div>
-          )}
-          {segundosRestantes === 0 && (
-            <div role="status" aria-live="assertive" className="sr-only">
-              O tempo de atendimento expirou.
-            </div>
-          )}
-
-          <Progress
-            value={segundosRestantes}
-            max={ttlSegundos}
-            aria-label="Tempo restante para atendimento"
-            indicatorClassName={segundosRestantes <= 10 ? "bg-destructive" : "bg-primary"}
-          />
-
-          <p className="text-[11px] text-muted-foreground">
-            A tolerância máxima para atendimento é de 45 segundos (RN02).
-          </p>
-        </div>
+        <RingCountdown
+          open={open}
+          ttlSegundos={ttlSegundos}
+          chamadaIniciadaEm={chamadaIniciadaEm}
+          onExpire={handleExpire}
+        />
 
         {erroAtendimento && (
           <div
@@ -224,7 +186,7 @@ export function IncomingCallRingModal({
           <Button
             type="button"
             size="lg"
-            disabled={isPending || segundosRestantes <= 0}
+            disabled={isPending || isRecusando || expirado}
             onClick={handleEntrarConsulta}
             className="w-full text-base font-bold min-h-[50px] shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-transform motion-reduce:transform-none"
           >
@@ -235,14 +197,12 @@ export function IncomingCallRingModal({
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => {
-              silenciarChime();
-              onNoShow();
-            }}
+            disabled={isPending || isRecusando}
+            onClick={handleRecusar}
             aria-label="Não posso atender agora (Recusar chamada médica)"
             className="w-full text-xs text-muted-foreground hover:text-destructive"
           >
-            Não posso atender agora (Recusar chamada)
+            {isRecusando ? "Recusando chamada…" : "Não posso atender agora (Recusar chamada)"}
           </Button>
         </DialogFooter>
       </DialogContent>

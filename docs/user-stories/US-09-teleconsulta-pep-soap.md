@@ -86,10 +86,10 @@
 - [x] **Apresentação Backend:** Router fino `consultation_router.py` integrado em `/api/v1/consultations`.
 - [x] **Frontend Workstation Single-Pane:**
   - Rotas dedicadas: `/medico` (`frontend/src/routes/medico.tsx`), `/chamada` (`frontend/src/routes/chamada.tsx`) e `/pos-consulta` (`frontend/src/routes/pos-consulta.tsx`) (Issue #141)
-  - Componente mestre: `frontend/src/features/consultation/components/doctor-workstation.tsx`
-  - Painéis compostos: `workstation-media-pane.tsx` (isolado com `React.memo` para blindar o streaming WebRTC contra re-renders acidentais por digitação SOAP ou telemetria), `video-pane.tsx`, `medical-records-pane.tsx`, `soap-editor.tsx`, `prescription-builder.tsx` (decomposto em `prescription-form.tsx`, `atestado-form.tsx`, `prescription-items-list.tsx`), `cfm-identity-gate.tsx`, `finalize-consultation-modal.tsx`, `tma-timer-badge.tsx`
-  - Hooks TanStack Query: `frontend/src/features/consultation/api/`
-  - Schemas Zod: `frontend/src/features/consultation/schemas/consultation-schema.ts`
+  - Componente mestre e orquestração: `frontend/src/features/consultation/components/doctor-workstation.tsx` (<180L), `frontend/src/features/consultation/hooks/use-doctor-workstation.ts`, `frontend/src/features/consultation/context/consultation-encounter-provider.tsx` (`ConsultationEncounterProvider` usando React 19 `use()`, remontado via `key={atendimentoId}` sem vazamento de estado nem dados hardcoded)
+  - Painéis compostos & vídeo unificado: `workstation-media-pane.tsx` (isolado com `React.memo`), `video-call-stage.tsx` (`LiveKitMediaAdapter` via `React.lazy()` e `OfflineFallbackAdapter` sem boolean mode props), `medical-records-pane.tsx`, `soap-editor.tsx` (`shouldValidate`/`shouldDirty` no CID-10), `prescription-builder.tsx` (`prescription-document-tabs.tsx`, `prescription-form.tsx`, `atestado-form.tsx` com tick isolado de 180s, `prescription-items-list.tsx`), `cfm-identity-gate.tsx`, `patient-liveness-modal.tsx` (`timeout_segundos` em contagem regressiva), `pos-consulta-summary.tsx` (`/api/v1/consultations/me/documentos`, `/me/documents/{documento_id}/pdf` e `getTipoDocumentoLabel` cobrindo toda `RECEITA_*`), `finalize-consultation-modal.tsx`, `tma-timer-badge.tsx`
+  - Hooks TanStack Query: `frontend/src/features/consultation/api/` (incluindo `use-doctor-logout.ts` e validação runtime `z*.parse()` em `use-liveness-check.ts`, `use-livekit-token.ts`, `use-prescricao-validator.ts`)
+  - Schemas Zod: `frontend/src/features/consultation/schemas/consultation-schema.ts` (`emitirDocumentoSchema` exigindo `itens` não vazios para toda `RECEITA_*`)
 - [x] **Testes Automatizados:**
   - `tests/unit/test_pep_soap_service.py`
   - `tests/integration/test_consultation_endpoints.py`
@@ -101,3 +101,6 @@
   - `frontend/src/features/consultation/tests/consultation-workstation.test.tsx`
   - `frontend/src/features/consultation/tests/doctor-workstation-performance.test.tsx`
   - `frontend/src/features/consultation/tests/prescription-builder.test.tsx`
+  - `frontend/src/features/consultation/tests/pos-consulta-summary.test.tsx`
+  - `frontend/src/features/consultation/tests/patient-liveness-modal.test.tsx`
+  - `frontend/src/routes/medico.test.tsx`

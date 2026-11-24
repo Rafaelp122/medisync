@@ -4,35 +4,48 @@ import {
   type AcolhimentoConcluidoData,
   ProgressiveOnboardingWizard,
 } from "@/features/onboarding/components/progressive-onboarding-wizard";
-import { type StoredPatientSession, saveStoredSession } from "@/lib/session-storage";
+import {
+  getStoredSession,
+  isThreePartJwt,
+  type StoredPatientSession,
+  saveStoredSession,
+} from "@/lib/session-storage";
 
-export function TriagemPage() {
+export interface TriagemPageProps {
+  session?: StoredPatientSession | null;
+}
+
+function mergeSessionPreservingJwt(
+  existing: StoredPatientSession | null,
+  data: AcolhimentoConcluidoData,
+): StoredPatientSession {
+  const preserveJwt = Boolean(existing?.token && isThreePartJwt(existing.token));
+  return {
+    tipo: preserveJwt && existing ? existing.tipo : "acolhimento",
+    role: existing?.role || "PACIENTE",
+    pacienteId: data.pacienteId,
+    atendimentoId: data.atendimentoId,
+    prioridadeClinica: data.prioridadeClinica,
+    token: preserveJwt && existing ? existing.token : data.token,
+    status: "APTO_PARA_CHAMADA",
+  };
+}
+
+/**
+ * Página de Triagem Clínica.
+ * Preserva o JWT 3-partes de cidadãos autenticados sem jamais sobrescrevê-lo por intake_token.
+ * @see docs/user-stories/US-01-acolhimento-triagem-tcle.md
+ */
+export function TriagemPage({ session }: TriagemPageProps) {
   const navigate = useNavigate();
+  const activeSession = session ?? getStoredSession();
 
   const handleSessaoIniciada = (data: AcolhimentoConcluidoData) => {
-    const newSession: StoredPatientSession = {
-      tipo: "acolhimento",
-      role: "PACIENTE",
-      pacienteId: data.pacienteId,
-      atendimentoId: data.atendimentoId,
-      prioridadeClinica: data.prioridadeClinica,
-      token: data.token,
-      status: "APTO_PARA_CHAMADA",
-    };
-    saveStoredSession(newSession);
+    saveStoredSession(mergeSessionPreservingJwt(getStoredSession() ?? activeSession, data));
   };
 
   const handleOnboardingFinalizado = (data: AcolhimentoConcluidoData) => {
-    const newSession: StoredPatientSession = {
-      tipo: "acolhimento",
-      role: "PACIENTE",
-      pacienteId: data.pacienteId,
-      atendimentoId: data.atendimentoId,
-      prioridadeClinica: data.prioridadeClinica,
-      token: data.token,
-      status: "APTO_PARA_CHAMADA",
-    };
-    saveStoredSession(newSession);
+    saveStoredSession(mergeSessionPreservingJwt(getStoredSession() ?? activeSession, data));
     navigate({ to: "/fila" });
   };
 
@@ -49,6 +62,7 @@ export function TriagemPage() {
       </div>
 
       <ProgressiveOnboardingWizard
+        session={activeSession}
         onSessaoIniciada={handleSessaoIniciada}
         onFinalizar={handleOnboardingFinalizado}
       />

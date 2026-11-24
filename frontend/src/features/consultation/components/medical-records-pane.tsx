@@ -2,8 +2,10 @@ import { Clock, Download, FileCheck, History, Loader2, Shield, User } from "luci
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getTipoDocumentoLabel } from "@/lib/formatters";
 import { useDownloadDocumentoPdf } from "../api/use-download-document-pdf";
 import { useProntuario } from "../api/use-prontuario";
+import { useOptionalConsultationEncounter } from "../context/consultation-encounter-provider";
 
 export interface MedicalRecordsPaneProps {
   atendimentoId: string;
@@ -16,18 +18,30 @@ export interface MedicalRecordsPaneProps {
 
 /**
  * Painel central de visualização do prontuário, triagem e documentos emitidos (PEP).
- * Apresenta dados protegidos e mascarados sob LGPD e histórico de receitas assinadas.
+ * Consome dados reais de `ConsultationEncounterProvider` sem strings hardcoded de paciente.
  * Regras: RF-07, US-09, US-10.
  */
 export function MedicalRecordsPane({
   atendimentoId,
-  pacienteNome = "Juliana Silva",
-  pacienteCpf = "123.***.***-00",
-  prioridadeClinica = 3,
-  queixaPrincipal = "Paciente acolhido com queixa de febre e dor de garganta.",
+  pacienteNome,
+  pacienteCpf,
+  prioridadeClinica,
+  queixaPrincipal,
   token,
 }: MedicalRecordsPaneProps) {
-  const { data: prontuario, isLoading } = useProntuario(atendimentoId, token);
+  const encounter = useOptionalConsultationEncounter();
+  const resolvedNome =
+    pacienteNome ?? encounter?.atendimento.pacienteNome ?? "Paciente em Atendimento";
+  const resolvedCpf =
+    pacienteCpf ?? encounter?.atendimento.pacienteIdentificador ?? "Protegido (LGPD)";
+  const resolvedPrioridade = prioridadeClinica ?? encounter?.atendimento.prioridadeClinica ?? 3;
+  const resolvedQueixa =
+    queixaPrincipal ??
+    encounter?.atendimento.queixaPrincipal ??
+    "Acolhimento clínico em telemedicina.";
+  const resolvedToken = token ?? encounter?.atendimento.token;
+
+  const { data: prontuario, isLoading } = useProntuario(atendimentoId, resolvedToken);
   const { downloadPdf, downloadingId } = useDownloadDocumentoPdf(atendimentoId);
 
   const PRIORIDADE_CLINICA_MAP: Record<
@@ -56,18 +70,18 @@ export function MedicalRecordsPane({
               <User className="size-4 text-primary" />
               <span>Identificação do Paciente</span>
             </CardTitle>
-            {getPrioridadeBadge(prioridadeClinica)}
+            {getPrioridadeBadge(resolvedPrioridade)}
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-2 text-xs">
           <div className="grid grid-cols-2 gap-2">
             <div>
               <span className="text-muted-foreground">Nome Completo:</span>
-              <p className="font-semibold text-foreground">{pacienteNome}</p>
+              <p className="font-semibold text-foreground">{resolvedNome}</p>
             </div>
             <div>
               <span className="text-muted-foreground">CPF (Protegido LGPD):</span>
-              <p className="font-semibold text-foreground">{pacienteCpf}</p>
+              <p className="font-semibold text-foreground">{resolvedCpf}</p>
             </div>
           </div>
 
@@ -77,7 +91,7 @@ export function MedicalRecordsPane({
               <span>Queixa Inicial Registrada no Acolhimento:</span>
             </span>
             <p className="p-2 rounded bg-muted/40 text-foreground font-normal italic">
-              "{queixaPrincipal}"
+              "{resolvedQueixa}"
             </p>
           </div>
         </CardContent>
@@ -114,7 +128,7 @@ export function MedicalRecordsPane({
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-foreground flex items-center gap-1.5">
                       <FileCheck className="size-3.5 text-primary" />
-                      {doc.tipo_documento.replace("_", " ")}
+                      {getTipoDocumentoLabel(doc.tipo_documento)}
                     </span>
                     <Badge
                       variant={doc.assinado_em ? "success" : "secondary"}
@@ -137,7 +151,7 @@ export function MedicalRecordsPane({
                       variant="outline"
                       size="sm"
                       disabled={downloadingId === doc.id}
-                      onClick={() => downloadPdf(doc.id, token)}
+                      onClick={() => downloadPdf(doc.id, resolvedToken)}
                       className="h-6 text-[10px] px-2 gap-1"
                     >
                       {downloadingId === doc.id ? (

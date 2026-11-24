@@ -45,7 +45,7 @@ export const triagemRoute = createRoute({
     return (
       <CitizenShellLayout session={session}>
         <Suspense fallback={<RoutePendingFallback />}>
-          <LazyTriagemPage />
+          <LazyTriagemPage session={session} />
         </Suspense>
       </CitizenShellLayout>
     );

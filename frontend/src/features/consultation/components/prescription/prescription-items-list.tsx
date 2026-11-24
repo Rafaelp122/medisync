@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 export interface PrescriptionItemsListProps {
   itens: ItemPrescricaoRequest[];
   onRemoveItem: (index: number) => void;
-  isReadOnly?: boolean;
+  accessMode?: "editable" | "readonly";
 }
 
 /**
@@ -15,8 +15,9 @@ export interface PrescriptionItemsListProps {
 export function PrescriptionItemsList({
   itens,
   onRemoveItem,
-  isReadOnly = false,
+  accessMode = "editable",
 }: PrescriptionItemsListProps) {
+  const isLocked = accessMode === "readonly";
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -50,7 +51,7 @@ export function PrescriptionItemsList({
                   {item.posologia} {item.duracao ? `• Duração: ${item.duracao}` : ""}
                 </p>
               </div>
-              {!isReadOnly && (
+              {!isLocked && (
                 <Button
                   type="button"
                   variant="ghost"

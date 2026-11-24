@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { SamuEmergencyModal } from "../components/samu-emergency-modal";
+import { SamuEmergencyModal } from "./samu-emergency-modal";
 
 describe("SamuEmergencyModal (Salvaguarda SAMU 192 - RN04)", () => {
   it("IT-SAMU-01: Renderiza o modal de emergência quando aberto com role alertdialog", () => {
