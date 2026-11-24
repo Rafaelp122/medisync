@@ -13,13 +13,8 @@ import {
 import { createContext, type ReactNode, use } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { clearAccessToken } from "@/lib/auth-token";
-import {
-  clearStoredCallData,
-  clearStoredSession,
-  getStoredSession,
-  type StoredPatientSession,
-} from "@/lib/session-storage";
+import { getStoredSession, type StoredPatientSession } from "@/lib/session-storage";
+import { sessionTransport } from "@/lib/session-transport";
 import { cn } from "@/lib/utils";
 
 const CitizenShellContext = createContext(false);
@@ -80,9 +75,7 @@ export function CitizenShellLayout({ children, session, onLogout }: CitizenShell
   ];
 
   const handleLogout = () => {
-    clearStoredSession();
-    clearStoredCallData();
-    clearAccessToken();
+    sessionTransport.clearSession("patient");
     queryClient.clear();
     if (onLogout) {
       onLogout();

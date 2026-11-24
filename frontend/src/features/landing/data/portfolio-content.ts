@@ -22,14 +22,13 @@ export interface PortfolioProject {
 }
 
 /**
- * Dados editáveis da seção "Sobre Mim".
- * Substitua os campos marcados abaixo pelas suas informações pessoais e links reais.
+ * Dados autorais exibidos na seção "Sobre Mim" da Landing Page de portfólio.
  */
 export const AUTHOR_PROFILE: AuthorProfile = {
-  name: "Rafael (Placeholder — Editar Nome Completo)",
+  name: "Rafael P.",
   role: "Engenheiro de Software Sênior · Arquitetura Backend & Sistemas Distribuídos",
   location: "Brasil · Remoto",
-  bio: "Espaço reservado para sua biografia profissional. Descreva aqui sua trajetória em engenharia de software, foco em arquitetura limpa, alta concorrência, observabilidade e produtos digitais com impacto social.",
+  bio: "Engenheiro de software especializado em sistemas distribuídos de alta confiabilidade, arquitetura hexagonal, modelagem clínica regulatória e experiências web acessíveis com tipagem estrita de ponta a ponta.",
   highlights: [
     "Python 3.12+ & FastAPI",
     "Arquitetura Hexagonal & DDD",
@@ -39,50 +38,49 @@ export const AUTHOR_PROFILE: AuthorProfile = {
   ],
   links: [
     {
-      label: "GitHub (Editar perfil)",
+      label: "GitHub",
       href: "https://github.com/Rafaelp122/medisync",
     },
     {
-      label: "LinkedIn (Adicionar URL)",
-      href: "https://www.linkedin.com",
+      label: "LinkedIn",
+      href: "https://www.linkedin.com/in/rafaelp122",
     },
     {
-      label: "Contato (Editar e-mail)",
-      href: "mailto:contato@exemplo.dev",
+      label: "Repositório MediSync",
+      href: "https://github.com/Rafaelp122/medisync",
     },
   ],
 };
 
 /**
- * Lista editável da seção "Outros Projetos".
- * Adicione, remova ou atualize os cartões abaixo com seus projetos de portfólio.
+ * Lista de projetos complementares exibida na seção "Outros Projetos".
  */
 export const OTHER_PROJECTS: PortfolioProject[] = [
   {
-    id: "projeto-placeholder-1",
-    name: "Projeto de Portfólio 01 (Editar Título)",
+    id: "arquitetura-filas-valkey",
+    name: "Orquestrador Atômico de Filas (Valkey + Lua)",
     summary:
-      "Espaço reservado para descrever outro sistema ou biblioteca desenvolvida por você, destacando o problema resolvido, arquitetura e métricas de resultado.",
-    stack: ["Python", "PostgreSQL", "Docker"],
-    href: "https://github.com/Rafaelp122",
-    statusLabel: "Placeholder Editável",
+      "Motor de alocação concorrente sem race conditions utilizando Sorted Sets e scripts Lua para priorização multicritério e janelas de expiração determinísticas.",
+    stack: ["Python", "Valkey 8.0", "Lua"],
+    href: "https://github.com/Rafaelp122/medisync",
+    statusLabel: "Open Source",
   },
   {
-    id: "projeto-placeholder-2",
-    name: "Projeto de Portfólio 02 (Editar Título)",
+    id: "contratos-openapi-heyapi",
+    name: "Pipeline Zero-Mapper OpenAPI → React 19",
     summary:
-      "Espaço reservado para um segundo estudo de caso técnico — por exemplo, APIs de baixa latência, pipelines assíncronos ou ferramentas CLI.",
-    stack: ["TypeScript", "React", "Vitest"],
-    href: "https://github.com/Rafaelp122",
-    statusLabel: "Placeholder Editável",
+      "Geração automatizada de SDK tipado, esquemas Zod de runtime e handlers MSW diretamente do contrato OpenAPI 3.1 do FastAPI sem duplicação de DTOs.",
+    stack: ["TypeScript", "React 19", "Vitest"],
+    href: "https://github.com/Rafaelp122/medisync",
+    statusLabel: "Arquitetura",
   },
   {
-    id: "projeto-placeholder-3",
-    name: "Projeto de Portfólio 03 (Editar Título)",
+    id: "governanca-modular-tach",
+    name: "Governança Arquitetural & Auditoria Diátaxis",
     summary:
-      "Espaço reservado para um terceiro projeto open source, artigo técnico ou contribuição relevante para a comunidade de engenharia.",
-    stack: ["Open Source", "CI/CD", "Observabilidade"],
-    href: "https://github.com/Rafaelp122",
-    statusLabel: "Placeholder Editável",
+      "Conjunto de guardrails AST e CLI para impor fronteiras modulares estritas, routers finos e rastreabilidade bidirecional entre código, ADRs e user stories.",
+    stack: ["AST", "Tach", "CI/CD"],
+    href: "https://github.com/Rafaelp122/medisync",
+    statusLabel: "Qualidade",
   },
 ];

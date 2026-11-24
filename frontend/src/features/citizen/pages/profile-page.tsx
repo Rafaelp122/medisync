@@ -71,10 +71,10 @@ export function ProfilePage({ session, renderEnrichmentForm }: ProfilePageProps)
               </section>
             )}
 
-            <DependentsSection pacienteId={pacienteId} token={token} />
+            <DependentsSection pacienteId={pacienteId} />
 
             <section aria-label="Gerenciar biometria Passkey">
-              <ProfilePasskeySection token={token} />
+              <ProfilePasskeySection />
             </section>
           </div>
         )}

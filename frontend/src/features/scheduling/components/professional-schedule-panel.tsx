@@ -21,7 +21,6 @@ import { useAgendaDia, useIniciarAtendimentoAgendado } from "../api/use-agenda-p
 import { DisponibilidadeFormDialog } from "./disponibilidade-form-dialog";
 
 export interface ProfessionalSchedulePanelProps {
-  token?: string;
   onAtendimentoIniciado?: (agendamento: AgendamentoResponse) => void;
 }
 
@@ -30,7 +29,6 @@ export interface ProfessionalSchedulePanelProps {
  * Exibe os agendamentos do dia com acionamento de teleconsulta e cadastro de disponibilidade.
  */
 export function ProfessionalSchedulePanel({
-  token,
   onAtendimentoIniciado,
 }: ProfessionalSchedulePanelProps) {
   const [dataSelecionada, setDataSelecionada] = useState(() => formatarDataIso(new Date()));
@@ -43,7 +41,7 @@ export function ProfessionalSchedulePanel({
     isFetching,
     error: agendaError,
     refetch,
-  } = useAgendaDia({ data: dataSelecionada, token });
+  } = useAgendaDia({ data: dataSelecionada });
 
   const { mutate: iniciarAtendimento, error: iniciarError } = useIniciarAtendimentoAgendado();
 
@@ -51,7 +49,7 @@ export function ProfessionalSchedulePanel({
     setFeedbackSucesso(null);
     setIniciandoId(agendamentoId);
     iniciarAtendimento(
-      { agendamentoId, token },
+      { agendamentoId },
       {
         onSuccess: (updated) => {
           setFeedbackSucesso(
@@ -91,7 +89,7 @@ export function ProfessionalSchedulePanel({
               Consulte seus atendimentos agendados por data e gerencie janelas de disponibilidade.
             </CardDescription>
           </div>
-          <DisponibilidadeFormDialog token={token} onSuccess={handleDisponibilidadeCriada} />
+          <DisponibilidadeFormDialog onSuccess={handleDisponibilidadeCriada} />
         </div>
       </CardHeader>
 

@@ -22,7 +22,7 @@ describe("CitizenHomePage & CitizenShellLayout (/home)", () => {
             codigo: "PSICOLOGIA",
             nome: "Psicologia",
             descricao: "Apoio psicológico clínico agendado via SUS.",
-            duracao_padrao_minutos: 45,
+            duracao_padrao_minutos: 50,
           },
           {
             codigo: "NUTRICAO",

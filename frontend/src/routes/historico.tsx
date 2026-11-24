@@ -1,7 +1,13 @@
-import { createRoute, redirect } from "@tanstack/react-router";
-import { HistoryPage } from "@/features/citizen/pages/history-page";
+import { createRoute, lazyRouteComponent, redirect } from "@tanstack/react-router";
+import { Suspense } from "react";
+import { RoutePendingFallback } from "@/components/route-fallbacks";
 import { getStoredSession, type StoredPatientSession } from "@/lib/session-storage";
 import { rootRoute } from "./root";
+
+const LazyHistoryPage = lazyRouteComponent(
+  () => import("@/features/citizen/pages/history-page"),
+  "HistoryPage",
+);
 
 export const historicoRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -15,6 +21,10 @@ export const historicoRoute = createRoute({
   },
   component: function HistoricoRouteComponent() {
     const { session } = historicoRoute.useRouteContext() as { session: StoredPatientSession };
-    return <HistoryPage session={session} />;
+    return (
+      <Suspense fallback={<RoutePendingFallback />}>
+        <LazyHistoryPage session={session} />
+      </Suspense>
+    );
   },
 });

@@ -19,6 +19,7 @@ import { mfaActivateSchema } from "../schemas/patient-hybrid-auth-schemas";
 export interface MfaSetupModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  tempToken?: string;
   onActivated?: () => void;
 }
 
@@ -26,7 +27,7 @@ export interface MfaSetupModalProps {
  * Modal de configuração inicial e ativação do segundo fator TOTP (MFA) para equipe interna.
  * Regras canônicas: RN-AUT-04, RN-AUT-08 e Resoluções CFM nº 2.299/2021 e nº 2.314/2022.
  */
-export function MfaSetupModal({ open, onOpenChange, onActivated }: MfaSetupModalProps) {
+export function MfaSetupModal({ open, onOpenChange, tempToken, onActivated }: MfaSetupModalProps) {
   const [setupData, setSetupData] = useState<MfaSetupResponse | null>(null);
   const [codigo, setCodigo] = useState("");
   const [erroValidacao, setErroValidacao] = useState<string | null>(null);
@@ -53,13 +54,18 @@ export function MfaSetupModal({ open, onOpenChange, onActivated }: MfaSetupModal
   useEffect(() => {
     if (!open) {
       requestedRef.current = false;
+      setSetupData(null);
+      setCodigo("");
+      setErroValidacao(null);
+      setCopiado(false);
+      setAtivadoMsg(null);
       return;
     }
     if (!setupData && !requestedRef.current) {
       requestedRef.current = true;
-      requestSetup();
+      requestSetup(tempToken ? { tempToken } : undefined);
     }
-  }, [open, setupData, requestSetup]);
+  }, [open, setupData, tempToken, requestSetup]);
 
   const handleCopySecret = async () => {
     if (!setupData?.secret || typeof navigator === "undefined" || !navigator.clipboard) {
@@ -77,7 +83,7 @@ export function MfaSetupModal({ open, onOpenChange, onActivated }: MfaSetupModal
       setErroValidacao(parsed.error.issues[0]?.message ?? "Código inválido.");
       return;
     }
-    activateMutation.mutate(parsed.data);
+    activateMutation.mutate({ body: parsed.data, tempToken });
   };
 
   const erroAtivo =
