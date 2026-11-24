@@ -18,7 +18,6 @@ class AtendimentoResumoDTO:
     paciente_id: UUID | None = None
     chamada_iniciada_em: datetime | None = None
     criado_em: datetime | None = None
-    exige_liveness_controle_especial: bool = True
 
 
 @dataclass(frozen=True)
@@ -43,7 +42,14 @@ class AtendimentoReaderPort(Protocol):
         self, atendimento_id: UUID
     ) -> AtendimentoResumoDTO | None: ...
 
-    async def concluir_atendimento(self, atendimento_id: UUID) -> None: ...
+    async def concluir_atendimento(
+        self,
+        atendimento_id: UUID,
+        *,
+        auto_commit: bool = True,
+    ) -> UUID | None: ...
+
+    async def liberar_consulta_ativa_medico(self, medico_id: UUID) -> None: ...
 
     async def atender_chamada(self, atendimento_id: UUID) -> None: ...
 

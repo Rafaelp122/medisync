@@ -8,7 +8,7 @@ import socket
 
 import pytest
 from sqlalchemy import text
-from src.core.database import async_session_factory, engine, get_db_session
+from src.core.database import get_db_session, get_engine, get_session_factory
 
 
 def _is_db_reachable(host: str = "localhost", port: int = 5432) -> bool:
@@ -29,7 +29,7 @@ def check_postgres_running() -> None:
 
 async def test_database_connection(check_postgres_running: None) -> None:
     """Verify that SQLAlchemy async engine connects to PostgreSQL 17 using Psycopg 3."""
-    async with engine.connect() as connection:
+    async with get_engine().connect() as connection:
         result = await connection.execute(text("SELECT 1;"))
         assert result.scalar() == 1
 
@@ -40,7 +40,7 @@ async def test_concurrent_sessions_pool_isolation(
     """Verify that concurrent transactions across the pool execute isolated queries."""
 
     async def run_query(value: int) -> int | None:
-        async with async_session_factory() as session, session.begin():
+        async with get_session_factory()() as session, session.begin():
             await asyncio.sleep(0.01)
             result = await session.execute(text("SELECT :val"), {"val": value})
             scalar_val = result.scalar()

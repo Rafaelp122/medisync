@@ -8,7 +8,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import get_settings
-from src.core.database import engine
+from src.core.database import dispose_engine
 from src.core.errors import register_exception_handlers
 from src.core.health_router import health_router
 from src.core.logging import setup_logging
@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     yield
 
     # 2. Gracefully teardown connection pools on shutdown
-    await engine.dispose()
+    await dispose_engine()
     logger.info("Database engine connection pool disposed successfully.")
     await close_valkey_pool()
     await close_arq_pool()
@@ -76,8 +76,12 @@ def create_app() -> FastAPI:
     # 2. Setup HTTP middlewares pipeline
     setup_middlewares(app, debug=settings.DEBUG)
 
-    # 3. Configure CORSMiddleware
-    cors_origins = ["*"] if settings.DEBUG else settings.CORS_ORIGINS
+    # 3. Configure CORSMiddleware (never allow wildcard '*' with credentials)
+    cors_origins = [
+        origin.strip()
+        for origin in settings.CORS_ORIGINS
+        if origin.strip() and origin.strip() != "*"
+    ]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,

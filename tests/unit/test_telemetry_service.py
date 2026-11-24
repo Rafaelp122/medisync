@@ -1,26 +1,15 @@
-"""Unit tests for TelemetryService and ConfigPlantaoService."""
+"""Unit tests for TelemetryService and ConfigPlantaoService using canonical Fakes."""
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock
+from typing import Literal
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.errors import ValidationError
 from src.modules.telemetry.application.dtos import (
-    ConfigPlantaoCommand,
     MedicoTMADTO,
     PainelTelemetriaDTO,
-)
-from src.modules.telemetry.application.ports.config_plantao_port import (
-    ConfigPlantaoRepositoryPort,
-)
-from src.modules.telemetry.application.ports.telemetry_cache_port import (
-    TelemetryCachePort,
-)
-from src.modules.telemetry.application.ports.telemetry_reader_port import (
-    TelemetryReaderPort,
 )
 from src.modules.telemetry.application.services.config_plantao_service import (
     ConfigPlantaoService,
@@ -29,6 +18,14 @@ from src.modules.telemetry.application.services.telemetry_service import (
     TelemetryService,
 )
 from src.modules.telemetry.domain.models import ConfiguracaoPlantao
+from src.modules.telemetry.presentation.schemas import ConfigPlantaoRequest
+
+from tests.doubles import (
+    FakeAsyncSession,
+    FakeConfigPlantaoRepository,
+    FakeTelemetryCache,
+    FakeTelemetryReader,
+)
 
 
 def _sample_painel() -> PainelTelemetriaDTO:
@@ -59,91 +56,95 @@ def _sample_painel() -> PainelTelemetriaDTO:
     )
 
 
-def _fake_salvar(cfg: ConfiguracaoPlantao) -> ConfiguracaoPlantao:
-    return cfg
+def _sample_request(
+    *,
+    medicos_ativos_planejados: int = 4,
+    alpha_backpressure: Decimal = Decimal("1.28"),
+    cota_diaria_maxima: int | None = 450,
+    tma_padrao_segundos: int = 700,
+    tempo_tolerancia_ring_segundos: int = 50,
+    modo_operacao: Literal["SUS", "PRIVADO"] = "PRIVADO",
+    sla_minutos_nivel_1: int = 2,
+    sla_minutos_nivel_2: int = 12,
+    sla_minutos_nivel_3: int = 50,
+    sla_minutos_nivel_4: int = 100,
+    sla_minutos_nivel_5: int = 200,
+) -> ConfigPlantaoRequest:
+    return ConfigPlantaoRequest(
+        medicos_ativos_planejados=medicos_ativos_planejados,
+        alpha_backpressure=alpha_backpressure,
+        cota_diaria_maxima=cota_diaria_maxima,
+        tma_padrao_segundos=tma_padrao_segundos,
+        tempo_tolerancia_ring_segundos=tempo_tolerancia_ring_segundos,
+        modo_operacao=modo_operacao,
+        sla_minutos_nivel_1=sla_minutos_nivel_1,
+        sla_minutos_nivel_2=sla_minutos_nivel_2,
+        sla_minutos_nivel_3=sla_minutos_nivel_3,
+        sla_minutos_nivel_4=sla_minutos_nivel_4,
+        sla_minutos_nivel_5=sla_minutos_nivel_5,
+    )
 
 
 @pytest.mark.asyncio
 async def test_telemetry_service_obter_painel_cache_hit() -> None:
-    reader = AsyncMock(spec=TelemetryReaderPort)
-    config_repo = AsyncMock(spec=ConfigPlantaoRepositoryPort)
-    cache = AsyncMock(spec=TelemetryCachePort)
-
     cached_painel = _sample_painel()
-    cache.obter_painel.return_value = cached_painel
+    reader = FakeTelemetryReader()
+    config_repo = FakeConfigPlantaoRepository()
+    cache = FakeTelemetryCache(initial=cached_painel)
 
     service = TelemetryService(reader=reader, config_repo=config_repo, cache=cache)
     result = await service.obter_painel(desconsiderar_cache=False)
 
     assert result == cached_painel
-    cache.obter_painel.assert_awaited_once_with()
-    config_repo.obter_atual.assert_not_called()
-    reader.obter_painel_telemetria.assert_not_called()
-    cache.salvar_painel.assert_not_called()
+    assert cache.obter_calls == 1
+    assert config_repo.obter_atual_calls == 0
+    assert reader.calls == []
+    assert cache.salvar_calls == []
 
 
 @pytest.mark.asyncio
 async def test_telemetry_service_obter_painel_cache_miss() -> None:
-    reader = AsyncMock(spec=TelemetryReaderPort)
-    config_repo = AsyncMock(spec=ConfigPlantaoRepositoryPort)
-    cache = AsyncMock(spec=TelemetryCachePort)
-
-    cache.obter_painel.return_value = None
-    config = ConfiguracaoPlantao()
-    config_repo.obter_atual.return_value = config
-
     fresh_painel = _sample_painel()
-    reader.obter_painel_telemetria.return_value = fresh_painel
+    config = ConfiguracaoPlantao()
+    reader = FakeTelemetryReader(painel=fresh_painel)
+    config_repo = FakeConfigPlantaoRepository(config=config)
+    cache = FakeTelemetryCache()
 
     service = TelemetryService(reader=reader, config_repo=config_repo, cache=cache)
     result = await service.obter_painel(desconsiderar_cache=False)
 
     assert result == fresh_painel
-    cache.obter_painel.assert_awaited_once_with()
-    config_repo.obter_atual.assert_awaited_once_with()
-    reader.obter_painel_telemetria.assert_awaited_once_with(config=config)
-    cache.salvar_painel.assert_awaited_once_with(
-        painel=fresh_painel,
-        ttl_segundos=5,
-    )
+    assert cache.obter_calls == 1
+    assert config_repo.obter_atual_calls == 1
+    assert len(reader.calls) == 1
+    assert reader.calls[0]["config"] is config
+    assert cache.salvar_calls == [(fresh_painel, 5)]
 
 
 @pytest.mark.asyncio
 async def test_telemetry_service_obter_painel_desconsiderar_cache() -> None:
-    reader = AsyncMock(spec=TelemetryReaderPort)
-    config_repo = AsyncMock(spec=ConfigPlantaoRepositoryPort)
-    cache = AsyncMock(spec=TelemetryCachePort)
-
-    config = ConfiguracaoPlantao()
-    config_repo.obter_atual.return_value = config
     fresh_painel = _sample_painel()
-    reader.obter_painel_telemetria.return_value = fresh_painel
+    config = ConfiguracaoPlantao()
+    reader = FakeTelemetryReader(painel=fresh_painel)
+    config_repo = FakeConfigPlantaoRepository(config=config)
+    cache = FakeTelemetryCache(initial=_sample_painel())
 
     service = TelemetryService(reader=reader, config_repo=config_repo, cache=cache)
     result = await service.obter_painel(desconsiderar_cache=True)
 
     assert result == fresh_painel
-    cache.obter_painel.assert_not_called()
-    config_repo.obter_atual.assert_awaited_once_with()
-    reader.obter_painel_telemetria.assert_awaited_once()
-    cache.salvar_painel.assert_awaited_once_with(
-        painel=fresh_painel,
-        ttl_segundos=5,
-    )
+    assert cache.obter_calls == 0
+    assert config_repo.obter_atual_calls == 1
+    assert len(reader.calls) == 1
+    assert cache.salvar_calls == [(fresh_painel, 5)]
 
 
 @pytest.mark.asyncio
 async def test_telemetry_service_custom_cache_ttl_segundos() -> None:
-    reader = AsyncMock(spec=TelemetryReaderPort)
-    config_repo = AsyncMock(spec=ConfigPlantaoRepositoryPort)
-    cache = AsyncMock(spec=TelemetryCachePort)
-
-    cache.obter_painel.return_value = None
-    config = ConfiguracaoPlantao()
-    config_repo.obter_atual.return_value = config
-
     fresh_painel = _sample_painel()
-    reader.obter_painel_telemetria.return_value = fresh_painel
+    reader = FakeTelemetryReader(painel=fresh_painel)
+    config_repo = FakeConfigPlantaoRepository(config=ConfiguracaoPlantao())
+    cache = FakeTelemetryCache()
 
     service = TelemetryService(
         reader=reader,
@@ -152,160 +153,159 @@ async def test_telemetry_service_custom_cache_ttl_segundos() -> None:
         cache_ttl_segundos=30,
     )
     result = await service.obter_painel()
+
     assert result == fresh_painel
-    cache.salvar_painel.assert_awaited_once_with(
-        painel=fresh_painel,
-        ttl_segundos=30,
-    )
+    assert cache.salvar_calls == [(fresh_painel, 30)]
 
 
 @pytest.mark.asyncio
 async def test_telemetry_service_obter_painel_usa_defaults_quando_sem_config() -> None:
-    reader = AsyncMock(spec=TelemetryReaderPort)
-    config_repo = AsyncMock(spec=ConfigPlantaoRepositoryPort)
-    cache = AsyncMock(spec=TelemetryCachePort)
-
-    cache.obter_painel.return_value = None
-    config_repo.obter_atual.return_value = None
     fresh_painel = _sample_painel()
-    reader.obter_painel_telemetria.return_value = fresh_painel
+    reader = FakeTelemetryReader(painel=fresh_painel)
+    config_repo = FakeConfigPlantaoRepository(config=None)
+    cache = FakeTelemetryCache()
 
     service = TelemetryService(reader=reader, config_repo=config_repo, cache=cache)
     result = await service.obter_painel()
 
     assert result == fresh_painel
-    # Reader deve ter sido chamado com a entidade default
-    call_kwargs = reader.obter_painel_telemetria.call_args[1]
-    passed_config: ConfiguracaoPlantao = call_kwargs["config"]
+    passed_config = reader.calls[0]["config"]
+    assert isinstance(passed_config, ConfiguracaoPlantao)
     assert passed_config.singleton_guard is True
     assert passed_config.alpha_backpressure == Decimal("1.25")
 
 
 @pytest.mark.asyncio
 async def test_config_plantao_service_obter_configuracao_existente() -> None:
-    repo = AsyncMock(spec=ConfigPlantaoRepositoryPort)
-    cache = AsyncMock(spec=TelemetryCachePort)
-    session = AsyncMock(spec=AsyncSession)
-
     config = ConfiguracaoPlantao(medicos_ativos_planejados=3)
-    repo.obter_atual.return_value = config
+    repo = FakeConfigPlantaoRepository(config=config)
+    cache = FakeTelemetryCache()
+    session = FakeAsyncSession()
 
-    service = ConfigPlantaoService(repo=repo, cache=cache, session=session)
+    service = ConfigPlantaoService(
+        repo=repo,
+        cache=cache,
+        session=session,  # pyright: ignore[reportArgumentType]
+    )
     result = await service.obter_configuracao()
 
-    assert isinstance(result, ConfiguracaoPlantao)
+    assert result is config
     assert result.medicos_ativos_planejados == 3
-    repo.salvar.assert_not_called()
-    session.commit.assert_not_called()
+    assert repo.obter_ou_criar_calls == 0
+    assert repo.salvos == []
+    assert session.commits == 0
 
 
 @pytest.mark.asyncio
-async def test_config_plantao_service_obter_inexistente_persiste_default() -> None:
-    repo = AsyncMock(spec=ConfigPlantaoRepositoryPort)
-    cache = AsyncMock(spec=TelemetryCachePort)
-    session = AsyncMock(spec=AsyncSession)
+async def test_config_plantao_service_obter_inexistente_provisiona_atomico() -> None:
+    repo = FakeConfigPlantaoRepository(config=None)
+    cache = FakeTelemetryCache()
+    session = FakeAsyncSession()
 
-    repo.obter_atual.return_value = None
-    repo.salvar.side_effect = _fake_salvar
-
-    service = ConfigPlantaoService(repo=repo, cache=cache, session=session)
+    service = ConfigPlantaoService(
+        repo=repo,
+        cache=cache,
+        session=session,  # pyright: ignore[reportArgumentType]
+    )
     result = await service.obter_configuracao()
 
     assert isinstance(result, ConfiguracaoPlantao)
     assert result.singleton_guard is True
     assert result.alpha_backpressure == Decimal("1.25")
     assert result.medicos_ativos_planejados == 1
-
-    repo.salvar.assert_awaited_once()
-    session.commit.assert_awaited_once()
+    assert repo.obter_ou_criar_calls == 1
+    assert session.commits == 1
 
 
 @pytest.mark.asyncio
 async def test_config_plantao_service_atualizar_configuracao_existente() -> None:
-    repo = AsyncMock(spec=ConfigPlantaoRepositoryPort)
-    cache = AsyncMock(spec=TelemetryCachePort)
-    session = AsyncMock(spec=AsyncSession)
-
     config_existente = ConfiguracaoPlantao()
-    repo.obter_atual.return_value = config_existente
-    repo.salvar.side_effect = _fake_salvar
+    repo = FakeConfigPlantaoRepository(config=config_existente)
+    cache = FakeTelemetryCache(initial=_sample_painel())
+    session = FakeAsyncSession()
 
     admin_id = uuid4()
-    cmd = ConfigPlantaoCommand(
-        medicos_ativos_planejados=4,
-        alpha_backpressure=Decimal("1.28"),
-        cota_diaria_maxima=450,
-        tma_padrao_segundos=700,
-        tempo_tolerancia_ring_segundos=50,
-        modo_operacao="PRIVADO",
-        sla_minutos_nivel_1=2,
-        sla_minutos_nivel_2=12,
-        sla_minutos_nivel_3=50,
-        sla_minutos_nivel_4=100,
-        sla_minutos_nivel_5=200,
-        atualizado_por_id=admin_id,
+    req = _sample_request()
+
+    service = ConfigPlantaoService(
+        repo=repo,
+        cache=cache,
+        session=session,  # pyright: ignore[reportArgumentType]
     )
+    result = await service.atualizar_configuracao(req, atualizado_por_id=admin_id)
 
-    service = ConfigPlantaoService(repo=repo, cache=cache, session=session)
-    result = await service.atualizar_configuracao(cmd)
-
+    assert result is config_existente
     assert result.medicos_ativos_planejados == 4
     assert result.alpha_backpressure == Decimal("1.28")
     assert result.modo_operacao == "PRIVADO"
     assert result.atualizado_por_id == admin_id
-
-    repo.salvar.assert_awaited_once_with(config_existente)
-    cache.invalidar_painel.assert_awaited_once_with()
-    session.commit.assert_awaited_once()
+    assert repo.obter_ou_criar_calls == 1
+    assert repo.salvos == [config_existente]
+    assert cache.invalidar_calls == 1
+    assert cache.painel is None
+    assert session.commits == 1
 
 
 @pytest.mark.asyncio
 async def test_config_plantao_service_atualizar_cria_nova_se_inexistente() -> None:
-    repo = AsyncMock(spec=ConfigPlantaoRepositoryPort)
-    cache = AsyncMock(spec=TelemetryCachePort)
-    session = AsyncMock(spec=AsyncSession)
+    repo = FakeConfigPlantaoRepository(config=None)
+    cache = FakeTelemetryCache()
+    session = FakeAsyncSession()
 
-    repo.obter_atual.return_value = None
-    repo.salvar.side_effect = _fake_salvar
-
-    cmd = ConfigPlantaoCommand(
+    req = _sample_request(
         medicos_ativos_planejados=2,
         alpha_backpressure=Decimal("1.22"),
         modo_operacao="SUS",
     )
 
-    service = ConfigPlantaoService(repo=repo, cache=cache, session=session)
-    result = await service.atualizar_configuracao(cmd)
+    service = ConfigPlantaoService(
+        repo=repo,
+        cache=cache,
+        session=session,  # pyright: ignore[reportArgumentType]
+    )
+    result = await service.atualizar_configuracao(req)
 
     assert result.medicos_ativos_planejados == 2
     assert result.alpha_backpressure == Decimal("1.22")
-
-    repo.salvar.assert_awaited_once()
-    cache.invalidar_painel.assert_awaited_once_with()
-    session.commit.assert_awaited_once()
+    assert result.modo_operacao == "SUS"
+    assert repo.obter_ou_criar_calls == 1
+    assert len(repo.salvos) == 1
+    assert cache.invalidar_calls == 1
+    assert session.commits == 1
 
 
 @pytest.mark.asyncio
 async def test_config_plantao_service_atualizar_invariante_invalida_nao_commita() -> (
     None
 ):
-    repo = AsyncMock(spec=ConfigPlantaoRepositoryPort)
-    cache = AsyncMock(spec=TelemetryCachePort)
-    session = AsyncMock(spec=AsyncSession)
-
     config_existente = ConfiguracaoPlantao()
-    repo.obter_atual.return_value = config_existente
+    repo = FakeConfigPlantaoRepository(config=config_existente)
+    cache = FakeTelemetryCache(initial=_sample_painel())
+    session = FakeAsyncSession()
 
-    # alpha fora da faixa 1.20 - 1.30
-    cmd = ConfigPlantaoCommand(
+    req_invalida = ConfigPlantaoRequest.model_construct(
         medicos_ativos_planejados=2,
         alpha_backpressure=Decimal("1.50"),
+        cota_diaria_maxima=300,
+        tma_padrao_segundos=600,
+        tempo_tolerancia_ring_segundos=45,
+        modo_operacao="SUS",
+        sla_minutos_nivel_1=0,
+        sla_minutos_nivel_2=10,
+        sla_minutos_nivel_3=60,
+        sla_minutos_nivel_4=120,
+        sla_minutos_nivel_5=240,
     )
 
-    service = ConfigPlantaoService(repo=repo, cache=cache, session=session)
+    service = ConfigPlantaoService(
+        repo=repo,
+        cache=cache,
+        session=session,  # pyright: ignore[reportArgumentType]
+    )
     with pytest.raises(ValidationError, match="alpha_backpressure inválido"):
-        await service.atualizar_configuracao(cmd)
+        await service.atualizar_configuracao(req_invalida)
 
-    repo.salvar.assert_not_called()
-    cache.invalidar_painel.assert_not_called()
-    session.commit.assert_not_called()
+    assert repo.obter_ou_criar_calls == 0
+    assert repo.salvos == []
+    assert cache.invalidar_calls == 0
+    assert session.commits == 0

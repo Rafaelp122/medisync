@@ -26,7 +26,6 @@ import { criarAgendamentoFormSchema, validarPeriodoSlots } from "../schemas/sche
 
 export interface ScheduleAppointmentPageProps {
   initialEspecialidade?: string;
-  token?: string;
 }
 
 /**
@@ -36,7 +35,6 @@ export interface ScheduleAppointmentPageProps {
  */
 export function ScheduleAppointmentPage({
   initialEspecialidade = "",
-  token,
 }: ScheduleAppointmentPageProps) {
   const hojeIso = formatarDataIso(new Date());
   const [especialidade, setEspecialidade] = useState(() =>
@@ -54,7 +52,7 @@ export function ScheduleAppointmentPage({
     data: especialidades = [],
     isLoading: isLoadingEspecialidades,
     error: especialidadesError,
-  } = useEspecialidades({ token });
+  } = useEspecialidades();
 
   const periodoInvalido = Boolean(validarPeriodoSlots(dataInicio, dataFim));
   const {
@@ -66,7 +64,6 @@ export function ScheduleAppointmentPage({
     especialidade,
     dataInicio,
     dataFim,
-    token,
     enabled: Boolean(especialidade) && !periodoInvalido,
   });
 
@@ -74,7 +71,7 @@ export function ScheduleAppointmentPage({
     data: meusAgendamentos = [],
     isLoading: isLoadingAgendamentos,
     error: meusAgendamentosError,
-  } = useMeusAgendamentos({ token });
+  } = useMeusAgendamentos();
 
   const {
     mutate: criarAgendamento,
@@ -127,7 +124,7 @@ export function ScheduleAppointmentPage({
     }
 
     criarAgendamento(
-      { body: parsed.data, token },
+      { body: parsed.data },
       {
         onSuccess: (agendamento) => {
           setSelectedSlot(null);
@@ -143,7 +140,7 @@ export function ScheduleAppointmentPage({
   const handleCancelarAgendamento = (agendamentoId: string) => {
     setCancellingId(agendamentoId);
     cancelarAgendamento(
-      { agendamentoId, token },
+      { agendamentoId },
       {
         onSettled: () => {
           setCancellingId(null);

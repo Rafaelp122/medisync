@@ -1,8 +1,6 @@
-import React, { lazy, Suspense } from "react";
+import React from "react";
 import type { LivenessChannelMessage } from "../lib/liveness-channel";
-import { VideoPane } from "./video-pane";
-
-const LazyLiveKitVideoCall = lazy(() => import("./livekit-video-call"));
+import { VideoCallStage } from "./video-call-stage";
 
 export interface WorkstationMediaPaneProps {
   atendimentoId: string;
@@ -18,51 +16,29 @@ export interface WorkstationMediaPaneProps {
 }
 
 /**
- * Contêiner de Mídia WebRTC da Estação de Trabalho Clínica isolado com React.memo.
- * Impede re-renders acidentais no canvas de vídeo ou LiveKit durante digitação no SOAP,
- * inclusão de prescrições ou polling de telemetria médica em segundo plano.
- * Regras: ADR-011, CFM nº 2.314/2022.
+ * Contêiner de Mídia WebRTC da Estação de Trabalho Clínica isolado com `React.memo`.
+ * Impede re-renders do palco de vídeo durante edição do SOAP ou polling em segundo plano.
  */
 export const WorkstationMediaPane = React.memo(function WorkstationMediaPane({
   atendimentoId,
   medicoNome,
-  remoteParticipantName = "Juliana Silva (Paciente)",
+  remoteParticipantName = "Paciente em Atendimento",
   livekitToken,
   wsUrl,
   roomName,
   onLivenessMessage,
   onRegisterLivenessSender,
 }: WorkstationMediaPaneProps) {
-  if (livekitToken) {
-    return (
-      <Suspense
-        fallback={
-          <div className="h-64 flex items-center justify-center bg-slate-900 rounded-lg text-slate-400 text-xs">
-            Conectando ao WebRTC LiveKit…
-          </div>
-        }
-      >
-        <LazyLiveKitVideoCall
-          wsUrl={wsUrl}
-          token={livekitToken}
-          roomName={roomName}
-          participantName={medicoNome}
-          remoteParticipantName={remoteParticipantName}
-          onLivenessMessage={onLivenessMessage}
-          onRegisterLivenessSender={onRegisterLivenessSender}
-          className="min-h-[300px]"
-        />
-      </Suspense>
-    );
-  }
-
   return (
-    <VideoPane
-      atendimentoId={atendimentoId}
-      pacienteNome={remoteParticipantName}
-      medicoNome={medicoNome}
-      roomName={roomName}
-      isConnected={false}
+    <VideoCallStage
+      roomName={roomName ?? `room_${atendimentoId}`}
+      participantName={medicoNome}
+      remoteParticipantName={remoteParticipantName}
+      token={livekitToken}
+      serverUrl={wsUrl}
+      onLivenessMessage={onLivenessMessage}
+      onRegisterLivenessSender={onRegisterLivenessSender}
+      className="min-h-[300px]"
     />
   );
 });

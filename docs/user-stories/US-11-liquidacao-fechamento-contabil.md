@@ -66,25 +66,24 @@
   - `cnes`: Código CNES do ponto de telessaúde (até 7 dígitos).
   - `codigo_sigtap`: `"03.01.01.025-0"` (padrão teleconsulta SUS).
   - `carater_atendimento`: `"02"` (urgência ambulatorial).
-* **DTO de Saída (`BpaProducaoDTO` e `BpaArquivoExportadoDTO`):**
-  - `atendimento_id`: UUIDv7 do atendimento.
-  - `cnes`: Código CNES da unidade.
-  - `codigo_sigtap`: Procedimento SIGTAP consolidado.
-  - `carater_atendimento`: Caráter do atendimento.
-  - `consolidado_em`: Carimbo de data/hora UTC de consolidação.
-  - `conteudo`: Texto plano posicional formatado para o aplicativo BPA-Mag.
+* **Saída da Consolidação e Exportação (`ProducaoAmbulatorial` e `BpaArquivoExportadoDTO`):**
+  - `consolidar_teleconsulta(cmd, *, auto_commit=True)` devolve diretamente o agregado `ProducaoAmbulatorial` (ADR-008), tratando colisões `23505` via savepoint (`begin_nested`) + releitura idempotente e suportando modo flush-only (`auto_commit=False`).
+  - `listar_producao_por_competencia` retorna `(list[ProducaoAmbulatorial], total)` validado diretamente em `ListaProducaoAmbulatorialResponse` (`from_attributes=True`).
+  - `gerar_arquivo_bpa_i` é puramente read-only e delega para `BpaPositionalFormatter.compilar_remessa` (retornando `BpaArquivoExportadoDTO` com `conteudo`, `nome_arquivo`, `total_registros`, `total_folhas`, `competencia` e `pendencias`).
 * **Evento de Auditoria Forense:**
-  - Emissão compulsória do evento `PRODUCAO_AMBULATORIAL_CONSOLIDADA` (Módulo: `ambulatory`, Ator: `SISTEMA` / `WORKER_ARQ`), registrando `sigtap`, `cnes` e `atendimento_id`.
+  - Emissão compulsória do evento `PRODUCAO_AMBULATORIAL_CONSOLIDADA` na consolidação (Módulo: `ambulatory`, Ator: `AtorTipo.SISTEMA` / `AtorPapel.WORKER_ARQ`), registrando `sigtap`, `cnes` e `atendimento_id`. A rota `GET /api/v1/ambulatory/producao/exportar` nunca grava eventos nem executa writes.
 
 ---
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Modelo de Produção Ambulatorial:** Entidade rica `ProducaoAmbulatorial` em plataforma única (`src/modules/ambulatory/domain/models/producao_ambulatorial.py`) e migração consolidada `migrations/versions/0001_initial_schema.py`.
-- [x] **Serviço de Consolidação e BPA-I:** `ProducaoAmbulatorialService` com suporte a SIGTAP `03.01.01.025-0` e verificação estrita de idempotência (`src/modules/ambulatory/application/services/producao_service.py`).
-- [x] **Formatador Posicional SIA-SUS:** `BpaPositionalFormatter` com header (130 chars), detalhes (152 chars) e checksum no intervalo `[1111..2221]` (`src/modules/ambulatory/domain/bpa_formatter.py`).
-- [x] **DTOs de Aplicação:** `ConsolidarTeleconsultaCommand`, `BpaProducaoDTO`, `BpaArquivoExportadoDTO` e `ListaProducaoAmbulatorialDTO` em `src/modules/ambulatory/application/dtos.py`.
+- [x] **Modelo de Produção Ambulatorial:** Entidade rica `ProducaoAmbulatorial` validando `cnes.isdigit()` e `competencia` com `ValidationError` (`src/modules/ambulatory/domain/models/producao_ambulatorial.py`) e migração consolidada `migrations/versions/0001_initial_schema.py`.
+- [x] **Serviço de Consolidação e BPA-I:** `ProducaoAmbulatorialService` com `auto_commit`, idempotência sob `23505` e `GET /exportar` puramente read-only (`src/modules/ambulatory/application/services/producao_service.py`).
+- [x] **Formatador Posicional SIA-SUS:** `BpaPositionalFormatter.compilar_remessa` com validação de pendências reais, paginação `20/folha`, header (130 chars), detalhes (152 chars), preservação de `idade == 0` (`000`) e checksum no intervalo `[1111..2221]` (`src/modules/ambulatory/domain/bpa_formatter.py`).
+- [x] **Diretório SQL Honesto:** `SqlBpaDirectory` retorna `None` para campos ausentes sem sentinelas (`"20000101"`, CPF como CNS), preserva `idade == 0` e resolve CBO por especialidade (`251510`/`223710`/`225125`) e metadados `unidade_*` (`src/modules/ambulatory/infrastructure/adapters/sql_bpa_directory.py`).
+- [x] **DTOs de Aplicação (ADR-008):** `ConsolidarTeleconsultaCommand`, `BpaArquivoExportadoDTO`, `BpaPendenciaCadastral` e `BpaRegistroDetalheDTO` em `src/modules/ambulatory/application/dtos.py` (sem `BpaProducaoDTO`/`ListaProducaoAmbulatorialDTO`).
 - [x] **Composition Root de Ambulatory:** `src/modules/ambulatory/composition.py` exportando `get_producao_ambulatorial_service` e `ProducaoServiceDep`.
 - [x] **Camada de Apresentação HTTP Fina:** Schemas em `presentation/schemas.py`, autenticação em `presentation/dependencies.py` e rotas em `presentation/routers/producao_router.py`.
-- [x] **Testes Automatizados:** Testes unitários para o domínio, serviço e router em `tests/unit/test_ambulatory_domain.py`, `test_ambulatory_production_service.py` e `test_ambulatory_router.py`.
+- [x] **Frontend Ambulatory (Issue #167):** Slice dedicado em `frontend/src/features/ambulatory/api/use-producao-bpa.ts` (`useProducaoBpa`, `useExportarBpa`) e `frontend/src/features/ambulatory/components/producao-bpa-card.tsx` (`ProducaoBpaCard`, injetado via slot na rota `/gestor` em `frontend/src/routes/gestor.tsx`), inicializado com competência UTC (`getCompetenciaAtualUtc`), extração de CNES por `Content-Disposition` ou linha `03` (`extractCnesFromBpaContent`) e testes em `frontend/src/features/ambulatory/tests/producao-bpa-card.test.tsx`.
+- [x] **Testes Automatizados:** Testes unitários e de integração em `tests/unit/test_ambulatory_domain.py`, `test_ambulatory_production_service.py`, `test_ambulatory_router.py` e `tests/integration/test_ambulatory_integration.py`.
 

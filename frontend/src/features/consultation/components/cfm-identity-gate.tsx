@@ -5,27 +5,29 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useOptionalConsultationEncounter } from "../context/consultation-encounter-provider";
 import { type CfmIdentityGateData, cfmIdentityGateSchema } from "../schemas/consultation-schema";
 
 export interface CfmIdentityGateProps {
-  onVerificationChange: (isVerified: boolean, data?: CfmIdentityGateData) => void;
-  isReadOnly?: boolean;
+  onVerificationChange?: (isVerified: boolean, data?: CfmIdentityGateData) => void;
+  accessMode?: "editable" | "readonly";
 }
 
 /**
  * Gate de Segurança Camada 2 — Conferência Visual de Identidade sob CFM nº 2.314/2022.
- * Exige conferência visual de documento oficial com foto (RG/CNH/CNS) ou justificativa de emergência
- * antes de destravar a emissão de prescrição digital e finalização da consulta.
  */
-export function CfmIdentityGate({
-  onVerificationChange,
-  isReadOnly = false,
-}: CfmIdentityGateProps) {
+export function CfmIdentityGate({ onVerificationChange, accessMode }: CfmIdentityGateProps) {
+  const encounter = useOptionalConsultationEncounter();
+  const isLocked =
+    (accessMode ?? (encounter?.isFinalizado ? "readonly" : "editable")) === "readonly";
+
   const [tipoDocumento, setTipoDocumento] = useState<"RG" | "CNH" | "CNS" | "CPF_FOTO" | "">("RG");
   const [isEmergencia, setIsEmergencia] = useState(false);
   const [justificativa, setJustificativa] = useState("");
-  const [verificado, setVerificado] = useState(false);
+  const [verificadoLocal, setVerificadoLocal] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  const verificado = encounter ? encounter.identidadeVerificada : verificadoLocal;
 
   const handleConfirmar = () => {
     setErro(null);
@@ -40,21 +42,23 @@ export function CfmIdentityGate({
 
     const parseResult = cfmIdentityGateSchema.safeParse(payload);
     if (!parseResult.success) {
-      const msg =
+      setErro(
         parseResult.error.issues[0]?.message ||
-        "Selecione um documento válido ou insira justificativa detalhada.";
-      setErro(msg);
+          "Selecione um documento válido ou insira justificativa detalhada.",
+      );
       return;
     }
 
-    setVerificado(true);
-    onVerificationChange(true, payload);
+    setVerificadoLocal(true);
+    encounter?.setIdentidadeConfirmada(true, payload);
+    onVerificationChange?.(true, payload);
   };
 
   const handleRevogar = () => {
-    if (isReadOnly) return;
-    setVerificado(false);
-    onVerificationChange(false);
+    if (isLocked) return;
+    setVerificadoLocal(false);
+    encounter?.setIdentidadeConfirmada(false);
+    onVerificationChange?.(false);
   };
 
   return (
@@ -93,7 +97,7 @@ export function CfmIdentityGate({
                 </p>
               )}
             </div>
-            {!isReadOnly && (
+            {!isLocked && (
               <Button
                 type="button"
                 variant="ghost"
@@ -119,7 +123,7 @@ export function CfmIdentityGate({
                   name="opcao-identidade"
                   checked={!isEmergencia}
                   onChange={() => setIsEmergencia(false)}
-                  disabled={isReadOnly}
+                  disabled={isLocked}
                   className="size-3.5"
                 />
                 <span>Documento com Foto</span>
@@ -131,7 +135,7 @@ export function CfmIdentityGate({
                   name="opcao-identidade"
                   checked={isEmergencia}
                   onChange={() => setIsEmergencia(true)}
-                  disabled={isReadOnly}
+                  disabled={isLocked}
                   className="size-3.5"
                 />
                 <span>Exceção Médica de Emergência</span>
@@ -151,7 +155,7 @@ export function CfmIdentityGate({
                       onChange={(e) =>
                         setTipoDocumento(e.target.value as "RG" | "CNH" | "CNS" | "CPF_FOTO")
                       }
-                      disabled={isReadOnly}
+                      disabled={isLocked}
                       className="size-3"
                     />
                     <span>{doc}</span>
@@ -168,7 +172,7 @@ export function CfmIdentityGate({
                   placeholder="Ex: Paciente inconsciente ou em trauma grave"
                   value={justificativa}
                   onChange={(e) => setJustificativa(e.target.value)}
-                  disabled={isReadOnly}
+                  disabled={isLocked}
                   className="h-8 text-xs"
                 />
               </div>
@@ -186,7 +190,7 @@ export function CfmIdentityGate({
               size="sm"
               variant="outline"
               onClick={handleConfirmar}
-              disabled={isReadOnly}
+              disabled={isLocked}
               className="w-full text-xs font-medium h-8"
             >
               Confirmar Conferência Visual de Identidade

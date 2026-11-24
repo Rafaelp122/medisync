@@ -5,18 +5,16 @@ Especificação: docs/user-stories/US-05-regularizacao-elegibilidade-fila.md
 """
 
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import pytest
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.core.errors import NotFoundError, ValidationError
-from src.modules.queue.application.dtos import (
-    RegularizacaoFilaCommand,
-)
-from src.modules.queue.application.services.alocacao_service import (
-    AlocacaoChamadaService,
-)
+from src.modules.queue.application.dtos import RegularizacaoFilaCommand
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.domain.exceptions import TransicaoEstadoInvalidaError
 from src.modules.queue.domain.models import (
@@ -26,7 +24,7 @@ from src.modules.queue.domain.models import (
 )
 from src.modules.queue.domain.scoring import calcular_score
 
-from tests.doubles import FakeAsyncSession, FakeAuditTrail, FakeValkey
+from tests.doubles import FakeAsyncSession, FakeAuditTrail, FakeQueueEngine
 
 
 @pytest.mark.asyncio
@@ -42,7 +40,6 @@ async def test_regularizar_contingencia_sucesso_restaura_score_original_no_valke
     t0 = now - timedelta(minutes=30)
     t1 = now - timedelta(minutes=5)
 
-    # Paciente 1 admitido há 30 min (T0), prioridade URGENTE, retido em elegibilidade
     paciente_1 = Atendimento(
         id=uuid4(),
         paciente_id=uuid4(),
@@ -52,8 +49,6 @@ async def test_regularizar_contingencia_sucesso_restaura_score_original_no_valke
         criado_em=t0,
         data_entrada_fila=t0,
     )
-
-    # Paciente 2 admitido há 5 min (T1), prioridade URGENTE, já ativo na fila de aptos
     paciente_2 = Atendimento(
         id=uuid4(),
         paciente_id=uuid4(),
@@ -63,24 +58,23 @@ async def test_regularizar_contingencia_sucesso_restaura_score_original_no_valke
         data_entrada_fila=t1,
     )
 
-    fake_valkey = FakeValkey()
-    score_p2 = calcular_score(paciente_2.prioridade_clinica, t1)
-    await fake_valkey.zadd("fila:aptos", {str(paciente_2.id): score_p2})
+    engine = FakeQueueEngine()
+    engine.fila_scores[paciente_2.id] = calcular_score(
+        paciente_2.prioridade_clinica, t1
+    )
 
     fake_session = FakeAsyncSession(
         entities={paciente_1.id: paciente_1, paciente_2.id: paciente_2}
     )
-
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
-        db_session=cast("Any", fake_session),
-        alocacao_service=MagicMock(spec=AlocacaoChamadaService),
+        queue_engine=engine,
+        db_session=cast("AsyncSession", fake_session),
     )
 
     cmd = RegularizacaoFilaCommand(
         atendimento_id=paciente_1.id,
         tipo_contingencia="CONTINGENCIA_ASSISTENCIAL",
-        motivo="Indisponibilidade gateway operadora",
+        motivo="Indisponibilidade temporária na validação CADSUS",
     )
 
     result = await fila_service.regularizar_atendimento(cmd)
@@ -88,25 +82,19 @@ async def test_regularizar_contingencia_sucesso_restaura_score_original_no_valke
     assert result.promovido is True
     assert result.status == StatusAtendimento.APTO_PARA_CHAMADA.value
 
-    score_p1 = await fake_valkey.zscore("fila:aptos", str(paciente_1.id))
-    score_p2_valkey = await fake_valkey.zscore("fila:aptos", str(paciente_2.id))
+    score_p1 = engine.fila_scores.get(paciente_1.id)
+    score_p2 = engine.fila_scores.get(paciente_2.id)
     assert score_p1 is not None
-    assert score_p2_valkey is not None
-    # Score de Paciente 1 (T0) deve ser menor que o de Paciente 2 (T1) (FIFO justo)
-    assert score_p1 < score_p2_valkey
+    assert score_p2 is not None
+    assert score_p1 < score_p2
 
-    # Paciente 1 assume a primeira posição na fila (FIFO justo RN01)
-    rank_p1 = await fake_valkey.zrank("fila:aptos", str(paciente_1.id))
+    rank_p1, _ = await engine.obter_posicao_e_tamanho(paciente_1.id)
     assert rank_p1 == 0
 
 
 @pytest.mark.asyncio
 async def test_regularizar_idempotencia_duplo_acionamento() -> None:
-    """Segunda regularização para atendimento já apto é idempotente (sem mutação).
-
-    Regras: RN03 (Idempotência de Regularização), NC-QUE-04.
-    História: docs/user-stories/US-05-regularizacao-elegibilidade-fila.md
-    """
+    """Segunda regularização para atendimento já apto é idempotente (sem mutação)."""
     now = datetime.now(UTC)
     t0 = now - timedelta(minutes=20)
 
@@ -119,16 +107,14 @@ async def test_regularizar_idempotencia_duplo_acionamento() -> None:
         data_entrada_fila=t0,
     )
 
-    fake_valkey = FakeValkey()
+    engine = FakeQueueEngine()
     score_original = calcular_score(paciente.prioridade_clinica, t0)
-    await fake_valkey.zadd("fila:aptos", {str(paciente.id): score_original})
+    engine.fila_scores[paciente.id] = score_original
 
     fake_session = FakeAsyncSession(entities={paciente.id: paciente})
-
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
-        db_session=cast("Any", fake_session),
-        alocacao_service=MagicMock(spec=AlocacaoChamadaService),
+        queue_engine=engine,
+        db_session=cast("AsyncSession", fake_session),
     )
 
     cmd = RegularizacaoFilaCommand(
@@ -141,24 +127,15 @@ async def test_regularizar_idempotencia_duplo_acionamento() -> None:
 
     assert result.promovido is False
     assert result.status == "already_promoted"
-
-    score_atual = await fake_valkey.zscore("fila:aptos", str(paciente.id))
-    assert score_atual == score_original
+    assert engine.fila_scores[paciente.id] == score_original
 
 
 @pytest.mark.asyncio
 async def test_regularizar_atendimento_inexistente() -> None:
-    """Tentativa de regularizar atendimento inexistente lança NotFoundError.
-
-    Regras: Tratamento de Erros Ricos (ADR-001).
-    História: docs/user-stories/US-05-regularizacao-elegibilidade-fila.md
-    """
-    fake_valkey = FakeValkey()
-    fake_session = FakeAsyncSession()
+    """Tentativa de regularizar atendimento inexistente lança NotFoundError."""
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
-        db_session=cast("Any", fake_session),
-        alocacao_service=MagicMock(spec=AlocacaoChamadaService),
+        queue_engine=FakeQueueEngine(),
+        db_session=cast("AsyncSession", FakeAsyncSession()),
     )
 
     inexistente_id = uuid4()
@@ -175,11 +152,7 @@ async def test_regularizar_atendimento_inexistente() -> None:
 
 @pytest.mark.asyncio
 async def test_regularizar_status_invalido_rejeita_com_offending_value() -> None:
-    """Status incompatível é rejeitado com mensagem contendo o valor ofensivo.
-
-    Regras: Transição Válida de Estados Clínicos, Clean Code para Agentes de IA.
-    História: docs/user-stories/US-05-regularizacao-elegibilidade-fila.md
-    """
+    """Status incompatível é rejeitado com mensagem contendo o valor ofensivo."""
     paciente_em_atendimento = Atendimento(
         id=uuid4(),
         paciente_id=uuid4(),
@@ -187,14 +160,12 @@ async def test_regularizar_status_invalido_rejeita_com_offending_value() -> None
         prioridade_clinica=PrioridadeClinica.URGENTE,
     )
 
-    fake_valkey = FakeValkey()
     fake_session = FakeAsyncSession(
         entities={paciente_em_atendimento.id: paciente_em_atendimento}
     )
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
-        db_session=cast("Any", fake_session),
-        alocacao_service=MagicMock(spec=AlocacaoChamadaService),
+        queue_engine=FakeQueueEngine(),
+        db_session=cast("AsyncSession", fake_session),
     )
 
     cmd = RegularizacaoFilaCommand(
@@ -211,11 +182,7 @@ async def test_regularizar_status_invalido_rejeita_com_offending_value() -> None
 
 @pytest.mark.asyncio
 async def test_regularizar_motivo_vazio_lanca_validation_error() -> None:
-    """Motivo vazio ou apenas espaços em branco rejeita com ValidationError.
-
-    Regras: Validação Estrita de Dados de Entrada, Rastreabilidade de Auditoria.
-    História: docs/user-stories/US-05-regularizacao-elegibilidade-fila.md
-    """
+    """Motivo vazio ou apenas espaços em branco rejeita com ValidationError."""
     paciente = Atendimento(
         id=uuid4(),
         paciente_id=uuid4(),
@@ -223,12 +190,10 @@ async def test_regularizar_motivo_vazio_lanca_validation_error() -> None:
         prioridade_clinica=PrioridadeClinica.URGENTE,
     )
 
-    fake_valkey = FakeValkey()
     fake_session = FakeAsyncSession(entities={paciente.id: paciente})
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
-        db_session=cast("Any", fake_session),
-        alocacao_service=MagicMock(spec=AlocacaoChamadaService),
+        queue_engine=FakeQueueEngine(),
+        db_session=cast("AsyncSession", fake_session),
     )
 
     for motivo_invalido in ["", "   ", "\t  \n"]:
@@ -242,12 +207,8 @@ async def test_regularizar_motivo_vazio_lanca_validation_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_regularizar_reenvio_convenio_enfileira_tarefa_assincrona() -> None:
-    """Reenvio de convênio enfileira nova tarefa ARQ e mantém status aguardando.
-
-    Regras: US-05, RF-02, RF-05.
-    História: docs/user-stories/US-05-regularizacao-elegibilidade-fila.md
-    """
+async def test_regularizar_contingencia_promove_e_insere_fila() -> None:
+    """Regularização assistencial promove atendimento para APTO e insere no ZSET."""
     paciente = Atendimento(
         id=uuid4(),
         paciente_id=uuid4(),
@@ -256,16 +217,11 @@ async def test_regularizar_reenvio_convenio_enfileira_tarefa_assincrona() -> Non
         tcle_hash="a" * 64,
     )
 
-    fake_valkey = FakeValkey()
+    engine = FakeQueueEngine()
     fake_session = FakeAsyncSession(entities={paciente.id: paciente})
-    mock_arq_pool = MagicMock()
-    mock_arq_pool.enqueue_job = AsyncMock()
-
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
-        db_session=cast("Any", fake_session),
-        alocacao_service=MagicMock(spec=AlocacaoChamadaService),
-        arq_pool=mock_arq_pool,
+        queue_engine=engine,
+        db_session=cast("AsyncSession", fake_session),
     )
 
     cmd = RegularizacaoFilaCommand(
@@ -279,6 +235,7 @@ async def test_regularizar_reenvio_convenio_enfileira_tarefa_assincrona() -> Non
     assert result.promovido is True
     assert result.status == StatusAtendimento.APTO_PARA_CHAMADA.value
     assert paciente.status == StatusAtendimento.APTO_PARA_CHAMADA.value
+    assert paciente.id in engine.fila_scores
 
 
 @pytest.mark.asyncio
@@ -291,14 +248,12 @@ async def test_regularizar_atendimento_registra_audit_trail_sem_refresh() -> Non
         prioridade_clinica=PrioridadeClinica.URGENTE,
         tcle_hash="b" * 64,
     )
-    fake_valkey = FakeValkey()
     fake_session = FakeAsyncSession(entities={paciente.id: paciente})
     audit = FakeAuditTrail()
 
     fila_service = FilaService(
-        valkey=cast("Any", fake_valkey),
-        db_session=cast("Any", fake_session),
-        alocacao_service=MagicMock(spec=AlocacaoChamadaService),
+        queue_engine=FakeQueueEngine(),
+        db_session=cast("AsyncSession", fake_session),
         audit_trail=audit,
     )
 

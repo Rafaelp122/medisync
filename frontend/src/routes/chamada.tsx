@@ -1,6 +1,7 @@
-import { createRoute, redirect } from "@tanstack/react-router";
+import { createRoute, lazyRouteComponent, redirect } from "@tanstack/react-router";
+import { Suspense } from "react";
 import type { LiveKitTokenResponse } from "@/api/generated/types.gen";
-import { ConsultationRoomPage } from "@/features/consultation/pages/consultation-room-page";
+import { RoutePendingFallback } from "@/components/route-fallbacks";
 import {
   getStoredCallData,
   getStoredSession,
@@ -8,9 +9,10 @@ import {
 } from "@/lib/session-storage";
 import { rootRoute } from "./root";
 
-interface ChamadaLocationState {
-  callData?: LiveKitTokenResponse;
-}
+const LazyConsultationRoomPage = lazyRouteComponent(
+  () => import("@/features/consultation/pages/consultation-room-page"),
+  "ConsultationRoomPage",
+);
 
 export const chamadaRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -21,8 +23,7 @@ export const chamadaRoute = createRoute({
       throw redirect({ to: "/entrar" });
     }
 
-    const state = location.state as ChamadaLocationState | undefined;
-    const callData = state?.callData ?? getStoredCallData();
+    const callData = location.state?.callData ?? getStoredCallData();
     if (!callData?.token) {
       throw redirect({ to: session.atendimentoId ? "/fila" : "/home" });
     }
@@ -34,6 +35,10 @@ export const chamadaRoute = createRoute({
       session: StoredPatientSession;
       callData: LiveKitTokenResponse;
     };
-    return <ConsultationRoomPage session={context.session} callData={context.callData} />;
+    return (
+      <Suspense fallback={<RoutePendingFallback />}>
+        <LazyConsultationRoomPage session={context.session} callData={context.callData} />
+      </Suspense>
+    );
   },
 });

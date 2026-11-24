@@ -1,6 +1,7 @@
 import { isRedirect } from "@tanstack/react-router";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { handleRefreshTokenApiV1AuthRefreshPost } from "@/api/generated/msw.gen";
 import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/auth-token";
 import {
   getStoredDoctorSession,
@@ -58,9 +59,15 @@ describe("Session Persistence & Silent Rehydration on F5 Reload (ADR-005, ADR-01
 
       let refreshChamado = false;
       server.use(
-        http.post("*/api/v1/auth/refresh", () => {
+        handleRefreshTokenApiV1AuthRefreshPost(() => {
           refreshChamado = true;
-          return HttpResponse.json({});
+          return HttpResponse.json({
+            access_token: "unused-token",
+            refresh_token: "unused-cookie",
+            token_type: "Bearer",
+            expires_in: 900,
+            refresh_expires_in: 604800,
+          });
         }),
       );
 
@@ -80,15 +87,15 @@ describe("Session Persistence & Silent Rehydration on F5 Reload (ADR-005, ADR-01
       expect(getAccessToken()).toBeNull();
 
       server.use(
-        http.post("*/api/v1/auth/refresh", () => {
-          return HttpResponse.json({
+        handleRefreshTokenApiV1AuthRefreshPost({
+          body: {
             access_token: "rotated-doctor-access-token",
             refresh_token: "new-cookie",
             token_type: "Bearer",
             expires_in: 900,
             refresh_expires_in: 604800,
             mfa_requerido: false,
-          });
+          },
         }),
       );
 
@@ -107,7 +114,7 @@ describe("Session Persistence & Silent Rehydration on F5 Reload (ADR-005, ADR-01
       expect(getAccessToken()).toBeNull();
 
       server.use(
-        http.post("*/api/v1/auth/refresh", () => {
+        handleRefreshTokenApiV1AuthRefreshPost(() => {
           return HttpResponse.json(
             { detail: "Token de refresh expirado ou revogado" },
             { status: 401 },
@@ -147,20 +154,20 @@ describe("Session Persistence & Silent Rehydration on F5 Reload (ADR-005, ADR-01
         usuarioId: "gestor-1",
         nome: "Gestora Maria",
         email: "gestor@saude.gov.br",
-        papel: "GESTOR",
+        papel: "GESTOR_UNIDADE",
       });
       expect(getAccessToken()).toBeNull();
 
       server.use(
-        http.post("*/api/v1/auth/refresh", () => {
-          return HttpResponse.json({
+        handleRefreshTokenApiV1AuthRefreshPost({
+          body: {
             access_token: "rotated-manager-access-token",
             refresh_token: "new-cookie",
             token_type: "Bearer",
             expires_in: 900,
             refresh_expires_in: 604800,
             mfa_requerido: false,
-          });
+          },
         }),
       );
 
@@ -174,12 +181,12 @@ describe("Session Persistence & Silent Rehydration on F5 Reload (ADR-005, ADR-01
         usuarioId: "gestor-1",
         nome: "Gestora Maria",
         email: "gestor@saude.gov.br",
-        papel: "GESTOR",
+        papel: "GESTOR_UNIDADE",
       });
       expect(getAccessToken()).toBeNull();
 
       server.use(
-        http.post("*/api/v1/auth/refresh", () => {
+        handleRefreshTokenApiV1AuthRefreshPost(() => {
           return HttpResponse.json({ detail: "Sessão corporativa encerrada" }, { status: 401 });
         }),
       );
@@ -192,6 +199,53 @@ describe("Session Persistence & Silent Rehydration on F5 Reload (ADR-005, ADR-01
         expect((err as unknown as RedirectLike).options?.to).toBe("/interno/login");
         expect(getAccessToken()).toBeNull();
         expect(getStoredManagerSession()).toBeNull();
+      }
+    });
+
+    it("IT-PERSIST-08: Bloqueia e purga sessão em /gestor quando papel armazenado ou JWT não for GESTOR_UNIDADE", async () => {
+      const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+      const medicoPayload = btoa(JSON.stringify({ sub: "user-1", papel: "MEDICO" }));
+      setAccessToken(`${header}.${medicoPayload}.sig`);
+      saveStoredManagerSession({
+        usuarioId: "gestor-1",
+        nome: "Gestora Inválida",
+        email: "medico@saude.gov.br",
+        papel: "GESTOR_UNIDADE",
+      });
+
+      try {
+        await runGestorBeforeLoad({});
+        expect.unreachable("Deveria ter bloqueado acesso de MEDICO ao /gestor");
+      } catch (err) {
+        expect(isRedirect(err)).toBe(true);
+        expect((err as unknown as RedirectLike).options?.to).toBe("/interno/login");
+        expect(getAccessToken()).toBeNull();
+        expect(getStoredManagerSession()).toBeNull();
+      }
+    });
+
+    it("IT-PERSIST-09: Bloqueia e purga sessão em /medico quando JWT possuir papel divergente (GESTOR_UNIDADE)", async () => {
+      const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+      const gestorPayload = btoa(JSON.stringify({ sub: "user-2", papel: "GESTOR_UNIDADE" }));
+      setAccessToken(`${header}.${gestorPayload}.sig`);
+      saveStoredDoctorSession({
+        medicoId: "med-1",
+        medicoNome: "Dr. Eduardo",
+        crmUf: "12345/SP",
+        identificador: "12345/SP",
+        papel: "MEDICO",
+      });
+
+      try {
+        await (
+          medicoRoute.options.beforeLoad as unknown as BeforeLoadFn<{ doctorSession: unknown }>
+        )({});
+        expect.unreachable("Deveria ter bloqueado acesso de GESTOR_UNIDADE ao /medico");
+      } catch (err) {
+        expect(isRedirect(err)).toBe(true);
+        expect((err as unknown as RedirectLike).options?.to).toBe("/interno/login");
+        expect(getAccessToken()).toBeNull();
+        expect(getStoredDoctorSession()).toBeNull();
       }
     });
   });

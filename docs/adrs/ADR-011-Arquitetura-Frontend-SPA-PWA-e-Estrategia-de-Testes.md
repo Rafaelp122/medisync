@@ -72,23 +72,23 @@ Adotamos a **Opção 3: Arquitetura de Frontend SPA/PWA com React 19, Hey API e 
 ### 4.2 Padrões de Composição e Clean Code (Skills Vercel)
 1. **Zero Boolean Props em Componentes Complexos**: Proibida a proliferação de flags booleanas para alternar comportamentos visuais; adotar componentes compostos (*Compound Components*) e variantes explícitas (`<SamuEmergencyModal />` em vez de `<Modal isSamu={true} />`).
 2. **Desacoplamento Headless & Convenções React 19**: A lógica de chamada de rede, reconexão WebSocket e tratamento RFC 7807 reside exclusivamente em *Custom Hooks* (`useQueuePosition`, `useLiveKitRoom`). Os componentes visuais são funções puras que recebem props primitivas. Proibido `forwardRef` (usar prop `ref` convencional do React 19) e consumo de contexto com `use(Context)`.
-3. **Proibição de Barrel Imports no Hey API**: Importar diretamente dos arquivos folha (`@/api/generated/services.gen`, `@/api/generated/types.gen`, `@/api/generated/zod.gen`, `@/api/generated/msw.gen`) para evitar inchaço no bundle e degradação do HMR no Vite.
+3. **Proibição de Barrel Imports no Hey API**: Importar diretamente dos arquivos folha (`@/api/generated/sdk.gen`, `@/api/generated/types.gen`, `@/api/generated/zod.gen`, `@/api/generated/msw.gen`) para evitar inchaço no bundle e degradação do HMR no Vite.
 4. **Blindagem contra Re-renders Críticos (WebRTC e Fila)**: Valores transientes de alta frequência (medidores de volume WebRTC, timers de contagem regressiva) devem residir em `useRef` ou componentes folha isolados, sem provocar re-render na árvore inteira. Utilizar `startTransition` para atualizações de baixa prioridade (ex.: filtros de busca na fila médica).
 5. **Lazy-Loading de Mídia (LiveKit SDK)**: O SDK do LiveKit (`livekit-client`, `@livekit/components-react`) e visualizadores de PDF devem ser carregados dinamicamente via `React.lazy()`, impedindo o inchaço do bundle inicial do paciente.
 6. **View Transitions SPA e Acessibilidade**: Transições visuais comunicam continuidade espacial em Vite SPA via `document.startViewTransition`. Polling e revalidações em segundo plano (TanStack Query a cada 5s) nunca disparam animações de transição (`default="none"`). Respeito estrito a `@media (prefers-reduced-motion: reduce)`, desativando animações e zerando durações via CSS para pacientes sensíveis.
 
 ### 4.3 Estratégia de Testes (O Troféu de Testes)
-* **Estático**: `tsc --noEmit` em modo estrito (`strict: true`) e ESLint sobre os contratos gerados pelo Hey API.
+* **Estático**: `tsc --noEmit` em modo estrito (`strict: true`) e Biome (`biome check .`) sobre os contratos gerados pelo Hey API.
 * **Unitário (Vitest)**: Exclusivo para funções puras de negócio (cálculo de score clínico, validação algorítmica de CPF/CNS, sanitização e refinamentos de schemas Zod).
 * **Integração de Componentes e Rotas (Vitest + React Testing Library + MSW v2)**: Renderização de telas e rotas completas em ambiente `jsdom` com simulação de rede na camada HTTP via Mock Service Worker (MSW v2) usando factories tipadas de `@/api/generated/msw.gen`. Para testes de navegação cliente e Route Guards, utiliza-se `createMemoryHistory({ initialEntries })` sem acoplamento a APIs de janela (`window.location`). Proibido mockar componentes ou hooks internos. Contagens regressivas locais utilizam `vi.useFakeTimers()` e `await vi.advanceTimersByTimeAsync()`, com teardown obrigatório em `afterEach(() => vi.useRealTimers())` e `afterEach(() => server.resetHandlers())`.
 * **End-to-End & Colaboração (Playwright)**: Jornadas assistenciais completas no Chromium/Firefox com locators acessíveis (`getByRole`, `getByLabel`) e asserções web-first sem `sleep()` arbitrário. O timeout de 45 segundos de No-Show ([US-07](../user-stories/US-07-alocacao-chamada-medica.md)/[US-08](../user-stories/US-08-atendimento-chamada-no-show.md)) é testado determinística e instantaneamente via `page.clock.install()` invocado **obrigatoriamente antes de `page.goto()`**, avançando com `await page.clock.fastForward(45_000)`. A colaboração em tempo real médico-paciente utiliza múltiplos contextos isolados de navegador (`browser.newContext()`) com encerramento explícito (`await context.close()`).
 * **Acessibilidade Clínica Automatizada (WCAG 2.1 AA)**: Auditoria contínua com `@axe-core/playwright` configurado com tags canônicas `['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']` e validação de supressão de animações para pacientes sensíveis sob `@media (prefers-reduced-motion: reduce)`.
 * **Padrões Canônicos**: Detalhados em [Frontend Testing Patterns](../reference/testing/frontend-testing-patterns.md).
 
-### 4.4 Decomposição em Rotas Declarativas, Route Guards e Deep Linking (Issue #141)
-Para eliminar monolitos de estado (*god components*) na raiz do frontend, a navegação é orquestrada por rotas tipadas em `frontend/src/routes/`:
+### 4.4 Decomposição em Rotas Declarativas, Route Guards, SessionTransport e Slices (Issue #141 / #167)
+Para eliminar monolitos de estado (*god components*) e vazamento de tokens stale na borda HTTP, a navegação e o transporte obedecem às seguintes fronteiras:
 1. **Mapa de Rotas Canônico (Portal Público, Portal Cidadão & Equipe Interna):**
-   - `/`: Landing Page pública de portfólio e apresentação 100% SUS do MediSync Express (`PortfolioLandingPage`, com links para `/home`, `/cadastro`, `/entrar` e `/validar`, sem exposição da área interna).
+   - `/`: Landing Page pública de portfólio e apresentação 100% SUS do MediSync Express (`PortfolioLandingPage`, com `PublicLandingLayout` recebendo `footer` via composição e links para `/home`, `/cadastro`, `/entrar` e `/validar`).
    - `/home`: Portal fechado autenticado do cidadão/paciente (`CitizenHomePage`), centralizando fila ativa, agendamentos eMulti, histórico de atendimentos e receitas digitais.
    - `/entrar`: Entrada do cidadão (`PatientAuthPage` / `PatientHybridAuthCard` — IAM Híbrido: identificação única anti-enumeração, OTP SMS, Passkeys WebAuthn, senha opcional e Gov.br opcional via `GOVBR_OIDC_ENABLED`).
    - `/cadastro`: Auto-cadastro civil do cidadão no portal SUS (`PatientRegisterPage` / `PatientRegisterForm` com e-mail obrigatório, senha opcional e disparo inicial de OTP).
@@ -103,15 +103,17 @@ Para eliminar monolitos de estado (*god components*) na raiz do frontend, a nave
    - `/receitas`: Visualização e download de receitas digitais, atestados e documentos ICP-Brasil (`PrescriptionsPage`).
    - `/perfil`: Dados cadastrais CFM do cidadão, dependentes legais e gerenciamento de Passkeys (`ProfilePage`).
    - `/validar` e `/validar/$token`: Portal público de verificação de autenticidade de prescrições e atestados ICP-Brasil (`DocumentValidationPage` por QR Code / hash SHA-256, com preenchimento automático de token na rota parametrizada).
-   - `/medico`: Estação de trabalho clínica do médico plantonista (`DoctorWorkstationPage` + `ProfessionalSchedulePanel`) protegida por guarda de sessão médica e cookie de refresh (redireciona para `/interno/login` se ausente).
-   - `/gestor`: Painel operacional de telemetria e gestão da unidade (`TelemetryDashboardPage`), redirecionando para `/interno/login` se não autenticado.
-2. **Route Guards Síncronos (`beforeLoad`):**
-   - Interceptação de transição antes da renderização de componentes com `throw redirect({ to: '...' })`.
-   - Leitura de sessões isolada nos helpers puros de `frontend/src/lib/session-storage.ts`.
-3. **Passagem Segura de Credenciais de Mídia:**
-   - Tokens WebRTC de chamada (`LiveKitTokenResponse`) são passados via *Router Navigation State* e *Session Storage*, impedindo exposição em query strings ou URLs (ADR-010).
-4. **Composition Root Enxuto:**
-   - `frontend/src/App.tsx` atua exclusivamente como composição global de providers (`QueryClientProvider` e `RouterProvider`) em menos de 30 linhas.
+   - `/medico`: Estação de trabalho clínica do médico plantonista (`DoctorWorkstationPage` + `ProfessionalSchedulePanel`) protegida por guarda `SessionTransport.ensureStaffSession("MEDICO")` e hidratada via `GET /api/v1/auth/me` (redireciona para `/interno/login` se ausente ou papel divergente).
+   - `/gestor`: Painel operacional de telemetria e gestão da unidade (`TelemetryDashboardPage` com slot `ProducaoBpaCard` de `features/ambulatory/`), protegido por `SessionTransport.ensureStaffSession("GESTOR_UNIDADE")`.
+2. **Route Guards Assíncronos e Transporte Unificado (`SessionTransport`):**
+   - `frontend/src/lib/session-transport.ts` encapsula o access token corporativo em memória privada, o silent refresh com mutex + `AbortSignal.timeout`, a validação estrita de papel (`MEDICO` / `GESTOR_UNIDADE`), a invalidação de cache `QueryClient` em 401 terminal (`subscribeInvalidated`) e o escopo dinâmico `getQueryScope()` sem passar props `token` estáticas para componentes ou hooks.
+   - `frontend/src/router.tsx` utiliza code-splitting via `lazyRouteComponent` por rota e fallback explícito em `defaultErrorComponent` / `defaultPendingComponent`.
+3. **Hooks Compartilhados e Segregação por Feature:**
+   - Hooks consumidos por mais de um bounded context (ex.: `frontend/src/api/hooks/use-painel-telemetria.ts`, `use-especialidades.ts`, `use-meus-agendamentos.ts`) residem em `frontend/src/api/hooks/`, eliminando imports cruzados entre `features/*` (como `features/ambulatory/` isolado de `features/telemetry/`).
+4. **Passagem Segura de Credenciais de Mídia:**
+   - Tokens WebRTC de chamada (`LiveKitTokenResponse`) são passados via *Router Navigation State* (`HistoryState` em `router.tsx`) e *Session Storage*, impedindo exposição em query strings ou URLs (ADR-010).
+5. **Composition Root Enxuto:**
+   - `frontend/src/App.tsx` atua exclusivamente como composição global de providers (`QueryClientProvider` conectado a `sessionTransport.subscribeInvalidated` e `RouterProvider`) em menos de 40 linhas.
 
 ---
 

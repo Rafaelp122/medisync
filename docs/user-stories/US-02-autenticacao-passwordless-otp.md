@@ -68,13 +68,15 @@
     "codigo": "123456"
   }
   ```
-  *Resposta (`200 OK`):*
+  *Resposta (`200 OK`, `VerificarOtpResponse`):*
   ```json
   {
     "access_token": "eyJhbGciOi...",
     "token_type": "bearer",
+    "expires_in": 900,
+    "paciente_id": "018f3a5b-...",
     "role": "PACIENTE",
-    "paciente_id": "018f3a5b-..."
+    "atendimento_id": null
   }
   ```
 
@@ -82,8 +84,8 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Segurança Criptográfica:** Geração via CSPRNG (`secrets.randbelow(1_000_000)`) e armazenamento com hash SHA-256 no Valkey com TTL de 300s (`src/modules/auth/application/services/patient_auth_service.py`).
-- [x] **Proteção de Acesso:** Rate limiting com contadores voláteis no Valkey bloqueando após 3 falhas com HTTP 429 `OtpTentativasExcedidasError` (`Retry-After: 900`) e 3 envios/15min via `OtpRateLimitExcedidoError`; payload inclui campo `role: "PACIENTE"` emitido conforme ADR-012.
+- [x] **Segurança Criptográfica:** Geração via CSPRNG (`secrets.randbelow(1_000_000)`) e armazenamento com hash SHA-256 via `ChallengeStorePort` (`ValkeyChallengeStore`, script Lua atômico `verify_and_increment_otp` e TTL de 300s) sem fallback em memória em produção (`src/modules/auth/application/services/patient_auth_service.py` e `src/modules/auth/infrastructure/valkey_challenge_store.py`).
+- [x] **Proteção de Acesso e CADSUS:** Rate limiting obrigatório via `AuthRateLimiterPort` (sem dupla prefixação `ratelimit:`) bloqueando após 3 falhas com HTTP 429 `OtpTentativasExcedidasError` (`Retry-After: 900`), 3 envios/15min via `OtpRateLimitExcedidoError` e rate limit por IP em `/auth/patient/cadsus` (exigindo `data_nascimento`, 2º fator civil e `validate_cns` quando por CPF); `FakeSmsSenderAdapter` reside em `src/modules/auth/infrastructure/fake_sms_adapter.py`; tokens JWT com TTL de 15 min emitidos via `TokenServicePort` conforme ADR-012.
 - [x] **Apresentação:** Router fino `patient_auth_router.py` integrado em `src/modules/auth/presentation/routers/`.
 - [x] **Frontend Roteamento (Issue #141):** Rota declarativa `/entrar` (`frontend/src/routes/entrar.tsx`, `PatientHybridAuthCard`) e redirect legado em `/otp` (`frontend/src/routes/otp.tsx`) com navegação declarativa para `/fila` ou `/home`.
 - [x] **Testes Automatizados:**
@@ -110,7 +112,7 @@
 
 ### 5.3 Troféu de Testes do Frontend
 - **Integração de Tela (Vitest + RTL + MSW v2):**
-  - `frontend/src/features/onboarding/tests/solicitar-otp-form.test.tsx`, `frontend/src/features/onboarding/tests/verificar-otp-form.test.tsx` e `frontend/src/features/auth/tests/patient-hybrid-auth.test.tsx`.
+  - `frontend/src/features/auth/tests/patient-hybrid-auth.test.tsx` e `frontend/src/features/auth/tests/session-persistence.test.tsx`.
   - `frontend/src/App.test.tsx`: validação de rotas, guards e login OTP do cidadão.
   - Simulação HTTP na camada de transporte via factory tipada `solicitarOtpPacienteMock` (`@/api/generated/msw.gen`).
   - Avanço determinístico do cooldown de 60s via `vi.useFakeTimers()` e `await vi.advanceTimersByTimeAsync(60_000)` com teardown mandatório em `afterEach(() => vi.useRealTimers())`.

@@ -83,7 +83,6 @@ class CommonSettings(BaseSettings):
     S3_ACCESS_KEY_ID: str = "medisync"
     S3_SECRET_ACCESS_KEY: str = "medisync123"
     S3_REGION_NAME: str = "us-east-1"
-    S3_PRESIGNED_EXPIRATION_SECONDS: int = 300
     STORAGE_BACKEND: Literal["fake", "s3"] = "fake"
 
     # --- Adapters & Backend Selectors ---
@@ -117,8 +116,6 @@ class CommonSettings(BaseSettings):
     PSC_BIRDID_ENDPOINT: str = "https://api.birdid.com.br"
     PSC_SAFEID_ENDPOINT: str = "https://api.safeid.com.br"
     PSC_VIDAAS_ENDPOINT: str = "https://api.vidaas.com.br"
-    PSC_CLIENT_ID: str = "medisync-psc-client"
-    PSC_CLIENT_SECRET: str = "dev-psc-secret"
 
     # --- Facial Liveness (US-15 / Portaria 344/98 Lista C1/C5) ---
     LIVENESS_PROVIDER: Literal["valkey_sandbox", "mock", "govbr", "datavalid"] = (
@@ -163,6 +160,10 @@ class DevelopmentSettings(CommonSettings):
 
     ENVIRONMENT: EnvironmentType = "development"
     DEBUG: bool = True
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
     STORAGE_BACKEND: Literal["fake", "s3"] = "fake"
     NOTIFICATION_PROVIDER: Literal["console", "fake", "noop"] = "console"
     RATE_LIMIT_BACKEND: Literal["valkey", "memory"] = "valkey"
@@ -180,6 +181,10 @@ class TestSettings(CommonSettings):
 
     ENVIRONMENT: EnvironmentType = "test"
     DEBUG: bool = True
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
     STORAGE_BACKEND: Literal["fake", "s3"] = "fake"
     NOTIFICATION_PROVIDER: Literal["console", "fake", "noop"] = "fake"
     RATE_LIMIT_BACKEND: Literal["valkey", "memory"] = "memory"
@@ -220,17 +225,25 @@ class ProductionSettings(CommonSettings):
                 f"DEBUG={self.DEBUG!r} não é permitido em produção/staging; "
                 "esperado DEBUG=False."
             )
-        if "dev-insecure" in self.SECRET_KEY or len(self.SECRET_KEY) < 32:
+        has_dev_secret = "dev-insecure" in self.SECRET_KEY
+        if has_dev_secret or len(self.SECRET_KEY) < 32:
             raise ValueError(
-                "SECRET_KEY insegura ou inferior a 32 caracteres em produção."
+                f"SECRET_KEY insegura em produção (len={len(self.SECRET_KEY)}, "
+                f"dev_marker={has_dev_secret}; esperado >= 32 caracteres sem "
+                "'dev-insecure')."
             )
-        if "dev-insecure" in self.JWT_SECRET_KEY or len(self.JWT_SECRET_KEY) < 32:
+        has_dev_jwt = "dev-insecure" in self.JWT_SECRET_KEY
+        if has_dev_jwt or len(self.JWT_SECRET_KEY) < 32:
             raise ValueError(
-                "JWT_SECRET_KEY insegura ou inferior a 32 caracteres em produção."
+                f"JWT_SECRET_KEY insegura em produção (len={len(self.JWT_SECRET_KEY)}, "
+                f"dev_marker={has_dev_jwt}; esperado >= 32 caracteres sem "
+                "'dev-insecure')."
             )
-        if not self.CORS_ORIGINS:
+        has_wildcard_cors = any(origin.strip() == "*" for origin in self.CORS_ORIGINS)
+        if not self.CORS_ORIGINS or has_wildcard_cors:
             raise ValueError(
-                "CORS_ORIGINS deve listar explicitamente as origens em produção."
+                "CORS_ORIGINS deve listar explicitamente as origens sem '*' em "
+                f"produção (recebido CORS_ORIGINS={self.CORS_ORIGINS!r})."
             )
         if self.PSC_DEFAULT_PROVIDER == "fake":
             raise ValueError(
@@ -247,13 +260,16 @@ class ProductionSettings(CommonSettings):
                 f"WEBAUTHN_RP_ID '{self.WEBAUTHN_RP_ID}' inválido em produção; "
                 "esperado domínio FQDN de produção (ex.: 'medisync.app')."
             )
-        if not self.WEBAUTHN_ALLOWED_ORIGINS or any(
-            not origin.startswith("https://")
+        invalid_origins = [
+            origin
             for origin in self.WEBAUTHN_ALLOWED_ORIGINS
-        ):
+            if not origin.startswith("https://")
+        ]
+        if not self.WEBAUTHN_ALLOWED_ORIGINS or invalid_origins:
+            offending = invalid_origins or self.WEBAUTHN_ALLOWED_ORIGINS
             raise ValueError(
                 "WEBAUTHN_ALLOWED_ORIGINS deve listar origens HTTPS explícitas em "
-                "produção."
+                f"produção (recebido={offending!r})."
             )
         return self
 

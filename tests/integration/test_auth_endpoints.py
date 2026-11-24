@@ -1,5 +1,6 @@
 """Integration tests for auth endpoints, anti-enumeration, and Anti-IDOR checks."""
 
+import asyncio
 from typing import cast
 from uuid import uuid4
 
@@ -9,6 +10,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.valkey import get_valkey_pool
 from src.modules.auth.composition import get_token_service
+from src.modules.auth.domain.totp import generate_totp_code
 
 from tests.factories.auth import persist_credencial
 from tests.factories.identity import make_profissional
@@ -370,3 +372,113 @@ async def test_auth_cookie_lifecycle_and_missing_token_rejection(
     # 5. Tentativa de refresh subsequente com cookie revogado/purgado
     revoked_resp = await async_client.post("/api/v1/auth/refresh", json={})
     assert revoked_resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_mfa_first_access_flow_single_use_and_refresh_race(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+) -> None:
+    """Validate MFA setup->activate->verify via mfa_pending, replay guard, and race."""
+    medico = make_profissional(
+        cpf="33344455566",
+        email="dr.mfa@telemed.com.br",
+        papel="MEDICO",
+        crm="88776",
+        crm_uf="SP",
+    )
+    db_session.add(medico)
+    await db_session.commit()
+    await db_session.refresh(medico)
+
+    await persist_credencial(
+        db_session,
+        usuario_id=medico.id,
+        identificador=medico.email,
+        senha_pura="SenhaForte123!@#",
+        papel=medico.papel,
+    )
+
+    # 1. Login inicial sem MFA ativo retorna token mfa_pending
+    login_resp = await async_client.post(
+        "/api/v1/auth/login",
+        json={"identificador": "dr.mfa@telemed.com.br", "senha": "SenhaForte123!@#"},
+    )
+    assert login_resp.status_code == 200
+    login_data = cast("dict[str, object]", login_resp.json())
+    assert login_data["mfa_requerido"] is True
+    assert login_data["mfa_setup_requerido"] is True
+    temp_token = cast("str", login_data["access_token"])
+
+    # 2. /mfa/verify antes de /mfa/activate é rejeitado
+    early_verify = await async_client.post(
+        "/api/v1/auth/mfa/verify",
+        json={"temp_token": temp_token, "codigo": "000000"},
+    )
+    assert early_verify.status_code == 401
+
+    # 3. /mfa/setup e /mfa/activate aceitam Bearer mfa_pending (1º acesso)
+    setup_resp = await async_client.post(
+        "/api/v1/auth/mfa/setup",
+        headers={"Authorization": f"Bearer {temp_token}"},
+    )
+    assert setup_resp.status_code == 200
+    secret = cast("str", cast("dict[str, object]", setup_resp.json())["secret"])
+
+    activate_resp = await async_client.post(
+        "/api/v1/auth/mfa/activate",
+        json={"codigo": generate_totp_code(secret)},
+        headers={"Authorization": f"Bearer {temp_token}"},
+    )
+    assert activate_resp.status_code == 200
+
+    # 4. Após MFA ativo, mfa_pending não pode re-executar /mfa/setup (403)
+    setup_again = await async_client.post(
+        "/api/v1/auth/mfa/setup",
+        headers={"Authorization": f"Bearer {temp_token}"},
+    )
+    assert setup_again.status_code == 403
+
+    # 5. /mfa/verify troca mfa_pending por sessão completa (uso único)
+    verify_resp = await async_client.post(
+        "/api/v1/auth/mfa/verify",
+        json={"temp_token": temp_token, "codigo": generate_totp_code(secret)},
+    )
+    assert verify_resp.status_code == 200
+    final_tokens = cast("dict[str, object]", verify_resp.json())
+    access_token = cast("str", final_tokens["access_token"])
+    refresh_token = cast("str", final_tokens["refresh_token"])
+    assert refresh_token != ""
+
+    # 6. Replay do mesmo temp_token é bloqueado (401 TOKEN_REVOGADO)
+    replay_verify = await async_client.post(
+        "/api/v1/auth/mfa/verify",
+        json={"temp_token": temp_token, "codigo": generate_totp_code(secret)},
+    )
+    assert replay_verify.status_code == 401
+    assert cast("dict[str, object]", replay_verify.json())["code"] == "TOKEN_REVOGADO"
+
+    # 7. Corrida concorrente em /refresh: SET NX permite apenas 1 sucesso
+    race_resps = await asyncio.gather(
+        async_client.post(
+            "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
+        ),
+        async_client.post(
+            "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
+        ),
+    )
+    race_statuses = sorted(r.status_code for r in race_resps)
+    assert race_statuses == [200, 401]
+
+    # 8. Logout somente com Bearer access_token (sem cookie/body) revoga o access_token
+    logout_only_access = await async_client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert logout_only_access.status_code == 204
+    me_after_logout = await async_client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert me_after_logout.status_code == 401
+    assert cast("dict[str, object]", me_after_logout.json())["code"] == "TOKEN_REVOGADO"

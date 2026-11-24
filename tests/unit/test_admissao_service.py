@@ -1,113 +1,87 @@
 """Unit tests for FilaService admission and unified intake/triage seam (Fase 4)."""
 
-from unittest.mock import AsyncMock, MagicMock
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import pytest
-from redis.asyncio import Redis
+
+if TYPE_CHECKING:
+    from arq.connections import ArqRedis
+    from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.core.errors import ValidationError
 from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoCommand,
     AdmissaoAtendimentoResult,
-    AvaliacaoAdmissaoResult,
 )
-from src.modules.queue.application.services.alocacao_service import (
-    AlocacaoChamadaService,
-)
-from src.modules.queue.application.services.controle_admissao_service import (
-    ControleAdmissaoService,
-)
+from src.modules.queue.application.ports.shift_policy_reader_port import ShiftPolicyDTO
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.domain.exceptions import AdmissaoFilaSuspensaError
 from src.modules.triage.application.services.triage_service import TriageService
 from src.modules.triage.domain.exceptions import EmergenciaCriticaSamuError
-from src.modules.triage.infrastructure.adapters.samu_emergency_notifier_adapter import (
-    SamuEmergencyNotifierAdapter,
+
+from tests.doubles import (
+    FakeArqPool,
+    FakeAsyncSession,
+    FakeEmergencyNotifier,
+    FakeQueueEngine,
+    FakeShiftPolicyReader,
 )
 
 
 @pytest.fixture
-def mock_valkey() -> AsyncMock:
-    valkey = AsyncMock(spec=Redis)
-    valkey.zcard = AsyncMock(return_value=2)
-    valkey.zadd = AsyncMock(return_value=1)
-    valkey.zrank = AsyncMock(return_value=0)
-    return valkey
+def fake_engine() -> FakeQueueEngine:
+    return FakeQueueEngine(medicos_ativos={uuid4(), uuid4()})
 
 
 @pytest.fixture
-def mock_alocacao_service() -> MagicMock:
-    return MagicMock(spec=AlocacaoChamadaService)
+def fake_session() -> FakeAsyncSession:
+    return FakeAsyncSession()
 
 
 @pytest.fixture
-def mock_controle_admissao() -> MagicMock:
-    controle = MagicMock(spec=ControleAdmissaoService)
-    controle.obter_admissoes_hoje = AsyncMock(return_value=0)
-    controle.incrementar_admissoes_hoje = AsyncMock(return_value=1)
-    controle.avaliar_admissao = AsyncMock(
-        return_value=AvaliacaoAdmissaoResult(
-            admissao_permitida=True,
-            motivo_bloqueio=None,
-            carga_estimada_segundos=1800.0,
-            tempo_restante_segundos=14400.0,
-            pacientes_aguardando=2,
-            medicos_ativos=2,
-            alpha_utilizado=1.25,
-            mensagem_explicativa="Admissão autorizada.",
-        )
-    )
-    return controle
+def emergency_notifier() -> FakeEmergencyNotifier:
+    return FakeEmergencyNotifier()
 
 
 @pytest.fixture
-def mock_emergency_notifier() -> SamuEmergencyNotifierAdapter:
-    return SamuEmergencyNotifierAdapter()
-
-
-@pytest.fixture
-def mock_arq_pool() -> AsyncMock:
-    pool = AsyncMock()
-    pool.enqueue_job = AsyncMock(return_value=MagicMock(job_id="test_job_123"))
-    return pool
+def fake_arq_pool() -> FakeArqPool:
+    return FakeArqPool()
 
 
 @pytest.fixture
 def triage_service(
-    mock_db_session: AsyncMock,
-    mock_emergency_notifier: SamuEmergencyNotifierAdapter,
+    fake_session: FakeAsyncSession,
+    emergency_notifier: FakeEmergencyNotifier,
 ) -> TriageService:
     return TriageService(
-        session=mock_db_session,
-        emergency_notifier=mock_emergency_notifier,
+        session=cast("AsyncSession", fake_session),
+        emergency_notifier=emergency_notifier,
     )
 
 
 @pytest.fixture
 def fila_service(
-    mock_valkey: AsyncMock,
-    mock_db_session: AsyncMock,
-    mock_alocacao_service: MagicMock,
-    mock_controle_admissao: MagicMock,
+    fake_engine: FakeQueueEngine,
+    fake_session: FakeAsyncSession,
     triage_service: TriageService,
-    mock_arq_pool: AsyncMock,
+    fake_arq_pool: FakeArqPool,
 ) -> FilaService:
     return FilaService(
-        valkey=mock_valkey,
-        db_session=mock_db_session,
-        alocacao_service=mock_alocacao_service,
-        controle_admissao=mock_controle_admissao,
+        queue_engine=fake_engine,
+        db_session=cast("AsyncSession", fake_session),
         triage_port=triage_service,
-        arq_pool=mock_arq_pool,
+        shift_policy_reader=FakeShiftPolicyReader(),
+        arq_pool=cast("ArqRedis", fake_arq_pool),
     )
 
 
 @pytest.mark.asyncio
 async def test_admitir_paciente_success(
     fila_service: FilaService,
-    mock_db_session: AsyncMock,
-    mock_arq_pool: AsyncMock,
-    mock_valkey: AsyncMock,
+    fake_session: FakeAsyncSession,
+    fake_arq_pool: FakeArqPool,
+    fake_engine: FakeQueueEngine,
 ) -> None:
     pac_id = uuid4()
     cmd = AdmissaoAtendimentoCommand(
@@ -126,16 +100,18 @@ async def test_admitir_paciente_success(
     assert result.alerta_samu_disparado is False
     assert result.tcle_hash is not None
     assert len(result.tcle_hash) == 64
-    assert mock_db_session.add.call_count == 2
-    mock_db_session.commit.assert_awaited_once()
-    mock_valkey.zadd.assert_awaited_once()
-    mock_arq_pool.enqueue_job.assert_not_called()
+    assert len(fake_session.added) == 2
+    assert fake_session.commits == 1
+    assert result.atendimento_id in fake_engine.fila_scores
+    assert fake_engine.cota_diaria_usada == 1
+    assert len(fake_arq_pool.enqueued_jobs) == 0
 
 
 @pytest.mark.asyncio
 async def test_admitir_paciente_emergencia_critica_raises(
     fila_service: FilaService,
-    mock_emergency_notifier: SamuEmergencyNotifierAdapter,
+    emergency_notifier: FakeEmergencyNotifier,
+    fake_engine: FakeQueueEngine,
 ) -> None:
     cmd = AdmissaoAtendimentoCommand(
         paciente_id=uuid4(),
@@ -148,15 +124,17 @@ async def test_admitir_paciente_emergencia_critica_raises(
     with pytest.raises(EmergenciaCriticaSamuError):
         await fila_service.admitir_paciente(cmd)
 
-    assert len(mock_emergency_notifier.sent_alerts) == 1
-    assert "inconsciencia" in mock_emergency_notifier.sent_alerts[0].sintomas_alerta
+    assert len(emergency_notifier.sent_alerts) == 1
+    assert "inconsciencia" in emergency_notifier.sent_alerts[0].sintomas_alerta
+    assert fake_engine.cota_diaria_usada == 0
+    assert len(fake_engine.fila_scores) == 0
 
 
 @pytest.mark.asyncio
 async def test_admitir_paciente_sus_direto_vai_para_apto_e_zset_sem_worker(
     fila_service: FilaService,
-    mock_valkey: AsyncMock,
-    mock_arq_pool: AsyncMock,
+    fake_engine: FakeQueueEngine,
+    fake_arq_pool: FakeArqPool,
 ) -> None:
     pac_id = uuid4()
     cmd = AdmissaoAtendimentoCommand(
@@ -171,26 +149,22 @@ async def test_admitir_paciente_sus_direto_vai_para_apto_e_zset_sem_worker(
 
     result = await fila_service.admitir_paciente(cmd)
     assert result.status_atendimento == "APTO_PARA_CHAMADA"
-    mock_valkey.zadd.assert_awaited_once()
-    mock_arq_pool.enqueue_job.assert_not_called()
+    assert result.atendimento_id in fake_engine.fila_scores
+    assert len(fake_arq_pool.enqueued_jobs) == 0
 
 
 @pytest.mark.asyncio
-async def test_admitir_paciente_backpressure_suspensa(
-    fila_service: FilaService,
-    mock_controle_admissao: MagicMock,
+async def test_admitir_paciente_sem_medicos_ativos_suspende(
+    fake_session: FakeAsyncSession,
+    triage_service: TriageService,
 ) -> None:
-    mock_controle_admissao.avaliar_admissao.return_value = AvaliacaoAdmissaoResult(
-        admissao_permitida=False,
-        motivo_bloqueio="TEMPO_INSUFICIENTE",
-        carga_estimada_segundos=15000.0,
-        tempo_restante_segundos=1000.0,
-        pacientes_aguardando=20,
-        medicos_ativos=1,
-        alpha_utilizado=1.25,
-        mensagem_explicativa="Capacidade máxima de atendimento excedida.",
+    engine_vazio = FakeQueueEngine(medicos_ativos=set())
+    service = FilaService(
+        queue_engine=engine_vazio,
+        db_session=cast("AsyncSession", fake_session),
+        triage_port=triage_service,
+        shift_policy_reader=FakeShiftPolicyReader(),
     )
-
     cmd = AdmissaoAtendimentoCommand(
         paciente_id=uuid4(),
         queixa_principal="Cefaleia leve",
@@ -199,8 +173,51 @@ async def test_admitir_paciente_backpressure_suspensa(
         tcle_hash="b" * 64,
     )
 
-    with pytest.raises(AdmissaoFilaSuspensaError):
-        await fila_service.admitir_paciente(cmd)
+    with pytest.raises(AdmissaoFilaSuspensaError) as exc_info:
+        await service.admitir_paciente(cmd)
+
+    assert exc_info.value.motivo == "SEM_MEDICOS_ATIVOS"
+    assert fake_session.commits == 0
+
+
+@pytest.mark.asyncio
+async def test_admitir_paciente_usa_parametros_shift_policy_reader(
+    fake_session: FakeAsyncSession,
+    triage_service: TriageService,
+) -> None:
+    """ShiftPolicyReaderPort parameters control backpressure even without overrides."""
+    engine = FakeQueueEngine(medicos_ativos={uuid4()})
+    for _ in range(5):
+        engine.fila_scores[uuid4()] = 3000
+
+    strict_policy = FakeShiftPolicyReader(
+        ShiftPolicyDTO(
+            alpha_backpressure=1.5,
+            cota_diaria_maxima=300,
+            tma_padrao_segundos=1200,
+        )
+    )
+    service = FilaService(
+        queue_engine=engine,
+        db_session=cast("AsyncSession", fake_session),
+        triage_port=triage_service,
+        shift_policy_reader=strict_policy,
+    )
+    # Load = 5 * 1200 * 1.5 / 1 = 9000s > 3600s -> suspended!
+    cmd = AdmissaoAtendimentoCommand(
+        paciente_id=uuid4(),
+        queixa_principal="Cefaleia leve",
+        sintomas=[],
+        escala_dor=2,
+        tcle_hash="b" * 64,
+        tempo_restante_segundos=3600.0,
+    )
+
+    with pytest.raises(AdmissaoFilaSuspensaError) as exc_info:
+        await service.admitir_paciente(cmd)
+
+    assert exc_info.value.motivo == "CAPACIDADE_EXCEDIDA"
+    assert engine.cota_diaria_usada == 0
 
 
 @pytest.mark.asyncio
@@ -221,47 +238,14 @@ async def test_admitir_paciente_tcle_ausente_raises(
 
 
 @pytest.mark.asyncio
-async def test_fila_service_admitir_paciente_direct_success(
-    fila_service: FilaService,
-    mock_db_session: AsyncMock,
-    mock_arq_pool: AsyncMock,
-    mock_controle_admissao: MagicMock,
-    mock_valkey: AsyncMock,
-) -> None:
-    """Verifica admissão executada diretamente pelo FilaService (Fase 2)."""
-    pac_id = uuid4()
-    cmd = AdmissaoAtendimentoCommand(
-        paciente_id=pac_id,
-        queixa_principal="Febre e tosse seca",
-        sintomas=["febre", "tosse"],
-        escala_dor=3,
-        tcle_texto="Termo de consentimento aceito",
-    )
-
-    result = await fila_service.admitir_paciente(cmd)
-    assert isinstance(result, AdmissaoAtendimentoResult)
-    assert result.paciente_id == pac_id
-    assert result.status_atendimento == "APTO_PARA_CHAMADA"
-    assert result.prioridade_clinica in (3, 4)
-    assert result.alerta_samu_disparado is False
-    assert mock_db_session.add.call_count == 2
-    mock_db_session.commit.assert_awaited_once()
-    mock_controle_admissao.incrementar_admissoes_hoje.assert_awaited_once_with()
-    mock_valkey.zadd.assert_awaited_once()
-    mock_arq_pool.enqueue_job.assert_not_called()
-
-
-@pytest.mark.asyncio
 async def test_fila_service_admitir_paciente_sem_triage_port_raises(
-    mock_valkey: AsyncMock,
-    mock_db_session: AsyncMock,
-    mock_alocacao_service: MagicMock,
+    fake_engine: FakeQueueEngine,
+    fake_session: FakeAsyncSession,
 ) -> None:
     """Verifica erro de runtime caso TriagePort não tenha sido injetada."""
     service_sem_triage = FilaService(
-        valkey=mock_valkey,
-        db_session=mock_db_session,
-        alocacao_service=mock_alocacao_service,
+        queue_engine=fake_engine,
+        db_session=cast("AsyncSession", fake_session),
         triage_port=None,
     )
     cmd = AdmissaoAtendimentoCommand(

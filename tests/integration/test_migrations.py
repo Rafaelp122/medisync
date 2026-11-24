@@ -9,7 +9,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
-from src.core.database import engine
+from src.core.database import get_engine
 
 _EXPECTED_TABLES = frozenset(
     [
@@ -59,7 +59,7 @@ async def ensure_clean_migration_state() -> AsyncGenerator[None, None]:
 @pytest.mark.asyncio
 async def test_migration_creates_all_single_platform_tables() -> None:
     """Verify that alembic upgrade head creates all expected single-platform tables."""
-    async with engine.connect() as conn:
+    async with get_engine().connect() as conn:
         result = await conn.execute(
             text(
                 """
@@ -79,7 +79,7 @@ async def test_migration_creates_all_single_platform_tables() -> None:
 @pytest.mark.asyncio
 async def test_zero_rls_policies_and_zero_organizacao_id_columns() -> None:
     """Verify no table has organizacao_id column and pg_policies is empty."""
-    async with engine.connect() as conn:
+    async with get_engine().connect() as conn:
         cols_res = await conn.execute(
             text(
                 """
@@ -110,7 +110,7 @@ async def test_zero_rls_policies_and_zero_organizacao_id_columns() -> None:
 @pytest.mark.asyncio
 async def test_gen_uuidv7_creates_valid_rfc9562_uuid() -> None:
     """Verify that PostgreSQL gen_uuidv7() generates RFC 9562 UUIDv7 values."""
-    async with engine.connect() as conn:
+    async with get_engine().connect() as conn:
         result = await conn.execute(text("SELECT gen_uuidv7();"))
         generated_uuid_str = result.scalar()
 
@@ -122,7 +122,7 @@ async def test_gen_uuidv7_creates_valid_rfc9562_uuid() -> None:
 @pytest.mark.asyncio
 async def test_partial_unique_indexes_on_pacientes() -> None:
     """Verify global partial unique indexes uq_paciente_cpf and uq_paciente_cns."""
-    async with engine.connect() as conn:
+    async with get_engine().connect() as conn:
         result = await conn.execute(
             text(
                 """
@@ -147,7 +147,7 @@ async def test_partial_unique_indexes_on_pacientes() -> None:
 @pytest.mark.asyncio
 async def test_check_constraints_registered() -> None:
     """Verify critical check constraints on clinical aggregate tables."""
-    async with engine.connect() as conn:
+    async with get_engine().connect() as conn:
         result = await conn.execute(
             text(
                 """
@@ -185,9 +185,35 @@ async def test_check_constraints_registered() -> None:
 
 
 @pytest.mark.asyncio
+async def test_gist_exclusion_constraints_registered() -> None:
+    """Verify GiST exclusion constraints on scheduling tables after head migration."""
+    async with get_engine().connect() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT c.conname
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE n.nspname = 'public'
+                  AND c.contype = 'x'
+                ORDER BY c.conname;
+                """
+            )
+        )
+        exclusions = {row[0] for row in result.fetchall()}
+
+    expected_exclusions = {
+        "excl_agenda_disp_sobreposicao",
+        "excl_agendamento_slot_ativo",
+        "excl_agendamento_paciente_ativo",
+    }
+    assert expected_exclusions.issubset(exclusions)
+
+
+@pytest.mark.asyncio
 async def test_singleton_constraints_on_unidade_and_plantao() -> None:
     """Verify singleton_guard prevents inserting second row or false guard."""
-    async with engine.begin() as conn:
+    async with get_engine().begin() as conn:
         await conn.execute(
             text(
                 """
@@ -207,7 +233,7 @@ async def test_singleton_constraints_on_unidade_and_plantao() -> None:
                 )
             )
 
-    async with engine.begin() as conn:
+    async with get_engine().begin() as conn:
         with pytest.raises(DBAPIError):
             await conn.execute(
                 text(
@@ -219,7 +245,7 @@ async def test_singleton_constraints_on_unidade_and_plantao() -> None:
                 )
             )
 
-    async with engine.begin() as conn:
+    async with get_engine().begin() as conn:
         await conn.execute(text("INSERT INTO configuracoes_plantao DEFAULT VALUES;"))
         with pytest.raises(DBAPIError):
             await conn.execute(
@@ -230,7 +256,7 @@ async def test_singleton_constraints_on_unidade_and_plantao() -> None:
 @pytest.mark.asyncio
 async def test_audit_immutable_trigger_blocks_mutations() -> None:
     """Verify ADR-007 anti-tampering trigger blocks UPDATE on audit_events."""
-    async with engine.begin() as conn:
+    async with get_engine().begin() as conn:
         await conn.execute(
             text(
                 """
@@ -284,7 +310,7 @@ async def test_downgrade_base_and_reupgrade_lifecycle() -> None:
     """Verify complete rollback to base and subsequent upgrade to head."""
     await asyncio.to_thread(_run_alembic_downgrade_base)
 
-    async with engine.connect() as conn:
+    async with get_engine().connect() as conn:
         result = await conn.execute(
             text(
                 """
@@ -301,7 +327,7 @@ async def test_downgrade_base_and_reupgrade_lifecycle() -> None:
 
     await asyncio.to_thread(_run_alembic_upgrade_head)
 
-    async with engine.connect() as conn:
+    async with get_engine().connect() as conn:
         result = await conn.execute(
             text(
                 """

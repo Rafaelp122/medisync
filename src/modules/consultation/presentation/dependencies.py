@@ -14,26 +14,27 @@ from fastapi import (
     WebSocketException,
     status,
 )
+from fastapi.security import HTTPAuthorizationCredentials
 
-from src.core.authz.dependencies import (
-    HTTPAuthorizationCredentials,
+from src.core.authz import (
+    AuthenticatedUser,
+    BearerAuthSettings,
+    OptionalBearerAuthSettingsDep,
+    OptionalTokenRevocationDep,
+    Role,
+    TokenRevocationPort,
+    get_bearer_auth_settings,
+    get_token_revocation,
     http_bearer_scheme,
     require_role,
+    resolve_bearer_principal,
 )
-from src.core.authz.models import AuthenticatedUser
-from src.core.authz.revocation import is_token_revoked
-from src.core.authz.roles import Role
-from src.core.authz.token import decode_access_token
-from src.core.config import get_settings
-from src.core.database import DbSessionDep
 from src.core.errors import (
     ConflictError,
     ForbiddenError,
     NotFoundError,
-    TokenRevogadoError,
     UnauthorizedError,
 )
-from src.core.security import verify_intake_token
 from src.modules.consultation.application.policies.clinical_access_policy import (
     ClinicalAccessPolicy,
 )
@@ -82,7 +83,7 @@ DocumentoIdPath = Annotated[
 async def require_clinical_read_access(
     atendimento_id: AtendimentoIdPath,
     current_user: MedicoUserDep,
-    session: DbSessionDep,
+    reader: Annotated[AtendimentoReaderPort, Depends(get_atendimento_reader)],
 ) -> AuthenticatedUser:
     """Enforce Tier 3 Clinical ABAC/ReBAC context for reading records.
 
@@ -92,10 +93,10 @@ async def require_clinical_read_access(
     3. Caller is the physician assigned to this attendance.
     4. Attendance status allows reading (active or CONCLUIDO).
     """
-    await ClinicalAccessPolicy.validar_acesso_clinico(
+    _resumo = await ClinicalAccessPolicy.validar_acesso_clinico(
         atendimento_id=atendimento_id,
         medico_id=current_user.usuario_id,
-        reader=get_atendimento_reader(session),
+        reader=reader,
         is_mutation=False,
     )
     return current_user
@@ -104,7 +105,7 @@ async def require_clinical_read_access(
 async def require_clinical_mutation_access(
     atendimento_id: AtendimentoIdPath,
     current_user: MedicoUserDep,
-    session: DbSessionDep,
+    reader: Annotated[AtendimentoReaderPort, Depends(get_atendimento_reader)],
 ) -> AuthenticatedUser:
     """Enforce Tier 3 Clinical ABAC/ReBAC context for mutating records.
 
@@ -114,10 +115,10 @@ async def require_clinical_mutation_access(
     3. Caller is the physician assigned to this attendance.
     4. Attendance is in active state (EM_ATENDIMENTO or CHAMANDO_PACIENTE).
     """
-    await ClinicalAccessPolicy.validar_acesso_clinico(
+    _resumo = await ClinicalAccessPolicy.validar_acesso_clinico(
         atendimento_id=atendimento_id,
         medico_id=current_user.usuario_id,
-        reader=get_atendimento_reader(session),
+        reader=reader,
         is_mutation=True,
     )
     return current_user
@@ -159,122 +160,12 @@ async def exigir_rate_limit(
         )
 
 
-async def _autenticar_chamador_medico(raw_token: str) -> UUID:
-    """Valida token JWT de médico e retorna usuario_id."""
-    try:
-        user = decode_access_token(raw_token)
-    except Exception as exc:
-        raise UnauthorizedError(
-            f"Token de acesso inválido ou expirado: {exc}."
-        ) from exc
-
-    if await is_token_revoked(user.token_id):
-        raise TokenRevogadoError(
-            f"Token de acesso '{user.token_id}' revogado. Realize novo login."
-        )
-
-    if user.papel != Role.MEDICO:
-        raise ForbiddenError(
-            f"Acesso negado: papel '{user.papel}' sem permissão para sala "
-            f"como médico (esperado: '{Role.MEDICO.value}')."
-        )
-
-    return user.usuario_id
-
-
-def _autenticar_chamador_paciente_intake(raw_token: str) -> UUID:
-    """Valida token HMAC de acolhimento do paciente (2 partes)."""
-    settings = get_settings()
-    try:
-        claims = verify_intake_token(raw_token, settings.SECRET_KEY)
-    except ValueError as exc:
-        raise UnauthorizedError(
-            f"Token de acolhimento em formato inválido: {exc}."
-        ) from exc
-
-    return UUID(str(claims["paciente_id"]))
-
-
-async def _autenticar_chamador_paciente_jwt(raw_token: str) -> UUID:
-    """Valida token JWT do paciente (3 partes)."""
-    try:
-        user = decode_access_token(raw_token)
-    except Exception as exc:
-        raise UnauthorizedError(
-            f"Token de acesso inválido ou expirado: {exc}."
-        ) from exc
-
-    if await is_token_revoked(user.token_id):
-        raise TokenRevogadoError(
-            f"Token de acesso '{user.token_id}' revogado. Realize novo login."
-        )
-
-    if user.papel != Role.PACIENTE:
-        raise ForbiddenError(
-            f"Acesso negado: papel '{user.papel}' sem permissão para sala "
-            f"como paciente (esperado: '{Role.PACIENTE.value}')."
-        )
-
-    return user.usuario_id
-
-
-async def _autenticar_chamador_paciente(raw_token: str) -> UUID:
-    """Autentica chamador paciente via token de acolhimento ou JWT completo."""
-    token_parts = raw_token.split(".")
-    if len(token_parts) == 2:
-        return _autenticar_chamador_paciente_intake(raw_token)
-    if len(token_parts) == 3:
-        return await _autenticar_chamador_paciente_jwt(raw_token)
-    raise UnauthorizedError(
-        f"Token em formato inválido ({len(token_parts)} partes; esperados: 2 ou 3)."
-    )
-
-
 @dataclass(frozen=True)
 class LivenessActor:
     """Identidade autenticada (médico ou paciente) para prova de vida US-15."""
 
     actor_id: UUID
     actor_papel: str
-
-
-async def _autenticar_chamador_liveness(
-    raw_token: str,
-    allowed_roles: tuple[Role, ...],
-) -> tuple[UUID, str]:
-    """Extrai identidade clínica de JWT ou HMAC validando papéis permitidos."""
-    parts = raw_token.split(".")
-    if len(parts) == 2:
-        actor_id = _autenticar_chamador_paciente_intake(raw_token)
-        if Role.PACIENTE not in allowed_roles:
-            raise ForbiddenError(
-                f"Papel '{Role.PACIENTE.value}' não autorizado para esta ação "
-                f"(esperados: {[r.value for r in allowed_roles]})."
-            )
-        return actor_id, Role.PACIENTE.value
-    if len(parts) != 3:
-        raise UnauthorizedError(
-            f"Token em formato inválido ({len(parts)} partes; esperados: 2 ou 3)."
-        )
-
-    try:
-        user = decode_access_token(raw_token)
-    except Exception as exc:
-        raise UnauthorizedError(
-            f"Token de acesso inválido ou expirado: {exc}."
-        ) from exc
-
-    if await is_token_revoked(user.token_id):
-        raise TokenRevogadoError(
-            f"Token de acesso '{user.token_id}' revogado. Realize novo login."
-        )
-
-    if user.papel not in allowed_roles:
-        raise ForbiddenError(
-            f"Papel '{user.papel}' não autorizado para prova de vida facial "
-            f"(esperados: {[r.value for r in allowed_roles]})."
-        )
-    return user.usuario_id, str(user.papel)
 
 
 def _validar_participacao_atendimento_liveness(
@@ -302,6 +193,8 @@ async def _require_liveness_actor(
     reader: AtendimentoReaderPort,
     credentials: HTTPAuthorizationCredentials | None,
     allowed_roles: tuple[Role, ...],
+    revocation: TokenRevocationPort | None = None,
+    auth_settings: BearerAuthSettings | None = None,
 ) -> LivenessActor:
     """Valida participante autorizado para etapa específica de prova de vida US-15."""
     if credentials is None or not credentials.credentials.strip():
@@ -311,9 +204,17 @@ async def _require_liveness_actor(
             "esperado cabeçalho 'Authorization: Bearer <token>')."
         )
 
-    actor_id, actor_papel = await _autenticar_chamador_liveness(
+    resolved_settings = auth_settings or get_bearer_auth_settings()
+    resolved_revocation = revocation or get_token_revocation()
+    principal = await resolve_bearer_principal(
         credentials.credentials,
-        allowed_roles,
+        allowed_roles=allowed_roles,
+        accept_intake=True,
+        revocation=resolved_revocation,
+        secret_key=resolved_settings.secret_key,
+        jwt_secret=resolved_settings.jwt_secret,
+        jwt_algorithm=resolved_settings.jwt_algorithm,
+        transport="http",
     )
     resumo = await reader.obter_resumo(atendimento_id)
     if resumo is None:
@@ -327,14 +228,14 @@ async def _require_liveness_actor(
         )
 
     _validar_participacao_atendimento_liveness(
-        actor_id=actor_id,
-        actor_papel=actor_papel,
+        actor_id=principal.actor_id,
+        actor_papel=principal.papel,
         atendimento_paciente_id=resumo.paciente_id,
         atendimento_medico_id=resumo.medico_id,
     )
     return LivenessActor(
-        actor_id=actor_id,
-        actor_papel=actor_papel,
+        actor_id=principal.actor_id,
+        actor_papel=principal.papel,
     )
 
 
@@ -345,6 +246,8 @@ async def require_liveness_challenge_medico(
         HTTPAuthorizationCredentials | None,
         Security(http_bearer_scheme),
     ] = None,
+    revocation: OptionalTokenRevocationDep = None,
+    auth_settings: OptionalBearerAuthSettingsDep = None,
 ) -> LivenessActor:
     """Restringe solicitação de desafio facial ao médico alocado."""
     return await _require_liveness_actor(
@@ -352,6 +255,8 @@ async def require_liveness_challenge_medico(
         reader=reader,
         credentials=credentials,
         allowed_roles=(Role.MEDICO,),
+        revocation=revocation,
+        auth_settings=auth_settings,
     )
 
 
@@ -362,6 +267,8 @@ async def require_liveness_verify_paciente(
         HTTPAuthorizationCredentials | None,
         Security(http_bearer_scheme),
     ] = None,
+    revocation: OptionalTokenRevocationDep = None,
+    auth_settings: OptionalBearerAuthSettingsDep = None,
 ) -> LivenessActor:
     """Restringe submissão dos frames biométricos ao paciente titular."""
     return await _require_liveness_actor(
@@ -369,6 +276,8 @@ async def require_liveness_verify_paciente(
         reader=reader,
         credentials=credentials,
         allowed_roles=(Role.PACIENTE,),
+        revocation=revocation,
+        auth_settings=auth_settings,
     )
 
 
@@ -419,6 +328,8 @@ async def validar_acesso_livekit(
         HTTPAuthorizationCredentials | None,
         Security(http_bearer_scheme),
     ] = None,
+    revocation: OptionalTokenRevocationDep = None,
+    auth_settings: OptionalBearerAuthSettingsDep = None,
 ) -> None:
     """Valida acesso para emissão de token LiveKit WebRTC (Issue #42).
 
@@ -426,7 +337,7 @@ async def validar_acesso_livekit(
     - Rejeita requisições anônimas ou com token inválido com RFC 7807 401.
     - Se papel 'medico': exige JWT válido, papel MEDICO e alocação ativa.
     - Se papel 'paciente': exige token de acolhimento (HMAC) ou JWT.
-    - Rejeita atendimentos em estado terminal com 403.
+    - Rejeita atendimentos em estado terminal com 403/409.
     """
     if credentials is None:
         raise UnauthorizedError(
@@ -434,21 +345,27 @@ async def validar_acesso_livekit(
             "esperado cabeçalho 'Authorization: Bearer <token>')."
         )
 
-    raw_token = credentials.credentials
-
-    # 1. Autenticação e extração de identidade do chamador (401 se credencial inválida)
     if request.role not in ("medico", "paciente"):
         raise UnauthorizedError(
             f"Papel clínico '{request.role}' não suportado; "
             "esperados: 'medico' ou 'paciente'."
         )
 
-    if request.role == "medico":
-        caller_id = await _autenticar_chamador_medico(raw_token)
-    else:
-        caller_id = await _autenticar_chamador_paciente(raw_token)
+    resolved_settings = auth_settings or get_bearer_auth_settings()
+    resolved_revocation = revocation or get_token_revocation()
+    allowed_roles = (Role.MEDICO,) if request.role == "medico" else (Role.PACIENTE,)
+    accept_intake = request.role == "paciente"
+    principal = await resolve_bearer_principal(
+        credentials.credentials,
+        allowed_roles=allowed_roles,
+        accept_intake=accept_intake,
+        revocation=resolved_revocation,
+        secret_key=resolved_settings.secret_key,
+        jwt_secret=resolved_settings.jwt_secret,
+        jwt_algorithm=resolved_settings.jwt_algorithm,
+        transport="http",
+    )
 
-    # 2. Busca do atendimento via reader (404 se não existir)
     atendimento = await reader.obter_resumo(atendimento_id)
     if atendimento is None:
         raise NotFoundError(f"Atendimento '{atendimento_id}' não encontrado.")
@@ -466,11 +383,10 @@ async def validar_acesso_livekit(
             f"'{atendimento.status}'."
         )
 
-    # 3. Micro-autorização ReBAC/ABAC
     _validar_permissao_sala_livekit(
         role=request.role,
         participant_id=request.participant_id,
-        caller_id=caller_id,
+        caller_id=principal.actor_id,
         atendimento=atendimento,
     )
 
@@ -484,46 +400,32 @@ async def validar_ws_doctor_token(
     websocket: WebSocket,
     medico_id: UUID,
     token: str | None = Query(default=None),
+    revocation: OptionalTokenRevocationDep = None,
+    auth_settings: OptionalBearerAuthSettingsDep = None,
 ) -> None:
     """Valida o handshake WebSocket do médico via query ?token= (Issue #42).
 
     Rejeita requisições não autorizadas com código de encerramento WS 4401 ou 4403
     antes de invocar websocket.accept().
     """
-    if not token:
-        raise WebSocketException(
-            code=4401,
-            reason=f"Credencial não fornecida na query string: {token!r}.",
-        )
+    resolved_settings = auth_settings or get_bearer_auth_settings()
+    resolved_revocation = revocation or get_token_revocation()
+    principal = await resolve_bearer_principal(
+        token,
+        allowed_roles=(Role.MEDICO,),
+        accept_intake=False,
+        revocation=resolved_revocation,
+        secret_key=resolved_settings.secret_key,
+        jwt_secret=resolved_settings.jwt_secret,
+        jwt_algorithm=resolved_settings.jwt_algorithm,
+        transport="ws",
+    )
 
-    try:
-        user = decode_access_token(token)
-    except Exception as exc:
-        raise WebSocketException(
-            code=4401,
-            reason=f"Token de autenticação inválido ou expirado: {exc}.",
-        ) from exc
-
-    if await is_token_revoked(user.token_id):
-        raise WebSocketException(
-            code=4401,
-            reason=f"Token de autenticação '{user.token_id}' revogado.",
-        )
-
-    if user.papel != Role.MEDICO:
+    if principal.actor_id != medico_id:
         raise WebSocketException(
             code=4403,
             reason=(
-                f"Acesso negado: usuário possui papel '{user.papel}'; "
-                "esperado papel médico."
-            ),
-        )
-
-    if user.usuario_id != medico_id:
-        raise WebSocketException(
-            code=4403,
-            reason=(
-                f"Acesso negado: token pertence ao médico '{user.usuario_id}', "
+                f"Acesso negado: token pertence ao médico '{principal.actor_id}', "
                 f"divergindo de '{medico_id}'."
             ),
         )

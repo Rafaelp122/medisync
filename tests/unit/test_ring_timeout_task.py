@@ -1,22 +1,20 @@
 """Unit tests for deterministic 45s ring timeout task and no-show resolution (RN02)."""
 
+import logging
 from datetime import timedelta
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 import pytest
-from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+if TYPE_CHECKING:
+    from arq.connections import ArqRedis
+    from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.modules.queue.application.dtos import AlocarChamadaCommand
 from src.modules.queue.application.ports import (
     LoggingPacienteAusenteNotifier,
     PacienteAusenteEvent,
-    PacienteAusenteNotifierPort,
-)
-from src.modules.queue.application.ports.allocation_port import (
-    AllocationPort,
-    AlocacaoCodigo,
 )
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
@@ -25,66 +23,67 @@ from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
 from src.worker.tasks.ring_timeout import resolver_ring_timeout_task
 
+from tests.doubles import (
+    FakeArqPool,
+    FakeAsyncSession,
+    FakeAsyncSessionFactory,
+    FakePacienteAusenteNotifier,
+    FakeQueueEngine,
+    FakeValkey,
+)
 
-def _create_mock_context(
-    mock_session: AsyncMock, mock_valkey: MagicMock
+_SAMPLE_TCLE = "a" * 64
+
+
+def _create_worker_context(
+    session: FakeAsyncSession,
+    valkey: FakeValkey,
 ) -> dict[str, Any]:
-    mock_factory = MagicMock(spec=async_sessionmaker)
-    mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
-
     return {
-        "db_session_factory": mock_factory,
-        "valkey_client": mock_valkey,
+        "db_session_factory": FakeAsyncSessionFactory(session),
+        "valkey_client": valkey,
     }
 
 
 @pytest.mark.asyncio
 async def test_resolver_ring_timeout_records_no_show_when_chamando_paciente() -> None:
     """If patient did not answer in 45s, mark absent, release locks and emit event."""
-    atend_id = uuid4()
     medico_id = uuid4()
     paciente_id = uuid4()
+    atendimento = Atendimento(
+        id=uuid4(),
+        paciente_id=paciente_id,
+        medico_id=medico_id,
+        status=StatusAtendimento.CHAMANDO_PACIENTE,
+        tcle_hash=_SAMPLE_TCLE,
+    )
+    atend_id = atendimento.id
 
-    mock_atendimento = MagicMock(spec=Atendimento)
-    mock_atendimento.id = atend_id
-    mock_atendimento.paciente_id = paciente_id
-    mock_atendimento.medico_id = medico_id
-    mock_atendimento.status = StatusAtendimento.CHAMANDO_PACIENTE.value
+    fake_session = FakeAsyncSession(entities={atend_id: atendimento})
+    fake_valkey = FakeValkey()
+    await fake_valkey.set(f"lock:medico:{medico_id}", str(atend_id))
+    await fake_valkey.set(f"lock:atendimento:{atend_id}", str(medico_id))
 
-    mock_session = AsyncMock(spec=AsyncSession)
-    mock_session.get.return_value = mock_atendimento
-
-    mock_pipe = MagicMock()
-    mock_pipe.execute = AsyncMock()
-    mock_valkey = MagicMock(spec=Redis)
-    mock_valkey.pipeline.return_value.__aenter__.return_value = mock_pipe
-
-    mock_notifier = AsyncMock(spec=PacienteAusenteNotifierPort)
-    ctx = _create_mock_context(mock_session, mock_valkey)
+    notifier = FakePacienteAusenteNotifier()
+    ctx = _create_worker_context(fake_session, fake_valkey)
 
     result: dict[str, Any] = await resolver_ring_timeout_task(
         ctx,
         atendimento_id=str(atend_id),
         medico_id=str(medico_id),
-        notifier=mock_notifier,
+        notifier=notifier,
     )
 
     assert result["status"] == "resolved"
     assert result["action"] == "no_show_recorded"
-    mock_atendimento.registrar_ausencia_paciente.assert_called_once()
-    mock_session.commit.assert_awaited_once()
+    assert atendimento.status == StatusAtendimento.PACIENTE_AUSENTE.value
+    assert fake_session.commits == 1
 
-    # Valkey ring locks deleted atomically
-    mock_pipe.delete.assert_any_call(f"lock:medico:{medico_id}")
-    mock_pipe.delete.assert_any_call(f"lock:atendimento:{atend_id}")
-    mock_pipe.execute.assert_awaited_once()
+    assert await fake_valkey.exists(f"lock:medico:{medico_id}") == 0
+    assert await fake_valkey.exists(f"lock:atendimento:{atend_id}") == 0
 
-    # Domain event emitted
-    mock_notifier.emitir_paciente_ausente.assert_awaited_once()
-    emitted_event: PacienteAusenteEvent = (
-        mock_notifier.emitir_paciente_ausente.call_args[0][0]
-    )
+    assert len(notifier.events) == 1
+    emitted_event = notifier.events[0]
     assert emitted_event.atendimento_id == atend_id
     assert emitted_event.medico_id == medico_id
     assert emitted_event.paciente_id == paciente_id
@@ -94,56 +93,48 @@ async def test_resolver_ring_timeout_records_no_show_when_chamando_paciente() ->
 @pytest.mark.asyncio
 async def test_resolver_ring_timeout_promotes_lock_when_em_atendimento() -> None:
     """If call is answered, preserve consultation and set active consultation lock."""
-    atend_id = uuid4()
     medico_id = uuid4()
+    atendimento = Atendimento(
+        id=uuid4(),
+        paciente_id=uuid4(),
+        medico_id=medico_id,
+        status=StatusAtendimento.EM_ATENDIMENTO,
+        tcle_hash=_SAMPLE_TCLE,
+    )
+    atend_id = atendimento.id
 
-    mock_atendimento = MagicMock(spec=Atendimento)
-    mock_atendimento.id = atend_id
-    mock_atendimento.status = StatusAtendimento.EM_ATENDIMENTO.value
+    fake_session = FakeAsyncSession(entities={atend_id: atendimento})
+    fake_valkey = FakeValkey()
+    await fake_valkey.set(f"lock:medico:{medico_id}", str(atend_id))
+    await fake_valkey.set(f"lock:atendimento:{atend_id}", str(medico_id))
 
-    mock_session = AsyncMock(spec=AsyncSession)
-    mock_session.get.return_value = mock_atendimento
-
-    mock_pipe = MagicMock()
-    mock_pipe.execute = AsyncMock()
-    mock_valkey = MagicMock(spec=Redis)
-    mock_valkey.pipeline.return_value.__aenter__.return_value = mock_pipe
-
-    mock_notifier = AsyncMock(spec=PacienteAusenteNotifierPort)
-    ctx = _create_mock_context(mock_session, mock_valkey)
+    notifier = FakePacienteAusenteNotifier()
+    ctx = _create_worker_context(fake_session, fake_valkey)
 
     result: dict[str, Any] = await resolver_ring_timeout_task(
         ctx,
         atendimento_id=str(atend_id),
         medico_id=str(medico_id),
-        notifier=mock_notifier,
+        notifier=notifier,
     )
 
     assert result["status"] == "resolved"
     assert result["action"] == "active_consultation_preserved"
-    mock_atendimento.registrar_ausencia_paciente.assert_not_called()
-    mock_session.commit.assert_not_awaited()
+    assert atendimento.status == StatusAtendimento.EM_ATENDIMENTO.value
+    assert fake_session.commits == 0
 
-    # Ring locks deleted and consulta_ativa lock set with 2h TTL
-    mock_pipe.delete.assert_any_call(f"lock:atendimento:{atend_id}")
-    mock_pipe.delete.assert_any_call(f"lock:medico:{medico_id}")
-    mock_pipe.set.assert_called_once_with(
-        f"lock:consulta_ativa:medico:{medico_id}",
-        str(atend_id),
-        ex=7200,
+    assert await fake_valkey.exists(f"lock:atendimento:{atend_id}") == 0
+    assert await fake_valkey.exists(f"lock:medico:{medico_id}") == 0
+    assert await fake_valkey.get(f"lock:consulta_ativa:medico:{medico_id}") == str(
+        atend_id
     )
-    mock_pipe.execute.assert_awaited_once()
-    mock_notifier.emitir_paciente_ausente.assert_not_awaited()
+    assert len(notifier.events) == 0
 
 
 @pytest.mark.asyncio
 async def test_resolver_ring_timeout_attendance_not_found() -> None:
     """If attendance is missing in DB, gracefully ignore."""
-    mock_session = AsyncMock(spec=AsyncSession)
-    mock_session.get.return_value = None
-
-    mock_valkey = MagicMock(spec=Redis)
-    ctx = _create_mock_context(mock_session, mock_valkey)
+    ctx = _create_worker_context(FakeAsyncSession(), FakeValkey())
 
     result: dict[str, Any] = await resolver_ring_timeout_task(
         ctx,
@@ -158,22 +149,22 @@ async def test_resolver_ring_timeout_attendance_not_found() -> None:
 @pytest.mark.asyncio
 async def test_resolver_ring_timeout_terminal_state_releases_locks() -> None:
     """If attendance is already cancelled/finished, cleanup lingering ring locks."""
-    atend_id = uuid4()
     medico_id = uuid4()
+    atendimento = Atendimento(
+        id=uuid4(),
+        paciente_id=uuid4(),
+        medico_id=medico_id,
+        status=StatusAtendimento.CANCELADO_PACIENTE,
+        tcle_hash=_SAMPLE_TCLE,
+    )
+    atend_id = atendimento.id
 
-    mock_atendimento = MagicMock(spec=Atendimento)
-    mock_atendimento.id = atend_id
-    mock_atendimento.status = StatusAtendimento.CANCELADO_PACIENTE.value
+    fake_session = FakeAsyncSession(entities={atend_id: atendimento})
+    fake_valkey = FakeValkey()
+    await fake_valkey.set(f"lock:medico:{medico_id}", str(atend_id))
+    await fake_valkey.set(f"lock:atendimento:{atend_id}", str(medico_id))
 
-    mock_session = AsyncMock(spec=AsyncSession)
-    mock_session.get.return_value = mock_atendimento
-
-    mock_pipe = MagicMock()
-    mock_pipe.execute = AsyncMock()
-    mock_valkey = MagicMock(spec=Redis)
-    mock_valkey.pipeline.return_value.__aenter__.return_value = mock_pipe
-
-    ctx = _create_mock_context(mock_session, mock_valkey)
+    ctx = _create_worker_context(fake_session, fake_valkey)
 
     result: dict[str, Any] = await resolver_ring_timeout_task(
         ctx,
@@ -183,13 +174,14 @@ async def test_resolver_ring_timeout_terminal_state_releases_locks() -> None:
 
     assert result["status"] == "resolved"
     assert result["action"] == "already_finalized"
-    mock_pipe.delete.assert_any_call(f"lock:medico:{medico_id}")
-    mock_pipe.delete.assert_any_call(f"lock:atendimento:{atend_id}")
-    mock_pipe.execute.assert_awaited_once()
+    assert await fake_valkey.exists(f"lock:medico:{medico_id}") == 0
+    assert await fake_valkey.exists(f"lock:atendimento:{atend_id}") == 0
 
 
 @pytest.mark.asyncio
-async def test_logging_paciente_ausente_notifier() -> None:
+async def test_logging_paciente_ausente_notifier(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """LoggingPacienteAusenteNotifier logs structured warning."""
     notifier = LoggingPacienteAusenteNotifier()
     event = PacienteAusenteEvent(
@@ -197,41 +189,33 @@ async def test_logging_paciente_ausente_notifier() -> None:
         medico_id=uuid4(),
         paciente_id=uuid4(),
     )
-    with patch(
-        "src.modules.queue.application.ports.paciente_ausente_notifier.logger.warning"
-    ) as mock_log:
+    with caplog.at_level(logging.WARNING):
         await notifier.emitir_paciente_ausente(event)
 
-    mock_log.assert_called_once()
-    assert "Event %s" in str(mock_log.call_args[0][0])
+    assert str(event.atendimento_id) in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_alocacao_service_schedules_arq_job() -> None:
-    """AlocacaoChamadaService enqueues resolver_ring_timeout_task
-    when arq_pool is set.
-    """
-    mock_valkey = AsyncMock(spec=Redis)
-    mock_session = AsyncMock(spec=AsyncSession)
-    mock_lua = AsyncMock(spec=AllocationPort)
-    mock_lua.alocar_chamada.return_value = AlocacaoCodigo.SUCESSO
-
-    atend_id = uuid4()
+    """AlocacaoChamadaService enqueues resolver_ring_timeout_task when arq_pool set."""
     medico_id = uuid4()
+    atendimento = Atendimento(
+        id=uuid4(),
+        paciente_id=uuid4(),
+        status=StatusAtendimento.APTO_PARA_CHAMADA,
+        tcle_hash=_SAMPLE_TCLE,
+    )
+    atend_id = atendimento.id
 
-    mock_atendimento = MagicMock(spec=Atendimento)
-    mock_atendimento.id = atend_id
-    mock_atendimento.status = StatusAtendimento.CHAMANDO_PACIENTE.value
-    mock_atendimento.chamada_iniciada_em = None
-    mock_session.get.return_value = mock_atendimento
-
-    mock_arq_pool = AsyncMock()
+    engine = FakeQueueEngine()
+    engine.fila_scores[atend_id] = 5000
+    session = FakeAsyncSession(entities={atend_id: atendimento})
+    arq_pool = FakeArqPool()
 
     service = AlocacaoChamadaService(
-        valkey=mock_valkey,
-        db_session=mock_session,
-        lua_manager=mock_lua,
-        arq_pool=mock_arq_pool,
+        queue_engine=engine,
+        db_session=cast("AsyncSession", session),
+        arq_pool=cast("ArqRedis", arq_pool),
     )
 
     cmd = AlocarChamadaCommand(
@@ -242,11 +226,12 @@ async def test_alocacao_service_schedules_arq_job() -> None:
 
     result = await service.alocar_chamada(cmd)
     assert result.atendimento_id == atend_id
-
-    mock_arq_pool.enqueue_job.assert_awaited_once_with(
-        "resolver_ring_timeout_task",
-        atendimento_id=str(atend_id),
-        medico_id=str(medico_id),
-        _defer_by=timedelta(seconds=45),
-        _job_id=f"ring_timeout:{atend_id}",
-    )
+    assert len(arq_pool.enqueued_jobs) == 1
+    job = arq_pool.enqueued_jobs[0]
+    assert job["function"] == "resolver_ring_timeout_task"
+    assert job["kwargs"] == {
+        "atendimento_id": str(atend_id),
+        "medico_id": str(medico_id),
+        "_defer_by": timedelta(seconds=45),
+        "_job_id": f"ring_timeout:{atend_id}",
+    }

@@ -5,76 +5,34 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { client } from "@/api/client";
+import { client, getSessionQueryScope } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
   atualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut,
   obterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGet,
-  obterPainelTelemetriaApiV1TelemetriaPainelGet,
 } from "@/api/generated/sdk.gen";
-import type {
-  ConfigPlantaoRequest,
-  ConfigPlantaoResponse,
-  PainelTelemetriaResponse,
-} from "@/api/generated/types.gen";
+import type { ConfigPlantaoRequest, ConfigPlantaoResponse } from "@/api/generated/types.gen";
+import { PAINEL_TELEMETRIA_QUERY_KEY_PREFIX } from "@/api/hooks/use-painel-telemetria";
+
+export const CONFIG_PLANTAO_QUERY_KEY_PREFIX = ["telemetria", "config-plantao"] as const;
 
 /**
- * Hook headless TanStack Query para monitoramento do painel operacional da regulação municipal.
- * Realiza polling respeitoso a cada 5 segundos (RF-10, US-13, ADR-011).
- */
-export function useTelemetriaPainel(
-  token?: string,
-  options?: Omit<
-    UseQueryOptions<PainelTelemetriaResponse, ProblemDetailsError>,
-    "queryKey" | "queryFn"
-  >,
-) {
-  return useQuery<PainelTelemetriaResponse, ProblemDetailsError>({
-    queryKey: ["telemetria", "painel"],
-    queryFn: async () => {
-      try {
-        const headers: Record<string, string> = {};
-        if (token) {
-          headers.Authorization = `Bearer ${token}`;
-        }
-
-        const response = await obterPainelTelemetriaApiV1TelemetriaPainelGet({
-          client,
-          headers,
-          throwOnError: true,
-        });
-        return response.data;
-      } catch (err) {
-        throw toProblemDetailsError(err);
-      }
-    },
-    refetchInterval: 5000,
-    ...options,
-  });
-}
-
-/**
- * Hook headless TanStack Query para obtenção das configurações e SLAs operacionais do plantão.
+ * Hook headless TanStack Query para leitura da política atual de plantão/backpressure (US-12).
+ * Escopa cache por sessão ativa via `getSessionQueryScope()`.
  */
 export function useConfigPlantao(
-  token?: string,
   options?: Omit<
     UseQueryOptions<ConfigPlantaoResponse, ProblemDetailsError>,
     "queryKey" | "queryFn"
   >,
 ) {
+  const scopeKey = getSessionQueryScope();
   return useQuery<ConfigPlantaoResponse, ProblemDetailsError>({
-    queryKey: ["telemetria", "config-plantao"],
+    queryKey: [...CONFIG_PLANTAO_QUERY_KEY_PREFIX, scopeKey],
     queryFn: async () => {
       try {
-        const headers: Record<string, string> = {};
-        if (token) {
-          headers.Authorization = `Bearer ${token}`;
-        }
-
         const response = await obterConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoGet({
           client,
-          headers,
           throwOnError: true,
         });
         return response.data;
@@ -88,27 +46,20 @@ export function useConfigPlantao(
 }
 
 /**
- * Hook headless de mutação para atualizar política operacional e parâmetros do plantão (US-12 / RF-09).
+ * Hook headless de mutação para parametrização da política de plantão (US-12 / RF-09).
  */
 export function useAtualizarConfigPlantao(
-  token?: string,
   options?: UseMutationOptions<ConfigPlantaoResponse, ProblemDetailsError, ConfigPlantaoRequest>,
 ) {
   const queryClient = useQueryClient();
+  const { onSuccess, ...restOptions } = options ?? {};
 
   return useMutation<ConfigPlantaoResponse, ProblemDetailsError, ConfigPlantaoRequest>({
-    ...options,
     mutationFn: async (body: ConfigPlantaoRequest) => {
       try {
-        const headers: Record<string, string> = {};
-        if (token) {
-          headers.Authorization = `Bearer ${token}`;
-        }
-
         const response = await atualizarConfiguracaoPlantaoApiV1TelemetriaConfigPlantaoPut({
           client,
           body,
-          headers,
           throwOnError: true,
         });
         return response.data;
@@ -117,8 +68,12 @@ export function useAtualizarConfigPlantao(
       }
     },
     onSuccess: (data, variables, onMutateResult, context) => {
-      void queryClient.invalidateQueries({ queryKey: ["telemetria"] });
-      options?.onSuccess?.(data, variables, onMutateResult, context);
+      const scopeKey = getSessionQueryScope();
+      queryClient.setQueryData([...CONFIG_PLANTAO_QUERY_KEY_PREFIX, scopeKey], data);
+      void queryClient.invalidateQueries({ queryKey: [...CONFIG_PLANTAO_QUERY_KEY_PREFIX] });
+      void queryClient.invalidateQueries({ queryKey: [...PAINEL_TELEMETRIA_QUERY_KEY_PREFIX] });
+      onSuccess?.(data, variables, onMutateResult, context);
     },
+    ...restOptions,
   });
 }

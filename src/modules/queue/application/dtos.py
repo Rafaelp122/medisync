@@ -1,7 +1,9 @@
-"""Data Transfer Objects for queue allocation operations."""
+"""Data Transfer Objects and application protocols for queue operations."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 from src.modules.queue.domain.models import PrioridadeClinica
@@ -55,8 +57,8 @@ class AdquirirProximoPacienteCommand:
     """Command payload for a doctor to acquire the next patient in queue."""
 
     medico_id: UUID
-    max_retries: int = 3
-    ttl_segundos: int = 45
+    max_scan: int = 50
+    ttl_segundos: int | None = None
 
 
 @dataclass(frozen=True)
@@ -87,21 +89,6 @@ class AvaliacaoAdmissaoResult:
 
 
 @dataclass(frozen=True)
-class IngressarFilaComBackpressureCommand:
-    """Command payload to ingest attendance with stochastic backpressure check."""
-
-    atendimento_id: UUID
-    prioridade_clinica: int | PrioridadeClinica
-    medicos_ativos: int
-    tempo_restante_segundos: float
-    tma_estimado_segundos: int = 600
-    alpha_margem: float = 1.25
-    cota_diaria_maxima: int | None = 300
-    total_admissoes_hoje: int = 0
-    data_entrada_fila: datetime | None = None
-
-
-@dataclass(frozen=True)
 class AdmissaoAtendimentoCommand:
     """Command payload for unified clinical intake and triage admission."""
 
@@ -111,11 +98,10 @@ class AdmissaoAtendimentoCommand:
     escala_dor: int = 0
     tcle_texto: str = ""
     tcle_hash: str | None = None
-    medicos_ativos: int = 1
     tempo_restante_segundos: float = 14400.0
-    tma_estimado_segundos: int = 600
-    alpha_margem: float = 1.25
-    cota_diaria_maxima: int | None = 300
+    tma_estimado_segundos: int | None = None
+    alpha_margem: float | None = None
+    cota_diaria_maxima: int | None = None
     cpf: str | None = None
     cns: str | None = None
     ip_origem: str | None = None
@@ -144,6 +130,9 @@ class PosicaoFilaResult:
     posicao: int | None
     total_aguardando: int
     tempo_estimado_segundos: int | None
+    prioridade_clinica: int = 5
+    chamada_iniciada_em: datetime | None = None
+    ttl_segundos: int | None = None
 
 
 @dataclass(frozen=True)
@@ -156,14 +145,29 @@ class CancelarAtendimentoResult:
     motivo: str | None = None
 
 
-@dataclass(frozen=True)
-class PioraClinicaCommand:
-    """Command to reassess deteriorating clinical symptoms in queue (RF-06)."""
+@runtime_checkable
+class PioraClinicaInput(Protocol):
+    """Input protocol for clinical deterioration reassessment avoiding DTO mirroring."""
 
-    atendimento_id: UUID
-    novos_sintomas: list[str]
-    escala_dor: int = 0
-    queixa_adicional: str = ""
+    @property
+    def atendimento_id(self) -> UUID:
+        """Attendance identifier."""
+        ...
+
+    @property
+    def novos_sintomas(self) -> Sequence[str]:
+        """Reported new or worsening symptoms."""
+        ...
+
+    @property
+    def escala_dor(self) -> int:
+        """Updated pain scale from 0 to 10."""
+        ...
+
+    @property
+    def queixa_adicional(self) -> str:
+        """Additional clinical description."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -176,15 +180,7 @@ class PioraClinicaResult:
     redirecionado_emergencia: bool
     nova_posicao: int | None
     instrucoes: str | None = None
-    nova_prioridade: int | None = None
     status_atendimento: str | None = None
-    orientacoes_emergencia: str | None = None
-
-    def __post_init__(self) -> None:
-        if self.nova_prioridade is None:
-            object.__setattr__(self, "nova_prioridade", self.prioridade_clinica)
-        if self.orientacoes_emergencia is None and self.redirecionado_emergencia:
-            object.__setattr__(self, "orientacoes_emergencia", self.instrucoes)
 
 
 @dataclass(frozen=True)
@@ -217,10 +213,9 @@ __all__ = [
     "AvaliacaoAdmissaoResult",
     "AvaliarAdmissaoCommand",
     "CancelarAtendimentoResult",
-    "IngressarFilaComBackpressureCommand",
     "IngressarFilaCommand",
     "IngressarFilaResult",
-    "PioraClinicaCommand",
+    "PioraClinicaInput",
     "PioraClinicaResult",
     "PosicaoFilaResult",
     "RegularizacaoFilaCommand",

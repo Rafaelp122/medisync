@@ -306,3 +306,72 @@ async def test_webauthn_register_rbac_and_token_validation(
         headers=jwt_paciente,
     )
     assert resp_jwt_ok.status_code == 200
+
+    # 4. Restricted intake token (is_novo_paciente=False) -> 403 Forbidden
+    restricted_intake = create_intake_token(
+        paciente.id,
+        get_settings().SECRET_KEY,
+        is_novo_paciente=False,
+    )
+    resp_restricted = await async_client.post(
+        "/api/v1/auth/patient/webauthn/register/options",
+        headers={"Authorization": f"Bearer {restricted_intake}"},
+    )
+    assert resp_restricted.status_code == 403
+
+    # 5. Multi-tab concurrent registration options/verify without collision -> both 200
+    opt1_resp = await async_client.post(
+        "/api/v1/auth/patient/webauthn/register/options",
+        headers=jwt_paciente,
+    )
+    opt2_resp = await async_client.post(
+        "/api/v1/auth/patient/webauthn/register/options",
+        headers=jwt_paciente,
+    )
+    assert opt1_resp.status_code == 200
+    assert opt2_resp.status_code == 200
+    opt1 = cast("dict[str, object]", opt1_resp.json())
+    opt2 = cast("dict[str, object]", opt2_resp.json())
+    rp_id = str(cast("dict[str, object]", opt1["rp"])["id"])
+
+    k1 = ec.generate_private_key(ec.SECP256R1())
+    k2 = ec.generate_private_key(ec.SECP256R1())
+    c1 = _b64url(b"multi-tab-cred-1")
+    c2 = _b64url(b"multi-tab-cred-2")
+
+    v1 = await async_client.post(
+        "/api/v1/auth/patient/webauthn/register/verify",
+        headers=jwt_paciente,
+        json={
+            "id": c1,
+            "rawId": c1,
+            "type": "public-key",
+            "response": {
+                "clientDataJSON": _encode_client_data(
+                    str(opt1["challenge"]), "webauthn.create"
+                ),
+                "attestationObject": _build_attestation_object(
+                    k1, rp_id=rp_id, credential_id=b"multi-tab-cred-1"
+                ),
+            },
+        },
+    )
+    v2 = await async_client.post(
+        "/api/v1/auth/patient/webauthn/register/verify",
+        headers=jwt_paciente,
+        json={
+            "id": c2,
+            "rawId": c2,
+            "type": "public-key",
+            "response": {
+                "clientDataJSON": _encode_client_data(
+                    str(opt2["challenge"]), "webauthn.create"
+                ),
+                "attestationObject": _build_attestation_object(
+                    k2, rp_id=rp_id, credential_id=b"multi-tab-cred-2"
+                ),
+            },
+        },
+    )
+    assert v1.status_code == 200
+    assert v2.status_code == 200

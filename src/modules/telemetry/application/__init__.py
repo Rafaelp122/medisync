@@ -1,13 +1,15 @@
 """Telemetry application layer."""
 
 from src.modules.telemetry.application.dtos import (
-    ConfigPlantaoCommand,
+    ConfigPlantaoInput,
     MedicoTMADTO,
     PainelTelemetriaDTO,
+    PoliticaPlantaoSnapshotDTO,
 )
 
 __all__ = [
-    "ConfigPlantaoCommand",
+    "ConfigPlantaoInput",
     "MedicoTMADTO",
     "PainelTelemetriaDTO",
+    "PoliticaPlantaoSnapshotDTO",
 ]

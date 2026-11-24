@@ -1,5 +1,6 @@
 """Integration tests for patient passwordless OTP authentication endpoints."""
 
+import asyncio
 import hashlib
 from datetime import date
 from typing import TYPE_CHECKING, cast
@@ -12,24 +13,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.authz.roles import Role
 from src.core.authz.token import decode_access_token
 from src.core.config import DevelopmentSettings
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.errors import ConflictError
 from src.core.valkey import get_valkey_pool
 from src.modules.auth.application.dtos import RegistrarPacienteCommand
-from src.modules.auth.composition import build_patient_auth_service_for_session
+from src.modules.auth.composition import (
+    build_patient_auth_service_for_session,
+    get_sms_sender,
+)
 from src.modules.auth.domain.models import UsuarioCredencial
 from src.modules.auth.infrastructure.patient_credential_repository_sql import (
     SqlPatientCredentialRepository,
 )
-from src.modules.identity.composition import get_sms_sender
 from src.modules.identity.domain.models import Paciente
 
 if TYPE_CHECKING:
-    from src.modules.identity.infrastructure.fake_sms_adapter import (
+    from src.modules.auth.infrastructure.fake_sms_adapter import (
         FakeSmsSenderAdapter,
     )
 
 from tests.factories.identity import make_paciente
+from tests.factories.queue import make_atendimento
 
 pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 
@@ -384,7 +388,7 @@ async def test_patient_register_email_conflict_atomic_rollback(
         async def existe_identificador(self, identificador: str) -> bool:
             return False
 
-    async with async_session_factory() as race_session:
+    async with get_session_factory()() as race_session:
         service = build_patient_auth_service_for_session(
             session=race_session,
             credential_repo=_RaceBypassCredentialRepo(session=race_session),
@@ -403,7 +407,7 @@ async def test_patient_register_email_conflict_atomic_rollback(
             )
         await race_session.rollback()
 
-    async with async_session_factory() as check_session:
+    async with get_session_factory()() as check_session:
         pacientes = (await check_session.execute(select(Paciente))).scalars().all()
         creds = (await check_session.execute(select(UsuarioCredencial))).scalars().all()
         assert len(pacientes) == 1
@@ -523,9 +527,9 @@ async def test_patient_identify_valkey_rate_limit_429(
         )
         assert resp.status_code == 200
 
-    # Verify sliding window key recorded in live Valkey
+    # Verify sliding window key recorded in live Valkey (no double ratelimit prefix)
     ident_hash = hashlib.sha256(ident.encode("utf-8")).hexdigest()[:16]
-    valkey_key = f"auth:ratelimit:ratelimit:identify:id:{ident_hash}"
+    valkey_key = f"auth:ratelimit:identify:id:{ident_hash}"
     valkey_client = Redis(connection_pool=get_valkey_pool())
     assert await valkey_client.zcard(valkey_key) == 10
 
@@ -570,3 +574,112 @@ async def test_patient_register_debug_false_oculta_codigo_debug(
     assert data["otp_enviado"] is True
     assert data["codigo_debug"] is None
     assert len(fake_sms.sent_otps) == 1
+
+
+@pytest.mark.asyncio
+async def test_patient_otp_verify_concurrent_race_valkey_lua(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+) -> None:
+    """Validate Valkey Lua verify_and_increment_otp prevents concurrent OTP replay."""
+    fake_sms = cast("FakeSmsSenderAdapter", get_sms_sender())
+    fake_sms.clear()
+
+    paciente = make_paciente(cpf="52998224725", telefone="11988887771")
+    db_session.add(paciente)
+    await db_session.commit()
+
+    req_resp = await async_client.post(
+        "/api/v1/auth/patient/otp/request",
+        json={"telefone": "11988887771"},
+    )
+    assert req_resp.status_code == 200
+    otp_code = fake_sms.sent_otps[0]["codigo"]
+
+    responses = await asyncio.gather(
+        *(
+            async_client.post(
+                "/api/v1/auth/patient/otp/verify",
+                json={"telefone": "11988887771", "codigo": otp_code},
+            )
+            for _ in range(5)
+        )
+    )
+    statuses = [r.status_code for r in responses]
+    assert statuses.count(200) == 1
+    assert statuses.count(401) == 4
+
+
+@pytest.mark.asyncio
+async def test_patient_cadsus_hardening_e2e_factors_and_rate_limit(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+) -> None:
+    """Validate CADSUS 2nd civil factor, invalid CNS, attendance link and IP 429."""
+    paciente = make_paciente(
+        cpf="11144477735",
+        cns="800000000000001",
+        data_nascimento=date(1985, 4, 12),
+        telefone="11977771234",
+    )
+    paciente.nome_mae = "Maria da Silva"
+    db_session.add(paciente)
+    await db_session.commit()
+    await db_session.refresh(paciente)
+
+    atendimento = make_atendimento(paciente_id=paciente.id, status="APTO_PARA_CHAMADA")
+    db_session.add(atendimento)
+    await db_session.commit()
+
+    # 1. Missing data_nascimento -> 422
+    no_dob = await async_client.post(
+        "/api/v1/auth/patient/cadsus",
+        json={"cpf": "11144477735", "nome_mae": "Maria da Silva"},
+    )
+    assert no_dob.status_code == 422
+
+    # 2. CPF alone without nome_mae or cns -> 422
+    cpf_only = await async_client.post(
+        "/api/v1/auth/patient/cadsus",
+        json={"cpf": "11144477735", "data_nascimento": "1985-04-12"},
+    )
+    assert cpf_only.status_code == 422
+
+    # 3. Invalid CNS checksum -> 422
+    bad_cns = await async_client.post(
+        "/api/v1/auth/patient/cadsus",
+        json={"cns": "898001234567890", "data_nascimento": "1985-04-12"},
+    )
+    assert bad_cns.status_code == 422
+
+    # 4. Valid CPF + DOB + nome_mae -> 200 with atendimento_id & 15m TTL
+    ok_resp = await async_client.post(
+        "/api/v1/auth/patient/cadsus",
+        json={
+            "cpf": "11144477735",
+            "data_nascimento": "1985-04-12",
+            "nome_mae": "maria da silva",
+        },
+    )
+    assert ok_resp.status_code == 200
+    ok_data = cast("dict[str, object]", ok_resp.json())
+    assert ok_data["paciente_id"] == str(paciente.id)
+    assert ok_data["atendimento_id"] == str(atendimento.id)
+    assert ok_data["expires_in"] == 900
+
+    # 5. Exceed IP rate limit (10 calls/15m: bad_cns + ok_resp + 8 more = 10)
+    for _ in range(8):
+        r = await async_client.post(
+            "/api/v1/auth/patient/cadsus",
+            json={
+                "cns": "800.0000.0000.0001",
+                "data_nascimento": "1985-04-12",
+            },
+        )
+        assert r.status_code == 200
+
+    limited = await async_client.post(
+        "/api/v1/auth/patient/cadsus",
+        json={"cns": "800000000000001", "data_nascimento": "1985-04-12"},
+    )
+    assert limited.status_code == 429

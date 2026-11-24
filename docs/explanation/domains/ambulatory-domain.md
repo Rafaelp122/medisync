@@ -19,7 +19,7 @@ Escopo termina na conformidade e consolidação da produção pública. A fila d
 - **RN-NEG-01 — Universalidade e ponto de telessaúde regulamentado.** Toda teleconsulta concluída vincula-se ao CNES 160/006 e registra o procedimento SIGTAP `03.01.01.025-0` (Nota Técnica nº 11/2024-MS). [Fonte](../product-specification.md) (RN-NEG-01)
 - **Consolidação em lote BPA-I e SISAB.** Ao término da consulta com evolução e documentos assinados, o atendimento é fechado e incluído no lote ambulatorial da unidade SUS (metadados CNES/CNPJ/IBGE lidos da tabela singleton `configuracoes_unidade` via `SqlBpaDirectory`) para prestação de contas e incentivo eMulti. [Fonte](../product-specification.md) (RF-08)
 
-Guardiões: O serviço ambulatorial valida a presença de CPF ou CNS válido, data de nascimento e dados da unidade SUS. A ausência de dados impede o fechamento do lote BPA-I sem bloquear o atendimento clínico de urgência.
+Guardiões: `ProducaoAmbulatorial` valida `CNES` numérico de 1 a 7 dígitos e competência `YYYYMM` (lançando `ValidationError`), enquanto `BpaPositionalFormatter.compilar_remessa` centraliza validação de pendências reais sem falsos positivos (`"20000101"` válido, `idade == 0` preservada como `"000"`), paginação (`20/folha`), checksum e `SqlBpaDirectory` retorna `None` honesto sem mascarar CPF como CNS nem fixar CBO `'225125'` para Psicologia (`251510`) ou Nutrição (`223710`).
 
 ## 3. Máquina de estados
 
@@ -42,13 +42,13 @@ Ao finalizar a consulta, a rotina de consolidação ambulatorial gera o lote de 
 
 ## 4. Relações
 
-- Expõe aptidão via porta tipada. `EligibilityProviderPort.verificar_elegibilidade` devolve `ResultadoElegibilidade` com `SUS-ISENTO`; o módulo `queue` consome a porta sem acoplamento à infraestrutura concreta.
+- Expõe qualificação cadastral via porta tipada. `EligibilityProviderPort.verificar_elegibilidade` devolve `ResultadoElegibilidade` com `SUS-ISENTO` dentro do serviço de elegibilidade de `ambulatory`, enquanto `ProducaoAmbulatorialService` consolida lotes BPA-I/SISAB após o fechamento da consulta em `consultation`.
 - Pureza de portas e desacoplamento de telemetria. A camada de aplicação define contratos abstratos (`typing.Protocol`) em `src/modules/ambulatory/application/ports/eligibility_notifier.py` (`ElegibilidadeNotifierPort`) e DTO imutável (`ElegibilidadeFalhaEvent`). O adaptador concreto de notificação e telemetria estruturada reside estritamente em `src/modules/ambulatory/infrastructure/adapters/logging_eligibility_notifier.py` (`LoggingElegibilidadeNotifier`), preservando a pureza hexagonal contra o acoplamento de bibliotecas de infraestrutura dentro de portas de aplicação.
 - Sem paywall ou travas financeiras. A validação não realiza chamadas a operadoras privadas nem expõe o paciente a cancelamento por recusa de crédito.
 - Unidade SUS Única (`configuracoes_unidade`). Os lotes ambulatoriais consolida-se na tabela `producoes_ambulatoriais` vinculando CNES/CNPJ/IBGE diretamente da configuração singleton da unidade. [Modelo](../architecture/data-model.md)
-- Fábrica canônica de serviço ambulatorial (ADR-001 / ADR-012 / ADR-013). O arquivo `src/modules/ambulatory/composition.py` exporta `build_producao_ambulatorial_service(session, audit_trail)` e `get_producao_ambulatorial_service(session)` para viabilizar a injeção desacoplada de `ProducaoAmbulatorialService` em workers assíncronos e na composition root de `consultation`, eliminando qualquer instanciação cruzada direta da camada `application/services/producao_service.py`.
-- Worker assíncrono executa fora do request. `src/worker/tasks/eligibility.py` promove o atendimento e orquestra a transição atômica no Valkey (`fila:aptos`).
-- Evento de auditoria imutável. A consolidação da produção gera `PRODUCAO_AMBULATORIAL_CONSOLIDADA` registrado em `audit_events`. [Catálogo de Eventos](../../reference/audit/event-catalog.md)
+- **Fábrica canônica e contrato transacional (ADR-001 / ADR-008 / ADR-012 / ADR-013).** `src/modules/ambulatory/composition.py` exporta `build_producao_ambulatorial_service` e `get_producao_ambulatorial_service`. `ProducaoAmbulatorialService.consolidar_teleconsulta(..., auto_commit=True)` retorna diretamente `ProducaoAmbulatorial` (zero DTOs espelho), trata colisão `23505` de forma idempotente via savepoint/rollback + releitura, suporta modo `auto_commit=False` para transação compartilhada com `PEPService`, e `gerar_arquivo_bpa_i` opera 100% em modo read-only (zero auditorias ou escritas em `GET`).
+- Admissão síncrona direta sem worker de elegibilidade. Sob a ADR-012, `FilaService.admitir_paciente` insere atendimentos SUS diretamente em `APTO_PARA_CHAMADA` no PostgreSQL e no ZSET `fila:aptos` do Valkey (task morta de elegibilidade removida de `src/worker/tasks/`), mantendo `ElegibilidadeService` isolado para validações cadastrais sob demanda.
+- Evento de auditoria imutável. A consolidação da produção gera `PRODUCAO_AMBULATORIAL_CONSOLIDADA` (e `PRODUCAO_PENDENCIA_CADASTRAL` quando aplicável na consolidação) registrado em `audit_events` com `AtorTipo.SISTEMA` e `AtorPapel.WORKER_ARQ`. [Catálogo de Eventos](../../reference/audit/event-catalog.md)
 
 ## 5. Peculiaridades
 
@@ -76,6 +76,7 @@ Ao finalizar a consulta, a rotina de consolidação ambulatorial gera o lote de 
 - `tests/unit/test_ambulatory_domain.py`
 - `tests/unit/test_ambulatory_production_service.py`
 - `tests/unit/test_ambulatory_router.py`
+- `tests/integration/test_ambulatory_integration.py`
 - Transição estrutural para `src/modules/ambulatory/...` formalizada na [ADR-012](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md).
 
 Prova viva:
@@ -91,15 +92,10 @@ ls tests/unit | rg -i "ambulatory"
 ## 7. Verificação
 
 ```bash
-rg -n "APROVADO|SUS-ISENTO" src/modules/ambulatory/
-# sus_adapter.py:24 codigo_autorizacao = "SUS-ISENTO"
+rg -n "SUS-ISENTO|def compilar_remessa" src/modules/ambulatory/
+# sus_adapter.py:28 codigo_autorizacao="SUS-ISENTO" | bpa_formatter.py:265 compilar_remessa
 
-uv run pytest tests/unit/test_ambulatory_production.py -q --no-cov
-
-# 8 passed
-
-uv run pytest tests/unit/test_eligibility_task.py -q --no-cov
-# 4 passed
+uv run pytest tests/unit/test_ambulatory_production.py tests/unit/test_ambulatory_domain.py -q --no-cov
 ```
 
 A integridade das regras ambulatoriais é assegurada pela garantia de gratuidade universal e geração determinística de lotes SUS.

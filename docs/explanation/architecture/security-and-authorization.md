@@ -99,8 +99,8 @@ sequenceDiagram
 
 ### Camada 1: Macro-Autorização na Borda da API (RBAC)
 * **Objetivo:** Filtrar o acesso a endpoints baseado nas atribuições funcionais (*roles*).
-* **Implementação:** Injeção de dependências nativa do FastAPI (`Depends(require_role("MEDICO"))` ou `Depends(require_permission("atendimentos:chamar"))`).
-* **Regra OWASP:** *Deny by Default*. Rotas protegidas rejeitam requisições sem claims explícitas válidas.
+* **Implementação:** Injeção de dependências nativa do FastAPI (`Depends(require_role("MEDICO"))`, `Depends(require_permission("prontuario:view"))` e `resolve_bearer_principal` em `src/core/authz/dependencies.py`), que unifica o parsing de tokens híbridos (HMAC 2-partes e JWT 3-partes), a verificação fail-closed contra `TokenRevocationPort` (`src/core/authz/revocation.py`) e o mapeamento de falhas HTTP (`401`/`403`/`503`) e WebSocket (`4401`/`4403`/`1013`). A matriz de permissões finas em `src/core/authz/roles.py` (`Permission` e `ROLE_PERMISSIONS`) associa explicitamente `queue:call` (`Permission.QUEUE_CALL`) a `Role.MEDICO` (junto de `queue:view`, `prontuario:view`, `prontuario:edit` e `doc:sign`).
+* **Regra OWASP:** *Deny by Default*. Rotas protegidas rejeitam requisições sem claims explícitas válidas e abortam com `503 Service Unavailable` caso o Valkey esteja inacessível (*fail-closed*).
 
 ### Camada 2: Segurança Horizontal Anti-IDOR por Titularidade (ADR-013)
 * **Objetivo:** Impedir acesso horizontal indevido (*Insecure Direct Object Reference*) entre pacientes ou profissionais autenticados na plataforma única, sem atalhos de bypass global (`ADMIN_GLOBAL` removido).
@@ -164,7 +164,7 @@ sequenceDiagram
 
 ### 4.3 Prevenção de Esgotamento do Pool de Banco de Dados (Anti-Starvation)
 * **O Risco:** Endpoints de WebSocket mantêm streams abertos por longos períodos (minutos a horas). Injetar `session: DbSessionDep` diretamente no router prenderia uma conexão do pool do PostgreSQL por toda a duração da conexão do cliente, esgotando rapidamente o pool da aplicação.
-* **A Solução:** As verificações de posse e autorização utilizam sessões efêmeras pontuais (ex.: `default_verificar_posse_paciente_fila` via `async_session_factory`), abrindo e liberando a conexão com o banco de dados em milissegundos durante o handshake. O streaming contínuo subseqüente consome exclusivamente recursos do Valkey Pub/Sub.
+* **A Solução:** As verificações de posse e autorização utilizam sessões efêmeras pontuais (ex.: `default_verificar_posse_paciente_fila` via `get_session_factory()` em `src/core/database.py`), abrindo e liberando a conexão com o banco de dados em milissegundos durante o handshake. O streaming contínuo subseqüente consome exclusivamente recursos do Valkey Pub/Sub.
 
 ### 4.4 Blindagem na Emissão de Tokens LiveKit SFU (WebRTC)
 No endpoint `POST /consultations/{atendimento_id}/livekit/token`:
@@ -180,7 +180,7 @@ No endpoint `POST /consultations/{atendimento_id}/livekit/token`:
 | **Configurar TMA / Parâmetros da Unidade** | Sim | Não | Não | Não |
 | **Cadastrar / Desativar Profissionais** | Sim | Não | Não | Não |
 | **Visualizar Fila Geral da Unidade** | Sim | Sim | Não | Não |
-| **Chamar Próximo Paciente da Fila** | Não | Sim | Não | Não |
+| **Chamar Próximo Paciente da Fila (`queue:call` / `Permission.QUEUE_CALL`)** | Não | Sim (`Role.MEDICO`) | Não | Não |
 | **Visualizar / Editar Prontuário Ativo** | Não | Sim (se alocado) | Não | Não |
 | **Assinar Receitas e Atestados (ICP)** | Não | Sim (se alocado) | Não | Não |
 | **Consolidar Lotes de Faturamento** | Sim | Não | Sim | Não |
@@ -197,8 +197,9 @@ No endpoint `POST /consultations/{atendimento_id}/livekit/token`:
 
 Para mitigar riscos de exfiltração de credenciais, sequestro de clique (*clickjacking*) e injeções maliciosas, o sistema adota medidas combinadas de borda e cliente:
 
-### 6.1 Middleware de Cabeçalhos de Segurança HTTP (`src/core/middleware.py:SecurityHeadersMiddleware`)
-Todas as respostas HTTP emitidas pela API passam pelo `SecurityHeadersMiddleware`, que injeta:
+### 6.1 Middleware de Cabeçalhos de Segurança HTTP e CORS Explícito (`src/core/middleware.py`, `src/main.py`)
+Todas as respostas HTTP emitidas pela API passam pelo `SecurityHeadersMiddleware` e pela política restritiva de CORS:
+* **`CORS_ORIGINS` Explícito (Sem Wildcard):** Em conformidade com OWASP, `src/main.py` nunca combina `allow_origins=["*"]` com `allow_credentials=True` (mesmo com `DEBUG=True`). Perfis locais (`DevelopmentSettings` e `TestSettings`) listam origens explícitas (`http://localhost:5173`, `http://127.0.0.1:5173`), e `ProductionSettings` falha no startup quando `CORS_ORIGINS` está vazio ou contém `"*"`.
 * **`Content-Security-Policy`**: Restringe fontes de script, estilo, mídia e conexões WebSockets. Em produção (`DEBUG=False`), opera com restrição estrita (`'self'`, sem `'unsafe-inline'`, sem CDNs e conexões `connect-src 'self' wss: https:`). Em desenvolvimento local (`DEBUG=True`), habilita relaxamento estrito para o Swagger UI e `ws:` local. Em todos os perfis, bloqueia frames (`frame-ancestors 'none'`) e objetos (`object-src 'none'`).
 * **`X-Content-Type-Options: nosniff`**: Impede que navegadores executem arquivos interpretando tipos MIME incorretos.
 * **`X-Frame-Options: DENY`**: Bloqueia ataques de clickjacking em toda a aplicação.

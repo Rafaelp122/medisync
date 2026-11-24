@@ -11,7 +11,6 @@ from src.core.errors import NotFoundError
 from src.core.privacy import mascarar_cpf, mascarar_nome
 from src.modules.consultation.application.ports.document_directory_port import (
     DadosVerificacaoDirectory,
-    DocumentDirectoryPort,
 )
 from src.modules.consultation.application.ports.signed_cache_port import (
     SignedCachePort,
@@ -31,7 +30,7 @@ from src.modules.consultation.infrastructure.memory_signed_cache import (
 )
 from src.modules.consultation.infrastructure.s3_storage import FakeStorageAdapter
 
-from tests.doubles import FakeAsyncSession, FakeResult
+from tests.doubles import FakeAsyncSession, FakeDocumentDirectory, FakeResult
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,26 +63,6 @@ class FakeDoc:
             self.itens = [FakeDocItem()]
 
 
-class FakeDirectory(DocumentDirectoryPort):
-    def __init__(
-        self,
-        dados: DadosVerificacaoDirectory | None = None,
-        exc: Exception | None = None,
-    ) -> None:
-        self._dados = dados
-        self._exc = exc
-
-    async def obter_dados_verificacao(
-        self,
-        medico_id: UUID,
-        atendimento_id: UUID,
-    ) -> DadosVerificacaoDirectory:
-        if self._exc is not None:
-            raise self._exc
-        assert self._dados is not None
-        return self._dados
-
-
 def _dados_padrao() -> DadosVerificacaoDirectory:
     return DadosVerificacaoDirectory(
         organizacao_nome="MediSync Telemedicina",
@@ -108,7 +87,7 @@ def _service(
 
     return DocumentValidationService(
         session=cast("AsyncSession", FakeAsyncSession([FakeResult(doc)])),
-        directory=FakeDirectory(dados or _dados_padrao(), exc),
+        directory=FakeDocumentDirectory(dados or _dados_padrao(), error=exc),
         storage=storage or FakeStorageAdapter(),
         compilador_pdf=compiler or _default_compiler,
         cache=cache if cache is not None else MemorySignedCache(),
@@ -157,8 +136,8 @@ async def test_validar_assinado_vs_emitido() -> None:
         id=doc_id,
         atendimento_id=atend_id,
         medico_id=med_id,
-        chave_s3="s3://medisync-docs/7/atendimentos/x/receita.pdf",
-        assinado_em=datetime.now(UTC),
+        chave_s3=f"consultations/{atend_id}/documents/{doc_id}.pdf",
+        assinado_em=None,
     )
     svc2 = _service(doc_emitido)
     res2 = await svc2.validar_documento(str(doc_id))
@@ -169,7 +148,7 @@ async def test_validar_assinado_vs_emitido() -> None:
 
 @pytest.mark.asyncio
 async def test_validar_chave_canonica_sem_cache_e_emitido() -> None:
-    """Canonical key alone must not imply signed status (Task 8 regression)."""
+    """Canonical key without DB signature or cache stays EMITIDO."""
     doc_id = uuid4()
     atend_id = uuid4()
     doc = FakeDoc(
@@ -177,13 +156,39 @@ async def test_validar_chave_canonica_sem_cache_e_emitido() -> None:
         atendimento_id=atend_id,
         medico_id=uuid4(),
         chave_s3=f"consultations/{atend_id}/documents/{doc_id}.pdf",
-        assinado_em=datetime.now(UTC),
+        assinado_em=None,
     )
     svc = _service(doc, cache=MemorySignedCache())
     res = await svc.validar_documento(str(doc_id))
     assert res.status_documento == "EMITIDO"
     assert res.assinatura_digital_valida is False
     assert res.assinado_em is None
+
+
+@pytest.mark.asyncio
+async def test_validar_pos_24h_cache_miss_com_db_assinado_e_reaquecimento() -> None:
+    """Cache miss after 24h TTL falls back to Postgres fields and reheats cache."""
+    doc_id = uuid4()
+    atend_id = uuid4()
+    signed_at = datetime.now(UTC)
+    doc = FakeDoc(
+        id=doc_id,
+        atendimento_id=atend_id,
+        medico_id=uuid4(),
+        chave_s3=f"consultations/{atend_id}/documents/{doc_id}.pdf",
+        assinado_em=signed_at,
+    )
+    cache = MemorySignedCache()
+    assert await cache.is_assinado(doc_id) is False
+
+    svc = _service(doc, cache=cache)
+    res = await svc.validar_documento(str(doc_id))
+
+    assert res.status_documento == "ASSINADO"
+    assert res.assinatura_digital_valida is True
+    assert res.conformidade_icp_brasil is True
+    assert res.assinado_em == signed_at
+    assert await cache.is_assinado(doc_id) is True
 
 
 @pytest.mark.asyncio
@@ -307,53 +312,42 @@ async def test_download_storage_falha_tipada_nao_suprime_generico() -> None:
         await svc.gerar_url_download(str(doc_id))
 
 
-class _DirRowResult:
-    def __init__(self, row: dict[str, Any] | None) -> None:
-        self._row = row
-
-    def mappings(self) -> "_DirRowResult":
-        return self
-
-    def first(self) -> dict[str, Any] | None:
-        return self._row
-
-
-class _DirFakeSession:
-    def __init__(self, rows: list[dict[str, Any] | None]) -> None:
-        self._rows = list(rows)
-        self.statements: list[str] = []
-        self.params: list[Any] = []
-
-    async def execute(self, stmt: Any, params: Any = None) -> _DirRowResult:
-        self.statements.append(str(stmt))
-        self.params.append(params)
-        return _DirRowResult(self._rows.pop(0))
-
-
 @pytest.mark.asyncio
 async def test_sql_document_directory_consulta_configuracoes_unidade_cnpj_cnes() -> (
     None
 ):
     """Q4 Fix #1: SqlDocumentDirectory lê cnpj e cnes de configuracoes_unidade."""
-    session = _DirFakeSession(
-        [
-            {
-                "cnpj": "12.345.678/0001-99",
-                "razao_social": "Consórcio Regional",
-                "nome_fantasia": "UPA Virtual Central",
-                "cnes": "2077558",
-            },
-            {"nome_completo": "Dra. Ana", "crm": "12345", "crm_uf": "SP"},
-            {
-                "nome_completo": "João Pedro",
-                "cpf": "12345678900",
-                "data_nascimento": None,
-                "logradouro": None,
-                "numero": None,
-                "bairro": None,
-                "cidade": None,
-                "estado": None,
-            },
+    session = FakeAsyncSession(
+        results=[
+            FakeResult(
+                mappings_rows=[
+                    {
+                        "cnpj": "12.345.678/0001-99",
+                        "razao_social": "Unidade Pública de Telemedicina SUS",
+                        "nome_fantasia": "UPA Virtual Central",
+                        "cnes": "2077558",
+                    }
+                ]
+            ),
+            FakeResult(
+                mappings_rows=[
+                    {"nome_completo": "Dra. Ana", "crm": "12345", "crm_uf": "SP"}
+                ]
+            ),
+            FakeResult(
+                mappings_rows=[
+                    {
+                        "nome_completo": "João Pedro",
+                        "cpf": "12345678900",
+                        "data_nascimento": None,
+                        "logradouro": None,
+                        "numero": None,
+                        "bairro": None,
+                        "cidade": None,
+                        "estado": None,
+                    }
+                ]
+            ),
         ]
     )
     directory = SqlDocumentDirectory(cast("AsyncSession", session))
@@ -363,10 +357,11 @@ async def test_sql_document_directory_consulta_configuracoes_unidade_cnpj_cnes()
         atendimento_id=uuid4(),
     )
 
-    assert "SELECT cnpj, razao_social, nome_fantasia, cnes" in session.statements[0]
-    assert "FROM configuracoes_unidade LIMIT 1" in session.statements[0]
-    assert "organizacoes" not in session.statements[0]
-    assert session.params[0] is None
+    stmt0 = session.executed_sql[0][0]
+    assert "SELECT cnpj, razao_social, nome_fantasia, cnes" in stmt0
+    assert "FROM configuracoes_unidade LIMIT 1" in stmt0
+    assert "organizacoes" not in stmt0
+    assert session.executed_sql[0][1] is None
     assert dto.organizacao_nome == "UPA Virtual Central"
     assert dto.organizacao_cnpj == "12.345.678/0001-99"
     assert dto.cnes == "2077558"
@@ -377,15 +372,19 @@ async def test_sql_document_directory_medico_ausente_raises_with_offending_id() 
     """DocumentoIntegridadeError interpola medico_id quando profissional ausente."""
     med_id = uuid4()
     atend_id = uuid4()
-    session = _DirFakeSession(
-        [
-            {
-                "cnpj": "12345678000199",
-                "razao_social": "UPA",
-                "nome_fantasia": "UPA",
-                "cnes": "2077558",
-            },
-            None,
+    session = FakeAsyncSession(
+        results=[
+            FakeResult(
+                mappings_rows=[
+                    {
+                        "cnpj": "12345678000199",
+                        "razao_social": "UPA",
+                        "nome_fantasia": "UPA",
+                        "cnes": "2077558",
+                    }
+                ]
+            ),
+            FakeResult(mappings_rows=None),
         ]
     )
     directory = SqlDocumentDirectory(cast("AsyncSession", session))
@@ -402,15 +401,21 @@ async def test_sql_document_directory_medico_sem_crm_raises_with_offending_id() 
     """DocumentoIntegridadeError interpola medico_id quando CRM/UF ausentes."""
     med_id = uuid4()
     atend_id = uuid4()
-    session = _DirFakeSession(
-        [
-            {
-                "cnpj": "12345678000199",
-                "razao_social": "UPA",
-                "nome_fantasia": "UPA",
-                "cnes": "2077558",
-            },
-            {"nome_completo": "Dra. Ana", "crm": "", "crm_uf": ""},
+    session = FakeAsyncSession(
+        results=[
+            FakeResult(
+                mappings_rows=[
+                    {
+                        "cnpj": "12345678000199",
+                        "razao_social": "UPA",
+                        "nome_fantasia": "UPA",
+                        "cnes": "2077558",
+                    }
+                ]
+            ),
+            FakeResult(
+                mappings_rows=[{"nome_completo": "Dra. Ana", "crm": "", "crm_uf": ""}]
+            ),
         ]
     )
     directory = SqlDocumentDirectory(cast("AsyncSession", session))
@@ -429,16 +434,24 @@ async def test_sql_document_directory_paciente_ausente_raises_with_offending_id(
     """DocumentoIntegridadeError interpola atendimento_id quando paciente ausente."""
     med_id = uuid4()
     atend_id = uuid4()
-    session = _DirFakeSession(
-        [
-            {
-                "cnpj": "12345678000199",
-                "razao_social": "UPA",
-                "nome_fantasia": "UPA",
-                "cnes": "2077558",
-            },
-            {"nome_completo": "Dra. Ana", "crm": "12345", "crm_uf": "SP"},
-            None,
+    session = FakeAsyncSession(
+        results=[
+            FakeResult(
+                mappings_rows=[
+                    {
+                        "cnpj": "12345678000199",
+                        "razao_social": "UPA",
+                        "nome_fantasia": "UPA",
+                        "cnes": "2077558",
+                    }
+                ]
+            ),
+            FakeResult(
+                mappings_rows=[
+                    {"nome_completo": "Dra. Ana", "crm": "12345", "crm_uf": "SP"}
+                ]
+            ),
+            FakeResult(mappings_rows=None),
         ]
     )
     directory = SqlDocumentDirectory(cast("AsyncSession", session))

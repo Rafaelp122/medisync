@@ -1,22 +1,30 @@
-"""Integration tests for atomic allocation, 50-doctor race, and latency benchmark."""
+"""Integration tests for atomic allocation, 4-Keys protection, and concurrency."""
 
 import asyncio
 import time
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from redis.asyncio import Redis
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.uuid7 import uuid7
 from src.core.valkey import get_valkey_client
-from src.modules.queue.application.dtos import AlocarChamadaCommand
-from src.modules.queue.application.services.alocacao_service import (
-    AlocacaoChamadaService,
+from src.modules.queue.application.dtos import (
+    AdquirirProximoPacienteCommand,
+    AlocarChamadaCommand,
+)
+from src.modules.queue.composition import (
+    build_alocacao_service_for_session,
+    build_fila_service_for_session,
+    build_queue_engine,
 )
 from src.modules.queue.domain.exceptions import MedicoOcupadoError
 from src.modules.queue.domain.models import Atendimento, StatusAtendimento
+from src.modules.queue.domain.scoring import calcular_score
 from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 
+from tests.factories.identity import make_paciente, make_profissional
+from tests.factories.queue import make_atendimento
 from tests.factories.scenarios import seed_clinical_scenario
 
 pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
@@ -34,68 +42,56 @@ async def test_parallel_race_condition_50_doctors_single_winner() -> None:
     k_atend_lock = f"lock:atendimento:{atendimento_id}"
 
     async for client in get_valkey_client():
-        # Clean and seed queue with single patient
         await client.delete(k_fila, k_atend_lock)
         await client.zadd(k_fila, {atendimento_id: 2000})  # pyright: ignore[reportUnknownMemberType]
-
-        # Preload script
         await manager.preload_scripts(client)
 
         async def attempt_call(doc_idx: int, cl: Redis = client) -> int:
             doc_id = f"doc-concurrency-{doc_idx}"
             k_doc = f"lock:medico:{doc_id}"
-            await cl.delete(k_doc)
+            k_consulta = f"lock:consulta_ativa:medico:{doc_id}"
+            await cl.delete(k_doc, k_consulta)
             res = await manager.execute_script(
                 client=cl,
                 script_name="alocar_chamada",
-                keys=[k_doc, k_atend_lock, k_fila],
+                keys=[k_doc, k_atend_lock, k_fila, k_consulta],
                 args=[doc_id, atendimento_id, 45],
             )
             return int(res)
 
-        # Launch 50 simultaneous doctors
         tasks = [attempt_call(i) for i in range(50)]
         results = await asyncio.gather(*tasks)
 
         winners = [r for r in results if r == 1]
         losers = [r for r in results if r == -1]
 
-        # Exact invariants: zero overbooking
         assert len(winners) == 1, f"Expected 1 winner, got {len(winners)}"
         assert len(losers) == 49, f"Expected 49 losers, got {len(losers)}"
+        assert await client.zcard(k_fila) == 0  # pyright: ignore[reportUnknownMemberType]
 
-        # Queue must be empty
-        assert (
-            await client.zcard(k_fila)  # pyright: ignore[reportUnknownMemberType]
-            == 0
-        )
-
-        # Attendance lock must exist and point to the winning doctor
         atend_lock_val = await client.get(k_atend_lock)
         assert atend_lock_val is not None
         assert str(atend_lock_val).startswith("doc-concurrency-")
 
-        # Winner doctor lock must exist and point to attendance
         winner_doc_id = str(atend_lock_val)
         winner_doc_lock = await client.get(f"lock:medico:{winner_doc_id}")
         assert winner_doc_lock == atendimento_id
 
-        # TTL must be within expected ring range
         ttl = await client.ttl(k_atend_lock)
         assert 40 <= ttl <= 45
 
 
 @pytest.mark.asyncio
 async def test_doctor_active_lock_returns_0_conflict() -> None:
-    """Verify doctor with active call lock receives 0 from Lua and 409 from service."""
+    """Verify doctor with ring or active consultation lock receives 0 / 409."""
     medico_id = uuid4()
     atendimento_id = uuid7()
     k_medico = f"lock:medico:{medico_id}"
     k_atend = f"lock:atendimento:{atendimento_id}"
+    k_consulta = f"lock:consulta_ativa:medico:{medico_id}"
     k_fila = "fila:aptos"
 
     async for client in get_valkey_client():
-        # Setup: doctor is already busy with another call
         await client.set(k_medico, "active-call-id", ex=45)
         await client.zadd(k_fila, {str(atendimento_id): 1000})  # pyright: ignore[reportUnknownMemberType]
 
@@ -103,17 +99,15 @@ async def test_doctor_active_lock_returns_0_conflict() -> None:
         res = await manager.execute_script(
             client=client,
             script_name="alocar_chamada",
-            keys=[k_medico, k_atend, k_fila],
+            keys=[k_medico, k_atend, k_fila, k_consulta],
             args=[str(medico_id), str(atendimento_id), 45],
         )
-        assert res == 0, "Expected code 0 when doctor has active lock"
+        assert res == 0, "Expected code 0 when doctor has active ring lock"
 
-        # Also verify application service translates code 0 to MedicoOcupadoError
-        async with async_session_factory() as session:
-            service = AlocacaoChamadaService(
+        async with get_session_factory()() as session:
+            service = build_alocacao_service_for_session(
                 valkey=client,
-                db_session=session,
-                lua_manager=manager,
+                session=session,
             )
             cmd = AlocarChamadaCommand(
                 medico_id=medico_id,
@@ -121,6 +115,25 @@ async def test_doctor_active_lock_returns_0_conflict() -> None:
             )
             with pytest.raises(MedicoOcupadoError, match="já possui uma chamada"):
                 await service.alocar_chamada(cmd)
+
+        # Also test KEYS[4] (active consultation lock)
+        await client.delete(k_medico)
+        await client.set(k_consulta, "ongoing-consultation-id", ex=7200)
+        res_consulta = await manager.execute_script(
+            client=client,
+            script_name="alocar_chamada",
+            keys=[k_medico, k_atend, k_fila, k_consulta],
+            args=[str(medico_id), str(atendimento_id), 45],
+        )
+        assert res_consulta == 0, "Expected code 0 when lock:consulta_ativa exists"
+
+        async with get_session_factory()() as session:
+            service = build_alocacao_service_for_session(
+                valkey=client,
+                session=session,
+            )
+            with pytest.raises(MedicoOcupadoError, match="já possui uma chamada"):
+                await service.alocar_proximo_paciente(medico_id=medico_id)
 
 
 @pytest.mark.asyncio
@@ -131,15 +144,14 @@ async def test_alocar_chamada_sub_10ms_latency_benchmark() -> None:
 
     async for client in get_valkey_client():
         await manager.preload_scripts(client)
-
         latencies_ms: list[float] = []
 
-        # Run 50 sequential allocations to evaluate steady-state latency
         for i in range(50):
             atend_id = f"bench-atend-{i}"
             med_id = f"bench-med-{i}"
             k_med = f"lock:medico:{med_id}"
             k_atend = f"lock:atendimento:{atend_id}"
+            k_consulta = f"lock:consulta_ativa:medico:{med_id}"
 
             await client.zadd(k_fila, {atend_id: 1000 + i})  # pyright: ignore[reportUnknownMemberType]
 
@@ -147,19 +159,17 @@ async def test_alocar_chamada_sub_10ms_latency_benchmark() -> None:
             res = await manager.execute_script(
                 client=client,
                 script_name="alocar_chamada",
-                keys=[k_med, k_atend, k_fila],
+                keys=[k_med, k_atend, k_fila, k_consulta],
                 args=[med_id, atend_id, 45],
             )
             elapsed_ms = (time.perf_counter() - start) * 1000.0
             latencies_ms.append(elapsed_ms)
-
             assert res == 1
 
         avg_latency = sum(latencies_ms) / len(latencies_ms)
         sorted_latencies = sorted(latencies_ms)
         p99_latency = sorted_latencies[int(len(sorted_latencies) * 0.98)]
 
-        # RNF-01 requirement: allocation < 10ms (and well under 200ms ceiling)
         assert avg_latency < 10.0, (
             f"Expected average latency < 10ms, got {avg_latency:.2f}ms"
         )
@@ -171,8 +181,7 @@ async def test_alocar_chamada_sub_10ms_latency_benchmark() -> None:
 @pytest.mark.asyncio
 async def test_end_to_end_alocacao_service_with_postgres() -> None:
     """Verify end-to-end atomic allocation with PostgreSQL and Valkey consistency."""
-    async with async_session_factory() as session:
-        # 1. Setup DB records via seed_clinical_scenario
+    async with get_session_factory()() as session:
         sample_tcle_hash = (
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         )
@@ -196,16 +205,15 @@ async def test_end_to_end_alocacao_service_with_postgres() -> None:
         atend_id = atendimento.id
         med_id = medico.id
 
-        # 2. Add to Valkey queue
         async for client in get_valkey_client():
             k_fila = "fila:aptos"
             await client.zadd(k_fila, {str(atend_id): 1000})  # pyright: ignore[reportUnknownMemberType]
 
-            # 3. Execute allocation via service
-            service = AlocacaoChamadaService(
+            engine = build_queue_engine(valkey=client)
+            service = build_alocacao_service_for_session(
                 valkey=client,
-                db_session=session,
-                lua_manager=get_lua_script_manager(),
+                session=session,
+                queue_engine=engine,
             )
             cmd = AlocarChamadaCommand(
                 medico_id=med_id,
@@ -214,37 +222,81 @@ async def test_end_to_end_alocacao_service_with_postgres() -> None:
             )
             result = await service.alocar_chamada(cmd)
 
-            # Assert returned DTO
             assert result.atendimento_id == atend_id
             assert result.medico_id == med_id
             assert result.status == StatusAtendimento.CHAMANDO_PACIENTE.value
             assert result.ttl_segundos == 45
 
-            # 4. Verify DB entity state
             reloaded = await session.get(Atendimento, atend_id)
             assert reloaded is not None
             assert reloaded.status == StatusAtendimento.CHAMANDO_PACIENTE.value
             assert reloaded.medico_id == med_id
             assert reloaded.chamada_iniciada_em is not None
 
-            # 5. Verify Valkey dual locks and queue removal
             k_med = f"lock:medico:{med_id}"
             k_atend = f"lock:atendimento:{atend_id}"
             assert await client.get(k_med) == str(atend_id)
             assert await client.get(k_atend) == str(med_id)
-            assert (
-                await client.zrank(k_fila, str(atend_id))  # pyright: ignore[reportUnknownMemberType]
-                is None
-            )
+            assert await client.zrank(k_fila, str(atend_id)) is None  # pyright: ignore[reportUnknownMemberType]
 
-            # 6. Verify lock checking helpers on service
-            assert await service.verificar_lock_medico(med_id) is True
-            assert await service.verificar_lock_atendimento(atend_id) is True
-            assert await service.obter_lock_medico_atendimento_id(med_id) == str(
-                atend_id
-            )
+            await engine.liberar_ring(med_id, atend_id)
+            assert await client.exists(k_med) == 0
+            assert await client.exists(k_atend) == 0
 
-            # 7. Release locks
-            await service.liberar_locks(med_id, atend_id)
-            assert await service.verificar_lock_medico(med_id) is False
-            assert await service.verificar_lock_atendimento(atend_id) is False
+
+@pytest.mark.asyncio
+async def test_concurrent_10_doctors_alocar_proximo_no_false_409() -> None:
+    """10 concurrent doctors calling /chamar-proximo allocate 10 distinct patients."""
+    sample_tcle = "c" * 64
+    medicos_ids: list[UUID] = []
+    atendimentos_ids: list[UUID] = []
+
+    async with get_session_factory()() as session:
+        for i in range(10):
+            pac = make_paciente(cpf=f"100000000{i:02d}", telefone=f"119000000{i:02d}")
+            med = make_profissional(
+                cpf=f"200000000{i:02d}",
+                email=f"dr.concurrent{i}@ubs.gov.br",
+                papel="MEDICO",
+                crm=f"99{i:03d}",
+                crm_uf="SP",
+            )
+            session.add_all([pac, med])
+            await session.flush()
+
+            atend = make_atendimento(
+                paciente_id=pac.id,
+                prioridade_clinica=3,
+                tcle_hash=sample_tcle,
+            )
+            atend.promover_para_apto()
+            session.add(atend)
+            await session.flush()
+            medicos_ids.append(med.id)
+            atendimentos_ids.append(atend.id)
+
+        await session.commit()
+
+    async for client in get_valkey_client():
+        for idx, aid in enumerate(atendimentos_ids):
+            score = calcular_score(3) + idx
+            await client.zadd("fila:aptos", {str(aid): score})  # pyright: ignore[reportUnknownMemberType]
+
+        async def _call_next(doc_id: UUID, cl: Redis = client) -> UUID | None:
+            async with get_session_factory()() as doc_session:
+                fila_svc = build_fila_service_for_session(
+                    session=doc_session,
+                    valkey=cl,
+                )
+                res = await fila_svc.adquirir_proximo_paciente(
+                    AdquirirProximoPacienteCommand(medico_id=doc_id, max_scan=50)
+                )
+                return res.atendimento_id if res is not None else None
+
+        allocated = await asyncio.gather(*[_call_next(mid) for mid in medicos_ids])
+        non_null = [aid for aid in allocated if aid is not None]
+
+        assert len(non_null) == 10
+        assert len(set(non_null)) == 10
+        assert set(non_null) == set(atendimentos_ids)
+        assert await client.zcard("fila:aptos") == 0  # pyright: ignore[reportUnknownMemberType]

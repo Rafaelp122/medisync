@@ -1,15 +1,17 @@
 """FastAPI WebSocket endpoint for doctor incoming call modal signaling."""
 
+import contextlib
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Path, WebSocket
 
-from src.core.dependencies import ValkeyDep
 from src.core.realtime import stream_channel
+from src.core.valkey import ValkeyDep
 from src.modules.consultation.application.realtime_channels import (
     channel_doctor_calls,
 )
+from src.modules.consultation.composition import DoctorPresenceDep
 from src.modules.consultation.presentation.dependencies import DoctorWsAuthDep
 
 doctor_ws_router = APIRouter(tags=["doctor-realtime"])
@@ -20,9 +22,12 @@ async def ws_doctor_calls(
     websocket: WebSocket,
     medico_id: Annotated[UUID, Path(description="ID do médico")],
     valkey: ValkeyDep,
+    presence: DoctorPresenceDep,
     _auth: DoctorWsAuthDep,
 ) -> None:
-    """Stream real-time incoming call modal triggers to connected doctor client."""
+    """Register doctor presence and stream incoming call triggers via Pub/Sub."""
+    with contextlib.suppress(Exception):
+        await presence.registrar_medico_ativo(medico_id)
     await stream_channel(
         websocket,
         valkey,

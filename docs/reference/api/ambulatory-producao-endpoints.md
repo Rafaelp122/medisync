@@ -20,7 +20,7 @@ Todos os endpoints operam sob o prefixo `/api/v1/ambulatory/producao` e exigem t
   - `page` (int, default `1`, ge=1).
   - `size` (int, default `50`, ge=1, le=100).
 - **Status Sucesso:** `200 OK`
-- **Envelope de Resposta:** `ListaProducaoAmbulatorialResponse` contendo `items`, `total`, `competencia`, `page` e `size`.
+- **Envelope de Resposta:** `ListaProducaoAmbulatorialResponse` serializado diretamente a partir das entidades `ProducaoAmbulatorial` (sem DTOs espelho `BpaProducaoDTO`/`ListaProducaoAmbulatorialDTO`), contendo `items`, `total`, `competencia`, `page` e `size`.
 
 **Exemplo de Resposta (JSON):**
 ```json
@@ -43,20 +43,20 @@ Todos os endpoints operam sob o prefixo `/api/v1/ambulatory/producao` e exigem t
 
 ### Download do Arquivo Magnético BPA-I
 
-- **Método / Rota:** `GET /api/v1/ambulatory/producao/exportar`
+- **Método / Rota:** `GET /api/v1/ambulatory/producao/exportar` (puramente read-only: 0 escritas ou emissões de `AuditEvent`)
 - **Query Params:**
   - `competencia` (string obrigatória, formato `YYYYMM`).
 - **Status Sucesso:** `200 OK`
 - **Headers de Resposta:**
   - `Content-Type: text/plain; charset=ascii`
   - `Content-Disposition: attachment; filename="BPA_I_{competencia}_{cnes}.txt"`
-- **Estrutura Posicional:**
+- **Estrutura Posicional (`BpaPositionalFormatter.compilar_remessa`):**
   - Linha Header (Tipo 01): 130 caracteres iniciados por `01#BPA#` contendo competência, total de linhas, total de folhas e checksum `cbc-smt-vrf` no domínio `[1111..2221]`.
-  - Linhas Detalhe (Tipo 03): 152 caracteres iniciados por `03` contendo CNES, CNS médico, CBO, CNS paciente, SIGTAP `0301010250`, caráter de urgência `02` e dados demográficos em ASCII maiúsculo.
+  - Linhas Detalhe (Tipo 03): 152 caracteres iniciados por `03` contendo CNES, CNS médico (nulo honesto quando ausente, nunca CPF), CBO por especialidade/papel (`251510` Psicologia, `223710` Nutrição, `225125` Médico), CNS paciente, SIGTAP `0301010250`, caráter de urgência `02`, idade (`000` preservado para lactentes) e dados demográficos em ASCII maiúsculo.
 
 **Amostra Posicional Gerada (ASCII Puro):**
 ```text
-01#BPA#2026110000010000011112UPA DIGITAL CONSORCIO INTERMUNMSYNC 12345678000199SECRETARIA MUNICIPAL DE SAUDE           M03.01     
+01#BPA#2026110000010000011112UPA DIGITAL UNIDADE CENTRAL INMSYNC 12345678000199SECRETARIA MUNICIPAL DE SAUDE           M03.01     
 03200000120261170000000000000122512520261110001010301010250700000000000002M355030R50903500000102             BPASILVA, JOAO                   1991051599
 ```
 
@@ -82,6 +82,7 @@ Todos os endpoints operam sob o prefixo `/api/v1/ambulatory/producao` e exigem t
 
 ```bash
 uv run pytest tests/unit/test_ambulatory_router.py tests/unit/test_ambulatory_production_service.py -v
+uv run pytest tests/integration/test_ambulatory_integration.py -v
 uv run pytest tests/architecture/test_routers_are_thin.py tests/architecture/test_main_composition_root.py -v
 ```
 

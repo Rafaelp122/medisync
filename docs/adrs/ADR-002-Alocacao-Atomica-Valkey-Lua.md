@@ -61,3 +61,16 @@ Adotamos a **Opção 3: Valkey 8.0 com ZSET e Script Lua Atômico (`alocar_chama
 * **Zero Race Conditions**: Eliminação matemática de duplicidade de chamadas.
 * **Desempenho Sub-Milissegundo**: Alocação concluída em $< 10\text{ ms}$, muito abaixo da meta de 200 ms.
 * **Tolerância a Falhas**: Locks expiram por TTL caso o nó da API sofra uma queda repentina.
+
+---
+
+## 6. Adendo — Evolução para Lua 4-Keys Anti-Overbooking, Varredura ZRANGE e Sweeper Lockado (Issue #163 - 2026-11-23)
+
+* **Lua 4-Keys (`KEYS[4]: lock:consulta_ativa:medico:{medico_id}`)**:
+  * Ambos `alocar_chamada.lua` e `alocar_proximo.lua` passaram a exigir `KEYS[4]` e checar `EXISTS(KEYS[1]) == 1 or EXISTS(KEYS[4]) == 1` antes de qualquer leitura/mutação, impedindo que um médico já em teleconsulta ativa (`EM_ATENDIMENTO`) capture um segundo paciente via `/chamar-proximo`.
+* **Seleção Atômica Multi-Candidato (`alocar_proximo.lua`)**:
+  * Substituiu o loop de retry em Python sobre `ZRANGE 0 0`: executa `ZRANGE KEYS[3] 0 (max_scan - 1)` atomicamente dentro do Lua, pula candidatos já bloqueados por `lock:atendimento:{cand}`, aplica `ZREM` + `SET EX` no primeiro candidato elegível e devolve `{1, cand}` (ou `{0, ""}` / `{-1, ""}`), suportando 10+ médicos concorrentes sem falsos HTTP 409.
+* **Motor `ValkeyQueueEngine`, Pós-Commit Estrito & Compensação**:
+  * Mutações Valkey (`inserir_ou_atualizar_fila`, `remover_da_fila`, `liberar_ring`, `liberar_consulta`) executam estritamente **após** `commit()` no PostgreSQL; falhas pós-Lua no banco ou no `enqueue_job` do ARQ acionam compensação via `devolver_para_fila(..., nx=True)` e reversão de estado.
+* **Sweeper Blindado (`lock:sweeper:fila_aptos`)**:
+  * `reconciliar_fila_orphans_task` adquire `lock:sweeper:fila_aptos` (`SET NX EX 55`, liberado em `finally`), pagina órfãos em lotes keyset (`LIMIT 200`), verifica locks em 1 round-trip via pipeline e reinjeta apenas após revalidar `APTO_PARA_CHAMADA` com `ZADD NX`.

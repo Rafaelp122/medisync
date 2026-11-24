@@ -1,50 +1,34 @@
 """Integration tests for stochastic queue admission control and backpressure (RN05)."""
 
-from datetime import datetime
+import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
-from src.core.database import async_session_factory
-from src.core.uuid7 import uuid7
+from src.core.database import get_session_factory
+from src.core.valkey import get_valkey_client
 
 if TYPE_CHECKING:
     from uuid import UUID
 
-from src.core.valkey import get_valkey_client
 from src.modules.queue.application.dtos import (
+    AdmissaoAtendimentoCommand,
     AdquirirProximoPacienteCommand,
-    IngressarFilaComBackpressureCommand,
     IngressarFilaCommand,
 )
-from src.modules.queue.application.ports.queue_overflow_notifier import (
-    QueueOverflowEvent,
+from src.modules.queue.composition import (
+    build_fila_service_for_session,
+    build_queue_engine,
 )
-from src.modules.queue.application.services.alocacao_service import (
-    AlocacaoChamadaService,
-)
-from src.modules.queue.application.services.controle_admissao_service import (
-    ControleAdmissaoService,
-)
-from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.domain.exceptions import AdmissaoFilaSuspensaError
 from src.modules.queue.domain.models import PrioridadeClinica
-from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
+from src.modules.queue.infrastructure.valkey_queue_engine import FILA_APTOS_KEY
+from src.modules.telemetry.domain.models import ConfiguracaoPlantao
 
 from tests.factories.identity import make_paciente, make_profissional
 from tests.factories.queue import make_atendimento
 
 SAMPLE_TCLE = "b" * 64
-
-
-class SpyNotifier:
-    """Spy notifier collecting emitted overflow events for assertions."""
-
-    def __init__(self) -> None:
-        self.events: list[QueueOverflowEvent] = []
-
-    async def emitir_transbordo(self, event: QueueOverflowEvent) -> None:
-        self.events.append(event)
-
 
 pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 
@@ -53,11 +37,9 @@ pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 async def test_acceptance_criteria_backpressure_rejection_and_queue_preservation() -> (
     None
 ):
-    """Test criteria 1 & 2: Safe rejection while preserving in-flight queue."""
-    spy_notifier = SpyNotifier()
-
+    """Safe rejection preserves in-flight queue and rolls back reserved quota."""
     async for valkey in get_valkey_client():
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             medico = make_profissional(
                 cpf="11122233344",
                 email="dr.shift@ubs.gov.br",
@@ -66,20 +48,11 @@ async def test_acceptance_criteria_backpressure_rejection_and_queue_preservation
             session.add(medico)
             await session.commit()
             await session.refresh(medico)
+            medico_id = medico.id
 
-            # Ingest 5 existing patients into the queue
-            controle = ControleAdmissaoService(valkey=valkey, notifier=spy_notifier)
-            alocacao = AlocacaoChamadaService(
-                valkey=valkey,
-                db_session=session,
-                lua_manager=get_lua_script_manager(),
-            )
-            service = FilaService(
-                valkey=valkey,
-                db_session=session,
-                alocacao_service=alocacao,
-                controle_admissao=controle,
-            )
+            engine = build_queue_engine(valkey=valkey)
+            await engine.registrar_medico_ativo(medico_id)
+            service = build_fila_service_for_session(session=session, valkey=valkey)
 
             existing_ids: list[UUID] = []
             for i in range(5):
@@ -106,38 +79,42 @@ async def test_acceptance_criteria_backpressure_rejection_and_queue_preservation
                     )
                 )
 
-            # Confirm 5 patients in queue
             assert await service.obter_tamanho_fila() == 5
 
-            # 2. Attempt to admit 6th patient with tight capacity:
-            # 5 waiting * 600s TMA * 1.25 alpha / 1 doctor = 3750s workload
-            # Remaining shift = 1800s (30 min) -> 3750s > 1800s -> BACKPRESSURE!
-            new_patient_id = uuid7()
-            blocked_cmd = IngressarFilaComBackpressureCommand(
-                atendimento_id=new_patient_id,
-                prioridade_clinica=PrioridadeClinica.URGENTE,
-                medicos_ativos=1,
+            new_patient = make_paciente(cpf="99900011122", telefone="11999998888")
+            session.add(new_patient)
+            await session.commit()
+            await session.refresh(new_patient)
+
+            # 5 waiting * 600s TMA * 1.25 alpha / 1 active doctor = 3750s > 1800s
+            blocked_cmd = AdmissaoAtendimentoCommand(
+                paciente_id=new_patient.id,
+                queixa_principal="Dor de cabeça leve",
+                sintomas=[],
+                tcle_hash=SAMPLE_TCLE,
                 tempo_restante_segundos=1800,
                 tma_estimado_segundos=600,
                 alpha_margem=1.25,
             )
 
             with pytest.raises(AdmissaoFilaSuspensaError) as exc_info:
-                await service.admitir_com_backpressure(blocked_cmd)
+                await service.admitir_paciente(blocked_cmd)
 
-            # AC 1: Rejected with HTTP 503 and polite explanation
             assert exc_info.value.status_code == 503
             assert exc_info.value.motivo == "CAPACIDADE_EXCEDIDA"
             assert "capacidade do plantão atual foi atingida" in exc_info.value.detail
 
-            # AC 2: Invariante de Transbordo -> existing 5 patients are NEVER dropped!
+            # Quota reservation was rolled back atomically
+            today_key = f"queue:admissoes:{datetime.now(UTC).strftime('%Y-%m-%d')}"
+            assert await valkey.get(today_key) == "0"
+
+            # Existing 5 patients are preserved untouched
             assert await service.obter_tamanho_fila() == 5
-            current_queue = await service.listar_fila()
+            current_queue: list[str] = await valkey.zrange(FILA_APTOS_KEY, 0, -1)  # pyright: ignore[reportUnknownMemberType]
             assert current_queue == [str(item_id) for item_id in existing_ids]
 
-            # Doctor can still call and serve existing patients without interruption
             res_call = await service.adquirir_proximo_paciente(
-                AdquirirProximoPacienteCommand(medico_id=medico.id)
+                AdquirirProximoPacienteCommand(medico_id=medico_id)
             )
             assert res_call is not None
             assert res_call.atendimento_id == existing_ids[0]
@@ -145,131 +122,141 @@ async def test_acceptance_criteria_backpressure_rejection_and_queue_preservation
 
 
 @pytest.mark.asyncio
-async def test_acceptance_criterion_3_queue_overflow_transit_event_emitted() -> None:
-    """Test criterion 3: QUEUE_OVERFLOW_TRANSIT event has full telemetry."""
-    spy_notifier = SpyNotifier()
-
+async def test_acceptance_criterion_3_queue_overflow_transit_logging(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Overflow emits structured warning with active doctors and workload."""
     async for valkey in get_valkey_client():
-        async with async_session_factory() as session:
-            controle = ControleAdmissaoService(valkey=valkey, notifier=spy_notifier)
-            alocacao = AlocacaoChamadaService(
-                valkey=valkey,
-                db_session=session,
-                lua_manager=get_lua_script_manager(),
-            )
-            service = FilaService(
-                valkey=valkey,
-                db_session=session,
-                alocacao_service=alocacao,
-                controle_admissao=controle,
-            )
+        async with get_session_factory()() as session:
+            engine = build_queue_engine(valkey=valkey)
+            for idx in range(2):
+                doc = make_profissional(
+                    cpf=f"2223334440{idx}",
+                    email=f"dr{idx}@ubs.gov.br",
+                    papel="MEDICO",
+                )
+                session.add(doc)
+                await session.commit()
+                await engine.registrar_medico_ativo(doc.id)
 
-            # Seed 8 patients in queue
+            patient = make_paciente(cpf="88877766655", telefone="11977776666")
+            session.add(patient)
+            await session.commit()
+
+            service = build_fila_service_for_session(session=session, valkey=valkey)
             for _ in range(8):
                 await service.ingressar_fila(
                     IngressarFilaCommand(
-                        atendimento_id=uuid7(),
+                        atendimento_id=make_atendimento(
+                            paciente_id=patient.id,
+                            prioridade_clinica=PrioridadeClinica.URGENTE,
+                            tcle_hash=SAMPLE_TCLE,
+                        ).id,
                         prioridade_clinica=PrioridadeClinica.URGENTE,
                     )
                 )
 
-            # Attempt admission: 8 * 600 * 1.25 / 2 = 3000s > 2000s
-            blocked_cmd = IngressarFilaComBackpressureCommand(
-                atendimento_id=uuid7(),
-                prioridade_clinica=PrioridadeClinica.URGENTE,
-                medicos_ativos=2,
+            # 8 * 600 * 1.25 / 2 active doctors = 3000s > 2000s
+            blocked_cmd = AdmissaoAtendimentoCommand(
+                paciente_id=patient.id,
+                queixa_principal="Coriza",
+                sintomas=[],
+                tcle_hash=SAMPLE_TCLE,
                 tempo_restante_segundos=2000,
                 tma_estimado_segundos=600,
                 alpha_margem=1.25,
             )
 
-            with pytest.raises(AdmissaoFilaSuspensaError):
-                await service.admitir_com_backpressure(blocked_cmd)
+            admissao_logger = logging.getLogger("medisync.queue.admissao")
+            prev_disabled = admissao_logger.disabled
+            admissao_logger.disabled = False
+            admissao_logger.addHandler(caplog.handler)
+            try:
+                with (
+                    caplog.at_level(logging.WARNING, logger="medisync.queue.admissao"),
+                    pytest.raises(AdmissaoFilaSuspensaError),
+                ):
+                    await service.admitir_paciente(blocked_cmd)
+            finally:
+                admissao_logger.removeHandler(caplog.handler)
+                admissao_logger.disabled = prev_disabled
 
-            # AC 3: Exactly 1 QUEUE_OVERFLOW_TRANSIT event was emitted
-            assert len(spy_notifier.events) == 1
-            ev = spy_notifier.events[0]
-
-            assert ev.evento == "QUEUE_OVERFLOW_TRANSIT"
-            assert ev.motivo == "CAPACIDADE_EXCEDIDA"
-            assert ev.pacientes_aguardando == 8
-            assert ev.medicos_ativos == 2
-            assert ev.carga_estimada_segundos == 3000.0
-            assert ev.tempo_restante_segundos == 2000.0
-            assert ev.alpha_utilizado == 1.25
-            assert "capacidade do plantão atual foi atingida" in ev.mensagem_orientacao
-            assert isinstance(ev.disparado_em, datetime)
+            assert "CAPACIDADE_EXCEDIDA" in caplog.text
+            assert "3000.0s" in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_rejection_no_active_doctors_emits_event() -> None:
-    """Zero active doctors blocks admission and emits overflow event."""
-    spy_notifier = SpyNotifier()
-
+async def test_rejection_no_active_doctors_blocks_admission() -> None:
+    """Zero active doctors in Valkey blocks admission with SEM_MEDICOS_ATIVOS."""
     async for valkey in get_valkey_client():
-        async with async_session_factory() as session:
-            controle = ControleAdmissaoService(valkey=valkey, notifier=spy_notifier)
-            alocacao = AlocacaoChamadaService(
-                valkey=valkey,
-                db_session=session,
-                lua_manager=get_lua_script_manager(),
-            )
-            service = FilaService(
-                valkey=valkey,
-                db_session=session,
-                alocacao_service=alocacao,
-                controle_admissao=controle,
-            )
+        async with get_session_factory()() as session:
+            patient = make_paciente(cpf="77766655544", telefone="11966665555")
+            session.add(patient)
+            await session.commit()
 
-            cmd = IngressarFilaComBackpressureCommand(
-                atendimento_id=uuid7(),
-                prioridade_clinica=PrioridadeClinica.URGENTE,
-                medicos_ativos=0,
+            service = build_fila_service_for_session(session=session, valkey=valkey)
+            cmd = AdmissaoAtendimentoCommand(
+                paciente_id=patient.id,
+                queixa_principal="Cefaleia",
+                sintomas=[],
+                tcle_hash=SAMPLE_TCLE,
                 tempo_restante_segundos=3600,
             )
 
             with pytest.raises(AdmissaoFilaSuspensaError) as exc_info:
-                await service.admitir_com_backpressure(cmd)
+                await service.admitir_paciente(cmd)
 
             assert exc_info.value.motivo == "SEM_MEDICOS_ATIVOS"
             assert "não há médicos plantonistas ativos" in exc_info.value.detail
-            assert len(spy_notifier.events) == 1
-            assert spy_notifier.events[0].motivo == "SEM_MEDICOS_ATIVOS"
 
 
 @pytest.mark.asyncio
-async def test_rejection_daily_quota_reached_emits_event() -> None:
-    """Reaching daily max quota blocks admission and emits overflow event."""
-    spy_notifier = SpyNotifier()
-
+async def test_rejection_daily_quota_from_config_plantao_blocks_and_preserves_cap() -> (
+    None
+):
+    """Persisted ConfiguracaoPlantao quota blocks overflow atomically in Valkey."""
     async for valkey in get_valkey_client():
-        async with async_session_factory() as session:
-            controle = ControleAdmissaoService(valkey=valkey, notifier=spy_notifier)
-            alocacao = AlocacaoChamadaService(
-                valkey=valkey,
-                db_session=session,
-                lua_manager=get_lua_script_manager(),
+        async with get_session_factory()() as session:
+            config = ConfiguracaoPlantao(
+                alpha_backpressure=1.25,
+                cota_diaria_maxima=1,
+                tma_padrao_segundos=600,
+                tempo_tolerancia_ring_segundos=45,
             )
-            service = FilaService(
-                valkey=valkey,
-                db_session=session,
-                alocacao_service=alocacao,
-                controle_admissao=controle,
+            doc = make_profissional(
+                cpf="55544433322",
+                email="dr.quota@ubs.gov.br",
+                papel="MEDICO",
             )
+            patient = make_paciente(cpf="66655544433", telefone="11955554444")
+            session.add_all([config, doc, patient])
+            await session.commit()
 
-            cmd = IngressarFilaComBackpressureCommand(
-                atendimento_id=uuid7(),
-                prioridade_clinica=PrioridadeClinica.URGENTE,
-                medicos_ativos=5,
-                tempo_restante_segundos=10000,
-                total_admissoes_hoje=300,
-                cota_diaria_maxima=300,
+            engine = build_queue_engine(valkey=valkey)
+            await engine.registrar_medico_ativo(doc.id)
+            service = build_fila_service_for_session(session=session, valkey=valkey)
+
+            first = await service.admitir_paciente(
+                AdmissaoAtendimentoCommand(
+                    paciente_id=patient.id,
+                    queixa_principal="Febre leve",
+                    sintomas=["febre"],
+                    tcle_hash=SAMPLE_TCLE,
+                )
             )
+            assert first.atendimento_id is not None
 
             with pytest.raises(AdmissaoFilaSuspensaError) as exc_info:
-                await service.admitir_com_backpressure(cmd)
+                await service.admitir_paciente(
+                    AdmissaoAtendimentoCommand(
+                        paciente_id=patient.id,
+                        queixa_principal="Dor leve",
+                        sintomas=[],
+                        tcle_hash=SAMPLE_TCLE,
+                    )
+                )
 
             assert exc_info.value.motivo == "COTA_ATINGIDA"
             assert "cota diária de atendimentos da unidade" in exc_info.value.detail
-            assert len(spy_notifier.events) == 1
-            assert spy_notifier.events[0].motivo == "COTA_ATINGIDA"
+            today_key = f"queue:admissoes:{datetime.now(UTC).strftime('%Y-%m-%d')}"
+            assert await valkey.get(today_key) == "1"

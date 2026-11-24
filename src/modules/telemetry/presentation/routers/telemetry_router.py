@@ -79,11 +79,13 @@ async def obter_configuracao_plantao(
     ),
 )
 async def atualizar_configuracao_plantao(
-    body: Annotated[ConfigPlantaoRequest, Body()],
-    config_service: ConfigPlantaoServiceDep,
     auth: TelemetryConfigAuthDep,
+    config_service: ConfigPlantaoServiceDep,
+    body: Annotated[ConfigPlantaoRequest, Body()],
 ) -> ConfigPlantaoResponse:
     """Update shift operational parameters and SLA thresholds."""
-    cmd = body.to_command(atualizado_por_id=auth.usuario_id)
-    dto = await config_service.atualizar_configuracao(cmd)
+    dto = await config_service.atualizar_configuracao(
+        body,
+        atualizado_por_id=auth.usuario_id,
+    )
     return ConfigPlantaoResponse.model_validate(dto)

@@ -40,7 +40,7 @@
 ### Cenário 4: Gate Mandatório de Conferência de Identidade Visual e Documento Oficial (CFM nº 2.314/2022)
 - **Dado que** o médico plantonista está em videoconferência ativa com a paciente,
 - **Quando** realiza a abertura da teleconsulta,
-- **Então** o médico deve solicitar a apresentação de documento oficial com foto (RG/CNH/CNS) na câmera e registrar no PEP a validação de identidade (`identidade_verificada: true`, `tipo_documento_apresentado: "RG"` ou justificativa formal em caso de impossibilidade/urgência extrema),
+- **Então** o médico deve solicitar a apresentação de documento oficial com foto (RG/CNH/CNS) na câmera e registrar no PEP a validação de identidade (`identidade_verificada: true`, `tipo_documento_verificado: "RG"` ou justificativa formal em caso de impossibilidade/urgência extrema),
 - **E** a interface do prontuário bloqueia preventivamente o comando de finalização e a assinatura de prescrições enquanto a identidade não for confirmada,
 - **E** a confirmação é registrada com carimbo de tempo oficial na evolução clínica do atendimento (ADR-007).
 
@@ -60,33 +60,36 @@
 
 * **Endpoint:** `POST /api/v1/consultations/{atendimento_id}/soap`
 * **Headers:** `Authorization: Bearer <jwt_medico>`
-* **Payload de Entrada (`SoapNotesRequest`):**
+* **Payload de Entrada (`RegistrarSOAPRequest`):**
   ```json
   {
     "anamnese": "Paciente refere dor de garganta, febre aferida em 38.5C e tosse seca.",
     "exame_fisico_virtual": "Orofaringe hiperemiada com exsudato purulento amigdaliano.",
     "cid10_principal": "J03.0",
     "conduta": "Prescrito Amoxicilina 500mg por 7 dias e repouso.",
+    "codigo_sigtap": "03.01.01.025-0",
+    "ia_utilizada": false,
+    "ia_ratificada_pelo_medico": true,
     "identidade_verificada": true,
     "tipo_documento_verificado": "RG",
     "justificativa_excecao_identidade": null
   }
   ```
-* **Resposta Esperada (`200 OK`):** Retorna o objeto da evolução clínica persistida.
+* **Resposta Esperada (`200 OK`, `EvolucaoSOAPResponse`):** Retorna o objeto da evolução clínica persistida.
 
 ---
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Modelo:** Entidade `EvolucaoClinica` com campos SOAP, CID-10, campos de conferência de identidade e flags de finalização (`src/modules/consultation/domain/models/evolucao_clinica.py`).
-- [x] **Imutabilidade e Salvaguarda:** Guardas de finalização bloqueiam alterações pós-fechamento e exigem verificação de identidade antes da emissão de prescrição digital (`PEPService.salvar_soap()`).
+- [x] **Modelo:** Entidade `EvolucaoClinica` com campos SOAP, CID-10, `codigo_sigtap`, campos de conferência de identidade e `finalizado_em` (`src/modules/consultation/domain/models/evolucao_clinica.py`).
+- [x] **Imutabilidade e Salvaguarda:** Guardas de finalização bloqueiam alterações pós-fechamento e exigem verificação de identidade antes da emissão de prescrição digital (`PEPService.salvar_evolucao_soap()`).
 - [x] **Apresentação Backend:** Router fino `consultation_router.py` integrado em `/api/v1/consultations`.
 - [x] **Frontend Workstation Single-Pane:**
   - Rotas dedicadas: `/medico` (`frontend/src/routes/medico.tsx`), `/chamada` (`frontend/src/routes/chamada.tsx`) e `/pos-consulta` (`frontend/src/routes/pos-consulta.tsx`) (Issue #141)
-  - Componente mestre: `frontend/src/features/consultation/components/doctor-workstation.tsx`
-  - Painéis compostos: `workstation-media-pane.tsx` (isolado com `React.memo` para blindar o streaming WebRTC contra re-renders acidentais por digitação SOAP ou telemetria), `video-pane.tsx`, `medical-records-pane.tsx`, `soap-editor.tsx`, `prescription-builder.tsx` (decomposto em `prescription-form.tsx`, `atestado-form.tsx`, `prescription-items-list.tsx`), `cfm-identity-gate.tsx`, `finalize-consultation-modal.tsx`, `tma-timer-badge.tsx`
-  - Hooks TanStack Query: `frontend/src/features/consultation/api/`
-  - Schemas Zod: `frontend/src/features/consultation/schemas/consultation-schema.ts`
+  - Componente mestre e orquestração: `frontend/src/features/consultation/components/doctor-workstation.tsx` (<180L), `frontend/src/features/consultation/hooks/use-doctor-workstation.ts`, `frontend/src/features/consultation/context/consultation-encounter-provider.tsx` (`ConsultationEncounterProvider` usando React 19 `use()`, remontado via `key={atendimentoId}` sem vazamento de estado nem dados hardcoded)
+  - Painéis compostos & vídeo unificado: `workstation-media-pane.tsx` (isolado com `React.memo`), `video-call-stage.tsx` (`LiveKitMediaAdapter` via `React.lazy()` e `OfflineFallbackAdapter` sem boolean mode props), `medical-records-pane.tsx`, `soap-editor.tsx` (`shouldValidate`/`shouldDirty` no CID-10), `prescription-builder.tsx` (`prescription-document-tabs.tsx`, `prescription-form.tsx`, `atestado-form.tsx` com tick isolado de 180s, `prescription-items-list.tsx`), `cfm-identity-gate.tsx`, `patient-liveness-modal.tsx` (`timeout_segundos` em contagem regressiva), `pos-consulta-summary.tsx` (`/api/v1/consultations/me/documentos`, `/me/documents/{documento_id}/pdf` e `getTipoDocumentoLabel` cobrindo toda `RECEITA_*`), `finalize-consultation-modal.tsx`, `tma-timer-badge.tsx`
+  - Hooks TanStack Query: `frontend/src/features/consultation/api/` (incluindo `use-doctor-logout.ts` e validação runtime `z*.parse()` em `use-liveness-check.ts`, `use-livekit-token.ts`, `use-prescricao-validator.ts`)
+  - Schemas Zod: `frontend/src/features/consultation/schemas/consultation-schema.ts` (`emitirDocumentoSchema` exigindo `itens` não vazios para toda `RECEITA_*`)
 - [x] **Testes Automatizados:**
   - `tests/unit/test_pep_soap_service.py`
   - `tests/integration/test_consultation_endpoints.py`
@@ -98,3 +101,6 @@
   - `frontend/src/features/consultation/tests/consultation-workstation.test.tsx`
   - `frontend/src/features/consultation/tests/doctor-workstation-performance.test.tsx`
   - `frontend/src/features/consultation/tests/prescription-builder.test.tsx`
+  - `frontend/src/features/consultation/tests/pos-consulta-summary.test.tsx`
+  - `frontend/src/features/consultation/tests/patient-liveness-modal.test.tsx`
+  - `frontend/src/routes/medico.test.tsx`

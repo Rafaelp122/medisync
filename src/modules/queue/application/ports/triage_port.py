@@ -1,4 +1,4 @@
-"""Port and DTO for delegating triage and clinical risk classification (NC-ARQ-01)."""
+"""Unified port and DTO for delegating clinical triage across queue and triage."""
 
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
@@ -21,13 +21,14 @@ class TriageEvaluationDTO(Protocol):
     def instrucao_redirecionamento(self) -> str | None: ...
 
 
+@runtime_checkable
 class TriagePort(Protocol):
-    """Abstract port for clinical risk evaluation and triage persistence."""
+    """Seam único entre queue e triage: risco, persistência 1:1 e leitura de queixas."""
 
     async def avaliar_risco(
         self,
         queixa_principal: str,
-        sintomas: list[str],
+        sintomas: Sequence[str],
         escala_dor: int = 0,
         tcle_texto: str = "",
         tcle_hash: str | None = None,
@@ -42,18 +43,13 @@ class TriagePort(Protocol):
         self,
         atendimento_id: UUID,
         queixa_principal: str,
-        sintomas: list[str],
-        prioridade_calculada: int,
+        sintomas: Sequence[str],
+        prioridade_calculada: int | None = None,
         alerta_samu_disparado: bool = False,
         escala_dor: int = 0,
     ) -> UUID:
         """Persist Triagem aggregate associated 1:1 with attendance."""
         ...
-
-
-@runtime_checkable
-class TriageQueixaReaderPort(Protocol):
-    """Complementary port for reading primary clinical complaints by attendance."""
 
     async def obter_queixas_por_atendimentos(
         self,

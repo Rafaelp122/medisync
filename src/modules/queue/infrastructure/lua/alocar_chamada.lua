@@ -1,13 +1,14 @@
--- Script de Alocação Atômica Médico-Paciente (ADR-002 / ADR-013)
+-- Script de Alocação Atômica Médico-Paciente 4-Keys (ADR-002 / ADR-013)
 -- KEYS[1]: lock:medico:{medico_id}
 -- KEYS[2]: lock:atendimento:{atendimento_id}
 -- KEYS[3]: fila:aptos
+-- KEYS[4]: lock:consulta_ativa:medico:{medico_id}
 -- ARGV[1]: medico_id
 -- ARGV[2]: atendimento_id
 -- ARGV[3]: ttl_segundos (padrão: 45)
 
--- 1. Verifica se o médico chamador já possui lock ativo (bloqueio do profissional)
-if redis.call('EXISTS', KEYS[1]) == 1 then
+-- 1. Verifica se o médico chamador possui lock de ring ou consulta ativa (HTTP 409)
+if redis.call('EXISTS', KEYS[1]) == 1 or redis.call('EXISTS', KEYS[4]) == 1 then
     return 0 -- Conflito: médico já ocupado com chamada ou consulta em andamento (HTTP 409)
 end
 

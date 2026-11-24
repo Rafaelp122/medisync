@@ -1,7 +1,14 @@
 import { waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http, ws } from "msw";
+import { HttpResponse, ws } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  handleCancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPost,
+  handleComunicarPioraClinicaApiV1FilaPioraPost,
+  handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost,
+  handleObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet,
+  handleRegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPost,
+} from "@/api/generated/msw.gen";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
 import { VirtualWaitingRoom } from "../components/virtual-waiting-room";
@@ -17,14 +24,21 @@ import {
 const queueWs = ws.link(/.*\/ws\/queue\/.*/);
 
 describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)", () => {
-  const mockStart = vi.fn();
-  const mockStop = vi.fn();
-  const mockSetValueAtTime = vi.fn();
-  const mockExponentialRampToValueAtTime = vi.fn();
-  const mockConnect = vi.fn();
-  const mockClose = vi.fn().mockResolvedValue(undefined);
+  let mockStart: ReturnType<typeof vi.fn>;
+  let mockStop: ReturnType<typeof vi.fn>;
+  let mockSetValueAtTime: ReturnType<typeof vi.fn>;
+  let mockExponentialRampToValueAtTime: ReturnType<typeof vi.fn>;
+  let mockConnect: ReturnType<typeof vi.fn>;
+  let mockClose: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    mockStart = vi.fn();
+    mockStop = vi.fn();
+    mockSetValueAtTime = vi.fn();
+    mockExponentialRampToValueAtTime = vi.fn();
+    mockConnect = vi.fn();
+    mockClose = vi.fn().mockResolvedValue(undefined);
+
     class FakeAudioContext {
       currentTime = 0;
       destination = {};
@@ -57,14 +71,15 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
       queueWs.addEventListener("connection", ({ client }) => {
         client.send(JSON.stringify({ event: "CONNECTED" }));
       }),
-      http.get("*/api/v1/fila/posicao/:atendimentoId", () => {
-        return HttpResponse.json(MOCK_POSICAO_RESPONSE, { status: 200 });
+      handleObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet({
+        body: MOCK_POSICAO_RESPONSE,
       }),
     );
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -90,8 +105,8 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
     const user = userEvent.setup();
 
     server.use(
-      http.post("*/api/v1/fila/piora", () => {
-        return HttpResponse.json(MOCK_PIORA_RECLASSIFICADO_RESPONSE, { status: 200 });
+      handleComunicarPioraClinicaApiV1FilaPioraPost({
+        body: MOCK_PIORA_RECLASSIFICADO_RESPONSE,
       }),
     );
 
@@ -126,8 +141,8 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
     const user = userEvent.setup();
 
     server.use(
-      http.post("*/api/v1/fila/piora", () => {
-        return HttpResponse.json(MOCK_PIORA_SAMU_RESPONSE, { status: 200 });
+      handleComunicarPioraClinicaApiV1FilaPioraPost({
+        body: MOCK_PIORA_SAMU_RESPONSE,
       }),
     );
 
@@ -159,17 +174,14 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
 
     // Mock do polling retornando CHAMANDO_PACIENTE
     server.use(
-      http.get("*/api/v1/fila/posicao/:atendimentoId", () => {
-        return HttpResponse.json(
-          {
-            ...MOCK_POSICAO_RESPONSE,
-            status: "CHAMANDO_PACIENTE",
-          },
-          { status: 200 },
-        );
+      handleObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet({
+        body: {
+          ...MOCK_POSICAO_RESPONSE,
+          status: "CHAMANDO_PACIENTE",
+        },
       }),
-      http.post("*/api/v1/consultations/:atendimentoId/livekit/token", () => {
-        return HttpResponse.json(MOCK_LIVEKIT_TOKEN_RESPONSE, { status: 200 });
+      handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost({
+        body: MOCK_LIVEKIT_TOKEN_RESPONSE,
       }),
     );
 
@@ -199,14 +211,11 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
     vi.useFakeTimers();
 
     server.use(
-      http.get("*/api/v1/fila/posicao/:atendimentoId", () => {
-        return HttpResponse.json(
-          {
-            ...MOCK_POSICAO_RESPONSE,
-            status: "CHAMANDO_PACIENTE",
-          },
-          { status: 200 },
-        );
+      handleObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet({
+        body: {
+          ...MOCK_POSICAO_RESPONSE,
+          status: "CHAMANDO_PACIENTE",
+        },
       }),
     );
 
@@ -228,20 +237,17 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
     expect(getByText(/não houve confirmação dentro da janela de 45 segundos/i)).toBeInTheDocument();
   });
 
-  it("IT-WAIT-06: Cancelamento voluntário da fila transiciona para estado CANCELADO", async () => {
+  it("IT-WAIT-06: Cancelamento voluntário da fila transiciona para estado CANCELADO_PACIENTE", async () => {
     const user = userEvent.setup();
 
     server.use(
-      http.post("*/api/v1/fila/cancelar/:atendimentoId", () => {
-        return HttpResponse.json(
-          {
-            atendimento_id: MOCK_ATENDIMENTO_ID,
-            status: "CANCELADO",
-            cancelado_em: new Date().toISOString(),
-            motivo: "Desistência voluntária pelo paciente",
-          },
-          { status: 200 },
-        );
+      handleCancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPost({
+        body: {
+          atendimento_id: MOCK_ATENDIMENTO_ID,
+          status: "CANCELADO_PACIENTE",
+          cancelado_em: new Date().toISOString(),
+          motivo: "Desistência voluntária pelo paciente",
+        },
       }),
     );
 
@@ -327,19 +333,19 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
     let regularizarCalled = false;
 
     server.use(
-      http.get("*/api/v1/fila/posicao/:atendimentoId", () => {
+      handleObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet(() => {
         return HttpResponse.json({
           ...MOCK_POSICAO_RESPONSE,
           status: statusAtual,
         });
       }),
-      http.post("*/api/v1/fila/atendimentos/:atendimentoId/regularizar", () => {
+      handleRegularizarAtendimentoFilaApiV1FilaAtendimentosAtendimentoIdRegularizarPost(() => {
         regularizarCalled = true;
-        statusAtual = "AGUARDANDO_ATENDIMENTO";
+        statusAtual = "APTO_PARA_CHAMADA";
         return HttpResponse.json({
           atendimento_id: MOCK_ATENDIMENTO_ID,
           promovido: true,
-          status: "AGUARDANDO_ATENDIMENTO",
+          status: "APTO_PARA_CHAMADA",
           score: 1500,
           tipo_contingencia: "REGULARIZACAO_ELEGIBILIDADE",
           mensagem: "Atendimento regularizado e promovido para fila ativa.",
@@ -365,5 +371,122 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
         queryByRole("button", { name: /regularizar elegibilidade agora/i }),
       ).not.toBeInTheDocument();
     });
+  });
+
+  it("IT-WAIT-10: PioraClinicaModal envia IDs canônicos de triage (dispneia_grave, dor_toracica_irradiada) via RHF", async () => {
+    const user = userEvent.setup();
+    let capturedBody: { novos_sintomas?: string[] } | null = null;
+
+    server.use(
+      handleComunicarPioraClinicaApiV1FilaPioraPost(async ({ request }) => {
+        capturedBody = await request.json();
+        return HttpResponse.json(MOCK_PIORA_RECLASSIFICADO_RESPONSE, { status: 200 });
+      }),
+    );
+
+    const { getByRole, getByLabelText } = renderWithProviders(
+      <VirtualWaitingRoom session={MOCK_SESSION} />,
+    );
+
+    await user.click(getByRole("button", { name: /relatar piora/i }));
+    await user.click(getByLabelText(/falta de ar intensa/i));
+    await user.click(getByLabelText(/dor ou aperto forte no peito/i));
+    await user.click(getByRole("button", { name: /enviar reavaliação/i }));
+
+    await waitFor(() => {
+      expect(capturedBody?.novos_sintomas).toEqual(["dispneia_grave", "dor_toracica_irradiada"]);
+    });
+  });
+
+  it("IT-WAIT-11: Restaura countdown restante após F5 via chamada_iniciada_em/ttl_segundos e recusa via POST /fila/cancelar", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const now = new Date("2026-11-24T12:00:20.000Z");
+    vi.setSystemTime(now);
+
+    const cancelSpy = vi.fn();
+
+    server.use(
+      handleObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet(() => {
+        return HttpResponse.json({
+          ...MOCK_POSICAO_RESPONSE,
+          status: "CHAMANDO_PACIENTE",
+          chamada_iniciada_em: "2026-11-24T12:00:00.000Z",
+          ttl_segundos: 45,
+        });
+      }),
+      handleCancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPost(() => {
+        cancelSpy();
+        return HttpResponse.json({
+          atendimento_id: MOCK_ATENDIMENTO_ID,
+          status: "CANCELADO_PACIENTE",
+          cancelado_em: now.toISOString(),
+          motivo: "Chamada médica recusada pelo paciente",
+        });
+      }),
+    );
+
+    const { getByTestId, getByRole, getByText, queryByRole } = renderWithProviders(
+      <VirtualWaitingRoom session={MOCK_SESSION} />,
+    );
+
+    await waitFor(() => {
+      expect(getByRole("alertdialog")).toBeInTheDocument();
+    });
+    expect(getByTestId("ring-timer")).toHaveTextContent("25s");
+
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.click(getByRole("button", { name: /não posso atender agora|recusar chamada/i }));
+
+    await waitFor(() => {
+      expect(cancelSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(getByText(/atendimento cancelado/i)).toBeInTheDocument();
+  });
+
+  it("IT-WAIT-12: Para polling e WS em estados terminais CANCELADO_PACIENTE, PACIENTE_AUSENTE e CONCLUIDO", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    for (const [terminalStatus, expectedHeading] of [
+      ["CANCELADO_PACIENTE", /atendimento cancelado/i],
+      ["PACIENTE_AUSENTE", /chamada não atendida/i],
+      ["CONCLUIDO", /atendimento concluído/i],
+    ] as const) {
+      let pollCount = 0;
+      let wsClosed = false;
+
+      server.use(
+        queueWs.addEventListener("connection", ({ client }) => {
+          client.send(JSON.stringify({ event: "CONNECTED" }));
+          client.addEventListener("close", () => {
+            wsClosed = true;
+          });
+        }),
+        handleObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet(() => {
+          pollCount += 1;
+          return HttpResponse.json({
+            ...MOCK_POSICAO_RESPONSE,
+            status: terminalStatus,
+          });
+        }),
+      );
+
+      const { getByText, unmount } = renderWithProviders(
+        <VirtualWaitingRoom session={MOCK_SESSION} />,
+      );
+
+      await waitFor(() => {
+        expect(getByText(expectedHeading)).toBeInTheDocument();
+      });
+
+      const countAtTerminal = pollCount;
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      expect(pollCount).toBe(countAtTerminal);
+      await waitFor(() => {
+        expect(wsClosed).toBe(true);
+      });
+      unmount();
+    }
   });
 });

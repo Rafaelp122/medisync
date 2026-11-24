@@ -7,26 +7,29 @@ const MOCK_SESSION = {
   pacienteId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
   atendimentoId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b99",
   prioridadeClinica: 3,
-  protocolo: "MED-2026-0099",
-  nomePaciente: "Juliana Silva",
   token: "fake-jwt-queue-token-e2e",
+  status: "APTO_PARA_CHAMADA",
 };
 
 test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", () => {
   test.beforeEach(async ({ page }) => {
-    // Intercepta rotas da fila e consultas
+    let prioridadeAtual = 3;
+    let posicaoAtual = 2;
+
+    // Intercepta rotas da fila e consultas com contratos OpenAPI vigentes
     await page.route("**/api/v1/fila/posicao/*", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
           atendimento_id: MOCK_SESSION.atendimentoId,
-          posicao: 2,
+          posicao: posicaoAtual,
           total_aguardando: 5,
           tempo_estimado_segundos: 600,
-          prioridade_clinica: 3,
-          status: "AGUARDANDO_CHAMADA",
-          protocolo: MOCK_SESSION.protocolo,
+          prioridade_clinica: prioridadeAtual,
+          status: "APTO_PARA_CHAMADA",
+          chamada_iniciada_em: null,
+          ttl_segundos: null,
         }),
       });
     });
@@ -37,8 +40,8 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
         contentType: "application/json",
         body: JSON.stringify({
           token: "fake-livekit-room-token-e2e",
-          room_name: `org_1_atend_${MOCK_SESSION.atendimentoId}`,
-          participant_identity: "paciente_e2e",
+          room_name: `atend_${MOCK_SESSION.atendimentoId}`,
+          participant_identity: `paciente_${MOCK_SESSION.pacienteId}`,
           server_url: "wss://livekit.medisync.local",
           expires_in: 3600,
         }),
@@ -46,15 +49,18 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
     });
 
     await page.route("**/api/v1/fila/piora", async (route) => {
+      prioridadeAtual = 2;
+      posicaoAtual = 1;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
           atendimento_id: MOCK_SESSION.atendimentoId,
-          nova_prioridade: 2,
-          nova_posicao: 1,
+          prioridade_clinica: 2,
+          status_atendimento: "APTO_PARA_CHAMADA",
           alerta_samu_disparado: false,
           redirecionado_emergencia: false,
+          nova_posicao: 1,
           instrucoes: "Prioridade reclassificada para Muito Urgente (Laranja).",
         }),
       });
@@ -74,7 +80,7 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
         contentType: "application/json",
         body: JSON.stringify({
           atendimento_id: MOCK_SESSION.atendimentoId,
-          status: "CANCELADO",
+          status: "CANCELADO_PACIENTE",
           cancelado_em: new Date().toISOString(),
           motivo: "Desistência voluntária pelo paciente",
         }),
@@ -124,7 +130,8 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
           tempo_estimado_segundos: 0,
           prioridade_clinica: 3,
           status: "CHAMANDO_PACIENTE",
-          protocolo: MOCK_SESSION.protocolo,
+          chamada_iniciada_em: null,
+          ttl_segundos: 45,
         }),
       });
     });
@@ -162,9 +169,27 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
     ).toBeVisible();
   });
 
-  test("E2E-QUEUE-03: Relato de Piora Clínica e Reclassificação de Risco (RF-06)", async ({
+  test("E2E-QUEUE-03: Relato de Piora Clínica com IDs canônicos e <fieldset>/<legend> WCAG (RF-06)", async ({
     page,
   }) => {
+    let capturedPioraPayload: Record<string, unknown> | null = null;
+    await page.route("**/api/v1/fila/piora", async (route) => {
+      capturedPioraPayload = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          atendimento_id: MOCK_SESSION.atendimentoId,
+          prioridade_clinica: 2,
+          status_atendimento: "APTO_PARA_CHAMADA",
+          alerta_samu_disparado: false,
+          redirecionado_emergencia: false,
+          nova_posicao: 1,
+          instrucoes: "Prioridade reclassificada para Muito Urgente (Laranja).",
+        }),
+      });
+    });
+
     await page.addInitScript((sessionData) => {
       window.localStorage.setItem("medisync_session", JSON.stringify(sessionData));
     }, MOCK_SESSION);
@@ -174,12 +199,21 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
     // Clica em relatar piora
     await page.getByRole("button", { name: /relatar piora/i }).click();
 
-    // Modal de piora clínica visível
+    // Modal de piora clínica visível com <fieldset>/<legend>
     await expect(
       page.getByRole("heading", { name: /salvaguarda de piora clínica/i }),
     ).toBeVisible();
+    const sintomasGroup = page.getByRole("group", { name: /sinais de alerta ou novos sintomas/i });
+    await expect(sintomasGroup).toBeVisible();
+    await expect(sintomasGroup.evaluate((el) => el.tagName)).resolves.toBe("FIELDSET");
 
-    // Preenche queixa de agravamento
+    const pioraScan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(pioraScan.violations).toEqual([]);
+
+    // Seleciona sintoma canônico e preenche queixa de agravamento
+    await page.getByLabel(/falta de ar intensa/i).check();
     await page
       .getByLabel(/descreva com suas palavras o que piorou/i)
       .fill("Dor aumentou progressivamente na última hora");
@@ -187,7 +221,11 @@ test.describe("Sala de Espera Virtual, Ring Modal 45s e Acessibilidade (E2E)", (
     // Submete reavaliação
     await page.getByRole("button", { name: /enviar reavaliação/i }).click();
 
-    // Prioridade e badge devem atualizar para Laranja
+    // Payload envia IDs canônicos de triage e prioridade atualiza para Laranja
+    expect(capturedPioraPayload).toMatchObject({
+      atendimento_id: MOCK_SESSION.atendimentoId,
+      novos_sintomas: ["dispneia_grave"],
+    });
     await expect(page.getByText(/laranja: muito urgente/i)).toBeVisible();
   });
 

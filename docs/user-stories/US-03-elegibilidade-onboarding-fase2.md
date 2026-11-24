@@ -3,7 +3,7 @@
 > **Requisito Base:** RF-02  
 > **Invariantes Relacionadas:** RN03, RN-REG-02 (CFM 1.821/2007 e 2.314/2022)  
 > **Personas:** Juliana Silva (Paciente) e Patrícia Mendes (Coordenação de Regulação e Produção Ambulatorial)  
-> **Módulos:** `identity`, `ambulatory`, `queue`, `worker`  
+> **Módulos:** `identity`, `ambulatory`, `queue`  
 
 > **Status de Qualidade:** 🟢 **Conforme**
 
@@ -12,7 +12,7 @@
 ## 1. Narrativa da História (User Voice)
 
 **Como** paciente aguardando atendimento na fila virtual ou acessando meu perfil no portal SUS (Juliana Silva),  
-**Quero** completar os dados regulatórios exigidos pelo Conselho Federal de Medicina (nome social, nome da mãe, sexo biológico e CEP) enquanto o sistema realiza a qualificação cadastral SUS em segundo plano,  
+**Quero** completar os dados regulatórios exigidos pelo Conselho Federal de Medicina (nome social, nome da mãe, sexo biológico e CEP) enquanto já aguardo apto na fila SUS sem dependência de worker assíncrono,  
 **Para que** meu prontuário esteja legalmente conforme sem bloqueios burocráticos ou financeiros ao atendimento.
 
 ---
@@ -20,11 +20,10 @@
 ## 2. Critérios de Aceite Formais (Gherkin)
 
 ### Cenário 1: Qualificação cadastral pública SUS (Caso Feliz Universal)
-- **Dado que** o atendimento pertence a uma unidade do Sistema Único de Saúde (100% SUS, ADR-012),
-- **Quando** a rotina de qualificação cadastral em segundo plano executa,
-- **Então** a elegibilidade é aprovada imediatamente com isenção pública universal (`SUS-ISENTO`),
-- **E** o atendimento permanece ou é promovido para `APTO_PARA_CHAMADA`,
-- **E** a paciente fica disponível para convocação pelos médicos plantonistas sem qualquer paywall.
+- **Dado que** o atendimento pertence à plataforma pública do Sistema Único de Saúde (100% SUS, ADR-012 / ADR-013),
+- **Quando** a paciente é admitida em `POST /api/v1/fila/admissao` (com aprovação universal `SUS-ISENTO` via `SusEligibilityAdapter` para checagens cadastrais),
+- **Então** o atendimento nasce diretamente como `APTO_PARA_CHAMADA` sem bloqueio de worker assíncrono nem paywall,
+- **E** a paciente fica disponível para convocação pelos médicos plantonistas enquanto enriquece seus dados CFM na Fase 2.
 
 ### Cenário 2: Atualização cadastral CFM contínua no Portal do Cidadão (`/perfil`)
 - **Dado que** a paciente pulou o enriquecimento na fila ou retornou posteriormente ao Portal do Cidadão (`/perfil`),
@@ -48,13 +47,13 @@
 
 * **Endpoint:** `POST /api/v1/onboarding/fase-2`
 * **Headers:** `Authorization: Bearer <token_intake_ou_jwt>`
-* **Payload de Entrada (`OnboardingFase2Request`):**
+* **Payload de Entrada (`Fase2Request`):**
   ```json
   {
     "paciente_id": "018f3a5b-...",
     "nome_social": "Juliana Santos Silva",
     "nome_mae": "Maria Aparecida Silva",
-    "sexo_biologico": "FEMININO",
+    "sexo_biologico": "F",
     "cep": "01310-100",
     "logradouro": "Avenida Paulista",
     "numero": "1000",
@@ -63,7 +62,7 @@
     "estado": "SP"
   }
   ```
-* **Resposta Esperada (`200 OK`):** Retorna DTO atualizado do paciente enriquecido.
+* **Resposta Esperada (`200 OK` — `Fase2Response`):** Retorna DTO atualizado do paciente enriquecido (aceita `"M"`/`"F"` e normaliza `"MASCULINO"`/`"FEMININO"` em `Fase2Request._normalizar_sexo`).
 
 ---
 
@@ -72,10 +71,10 @@
 - [x] **Modelo:** Suporte a `nome_social` e dados completos do CFM em `Paciente` (`src/modules/identity/domain/models/paciente.py`).
 - [x] **Adaptadores:** `SusEligibilityAdapter` (isenção universal `SUS-ISENTO` no SUS / ADR-012) em `src/modules/ambulatory/infrastructure/adapters/sus_adapter.py`.
 - [x] **Débito NC-IDN-01:** Dependência `validar_intake_fase2` aceitar polimorfismo de token JWT OTP (Resolvido na Issue #76).
-- [x] **Frontend (Fase 2, ViaCEP & `/perfil`):** Formulário em `frontend/src/features/onboarding/components/enriquecimento-fase2-form.tsx` com autopreenchimento assíncrono e timeout de 5000ms (`frontend/src/features/onboarding/api/use-via-cep.ts`), integrado tanto à sala de espera `/fila` quanto ao perfil do cidadão em `/perfil` (`frontend/src/routes/perfil.tsx`, `ProfilePage`).
+- [x] **Frontend (Fase 2, ViaCEP & `/perfil`):** Formulário em `frontend/src/features/onboarding/components/enriquecimento-fase2-form.tsx` (com `<fieldset>`/`<legend>` via `frontend/src/features/onboarding/components/sexo-biologico-fieldset.tsx`, `cfm-address-fields.tsx` e propagação `{...field}` antes de `onChange`) e consulta `useQuery` cancelável via `AbortSignal` (`frontend/src/features/onboarding/api/use-via-cep.ts:useViaCepQuery`), integrado tanto à sala de espera `/fila` quanto ao perfil do cidadão em `/perfil` (`frontend/src/routes/perfil.tsx`, `ProfilePage`).
 - [x] **Frontend Hook:** `frontend/src/features/onboarding/api/use-enrichment-fase2.ts` integrando com SDK Hey API.
 - [x] **Testes Automatizados:**
-  - Backend: `tests/unit/test_onboarding_schemas.py`, `tests/unit/test_eligibility_task.py`, `tests/integration/test_eligibility_flow.py`
+  - Backend: `tests/unit/test_onboarding_schemas.py`, `tests/unit/test_fila_regularizacao.py`, `tests/integration/test_eligibility_flow.py`
   - Frontend Schemas: `frontend/src/features/onboarding/schemas/onboarding-schema.test.ts`
   - Frontend Hooks: `frontend/src/features/onboarding/api/__tests__/onboarding-hooks.test.tsx`
   - Frontend Telas: `frontend/src/features/onboarding/tests/enriquecimento-fase2-form.test.tsx`

@@ -1,18 +1,32 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
-import { HttpResponse, http } from "msw";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { HttpResponse } from "msw";
 import type React from "react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  handleAssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPost,
+  handleChamarProximoPacienteApiV1FilaChamarProximoPost,
+  handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost,
+  handleFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePost,
+  handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost,
+  handleLogoutApiV1AuthLogoutPost,
+  handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet,
+  handleSalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPost,
+  handleValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost,
+} from "@/api/generated/msw.gen";
+import { clearAccessToken, setAccessToken } from "@/lib/auth-token";
+import { saveStoredDoctorSession } from "@/lib/session-storage";
 import { server } from "@/mocks/server";
 import { useAssinarDocumento } from "../use-assinar-documento";
 import { useChamarProximo } from "../use-chamar-proximo";
+import { useDoctorLogout } from "../use-doctor-logout";
 import { useEmitirDocumento } from "../use-emitir-documento";
 import { useFinalizarConsulta } from "../use-finalizar-consulta";
 import { useLiveKitToken } from "../use-livekit-token";
+import { useVerificarLiveness } from "../use-liveness-check";
 import { usePrescricaoValidator } from "../use-prescricao-validator";
 import { useProntuario } from "../use-prontuario";
 import { useSalvarSoap } from "../use-soap-evolucao";
-import { useTmaStatus } from "../use-tma-status";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,10 +48,15 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
     queryClient.clear();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+    clearAccessToken();
+  });
+
   it("HK-CONS-01: useChamarProximo adquire paciente da fila virtual", async () => {
     server.use(
-      http.post("*/api/v1/fila/chamar-proximo", () => {
-        return HttpResponse.json({
+      handleChamarProximoPacienteApiV1FilaChamarProximoPost({
+        body: {
           alocado: true,
           atendimento_id: MOCK_ATENDIMENTO_ID,
           paciente_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
@@ -46,7 +65,8 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
           status: "EM_ATENDIMENTO",
           chamada_iniciada_em: "2026-11-01T12:00:00Z",
           ttl_segundos: 900,
-        });
+          mensagem: "Paciente alocado com sucesso.",
+        },
       }),
     );
 
@@ -60,14 +80,14 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
   it("HK-CONS-02: useLiveKitToken emite token WebRTC SFU assinado", async () => {
     server.use(
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/livekit/token`, () => {
-        return HttpResponse.json({
+      handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost({
+        body: {
           token: "fake-jwt-livekit-token",
-          room_name: "atend_123",
+          room_name: `atend_${MOCK_ATENDIMENTO_ID}`,
           participant_identity: `medico_${MOCK_MEDICO_ID}`,
           server_url: "wss://livekit.medisync.local",
           expires_in: 3600,
-        });
+        },
       }),
     );
 
@@ -89,13 +109,13 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
   it("HK-CONS-03: useProntuario carrega prontuário e histórico clínico", async () => {
     server.use(
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/prontuario`, () => {
-        return HttpResponse.json({
+      handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet({
+        body: {
           atendimento_id: MOCK_ATENDIMENTO_ID,
           is_finalizado: false,
           evolucao: null,
           documentos: [],
-        });
+        },
       }),
     );
 
@@ -110,8 +130,8 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
   it("HK-CONS-04: useSalvarSoap persiste evolução clínica SOAP", async () => {
     server.use(
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/soap`, () => {
-        return HttpResponse.json({
+      handleSalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPost({
+        body: {
           id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b30",
           atendimento_id: MOCK_ATENDIMENTO_ID,
           medico_id: MOCK_MEDICO_ID,
@@ -121,7 +141,7 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
           conduta: "Prescrito Amoxicilina.",
           registrado_em: "2026-11-01T12:05:00Z",
           is_finalizado: false,
-        });
+        },
       }),
     );
 
@@ -141,10 +161,9 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
   it("HK-CONS-05: usePrescricaoValidator valida medicamento contra Portaria 344/98", async () => {
     server.use(
-      http.post(
-        `*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/prescriptions/validate`,
+      handleValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost(
         async ({ request }) => {
-          const body = (await request.json()) as { medicamento: string };
+          const body = await request.json();
           if (body.medicamento.toLowerCase().includes("zolpidem")) {
             return HttpResponse.json(
               {
@@ -155,7 +174,7 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
                 code: "PRESCRICAO_FISICA_OBRIGATORIA",
               },
               { status: 422 },
-            );
+            ) as never;
           }
           return HttpResponse.json({
             status: "PERMITIDO",
@@ -183,33 +202,28 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
   it("HK-CONS-06: useEmitirDocumento e useAssinarDocumento concluem fluxo de receita ICP-Brasil", async () => {
     server.use(
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/documents`, () => {
-        return HttpResponse.json(
-          {
-            id: MOCK_DOC_ID,
-            atendimento_id: MOCK_ATENDIMENTO_ID,
-            medico_id: MOCK_MEDICO_ID,
-            tipo_documento: "RECEITA_SIMPLES",
-            chave_s3: "prescricoes/doc.pdf",
-            is_finalizado: false,
-            itens: [],
-          },
-          { status: 201 },
-        );
-      }),
-      http.post(
-        `*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/documents/${MOCK_DOC_ID}/sign`,
-        () => {
-          return HttpResponse.json({
-            documento_id: MOCK_DOC_ID,
-            tipo_documento: "RECEITA_SIMPLES",
-            sha256_hash: "abcd1234ef5678",
-            assinado_em: "2026-11-01T12:10:00Z",
-            tamanho_bytes: 10240,
-            status: "ASSINADO",
-          });
+      handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost({
+        status: 201,
+        body: {
+          id: MOCK_DOC_ID,
+          atendimento_id: MOCK_ATENDIMENTO_ID,
+          medico_id: MOCK_MEDICO_ID,
+          tipo_documento: "RECEITA_SIMPLES",
+          chave_s3: "prescricoes/doc.pdf",
+          is_finalizado: false,
+          itens: [],
         },
-      ),
+      }),
+      handleAssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPost({
+        body: {
+          documento_id: MOCK_DOC_ID,
+          tipo_documento: "RECEITA_SIMPLES",
+          sha256_hash: "abcd1234ef5678",
+          assinado_em: "2026-11-01T12:10:00Z",
+          tamanho_bytes: 10240,
+          status: "ASSINADO",
+        },
+      }),
     );
 
     const { result: emitirResult } = renderHook(() => useEmitirDocumento(MOCK_ATENDIMENTO_ID), {
@@ -245,33 +259,17 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
     expect(assinarResult.current.data?.status).toBe("ASSINADO");
   });
 
-  it("HK-CONS-07: useTmaStatus e useFinalizarConsulta respeitam imutabilidade e telemetria (RN06)", async () => {
+  it("HK-CONS-07: useFinalizarConsulta respeita imutabilidade e telemetria (RN06)", async () => {
     server.use(
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/tma-status`, () => {
-        return HttpResponse.json({
-          atendimento_id: MOCK_ATENDIMENTO_ID,
-          tempo_decorrido_segundos: 950,
-          tma_planejado_segundos: 900,
-          excedeu_tma: true,
-          aviso_visual: "TMA excedido em 50s. Atendimento preservado sob RN06.",
-        });
-      }),
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/finalize`, () => {
-        return HttpResponse.json({
+      handleFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePost({
+        body: {
           status: "FINALIZADO",
           atendimento_id: MOCK_ATENDIMENTO_ID,
           is_finalizado: true,
           mensagem: "Consulta finalizada com sucesso.",
-        });
+        },
       }),
     );
-
-    const { result: tmaResult } = renderHook(() => useTmaStatus(MOCK_ATENDIMENTO_ID), {
-      wrapper: TestWrapper,
-    });
-
-    await waitFor(() => expect(tmaResult.current.isSuccess).toBe(true));
-    expect(tmaResult.current.data?.excedeu_tma).toBe(true);
 
     const { result: finalizarResult } = renderHook(
       () => useFinalizarConsulta(MOCK_ATENDIMENTO_ID),
@@ -281,5 +279,63 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
     await waitFor(() => expect(finalizarResult.current.isSuccess).toBe(true));
     expect(finalizarResult.current.data?.is_finalizado).toBe(true);
+  });
+
+  it("HK-CONS-08: useLiveKitToken, useVerificarLiveness e usePrescricaoValidator validam payload/resposta em runtime via z*.parse()", async () => {
+    const { result: lkResult } = renderHook(() => useLiveKitToken(MOCK_ATENDIMENTO_ID), {
+      wrapper: TestWrapper,
+    });
+    lkResult.current.mutate({
+      participant_id: "nao-e-uuid",
+      role: "medico",
+    });
+    await waitFor(() => expect(lkResult.current.isError).toBe(true));
+
+    const { result: liveResult } = renderHook(() => useVerificarLiveness(MOCK_ATENDIMENTO_ID), {
+      wrapper: TestWrapper,
+    });
+    liveResult.current.mutate({
+      challenge_id: "ab",
+      liveness_payload: "",
+    });
+    await waitFor(() => expect(liveResult.current.isError).toBe(true));
+
+    server.use(
+      handleValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost(
+        () => HttpResponse.json({ status: "PERMITIDO" } as never),
+      ),
+    );
+    const { result: prescResult } = renderHook(() => usePrescricaoValidator(MOCK_ATENDIMENTO_ID), {
+      wrapper: TestWrapper,
+    });
+    prescResult.current.mutate({ medicamento: "Dipirona 500mg" });
+    await waitFor(() => expect(prescResult.current.isError).toBe(true));
+  });
+
+  it("HK-CONS-09: useDoctorLogout revoga sessão no backend e limpa storage + queryClient", async () => {
+    const logoutSpy = vi.fn();
+    server.use(
+      handleLogoutApiV1AuthLogoutPost(() => {
+        logoutSpy();
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    setAccessToken("tok-doc");
+    saveStoredDoctorSession({
+      medicoId: MOCK_MEDICO_ID,
+      medicoNome: "Dra. Helena Costa",
+      crmUf: "98765/MG",
+      identificador: "98765/MG",
+    });
+    queryClient.setQueryData(["consultation", "probe"], { ok: true });
+
+    const { result } = renderHook(() => useDoctorLogout(), { wrapper: TestWrapper });
+    await act(async () => {
+      await result.current.mutateAsync();
+    });
+
+    expect(logoutSpy).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData(["consultation", "probe"])).toBeUndefined();
+    clearAccessToken();
   });
 });

@@ -21,7 +21,7 @@ A infraestrutura de teste é organizada em quatro grupos: fixtures globais, fáb
 | `async_client` | Function | `AsyncGenerator[AsyncClient, None]` | Cliente HTTP assíncrono conectado ao ASGI FastAPI via `ASGITransport`. |
 | `authed_client_factory` | Function | `Callable[[str, UUID \| None], AsyncClient]` | Gerador de cliente HTTP com cabeçalho `Authorization: Bearer ...` para RBAC e Anti-IDOR. |
 | `db_session` | Function | `AsyncGenerator[AsyncSession, None]` | Sessão assíncrona SQLAlchemy conectada ao Postgres real com rollback automático. |
-| `mock_db_session` | Function | `AsyncMock` | Dublê mock de `AsyncSession` com métodos preparados (`add`, `commit`, etc.). |
+| `fake_db_session` | Function | `FakeAsyncSession` | Dublê em memória de `AsyncSession` com suporte transacional simulado (`add`, `flush`, `commit`, etc.). |
 | `clean_db` | Function | `AsyncGenerator[None, None]` | Trunca tabelas de domínio via `clean_database_tables()` antes e após o teste. |
 | `clean_db_and_valkey` | Function | `AsyncGenerator[None, None]` | Limpeza coordenada de tabelas Postgres e chaves de teste no Valkey. |
 | `cleanup_valkey_pool_fixture` | Function (Autouse) | `AsyncGenerator[None, None]` | Fecha graciosamente os pools de conexão Valkey ao final de cada teste. |

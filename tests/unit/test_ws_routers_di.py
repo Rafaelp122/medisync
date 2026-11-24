@@ -174,6 +174,7 @@ def test_ws_doctor_calls_initial_and_forward_with_fake_valkey() -> None:
             received = ws.receive_json()
             assert received["event"] == "INCOMING_CALL"
             assert received["atendimento_id"] == str(atend_id)
+            assert str(med_id) in fake.set_members("plantao:medicos_ativos")
     finally:
         app.dependency_overrides.clear()
 

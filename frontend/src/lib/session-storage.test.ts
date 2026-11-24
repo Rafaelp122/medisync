@@ -5,6 +5,7 @@ import {
   clearStoredDoctorSession,
   clearStoredManagerSession,
   clearStoredSession,
+  createStorageSlot,
   getStoredCallData,
   getStoredDoctorSession,
   getStoredManagerSession,
@@ -36,7 +37,7 @@ describe("session-storage", () => {
     tipo: "acolhimento",
     atendimentoId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2d",
     prioridadeClinica: 3,
-    status: "TRIADO_AGUARDANDO_ELEGIBILIDADE",
+    status: "APTO_PARA_CHAMADA",
   };
 
   const mockDoctorSession: StoredDoctorSession = {
@@ -50,7 +51,7 @@ describe("session-storage", () => {
     usuarioId: "018f3a5b-mgr-123",
     nome: "Gestora Maria",
     email: "maria@saude.gov.br",
-    papel: "GESTOR_MUNICIPAL",
+    papel: "GESTOR_UNIDADE",
   };
 
   const mockCallData: LiveKitTokenResponse = {
@@ -170,6 +171,36 @@ describe("session-storage", () => {
       clearStoredManagerSession();
       expect(localStorage.getItem(MEDISYNC_MANAGER_SESSION_KEY)).toBeNull();
       expect(getStoredManagerSession()).toBeNull();
+    });
+
+    it("UT-MGR-05: deve rejeitar e limpar sessão de gestor sem papel válido", () => {
+      localStorage.setItem(
+        MEDISYNC_MANAGER_SESSION_KEY,
+        JSON.stringify({
+          usuarioId: "018f3a5b-mgr-123",
+          nome: "Gestora Sem Papel",
+          email: "maria@saude.gov.br",
+          papel: "   ",
+        }),
+      );
+
+      expect(getStoredManagerSession()).toBeNull();
+      expect(localStorage.getItem(MEDISYNC_MANAGER_SESSION_KEY)).toBeNull();
+    });
+
+    it("UT-SLOT-01: createStorageSlot encapsula parsing seguro e invalidação defensiva", () => {
+      const slot = createStorageSlot<{ id: string }>({
+        key: "medisync_custom_slot_test",
+        storage: () => localStorage,
+        isValid: (parsed): parsed is { id: string } => typeof parsed.id === "string",
+      });
+
+      slot.save({ id: "slot-1" });
+      expect(slot.get()).toEqual({ id: "slot-1" });
+
+      localStorage.setItem("medisync_custom_slot_test", "{corrupt");
+      expect(slot.get()).toBeNull();
+      expect(localStorage.getItem("medisync_custom_slot_test")).toBeNull();
     });
   });
 

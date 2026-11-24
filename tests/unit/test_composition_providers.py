@@ -1,13 +1,14 @@
 """Unit tests for composition providers (DI Fase 3 without infra defaults)."""
 
 from collections.abc import Generator
-from typing import cast
-from unittest.mock import AsyncMock
+from typing import TYPE_CHECKING, cast
 
 import pytest
-from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import Settings
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture(autouse=True)
@@ -21,13 +22,15 @@ def _clear_composition_cache() -> Generator[None, None, None]:
     composition.get_signed_cache.cache_clear()
 
 
-def test_lua_script_manager_satisfies_lua_script_port() -> None:
-    """LuaScriptManager must structurally satisfy the application port."""
-    from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
-    from src.modules.queue.infrastructure.lua_loader import LuaScriptManager
+def test_valkey_queue_engine_satisfies_queue_engine_port() -> None:
+    """ValkeyQueueEngine must structurally satisfy QueueEnginePort."""
+    from src.modules.queue.application.ports.queue_engine_port import QueueEnginePort
+    from src.modules.queue.infrastructure.valkey_queue_engine import ValkeyQueueEngine
 
-    manager = LuaScriptManager()
-    assert isinstance(manager, LuaScriptPort)
+    from tests.doubles import FakeValkey
+
+    engine = ValkeyQueueEngine(valkey=cast("Redis", FakeValkey()))
+    assert isinstance(engine, QueueEnginePort)
 
 
 def test_get_storage_returns_fake_by_default(
@@ -71,8 +74,11 @@ def test_get_storage_returns_s3_with_injected_client_vars(
     assert storage._bucket_name == "test-bucket"  # pyright: ignore[reportPrivateUsage]
 
 
-def test_get_auth_service_wires_real_adapters() -> None:
+def test_get_auth_service_wires_real_adapters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Auth composition must wire hasher, token service and rate limiter."""
+    from src.core.config import get_settings
     from src.modules.auth.composition import get_auth_service
     from src.modules.auth.infrastructure.argon2_hasher import Argon2PasswordHasher
     from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
@@ -80,8 +86,12 @@ def test_get_auth_service_wires_real_adapters() -> None:
         ValkeyAuthRateLimiter,
     )
 
-    session = AsyncMock(spec=AsyncSession)
-    service = get_auth_service(cast("AsyncSession", session))
+    from tests.doubles import FakeAsyncSession
+
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    get_settings.cache_clear()
+    session = cast("AsyncSession", FakeAsyncSession())
+    service = get_auth_service(session)
     assert isinstance(service._hasher, Argon2PasswordHasher)  # pyright: ignore[reportPrivateUsage]
     assert isinstance(service._token_service, JWTTokenService)  # pyright: ignore[reportPrivateUsage]
     assert isinstance(service._rate_limiter, ValkeyAuthRateLimiter)  # pyright: ignore[reportPrivateUsage]
@@ -90,40 +100,64 @@ def test_get_auth_service_wires_real_adapters() -> None:
 def test_get_pep_service_wires_real_adapters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PEP composition must wire pdf generator, signer and fake storage."""
+    """PEP composition must wire ClinicalPdfCompiler and FakeStorage without Signer."""
     from src.modules.consultation import composition
+    from src.modules.consultation.application.services.clinical_pdf_compiler import (
+        ClinicalPdfCompiler,
+    )
     from src.modules.consultation.infrastructure.pdf_generator import (
         ReportLabPDFGenerator,
     )
     from src.modules.consultation.infrastructure.pyhanko_signer import PyHankoSigner
     from src.modules.consultation.infrastructure.s3_storage import FakeStorageAdapter
 
+    from tests.doubles import FakeAsyncSession
+
     monkeypatch.setattr(
         composition,
         "get_settings",
         lambda: Settings(STORAGE_BACKEND="fake"),
     )
-    session = AsyncMock(spec=AsyncSession)
-    service = composition.get_pep_service(cast("AsyncSession", session))
-    assert isinstance(service._pdf_generator, ReportLabPDFGenerator)  # pyright: ignore[reportPrivateUsage]
-    assert isinstance(service._signer, PyHankoSigner)  # pyright: ignore[reportPrivateUsage]
-    assert isinstance(service._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
+    session = cast("AsyncSession", FakeAsyncSession())
+    service = composition.get_pep_service(session)
+    assert isinstance(service._pdf_compiler, ClinicalPdfCompiler)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(service._pdf_compiler._pdf_generator, ReportLabPDFGenerator)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(service._pdf_compiler._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
+    assert not hasattr(service, "_signer")
+    assert not hasattr(service, "_pdf_generator")
 
-    built = composition.build_pep_service_for_session(cast("AsyncSession", session))
-    assert isinstance(built._pdf_generator, ReportLabPDFGenerator)  # pyright: ignore[reportPrivateUsage]
-    assert isinstance(built._signer, PyHankoSigner)  # pyright: ignore[reportPrivateUsage]
-    assert isinstance(built._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
+    built = composition.build_pep_service_for_session(session)
+    assert isinstance(built._pdf_compiler, ClinicalPdfCompiler)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(built._pdf_compiler._pdf_generator, ReportLabPDFGenerator)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(built._pdf_compiler._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
+
+    doc_service = composition.get_documento_service(session)
+    assert isinstance(doc_service._signer, PyHankoSigner)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(doc_service._pdf_compiler, ClinicalPdfCompiler)  # pyright: ignore[reportPrivateUsage]
+
+    val_service = composition.get_document_validation_service(session)
+    assert isinstance(val_service._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
+    assert val_service._compilador_pdf.__self__ is not doc_service  # pyright: ignore[reportFunctionMemberAccess,reportPrivateUsage]
 
 
-def test_get_alocacao_service_injects_lua_port() -> None:
-    """Queue composition must inject a LuaScriptPort-compliant manager."""
-    from src.modules.queue.application.ports.lua_script_port import LuaScriptPort
-    from src.modules.queue.composition import get_alocacao_service
+def test_build_fila_service_injects_queue_engine_and_shift_policy() -> None:
+    """Queue composition must inject QueueEnginePort and ShiftPolicyReaderPort."""
+    from src.modules.queue.application.ports.queue_engine_port import QueueEnginePort
+    from src.modules.queue.application.ports.shift_policy_reader_port import (
+        ShiftPolicyReaderPort,
+    )
+    from src.modules.queue.composition import build_fila_service_for_session
 
-    valkey = cast("Redis", AsyncMock(spec=Redis))
-    session = AsyncMock(spec=AsyncSession)
-    service = get_alocacao_service(valkey, cast("AsyncSession", session))
-    assert isinstance(service._lua_manager, LuaScriptPort)  # pyright: ignore[reportPrivateUsage]
+    from tests.doubles import FakeAsyncSession, FakeValkey
+
+    valkey = cast("Redis", FakeValkey())
+    session = cast("AsyncSession", FakeAsyncSession())
+    service = build_fila_service_for_session(session=session, valkey=valkey)
+    assert isinstance(service._queue_engine, QueueEnginePort)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(
+        service._shift_policy_reader,  # pyright: ignore[reportPrivateUsage]
+        ShiftPolicyReaderPort,
+    )
 
 
 def test_get_livekit_adapter_from_composition() -> None:
@@ -137,8 +171,6 @@ def test_get_livekit_adapter_from_composition() -> None:
 
 def test_get_onboarding_and_dependente_services() -> None:
     """Identity composition must provide service instances."""
-    from unittest.mock import AsyncMock
-
     from src.modules.identity.application.services.dependente_service import (
         DependenteService,
     )
@@ -150,9 +182,11 @@ def test_get_onboarding_and_dependente_services() -> None:
         get_onboarding_service,
     )
 
-    mock_session = AsyncMock()
-    assert isinstance(get_onboarding_service(session=mock_session), OnboardingService)
-    assert isinstance(get_dependente_service(session=mock_session), DependenteService)
+    from tests.doubles import FakeAsyncSession
+
+    fake_session = cast("AsyncSession", FakeAsyncSession())
+    assert isinstance(get_onboarding_service(session=fake_session), OnboardingService)
+    assert isinstance(get_dependente_service(session=fake_session), DependenteService)
 
 
 def test_get_signed_cache_returns_memory_when_configured(
@@ -189,3 +223,100 @@ def test_get_signed_cache_returns_valkey_when_configured(
     )
     cache = composition.get_signed_cache()
     assert isinstance(cache, ValkeySignedCache)
+
+
+def test_build_scheduling_service_wires_lightweight_sql_reader_without_valkey() -> None:
+    """Scheduling composition must use lightweight SQL reader without Valkey/Triage."""
+    import ast
+    from pathlib import Path
+
+    from src.modules.queue.composition import build_attendance_lookup_reader
+    from src.modules.queue.infrastructure.attendance_snapshot_reader_sql import (
+        SqlAttendanceSnapshotReader,
+    )
+    from src.modules.scheduling import composition as sched_comp
+    from src.modules.scheduling.composition import (
+        QueueAttendanceSnapshotLookupAdapter,
+        build_scheduling_service,
+    )
+
+    from tests.doubles import FakeAsyncSession
+
+    session = cast("AsyncSession", FakeAsyncSession())
+    reader = build_attendance_lookup_reader(session=session)
+    assert isinstance(reader, SqlAttendanceSnapshotReader)
+    assert reader._session is session  # pyright: ignore[reportPrivateUsage]
+
+    service = build_scheduling_service(session=session)
+    assert isinstance(
+        service._attendance_lookup,  # pyright: ignore[reportPrivateUsage]
+        QueueAttendanceSnapshotLookupAdapter,
+    )
+    assert isinstance(
+        service._attendance_lookup._reader,  # pyright: ignore[reportPrivateUsage]
+        SqlAttendanceSnapshotReader,
+    )
+
+    assert sched_comp.__file__ is not None
+    comp_source = Path(sched_comp.__file__).read_text(encoding="utf-8")
+    imported_names: set[str] = set()
+    for node in ast.walk(ast.parse(comp_source)):
+        if isinstance(node, (ast.ImportFrom, ast.Import)):
+            imported_names.update(alias.name for alias in node.names)
+    proibidos = {
+        "Redis",
+        "LuaScriptManager",
+        "TriageService",
+        "AlocacaoChamadaService",
+        "FilaService",
+        "build_fila_service_for_session",
+    }
+    assert imported_names.isdisjoint(proibidos)
+
+
+@pytest.mark.asyncio
+async def test_sql_attendance_snapshot_reader_e_lookup_adapter() -> None:
+    """SqlAttendanceSnapshotReader and QueueAttendanceSnapshotLookupAdapter contract."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from src.modules.queue.composition import build_attendance_lookup_reader
+    from src.modules.queue.domain.enums import StatusAtendimento
+    from src.modules.scheduling.composition import QueueAttendanceSnapshotLookupAdapter
+
+    from tests.doubles import FakeAsyncSession, FakeResult
+
+    atend_id = uuid4()
+    pac_id = uuid4()
+    med_id = uuid4()
+    agora = datetime.now(UTC)
+    session = FakeAsyncSession(
+        results=[
+            FakeResult(),
+            FakeResult(
+                mappings_rows=[
+                    {
+                        "id": atend_id,
+                        "paciente_id": pac_id,
+                        "medico_id": med_id,
+                        "status": StatusAtendimento.CONCLUIDO.value,
+                        "prioridade_clinica": 3,
+                        "tcle_hash": "abc123",
+                        "data_entrada_fila": agora,
+                        "criado_em": agora,
+                        "chamada_iniciada_em": agora,
+                    }
+                ]
+            ),
+        ]
+    )
+    reader = build_attendance_lookup_reader(session=cast("AsyncSession", session))
+    adapter = QueueAttendanceSnapshotLookupAdapter(reader)
+
+    assert await adapter.buscar_atendimento(uuid4()) is None
+
+    snapshot = await adapter.buscar_atendimento(atend_id)
+    assert snapshot is not None
+    assert snapshot.id == atend_id
+    assert snapshot.paciente_id == pac_id
+    assert snapshot.medico_id == med_id

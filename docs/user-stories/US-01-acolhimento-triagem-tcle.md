@@ -27,7 +27,7 @@
 - **E** admite o atendimento diretamente como apto para chamada (`APTO_PARA_CHAMADA`) pelo Art. 196 da CF/88 (ADR-012),
 - **E** calcula o score determinístico de 64 bits e insere atomicamente no ZSET do Valkey `fila:aptos`,
 - **E** persiste atomicamente o evento auditável 'ADMISSAO_PACIENTE' na trilha append-only (ADR-007 / CFM nº 2.314/2022),
-- **E** retorna confirmação de admissão (HTTP 201 Created) com status `APTO_PARA_CHAMADA`, identificador do atendimento e credencial provisória de acesso.
+- **E** retorna confirmação de admissão (HTTP 201 Created) com status `APTO_PARA_CHAMADA` e identificadores do atendimento e da triagem (`AdmissaoResponse`), enquanto a credencial provisória de acesso (`token`) para fluxos sem sessão prévia é emitida na etapa de identificação (`POST /api/v1/onboarding/fase-1` $\to$ `Fase1Response`).
 
 ### Cenário 2: Detecção de Emergência Iminente (Salvaguarda SAMU 192)
 - **Dado que** minhas respostas na triagem inicial acusam sinais clínicos de Nível 1 (Risco Crítico / Vermelho),
@@ -43,7 +43,7 @@
 - **Então** o sistema rejeita a admissão com HTTP 422 e mensagem explicativa sobre a obrigatoriedade legal do consentimento (LGPD Art. 11 / CFM 2.314).
 
 ### Cenário 4: Rota declarativa `/fila`, persistência local da sessão e proteção contra abandono (Issue #113, Issue #141)
-- **Dado que** concluí com sucesso a triagem e recebi o identificador do atendimento e a credencial provisória de acesso,
+- **Dado que** concluí com sucesso a etapa de identificação (JWT cidadão ou `token` provisório de `POST /api/v1/onboarding/fase-1`) e a admissão (`POST /api/v1/fila/admissao`) retornou o `atendimento_id`,
 - **Quando** a admissão é confirmada,
 - **Então** o sistema navega declarativamente para a rota `/fila` (`frontend/src/routes/fila.tsx`),
 - **E** quando recarrego a página acidentalmente (F5) ou fecho temporariamente a aba do navegador,
@@ -68,18 +68,21 @@
     "queixa_principal": "Febre moderada e dor de cabeça há 2 dias",
     "sintomas": ["febre", "cefaleia"],
     "escala_dor": 4,
-    "tcle_texto": "Texto integral do termo de consentimento apresentado ao paciente...",
-    "medicos_ativos": 2
+    "tcle_texto": "Texto integral do termo de consentimento apresentado ao paciente..."
   }
   ```
+  *(Nota: `medicos_ativos` não é aceito no payload HTTP; a contagem é lida no servidor em `plantao:medicos_ativos` e os parâmetros de plantão vêm de `ConfiguracaoPlantao` via `ShiftPolicyReaderPort`. Quando `tcle_hash` for informado diretamente, deve cumprir `^[0-9a-f]{64}$`.)*
 * **Resposta Esperada (`201 Created`):**
   ```json
   {
     "atendimento_id": "018f3a5b-...",
+    "triagem_id": "018f3a5b-...",
+    "paciente_id": "018f3a5b-...",
     "prioridade_clinica": 3,
     "status_atendimento": "APTO_PARA_CHAMADA",
-    "tcle_hash": "a1b2c3d4...",
-    "alerta_samu_disparado": false
+    "alerta_samu_disparado": false,
+    "instrucoes": null,
+    "tcle_hash": "a1b2c3d4..."
   }
   ```
 
@@ -87,18 +90,18 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Domínio:** Entidade rica `Triagem` com cálculo de prioridade aberta ACR (`src/modules/triage/domain/classification.py`).
-- [x] **Hash TCLE:** Hash SHA-256 gerado e armazenado com timestamp UTC (`src/modules/triage/domain/classification.py`).
-- [x] **Aplicação:** `FilaService.admitir_paciente()` orquestra persistência atômica direta em `APTO_PARA_CHAMADA` e inserção no ZSET do Valkey `fila:aptos` (`src/modules/queue/application/services/fila_service.py`).
-- [x] **Apresentação:** Router fino `admissao_router.py` montado em `/api/v1/fila/admissao` com `AdmissaoResponse` expondo `tcle_hash` validado via `model_validate` (ADR-001).
-- [x] **Frontend (Fase 1 & TCLE):** `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx`, `frontend/src/features/onboarding/components/pain-scale-selector.tsx` (alvos de toque >= 44x44px em grid responsivo), `frontend/src/components/samu-emergency-modal.tsx` (safe area inset e saída acessível via Escape sem keyboard trap) e `frontend/src/features/onboarding/components/tcle-dialog.tsx` com cálculo de hash forense nativo Web Crypto API (`frontend/src/lib/validators.ts:calcularHashTcle`).
-- [x] **Frontend Hooks:** `frontend/src/features/onboarding/api/use-intake-fase1.ts` e `frontend/src/features/onboarding/api/use-admitir-paciente.ts`.
+- [x] **Domínio (`triage`):** `normalizar_sintomas` e `classificar_risco_clinico` (`src/modules/triage/domain/classification.py`) mapeiam Red Flags canônicas (`dor_toracica_irradiada`, `dispneia_grave`, `inconsciencia`, `confusao_mental`, `hemorragia_grave`, `febre`) e aliases de UI (`dor_no_peito`, `falta_de_ar`, `tontura_desmaio`, `sangramento_grave`, `febre_alta`), descartando entradas em branco; `Triagem.criar_avaliada()` (`src/modules/triage/domain/models/triagem.py`) classifica 1x e sinaliza SAMU no Nível 1.
+- [x] **Hash TCLE e Validação:** Hash SHA-256 gerado por `calcular_hash_tcle` (`classification.py`) e validado contra `^[0-9a-f]{64}$` em `TriageService.avaliar_risco` (`src/modules/triage/application/services/triage_service.py`).
+- [x] **Aplicação (`queue`):** `FilaService.admitir_paciente()` lê `ShiftPolicyReaderPort` e `plantao:medicos_ativos`, reserva cota diária atomicamente (`consumir_cota_ou_bloquear` com estorno em rollback), persiste `Atendimento` + `Triagem` via `TriagePort` e insere no ZSET `fila:aptos` pós-commit (`src/modules/queue/application/services/fila_service.py`).
+- [x] **Apresentação:** Router fino `admissao_router.py` montado em `/api/v1/fila/admissao` com `AdmissaoRequest` (sem `medicos_ativos`) e `AdmissaoResponse` validado via `model_validate` (ADR-001).
+- [x] **Frontend (Fase 1 & TCLE):** `frontend/src/features/onboarding/pages/triagem-page.tsx:TriagemPage`, `frontend/src/features/onboarding/components/authenticated-triagem-flow.tsx`, `frontend/src/features/onboarding/components/acolhimento-fase1-form.tsx` (com `nome_social`, propagação `{...field}` antes de `onChange` preservando `onBlur`/`ref`, e decomposição em `triage-clinical-step.tsx`, `triage-identification-step.tsx`, `documento-identificacao-field.tsx`, `samu-presencial-redirect-card.tsx`), `frontend/src/features/onboarding/components/enriquecimento-fase2-form.tsx` (fatiado com `cfm-address-fields.tsx` e `<fieldset>`/`<legend>` em `sexo-biologico-fieldset.tsx`), `frontend/src/features/onboarding/components/pain-scale-selector.tsx` (alvos de toque >= 44x44px), `frontend/src/components/samu-emergency-modal.tsx` e `frontend/src/features/onboarding/components/tcle-dialog.tsx` com cálculo SHA-256 obrigatório via `frontend/src/lib/validators.ts:calcularHashTcle` (zero dummy `"0"*64`).
+- [x] **Frontend Hooks (Headless & JWT Preservation):** `frontend/src/features/onboarding/hooks/use-acolhimento-triagem-flow.ts:useAcolhimentoTriagemFlow` (cidadão autenticado com JWT 3-partes via `frontend/src/lib/session-storage.ts:isThreePartJwt` pula `/onboarding/fase-1` e preserva o JWT em `medisync_session`), `frontend/src/features/onboarding/api/use-intake-fase1.ts`, `frontend/src/features/onboarding/api/use-admitir-paciente.ts` e `frontend/src/features/onboarding/api/use-via-cep.ts:useViaCepQuery` (`useQuery` com `AbortSignal`).
 - [x] **Sessão & Roteamento (Issue #113, Issue #141):** Persistência em `frontend/src/lib/session-storage.ts`, rota autenticada pós-portal `/triagem` (`frontend/src/routes/triagem.tsx`, `beforeLoad` exige sessão de cidadão em `/entrar`) e rota `/fila` (`frontend/src/routes/fila.tsx`) com guard `beforeLoad` e orquestração em `frontend/src/router.tsx`.
 - [x] **Testes Automatizados:**
   - Backend: `tests/unit/test_triage_model.py`, `tests/unit/test_admissao_service.py`, `tests/integration/test_admissao_integrada_flow.py`
-  - Frontend Unitários: `frontend/src/lib/validators.test.ts`, `frontend/src/features/onboarding/schemas/onboarding-schema.test.ts`, `frontend/src/lib/session-storage.test.ts`, `frontend/src/api/client.test.ts`, `frontend/src/features/onboarding/tests/pain-scale-selector.test.tsx`, `frontend/src/features/onboarding/tests/samu-emergency-modal.test.tsx`
-  - Frontend Hooks: `frontend/src/features/onboarding/api/__tests__/onboarding-hooks.test.tsx`
-  - Frontend Telas: `frontend/src/features/onboarding/tests/acolhimento-triagem-form.test.tsx`, `frontend/src/App.test.tsx`
+  - Frontend Unitários: `frontend/src/lib/validators.test.ts`, `frontend/src/features/onboarding/schemas/onboarding-schema.test.ts`, `frontend/src/lib/session-storage.test.ts`, `frontend/src/api/client.test.ts`, `frontend/src/features/onboarding/tests/pain-scale-selector.test.tsx`, `frontend/src/components/samu-emergency-modal.test.tsx`
+  - Frontend Hooks: `frontend/src/features/onboarding/api/__tests__/onboarding-hooks.test.tsx` (`HK-08`..`HK-11`)
+  - Frontend Telas: `frontend/src/features/onboarding/tests/acolhimento-triagem-form.test.tsx`, `frontend/src/features/onboarding/tests/enriquecimento-fase2-form.test.tsx`, `frontend/src/features/onboarding/tests/triagem-page.test.tsx` (`IT-TRI-01`), `frontend/src/App.test.tsx` (`IT-APP-11`)
   - E2E / A11y: `frontend/e2e/onboarding-acolhimento.spec.ts` (`E2E-ONB-01` cobrindo persistência pós-admissão e `page.reload()`, `E2E-A11Y-01`)
 
 ---

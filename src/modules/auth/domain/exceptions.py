@@ -219,12 +219,27 @@ class IdentificacaoRateLimitExcedidoError(DomainError):
         self.retry_after_segundos = retry_after_segundos
 
 
+class MfaCodigoInvalidoError(DomainError):
+    """Raised when second-factor TOTP verification fails or expired."""
+
+    status_code: int = 401
+    title: str = "Código MFA Inválido"
+    code: str = "MFA_CODIGO_INVALIDO"
+
+    def __init__(
+        self,
+        detail: str = "Código TOTP de segundo fator fornecido é inválido ou expirou.",
+    ) -> None:
+        super().__init__(detail, title=self.title, code=self.code)
+
+
 __all__ = [
     "AuthError",
     "ContaBloqueadaError",
     "ContaDesativadaError",
     "CredenciaisInvalidasError",
     "IdentificacaoRateLimitExcedidoError",
+    "MfaCodigoInvalidoError",
     "OtpInvalidoOuExpiradoError",
     "OtpRateLimitExcedidoError",
     "OtpTentativasExcedidasError",

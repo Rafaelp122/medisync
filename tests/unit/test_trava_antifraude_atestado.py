@@ -8,7 +8,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
-from src.core.errors import TravaAntiFraudeAtestadoError
 from src.modules.consultation.application.dtos import (
     CriarItemPrescricaoDTO,
     EmitirDocumentoClinicoCommand,
@@ -19,6 +18,7 @@ from src.modules.consultation.application.ports.atendimento_reader_port import (
 from src.modules.consultation.application.services.documento_service import (
     DocumentoService,
 )
+from src.modules.consultation.domain.exceptions import TravaAntiFraudeAtestadoError
 from src.modules.consultation.domain.models import (
     EvolucaoClinica,
     TipoDocumentoClinico,
@@ -28,7 +28,6 @@ from src.modules.consultation.infrastructure.memory_signed_cache import (
 )
 
 from tests.doubles import (
-    FakeAddedResult,
     FakeAsyncSession,
     FakeAtendimentoReader,
     FakeAuditTrail,
@@ -170,10 +169,7 @@ async def test_emissao_atestado_inferior_180s_com_justificativa_valida_permitida
 
     added_entities: list[object] = []
     session = FakeAsyncSession(
-        [
-            FakeResult(_make_evolucao_verificada(atendimento_id, medico_id)),
-            FakeAddedResult(added_entities),  # reload after commit
-        ],
+        [FakeResult(_make_evolucao_verificada(atendimento_id, medico_id))],
         added_entities,
     )
     svc = _build_service(session, reader, audit_trail=fake_audit)
@@ -216,10 +212,7 @@ async def test_emissao_atestado_superior_180s_sem_justificativa_permitida() -> N
 
     added_entities: list[object] = []
     session = FakeAsyncSession(
-        [
-            FakeResult(_make_evolucao_verificada(atendimento_id, medico_id)),
-            FakeAddedResult(added_entities),  # reload after commit
-        ],
+        [FakeResult(_make_evolucao_verificada(atendimento_id, medico_id))],
         added_entities,
     )
     svc = _build_service(session, reader, audit_trail=fake_audit)
@@ -249,10 +242,7 @@ async def test_emissao_receita_inferior_180s_nao_aciona_trava() -> None:
 
     added_entities: list[object] = []
     session = FakeAsyncSession(
-        [
-            FakeResult(_make_evolucao_verificada(atendimento_id, medico_id)),
-            FakeAddedResult(added_entities),  # reload after commit
-        ],
+        [FakeResult(_make_evolucao_verificada(atendimento_id, medico_id))],
         added_entities,
     )
     svc = _build_service(session, reader, audit_trail=fake_audit)
@@ -275,3 +265,71 @@ async def test_emissao_receita_inferior_180s_nao_aciona_trava() -> None:
 
     assert doc.tipo_documento == TipoDocumentoClinico.RECEITA_SIMPLES
     assert len(fake_audit.get_events_by_type("TRAVA_TEMPORAL_ATESTADO_VIOLADA")) == 0
+
+
+@pytest.mark.asyncio
+async def test_rn09_atestado_ignora_criado_em_quando_chamada_recente() -> None:
+    """RN09: fila longa (criado_em 10min atrás) não burla piso de 180s de chamada."""
+    atendimento_id = uuid4()
+    medico_id = uuid4()
+    now = datetime.now(UTC)
+    resumo = AtendimentoResumoDTO(
+        atendimento_id=atendimento_id,
+        medico_id=medico_id,
+        status="EM_ATENDIMENTO",
+        tcle_hash="b" * 64,
+        is_terminal=False,
+        chamada_iniciada_em=now - timedelta(seconds=30),
+        criado_em=now - timedelta(minutes=10),
+    )
+    reader = FakeAtendimentoReader(resumo=resumo)
+    fake_audit = FakeAuditTrail()
+    svc = _build_service(FakeAsyncSession(), reader, audit_trail=fake_audit)
+
+    cmd = EmitirDocumentoClinicoCommand(
+        atendimento_id=atendimento_id,
+        medico_id=medico_id,
+        tipo_documento=TipoDocumentoClinico.ATESTADO_MEDICO,
+        justificativa_tempo_inferior=None,
+    )
+    with pytest.raises(TravaAntiFraudeAtestadoError):
+        await svc.emitir_documento(cmd)
+
+    events = fake_audit.get_events_by_type("TRAVA_TEMPORAL_ATESTADO_VIOLADA")
+    assert len(events) == 1
+    assert events[0]["payload"]["duracao_segundos"] < 180.0
+    assert events[0]["payload"]["justificativa_aceita"] is False
+
+
+@pytest.mark.asyncio
+async def test_rn09_atestado_sem_chamada_iniciada_em_nao_usa_criado_em() -> None:
+    """RN09: ausência de chamada_iniciada_em falha fechado sem fallback em criado_em."""
+    atendimento_id = uuid4()
+    medico_id = uuid4()
+    now = datetime.now(UTC)
+    resumo = AtendimentoResumoDTO(
+        atendimento_id=atendimento_id,
+        medico_id=medico_id,
+        status="EM_ATENDIMENTO",
+        tcle_hash="b" * 64,
+        is_terminal=False,
+        chamada_iniciada_em=None,
+        criado_em=now - timedelta(minutes=15),
+    )
+    reader = FakeAtendimentoReader(resumo=resumo)
+    fake_audit = FakeAuditTrail()
+    svc = _build_service(FakeAsyncSession(), reader, audit_trail=fake_audit)
+
+    cmd = EmitirDocumentoClinicoCommand(
+        atendimento_id=atendimento_id,
+        medico_id=medico_id,
+        tipo_documento=TipoDocumentoClinico.ATESTADO_MEDICO,
+        justificativa_tempo_inferior=None,
+    )
+    with pytest.raises(TravaAntiFraudeAtestadoError):
+        await svc.emitir_documento(cmd)
+
+    events = fake_audit.get_events_by_type("TRAVA_TEMPORAL_ATESTADO_VIOLADA")
+    assert len(events) == 1
+    assert events[0]["payload"]["duracao_segundos"] == 0.0
+    assert events[0]["payload"]["justificativa_aceita"] is False

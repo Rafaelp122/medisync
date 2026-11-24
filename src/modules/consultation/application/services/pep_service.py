@@ -1,18 +1,18 @@
-"""PEP clinical workflow service enforcing SOAP and Portaria 344/98 safeguards."""
+"""Deep PEP clinical service owning SOAP, lifecycle, finalization and patient portal."""
 
+import difflib
 import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.core.audit import AtorPapel, AtorTipo, AuditTrailPort
 from src.core.errors import ForbiddenError, NotFoundError
 from src.modules.consultation.application.dtos import (
-    DocumentoAssinadoResult,
-    EmitirDocumentoClinicoCommand,
     FinalizarConsultaCommand,
     FinalizarConsultaResult,
     HistoricoAtendimentoItemDTO,
@@ -20,52 +20,44 @@ from src.modules.consultation.application.dtos import (
     ProntuarioResumoDTO,
     RegistrarEvolucaoSOAPCommand,
     TMAStatusDTO,
-    VerificarLivenessCommand,
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoHistoricoDTO,
     AtendimentoReaderPort,
     AtendimentoResumoDTO,
     HistoricoAtendimentoReaderPort,
-    is_atendimento_terminal,
-)
-from src.modules.consultation.application.ports.icp_brasil_signer_port import (
-    DoctorCertificateCredentials,
-    ICPBrasilSignerPort,
-)
-from src.modules.consultation.application.ports.liveness_verification_port import (
-    LivenessChallengeDTO,
-    LivenessVerificationResultDTO,
-)
-from src.modules.consultation.application.ports.pdf_generator_port import (
-    PDFGeneratorPort,
 )
 from src.modules.consultation.application.ports.producao_ambulatorial_port import (
     ProducaoAmbulatorialPort,
 )
-from src.modules.consultation.application.ports.storage_port import StoragePort
-from src.modules.consultation.application.services.documento_service import (
-    DocumentoService,
-)
-from src.modules.consultation.application.services.evolucao_service import (
-    EvolucaoService,
+from src.modules.consultation.application.services.clinical_pdf_compiler import (
+    ClinicalPdfCompiler,
 )
 from src.modules.consultation.domain.exceptions import (
     ConsultaFinalizadaError,
     ConsultaInvalidaError,
     DocumentoClinicoNaoEncontradoError,
+    EvolucaoNaoEncontradaError,
+    IANaoRatificadaError,
 )
 from src.modules.consultation.domain.models import (
     DocumentoClinico,
     EvolucaoClinica,
 )
-from src.modules.consultation.domain.models._substances import (
-    validar_substancia_permitida_telemedicina,
-)
 
 logger = logging.getLogger("medisync.consultation.pep")
 
 _EPOCH_MIN_UTC = datetime.min.replace(tzinfo=UTC)
+_STATUS_TERMINAIS = frozenset({"CONCLUIDO", "PACIENTE_AUSENTE", "CANCELADO_PACIENTE"})
+
+
+def _is_resumo_terminal(resumo: AtendimentoResumoDTO | None) -> bool:
+    """Determine terminal status from an already-loaded attendance summary."""
+    if resumo is None:
+        return False
+    return bool(
+        resumo.is_terminal or resumo.status.strip().upper() in _STATUS_TERMINAIS
+    )
 
 
 def _extrair_criado_em_documento(
@@ -120,55 +112,21 @@ def _montar_paciente_documento_dto(
 
 
 class PEPService:
-    """Application service for Electronic Health Record (PEP) and SOAP workflow."""
+    """Deep module owning SOAP evolution, PEP summary, finalization and PDF view."""
 
     def __init__(
         self,
         session: AsyncSession,
-        pdf_generator: PDFGeneratorPort,
-        signer: ICPBrasilSignerPort,
-        storage: StoragePort,
-        documento_service: DocumentoService,
+        pdf_compiler: ClinicalPdfCompiler,
         atendimento_reader: AtendimentoReaderPort | None = None,
-        evolucao_service: EvolucaoService | None = None,
         audit_trail: AuditTrailPort | None = None,
         producao_port: ProducaoAmbulatorialPort | None = None,
     ) -> None:
         self._session = session
-        self._pdf_generator = pdf_generator
-        self._signer = signer
-        self._storage = storage
+        self._pdf_compiler = pdf_compiler
         self._reader = atendimento_reader
-        self._documentos = documento_service
         self._audit_trail = audit_trail
         self._producao_port = producao_port
-        self._evolucao = evolucao_service or EvolucaoService(
-            session=session, reader=atendimento_reader, audit_trail=audit_trail
-        )
-
-    @property
-    def storage(self) -> StoragePort:
-        """Instância de StoragePort para binários de documentos sob ADR-006.
-
-        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
-        """
-        return self._storage
-
-    @property
-    def documento_service(self) -> DocumentoService:
-        """Serviço de ciclo de vida de documentos e assinatura digital.
-
-        Regras: Portaria 344/98 e ADR-006.
-        """
-        return self._documentos
-
-    @property
-    def evolucao_service(self) -> EvolucaoService:
-        """Serviço de registro de evolução clínica SOAP.
-
-        Regras: RN06 (Ato Médico) e CFM nº 1.821/2007.
-        """
-        return self._evolucao
 
     @property
     def atendimento_reader(self) -> AtendimentoReaderPort | None:
@@ -186,102 +144,280 @@ class PEPService:
         """
         return self._producao_port
 
+    async def _obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
+        if self._reader is None:
+            return None
+        return await self._reader.obter_resumo(atendimento_id)
+
     async def _is_terminal(self, atendimento_id: UUID) -> bool:
         """Return True when queue-owned attendance reached terminal status."""
-        return await is_atendimento_terminal(self._reader, atendimento_id)
+        return _is_resumo_terminal(await self._obter_resumo(atendimento_id))
+
+    @staticmethod
+    def _resolver_diff_ia(command: RegistrarEvolucaoSOAPCommand) -> str | None:
+        """Calcula o diff da sugestão de IA versus a conduta médica ratificada.
+
+        Regras: CFM nº 2.454/2026 e docs/explanation/domains/consultation-domain.md.
+        """
+        if not command.ia_utilizada:
+            return None
+        if not command.ia_ratificada_pelo_medico:
+            conduta_preview = command.conduta[:40].replace("\n", " ")
+            raise IANaoRatificadaError(
+                f"Sugestão de IA para o plano SOAP '{conduta_preview}...' não foi "
+                f"ratificada pelo médico assistente '{command.medico_id}' conforme "
+                "Resolução CFM nº 2.454/2026."
+            )
+        diff = command.ia_diff_modificacao
+        if (
+            not diff
+            and command.ia_sugestao_bruta
+            and command.ia_sugestao_bruta != command.conduta
+        ):
+            diff_lines = list(
+                difflib.unified_diff(
+                    command.ia_sugestao_bruta.splitlines(keepends=True),
+                    command.conduta.splitlines(keepends=True),
+                    fromfile="sugestao_ia",
+                    tofile="plano_ratificado",
+                )
+            )
+            diff = "".join(diff_lines)
+        return diff
+
+    async def _registrar_auditoria_soap(
+        self,
+        command: RegistrarEvolucaoSOAPCommand,
+        evolucao: EvolucaoClinica,
+        diff_ia: str | None,
+    ) -> None:
+        if self._audit_trail is None:
+            return
+        await self._audit_trail.record_event(
+            tipo_evento="EVOLUCAO_SOAP_REGISTRADA",
+            ator_tipo=AtorTipo.PROFISSIONAL.value,
+            ator_papel=AtorPapel.MEDICO.value,
+            ator_id=command.medico_id,
+            atendimento_id=command.atendimento_id,
+            payload={
+                "evolucao_id": str(evolucao.id),
+                "cid10": evolucao.cid10_principal,
+                "codigo_sigtap": evolucao.codigo_sigtap,
+                "ia_utilizada": evolucao.ia_utilizada,
+            },
+        )
+        if command.ia_utilizada:
+            await self._audit_trail.record_event(
+                tipo_evento="IA_DECISAO_MEDICA_REGISTRADA",
+                ator_tipo=AtorTipo.PROFISSIONAL.value,
+                ator_papel=AtorPapel.MEDICO.value,
+                ator_id=command.medico_id,
+                atendimento_id=command.atendimento_id,
+                payload={
+                    "evolucao_id": str(evolucao.id),
+                    "ia_modelo": command.ia_modelo,
+                    "ia_ratificada": command.ia_ratificada_pelo_medico,
+                    "diff_forense": diff_ia,
+                },
+            )
+
+    @staticmethod
+    def _aplicar_atualizacao_soap(
+        evolucao: EvolucaoClinica,
+        command: RegistrarEvolucaoSOAPCommand,
+        diff_ia: str | None,
+        *,
+        is_term: bool,
+    ) -> None:
+        if evolucao.is_finalizado or is_term:
+            evolucao.marcar_finalizado()
+            status_desc = "terminal" if is_term else "evolucao_finalizada"
+            raise ConsultaFinalizadaError(
+                "Não é permitido alterar evolução de consulta finalizada "
+                f"(status atual: '{status_desc}')."
+            )
+        evolucao.atualizar_soap(
+            anamnese=command.anamnese,
+            conduta=command.conduta,
+            exame_fisico_virtual=command.exame_fisico_virtual,
+            cid10_principal=command.cid10_principal,
+            codigo_sigtap=command.codigo_sigtap,
+            ia_utilizada=command.ia_utilizada,
+            ia_modelo=command.ia_modelo,
+            ia_sugestao_bruta=command.ia_sugestao_bruta,
+            ia_diff_modificacao=diff_ia,
+            ia_ratificada_pelo_medico=command.ia_ratificada_pelo_medico,
+            identidade_verificada=command.identidade_verificada,
+            tipo_documento_verificado=command.tipo_documento_verificado,
+            justificativa_excecao_identidade=command.justificativa_excecao_identidade,
+        )
+
+    async def _buscar_evolucao_opcional(
+        self, atendimento_id: UUID
+    ) -> EvolucaoClinica | None:
+        stmt = select(EvolucaoClinica).where(
+            EvolucaoClinica.atendimento_id == atendimento_id
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def salvar_evolucao_soap(
         self, command: RegistrarEvolucaoSOAPCommand
     ) -> EvolucaoClinica:
-        """Registra ou atualiza evolução SOAP com CID-10 e conduta médica.
+        """Registra ou atualiza evolução SOAP com governança de IA.
 
-        Garante soberania clínica e preenchimento sob CFM nº 2.314/2022.
-        Regras: RN06 (Ato Médico) e docs/explanation/domains/consultation-domain.md.
+        Garante soberania clínica e preenchimento sob CFM nº 1.821/2007,
+        2.314/2022 e 2.454/2026. Regras: RN06 e
+        docs/explanation/domains/consultation-domain.md.
         """
-        return await self._evolucao.salvar_evolucao_soap(command)
+        diff_ia = self._resolver_diff_ia(command)
+        existing = await self._buscar_evolucao_opcional(command.atendimento_id)
+        is_term = await self._is_terminal(command.atendimento_id)
 
-    def validar_prescricao(self, medicamento: str) -> None:
-        """Valida emissão digital de medicamento sob Portaria SVS/MS nº 344/98.
+        if existing is not None:
+            self._aplicar_atualizacao_soap(existing, command, diff_ia, is_term=is_term)
+            await self._session.flush()
+            await self._registrar_auditoria_soap(command, existing, diff_ia)
+            await self._session.commit()
+            return existing
 
-        Rejeita substâncias das Listas A/B que exigem talonário físico.
-        Regras: Portaria 344/98 e docs/explanation/domains/consultation-domain.md.
+        if is_term:
+            raise ConsultaFinalizadaError(
+                "Não é permitido criar evolução de consulta já finalizada "
+                f"(atendimento '{command.atendimento_id}')."
+            )
+
+        evolucao = EvolucaoClinica(
+            atendimento_id=command.atendimento_id,
+            medico_id=command.medico_id,
+            anamnese=command.anamnese,
+            conduta=command.conduta,
+            exame_fisico_virtual=command.exame_fisico_virtual,
+            cid10_principal=command.cid10_principal,
+            codigo_sigtap=command.codigo_sigtap,
+            ia_utilizada=command.ia_utilizada,
+            ia_modelo=command.ia_modelo,
+            ia_sugestao_bruta=command.ia_sugestao_bruta,
+            ia_diff_modificacao=diff_ia,
+            ia_ratificada_pelo_medico=command.ia_ratificada_pelo_medico,
+            identidade_verificada=command.identidade_verificada,
+            tipo_documento_verificado=command.tipo_documento_verificado,
+            justificativa_excecao_identidade=command.justificativa_excecao_identidade,
+        )
+        self._session.add(evolucao)
+        try:
+            await self._session.flush()
+        except IntegrityError:
+            await self._session.rollback()
+            existing_retry = await self._buscar_evolucao_opcional(
+                command.atendimento_id
+            )
+            if existing_retry is None:
+                raise
+            self._aplicar_atualizacao_soap(
+                existing_retry, command, diff_ia, is_term=is_term
+            )
+            await self._session.flush()
+            await self._registrar_auditoria_soap(command, existing_retry, diff_ia)
+            await self._session.commit()
+            return existing_retry
+
+        await self._registrar_auditoria_soap(command, evolucao, diff_ia)
+        await self._session.commit()
+        return evolucao
+
+    async def obter_evolucao(self, atendimento_id: UUID) -> EvolucaoClinica:
+        """Recupera evolução clínica SOAP persistida para o atendimento.
+
+        Garante integridade e rastreabilidade conforme CFM nº 1.821/2007.
+        Regras: RN06 e docs/explanation/domains/consultation-domain.md.
         """
-        validar_substancia_permitida_telemedicina(medicamento)
+        evolucao = await self._buscar_evolucao_opcional(atendimento_id)
+        if evolucao is None:
+            raise EvolucaoNaoEncontradaError(
+                f"Nenhuma evolução clínica registrada para o atendimento "
+                f"'{atendimento_id}'."
+            )
+        return evolucao
 
-    async def emitir_documento(
-        self, command: EmitirDocumentoClinicoCommand
-    ) -> DocumentoClinico:
-        """Delega emissão de documento clínico ao DocumentoService.
-
-        Valida itens contra restrições sanitárias e gera chave canônica.
-        Regras: Portaria 344/98 e ADR-006.
-        """
-        return await self._documentos.emitir_documento(command)
-
-    async def solicitar_desafio_liveness(
-        self, atendimento_id: UUID
-    ) -> LivenessChallengeDTO:
-        """Delega geração de desafio facial (US-15) ao DocumentoService.
-
-        Regras: RF-07 e docs/user-stories/US-15-prova-de-vida-facial-liveness.md.
-        """
-        return await self._documentos.solicitar_desafio_liveness(atendimento_id)
-
-    async def verificar_liveness_prescricao(
-        self, command: VerificarLivenessCommand
-    ) -> LivenessVerificationResultDTO:
-        """Delega verificação de prova de vida facial (US-15) ao DocumentoService.
-
-        Regras: RF-07 e docs/user-stories/US-15-prova-de-vida-facial-liveness.md.
-        """
-        return await self._documentos.verificar_liveness_prescricao(command)
-
-    async def compilar_pdf(self, documento_id: UUID) -> bytes:
-        """Gera binário PDF/A-1b do documento com validação pública ITI.
-
-        Garante conformidade com PAdES e CFM nº 2.314/2022 via DocumentoService.
-        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
-        """
-        return await self._documentos.compilar_pdf(documento_id)
-
-    async def assinar_documento(
+    async def compilar_pdf(
         self,
         documento_id: UUID,
-        atendimento_id: UUID,
-        credenciais: DoctorCertificateCredentials,
-    ) -> DocumentoAssinadoResult:
-        """Assina documento clínico no padrão ICP-Brasil via Cloud PSC.
+        *,
+        atendimento_id: UUID | None = None,
+    ) -> bytes:
+        """Compila binário PDF/A-1b do documento validando posse do atendimento.
 
-        Garante validade jurídica sob MP nº 2.200-2/2001 e CFM nº 2.314/2022.
-        Regras: docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
+        Impede IDOR horizontal delegando ao ClinicalPdfCompiler compartilhado.
+        Regras: CFM nº 2.314/2022 e
+        docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md.
         """
-        return await self._documentos.assinar(
-            documento_id=documento_id,
-            atendimento_id=atendimento_id,
-            credenciais=credenciais,
+        return await self._pdf_compiler.compilar(
+            documento_id, atendimento_id=atendimento_id
         )
+
+    async def _consolidar_ambulatorio_em_savepoint(
+        self,
+        command: FinalizarConsultaCommand,
+        paciente_id: UUID,
+        codigo_sigtap: str,
+    ) -> None:
+        if self._producao_port is None:
+            return
+        try:
+            async with self._session.begin_nested():
+                await self._producao_port.consolidar_teleconsulta(
+                    atendimento_id=command.atendimento_id,
+                    profissional_id=command.medico_id,
+                    paciente_id=paciente_id,
+                    codigo_sigtap=codigo_sigtap,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Falha ao consolidar teleconsulta ambulatorial (BPA-I/SUS) "
+                "para atendimento '%s' (médico: %s, paciente: %s, "
+                "sigtap: '%s'): %s",
+                command.atendimento_id,
+                command.medico_id,
+                paciente_id,
+                codigo_sigtap,
+                exc,
+                exc_info=True,
+            )
+
+    async def _obter_resumo_resiliente(
+        self, atendimento_id: UUID
+    ) -> AtendimentoResumoDTO | None:
+        if self._reader is None:
+            return None
+        try:
+            return await self._reader.obter_resumo(atendimento_id)
+        except Exception as exc:
+            logger.warning(
+                "Falha ao obter resumo do atendimento '%s' via reader: %s",
+                atendimento_id,
+                exc,
+                exc_info=True,
+            )
+            return None
 
     async def finalizar_consulta(
         self, command: FinalizarConsultaCommand
     ) -> FinalizarConsultaResult:
-        """Encerra a consulta clínica, bloqueando evolução SOAP e documentos.
+        """Encerra a consulta clínica com commit único atômico e savepoints.
 
         Assegura imutabilidade sob CFM nº 1.821/2007 e CFM nº 2.314/2022.
         Regras: RN06 (Ato Médico) e docs/explanation/domains/consultation-domain.md.
         """
-        stmt = select(EvolucaoClinica).where(
-            EvolucaoClinica.atendimento_id == command.atendimento_id
-        )
-        res = await self._session.execute(stmt)
-        evolucao = res.scalar_one_or_none()
-
+        evolucao = await self._buscar_evolucao_opcional(command.atendimento_id)
         if evolucao is None:
             raise ConsultaInvalidaError(
                 f"Atendimento '{command.atendimento_id}' sem evolução preenchida. "
                 "É obrigatório registrar a evolução SOAP antes da finalização."
             )
 
-        is_term = await self._is_terminal(command.atendimento_id)
+        resumo = await self._obter_resumo_resiliente(command.atendimento_id)
+        is_term = _is_resumo_terminal(resumo)
         if evolucao.is_finalizado or is_term:
             evolucao.marcar_finalizado()
             status_desc = "terminal" if is_term else "evolucao_finalizada"
@@ -300,60 +436,21 @@ class PEPService:
 
         evolucao.marcar_finalizado()
 
-        # Mark all documents as finalized
         doc_stmt = select(DocumentoClinico).where(
             DocumentoClinico.atendimento_id == command.atendimento_id
         )
         doc_res = await self._session.execute(doc_stmt)
-        documentos = doc_res.scalars().all()
-        for doc in documentos:
+        for doc in doc_res.scalars().all():
             doc.marcar_finalizado()
 
-        resumo: AtendimentoResumoDTO | None = None
-        if self._reader is not None:
-            try:
-                resumo = await self._reader.obter_resumo(command.atendimento_id)
-            except Exception as exc:
-                logger.warning(
-                    "Falha ao obter resumo do atendimento '%s' via reader: %s",
-                    command.atendimento_id,
-                    exc,
-                    exc_info=True,
-                )
-            try:
-                await self._reader.concluir_atendimento(command.atendimento_id)
-            except Exception as exc:
-                logger.warning(
-                    "Falha ao concluir atendimento '%s' na fila virtual via reader: %s",
-                    command.atendimento_id,
-                    exc,
-                    exc_info=True,
-                )
+        medico_para_liberar = await self._concluir_fila_antes_commit(
+            command.atendimento_id
+        )
 
-        if (
-            self._producao_port is not None
-            and resumo is not None
-            and resumo.paciente_id is not None
-        ):
-            try:
-                await self._producao_port.consolidar_teleconsulta(
-                    atendimento_id=command.atendimento_id,
-                    profissional_id=command.medico_id,
-                    paciente_id=resumo.paciente_id,
-                    codigo_sigtap=evolucao.codigo_sigtap,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Falha ao consolidar teleconsulta ambulatorial (BPA-I/SUS) "
-                    "para atendimento '%s' (médico: %s, paciente: %s, "
-                    "sigtap: '%s'): %s",
-                    command.atendimento_id,
-                    command.medico_id,
-                    resumo.paciente_id,
-                    evolucao.codigo_sigtap,
-                    exc,
-                    exc_info=True,
-                )
+        if resumo is not None and resumo.paciente_id is not None:
+            await self._consolidar_ambulatorio_em_savepoint(
+                command, resumo.paciente_id, evolucao.codigo_sigtap
+            )
 
         await self._session.flush()
         if self._audit_trail is not None:
@@ -368,10 +465,43 @@ class PEPService:
                 payload={"evolucao_id": str(evolucao.id)},
             )
         await self._session.commit()
+        await self._liberar_lock_consulta_pos_commit(medico_para_liberar)
         return FinalizarConsultaResult(
             atendimento_id=command.atendimento_id,
             is_finalizado=evolucao.is_finalizado,
         )
+
+    async def _concluir_fila_antes_commit(self, atendimento_id: UUID) -> UUID | None:
+        if self._reader is None:
+            return None
+        try:
+            async with self._session.begin_nested():
+                return await self._reader.concluir_atendimento(
+                    atendimento_id,
+                    auto_commit=False,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Falha ao concluir atendimento '%s' na fila virtual via reader: %s",
+                atendimento_id,
+                exc,
+                exc_info=True,
+            )
+            return None
+
+    async def _liberar_lock_consulta_pos_commit(self, medico_id: UUID | None) -> None:
+        if self._reader is None or medico_id is None:
+            return
+        try:
+            await self._reader.liberar_consulta_ativa_medico(medico_id)
+        except Exception as exc:
+            logger.warning(
+                "Falha ao liberar lock de consulta ativa para médico '%s' "
+                "pós-commit: %s",
+                medico_id,
+                exc,
+                exc_info=True,
+            )
 
     def calcular_tma_status(
         self,
@@ -417,11 +547,7 @@ class PEPService:
         Aplica bloqueio de integridade se atendimento encerrado (CFM 1.821/2007).
         Regras: RN06 e docs/explanation/domains/consultation-domain.md.
         """
-        stmt = select(EvolucaoClinica).where(
-            EvolucaoClinica.atendimento_id == atendimento_id
-        )
-        res = await self._session.execute(stmt)
-        evolucao = res.scalar_one_or_none()
+        evolucao = await self._buscar_evolucao_opcional(atendimento_id)
 
         doc_stmt = (
             select(DocumentoClinico)
@@ -435,8 +561,8 @@ class PEPService:
         is_finalizado = bool((evolucao and evolucao.is_finalizado) or is_term)
         if evolucao and is_finalizado:
             evolucao.marcar_finalizado()
-        for doc in documentos:
-            if is_finalizado:
+        if is_finalizado:
+            for doc in documentos:
                 doc.marcar_finalizado()
 
         return ProntuarioResumoDTO(
@@ -445,14 +571,6 @@ class PEPService:
             documentos=documentos,
             is_finalizado=is_finalizado,
         )
-
-    async def obter_evolucao(self, atendimento_id: UUID) -> EvolucaoClinica:
-        """Recupera evolução clínica SOAP persistida para o atendimento.
-
-        Assegura acesso rastreável ao registro médico conforme CFM nº 1.821/2007.
-        Regras: RN06 e docs/explanation/domains/consultation-domain.md.
-        """
-        return await self._evolucao.obter_evolucao(atendimento_id)
 
     async def _listar_atendimentos_paciente(
         self,
@@ -581,4 +699,4 @@ class PEPService:
             )
 
         await self._validar_titularidade_documento(doc, paciente_id)
-        return await self.compilar_pdf(documento_id)
+        return await self.compilar_pdf(documento_id, atendimento_id=doc.atendimento_id)

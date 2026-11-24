@@ -9,7 +9,7 @@ A sala de espera virtual (`frontend/src/features/queue/`) é o ponto focal da ex
 O componente orquestrador (`VirtualWaitingRoom`) encapsula quatro salvaguardas essenciais:
 1. **Acompanhamento Transparente:** Exibição da posição ordinal atual e estimativa de espera calculada pelo TMA dos médicos ativos.
 2. **Salvaguarda de Piora Clínica (RF-06):** Botão acessível que permite relatar agravamento dos sintomas; se classificado em Nível 1 (Vermelho), aciona imediatamente a salvaguarda SAMU 192 (`SamuEmergencyModal`) com compensação de safe area e tecla Escape destravada.
-3. **Convocação Médica e Ring Modal de 45s (RN02, WCAG 2.1.2):** Ao ser convocado pelo médico, exibe modal fullscreen com alerta sonoro Web Audio API (chime 523Hz/659Hz), compensação de safe area (`env(safe-area-inset-bottom)`), botão acessível de recusa (`aria-label="Recusar chamada médica"`), saída via `Escape` sem keyboard trap e contagem regressiva determinística de 45 segundos para ingresso na teleconsulta WebRTC.
+3. **Convocação Médica e Ring Modal de 45s (RN02, WCAG 2.1.2):** Ao ser convocado pelo médico, exibe modal fullscreen com alerta sonoro Web Audio API (chime 523Hz/659Hz), compensação de safe area (`env(safe-area-inset-bottom)`), botão acessível de recusa (`aria-label="Não posso atender agora (Recusar chamada médica)"`), saída via `Escape` sem keyboard trap e contagem regressiva determinística de 45 segundos para ingresso na teleconsulta WebRTC.
 4. **Resolução de No-Show:** Se os 45 segundos expirarem sem confirmação, transiciona deterministicamente para o estado `PACIENTE_AUSENTE` sem travamento da aplicação, preservando a árvore e restaurando o foco na fila.
 
 ## Procedimento
@@ -32,8 +32,8 @@ rg -n "new WebSocket|/ws/queue/" frontend/src/features/queue/api/use-queue-socke
 
 ### 3. Comunicação de Deterioração Clínica (RF-06)
 Quando o paciente relata piora através do `PioraClinicaModal`, a mutação `useComunicarPiora` envia o payload ao backend (`POST /api/v1/fila/piora`):
-- Se `alerta_samu_disparado: true` ou `nova_prioridade: 1`: o estado local ativa o `SamuEmergencyModal`, oferecendo discagem rápida `tel:192` e bloqueando ações virtuais.
-- Se `nova_prioridade: 2` (Laranja): a posição na fila é recalculada e atualizada na tela imediatamente.
+- Se `alerta_samu_disparado: true` ou `prioridade_clinica: 1`: o estado local ativa o `SamuEmergencyModal`, oferecendo discagem rápida `tel:192` e bloqueando ações virtuais.
+- Se `prioridade_clinica: 2` (Laranja): a posição na fila (`nova_posicao`) é recalculada pós-commit e atualizada na tela imediatamente.
 
 ### 4. Atendimento da Chamada e Ingresso na Teleconsulta (RF-03)
 Ao receber o evento `CALLED` ou `CHAMANDO_PACIENTE`:
@@ -46,18 +46,26 @@ Enquanto aguarda na fila, o paciente pode visualizar o `PasskeyInvitationCard` c
 
 ## Onde no código
 
-- Orquestrador da tela: `frontend/src/features/queue/components/virtual-waiting-room.tsx:VirtualWaitingRoom`
+- Orquestrador visual da tela (<150L): `frontend/src/features/queue/components/virtual-waiting-room.tsx:VirtualWaitingRoom`
+- Orquestrador headless (polling, WS, TTL pós-F5, parada terminal e recusa): `frontend/src/features/queue/hooks/use-virtual-queue.ts:useVirtualQueue`
 - Card de posição e TMA: `frontend/src/features/queue/components/queue-position-card.tsx:QueuePositionCard`
+- Ações e estados terminais: `frontend/src/features/queue/components/queue-waiting-actions-card.tsx:QueueWaitingActionsCard` e `frontend/src/features/queue/components/queue-terminal-state-card.tsx:QueueTerminalStateCard`
 - Ring modal de 45s: `frontend/src/features/queue/components/incoming-call-ring-modal.tsx:IncomingCallRingModal`
+- Contagem isolada em folha (`motion-reduce:animate-none`): `frontend/src/features/queue/components/ring-countdown.tsx:RingCountdown`
 - Alerta sonoro sintetizado: `frontend/src/features/queue/lib/audio-chime.ts:iniciarToqueChamadaMedica`
-- Modal de piora clínica: `frontend/src/features/queue/components/piora-clinica-modal.tsx:PioraClinicaModal`
+- Modal de piora clínica (RHF + Zod, IDs canônicos): `frontend/src/features/queue/components/piora-clinica-modal.tsx:PioraClinicaModal`
 - Diálogo de desistência (RN06): `frontend/src/features/queue/components/cancelar-fila-dialog.tsx:CancelarFilaDialog`
-- Card de convite Passkey: `frontend/src/features/queue/components/passkey-invitation-card.tsx:PasskeyInvitationCard`
+- Card de convite Passkey: `frontend/src/features/queue/components/passkey-invitation-card.tsx:PasskeyInvitationCard` (hook em `frontend/src/features/auth/api/use-passkey-register.ts:usePasskeyRegister`)
 - Salvaguarda SAMU compartilhada: `frontend/src/components/samu-emergency-modal.tsx:SamuEmergencyModal`
 - Formatação e estimativas: `frontend/src/lib/formatters.ts:formatarPosicaoOrdinal`
 - Hook de WebSocket: `frontend/src/features/queue/api/use-queue-socket.ts:useQueueSocket`
 - Hook de posição REST: `frontend/src/features/queue/api/use-posicao-fila.ts:usePosicaoFila`
 - Hook de teleconsulta: `frontend/src/features/queue/api/use-atender-chamada.ts:useAtenderChamada`
+
+### Invariantes da Fila na Issue #168
+- **Parada terminal:** `useVirtualQueue` desativa o polling REST e fecha o socket `/ws/queue/` ao atingir `PACIENTE_AUSENTE`, `CANCELADO_PACIENTE` ou `CONCLUIDO`.
+- **Restauração pós-F5:** O deadline da contagem de 45s é recalculado deterministicamente com `chamada_iniciada_em` + `ttl_segundos` de `PosicaoFilaResponse`.
+- **Recusa da chamada:** O botão "Não posso atender agora" envia `POST /api/v1/fila/cancelar/{atendimento_id}` via `useCancelarFila` antes de liberar o estado local.
 
 ## Verificação
 

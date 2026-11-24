@@ -1,8 +1,6 @@
-"""Presentation helpers for authentication endpoints."""
+"""Presentation helpers for authentication endpoints (ADR-009 pure)."""
 
 from fastapi import Request, Response
-
-from src.core.config import get_settings
 
 AUTH_COOKIE_NAME = "refresh_token"
 AUTH_COOKIE_PATH = "/api/v1/auth"
@@ -10,17 +8,19 @@ DEFAULT_REFRESH_COOKIE_MAX_AGE_DAYS = 7
 
 
 def resolve_cookie_secure(
-    request: Request | None = None, *, secure: bool | None = None
+    request: Request | None = None,
+    *,
+    secure: bool | None = None,
+    environment: str | None = None,
 ) -> bool:
     """Resolve dinamicamente se o cookie deve conter o atributo Secure.
 
-    Regras: RN-AUT-08, OWASP ASVS v4.0 (V3.4.1).
+    Regras: RN-AUT-08, OWASP ASVS v4.0 (V3.4.1), ADR-009.
     Documentação: docs/explanation/domains/auth-domain.md
     """
     if secure is not None:
         return secure
-    settings = get_settings()
-    if settings.ENVIRONMENT in ("production", "staging"):
+    if environment in ("production", "staging"):
         return True
     if request is not None:
         forwarded_proto = request.headers.get("x-forwarded-proto", "").lower()

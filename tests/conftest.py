@@ -2,7 +2,6 @@
 
 import asyncio
 from collections.abc import AsyncGenerator, Callable
-from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -14,10 +13,11 @@ CommonSettings.model_config["env_file"] = None
 DevelopmentSettings.model_config["env_file"] = None
 get_settings.cache_clear()
 
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.valkey import close_valkey_pool
 from src.main import app
 
+from tests.doubles import FakeAsyncSession
 from tests.helpers import (
     auth_headers,
 )
@@ -56,7 +56,7 @@ async def async_client() -> AsyncGenerator[AsyncClient, None]:
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Yield an isolated AsyncSession connected to PostgreSQL."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         yield session
 
 
@@ -74,15 +74,9 @@ def authed_client_factory() -> AuthedClientFactory:
 
 
 @pytest.fixture
-def mock_db_session() -> AsyncMock:
-    """Provide a strictly typed AsyncMock of AsyncSession for fast unit tests."""
-    session = AsyncMock(spec=AsyncSession)
-    session.add = MagicMock()
-    session.flush = AsyncMock()
-    session.commit = AsyncMock()
-    session.refresh = AsyncMock()
-    session.execute = AsyncMock()
-    return session
+def fake_db_session() -> FakeAsyncSession:
+    """Provide an in-memory FakeAsyncSession for fast unit tests."""
+    return FakeAsyncSession()
 
 
 @pytest.fixture

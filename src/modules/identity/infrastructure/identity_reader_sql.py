@@ -1,3 +1,5 @@
+"""SQLAlchemy read adapter for identity lookups without exposing ORM models."""
+
 from collections.abc import Sequence
 from datetime import date
 from uuid import UUID
@@ -5,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.errors import ConflictError, NotFoundError
+from src.core.errors import ConflictError, NotFoundError, ValidationError
 from src.modules.identity.application.ports.identity_reader_port import (
     IdentityDirectoryDTO,
     IdentityReaderPort,
@@ -22,8 +24,32 @@ from src.modules.identity.domain.models import (
 )
 
 
+def _to_lookup_data(pac: Paciente) -> PacienteAuthLookupData:
+    return PacienteAuthLookupData(
+        id=pac.id,
+        telefone=pac.telefone,
+        cpf=pac.cpf,
+        nome_completo=pac.nome_completo or "",
+        nome_mae=pac.nome_mae,
+        cns=pac.cns,
+        data_nascimento=pac.data_nascimento,
+    )
+
+
+def _to_passkey_data(passkey: PacientePasskey) -> PacientePasskeyData:
+    """Convert ORM PacientePasskey model to immutable DTO across boundaries."""
+    return PacientePasskeyData(
+        id=passkey.id,
+        paciente_id=passkey.paciente_id,
+        credential_id=passkey.credential_id,
+        public_key=passkey.public_key,
+        sign_count=passkey.sign_count,
+        device_name=passkey.device_name,
+    )
+
+
 class SqlIdentityReader(IdentityReaderPort):
-    """Chainable ORM identity reader encapsulating identity tables."""
+    """Chainable ORM identity reader encapsulating identity tables (CQRS read-only)."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -34,7 +60,6 @@ class SqlIdentityReader(IdentityReaderPort):
         paciente_id: UUID,
     ) -> IdentityDirectoryDTO:
         """Fetch singleton clinical unit configuration, doctor, and patient details."""
-        # 1. Fetch singleton clinical unit configuration
         stmt_unidade = select(ConfiguracaoUnidade).limit(1)
         unidade = (await self._session.execute(stmt_unidade)).scalar_one_or_none()
         org_nome = "MediSync Pronto-Atendimento Virtual"
@@ -45,13 +70,11 @@ class SqlIdentityReader(IdentityReaderPort):
             org_cnpj = unidade.cnpj
             cnes = unidade.cnes
 
-        # 2. Fetch professional
         stmt_prof = select(Profissional).where(Profissional.id == medico_id)
         prof = (await self._session.execute(stmt_prof)).scalar_one_or_none()
         if prof is None:
             raise NotFoundError(f"Profissional médico '{medico_id}' não encontrado.")
 
-        # 3. Fetch patient
         stmt_pac = select(Paciente).where(Paciente.id == paciente_id)
         pac = (await self._session.execute(stmt_pac)).scalar_one_or_none()
         if pac is None:
@@ -59,7 +82,6 @@ class SqlIdentityReader(IdentityReaderPort):
                 f"Paciente '{paciente_id}' não encontrado na plataforma."
             )
 
-        # Format address parts
         end_parts = [
             str(pac.logradouro or "").strip(),
             str(pac.numero or "").strip(),
@@ -97,6 +119,7 @@ class SqlIdentityReader(IdentityReaderPort):
         telefone: str,
         cpf: str | None = None,
     ) -> PacienteAuthLookupDTO | None:
+        """Look up patient authentication record by verified phone and optional CPF."""
         stmt = select(Paciente).where(Paciente.telefone == telefone)
         if cpf is not None:
             stmt = stmt.where(Paciente.cpf == cpf)
@@ -104,14 +127,7 @@ class SqlIdentityReader(IdentityReaderPort):
         pac = (await self._session.execute(stmt)).scalars().first()
         if pac is None:
             return None
-
-        return PacienteAuthLookupData(
-            id=pac.id,
-            telefone=pac.telefone,
-            cpf=pac.cpf,
-            nome_completo=pac.nome_completo or "",
-            nome_mae=pac.nome_mae,
-        )
+        return _to_lookup_data(pac)
 
     async def buscar_paciente_cadsus(
         self,
@@ -120,27 +136,37 @@ class SqlIdentityReader(IdentityReaderPort):
         cns: str | None = None,
         nome_mae: str | None = None,
     ) -> PacienteAuthLookupDTO | None:
+        """Localiza paciente por CPF/CNS e critérios civis evitando query ambígua.
+
+        Regras: RN-AUT-09, LGPD Art. 11, docs/explanation/domains/identity-domain.md
+        """
+        clean_cpf = cpf.strip() if cpf and cpf.strip() else None
+        clean_cns = cns.strip() if cns and cns.strip() else None
+        if clean_cpf is None and clean_cns is None:
+            raise ValidationError(
+                "Consulta CADSUS requer ao menos CPF ou CNS informado "
+                f"(recebido cpf={cpf!r}, cns={cns!r})."
+            )
+
         stmt = select(Paciente)
-        if cpf is not None:
-            stmt = stmt.where(Paciente.cpf == cpf)
+        if clean_cpf is not None:
+            stmt = stmt.where(Paciente.cpf == clean_cpf)
+        if clean_cns is not None:
+            stmt = stmt.where(Paciente.cns == clean_cns)
         if data_nascimento is not None:
             stmt = stmt.where(Paciente.data_nascimento == data_nascimento)
-        if cns is not None:
-            stmt = stmt.where(Paciente.cns == cns)
         if nome_mae is not None and nome_mae.strip():
             stmt = stmt.where(func.lower(Paciente.nome_mae) == nome_mae.strip().lower())
 
-        pac = (await self._session.execute(stmt)).scalars().first()
-        if pac is None:
+        rows = (await self._session.execute(stmt.limit(2))).scalars().all()
+        if not rows:
             return None
-
-        return PacienteAuthLookupData(
-            id=pac.id,
-            telefone=pac.telefone,
-            cpf=pac.cpf,
-            nome_completo=pac.nome_completo or "",
-            nome_mae=pac.nome_mae,
-        )
+        if len(rows) > 1:
+            raise ConflictError(
+                "Consulta CADSUS retornou múltiplos registros ambíguos; "
+                "informe CPF ou CNS único junto ao segundo fator civil."
+            )
+        return _to_lookup_data(rows[0])
 
     async def buscar_paciente_por_id(
         self,
@@ -155,48 +181,7 @@ class SqlIdentityReader(IdentityReaderPort):
         pac = (await self._session.execute(stmt)).scalar_one_or_none()
         if pac is None:
             return None
-        return PacienteAuthLookupData(
-            id=pac.id,
-            telefone=pac.telefone,
-            cpf=pac.cpf,
-            nome_completo=pac.nome_completo or "",
-            nome_mae=pac.nome_mae,
-        )
-
-    async def registrar_passkey_paciente(
-        self,
-        paciente_id: UUID,
-        credential_id: str,
-        public_key: str,
-        sign_count: int = 0,
-        device_name: str | None = None,
-    ) -> PacientePasskeyDTO:
-        """Persiste ou atualiza credencial Passkey WebAuthn do paciente sem commit.
-
-        O commit pertence ao caso de uso no Application Service (ADR-001 §6).
-        Regras: RF-01, ADR-005, ADR-013 e
-        docs/user-stories/US-14-biometria-passkeys-webauthn.md.
-        """
-        stmt = select(PacientePasskey).where(
-            PacientePasskey.credential_id == credential_id
-        )
-        existing = (await self._session.execute(stmt)).scalar_one_or_none()
-        if existing is not None:
-            raise ConflictError(
-                f"Credencial WebAuthn '{credential_id}' já registrada na "
-                f"plataforma (paciente '{existing.paciente_id}')."
-            )
-
-        passkey = PacientePasskey(
-            paciente_id=paciente_id,
-            credential_id=credential_id,
-            public_key=public_key,
-            sign_count=sign_count,
-            device_name=device_name,
-        )
-        self._session.add(passkey)
-        await self._session.flush()
-        return _to_passkey_data(passkey)
+        return _to_lookup_data(pac)
 
     async def buscar_passkey_por_credencial(
         self,
@@ -231,38 +216,3 @@ class SqlIdentityReader(IdentityReaderPort):
         )
         rows = (await self._session.execute(stmt)).scalars().all()
         return [_to_passkey_data(r) for r in rows]
-
-    async def atualizar_sign_count_passkey(
-        self,
-        credential_id: str,
-        novo_sign_count: int,
-    ) -> PacientePasskeyDTO:
-        """Atualiza o contador monotônico de assinatura FIDO2 após autenticação válida.
-
-        Regras: RF-01, ADR-005, ADR-013 e
-        docs/user-stories/US-14-biometria-passkeys-webauthn.md.
-        """
-        stmt = select(PacientePasskey).where(
-            PacientePasskey.credential_id == credential_id
-        )
-        passkey = (await self._session.execute(stmt)).scalar_one_or_none()
-        if passkey is None:
-            raise NotFoundError(
-                f"Credencial Passkey '{credential_id}' não encontrada na "
-                "plataforma; esperado credential_id registrado."
-            )
-        passkey.atualizar_contador(novo_sign_count)
-        await self._session.flush()
-        return _to_passkey_data(passkey)
-
-
-def _to_passkey_data(passkey: PacientePasskey) -> PacientePasskeyData:
-    """Convert ORM PacientePasskey model to immutable DTO across boundaries."""
-    return PacientePasskeyData(
-        id=passkey.id,
-        paciente_id=passkey.paciente_id,
-        credential_id=passkey.credential_id,
-        public_key=passkey.public_key,
-        sign_count=passkey.sign_count,
-        device_name=passkey.device_name,
-    )

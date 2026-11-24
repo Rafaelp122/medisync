@@ -11,11 +11,13 @@ from uuid import UUID, uuid4
 import jwt
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.authz.roles import Role
 from src.core.config import get_settings
 from src.core.security import create_intake_token, verify_intake_token
 from src.core.uuid7 import uuid7
+from src.modules.identity.domain.models import Paciente
 
 from tests.factories.identity import make_configuracao_unidade
 
@@ -436,7 +438,20 @@ async def test_dependente_management_lifecycle(
     res_self_data = cast("dict[str, object]", res_self.json())
     assert res_self_data["code"] == "DEPENDENTE_AUTO_REFERENCIA"
 
-    # 3. Create new minor dependent
+    # 3. Create new minor dependent requiring explicit outorga_tcle (RN-IDE-05)
+    res_dep_missing_tcle = await async_client.post(
+        f"/api/v1/pacientes/{titular_id}/dependentes",
+        json={
+            "grau_parentesco": "FILHO",
+            "nome_completo": "Enzo Gabriel Ribeiro",
+            "data_nascimento": "2020-06-15",
+            "cns": "800000000000001",
+            "outorga_tcle": False,
+        },
+        headers=headers,
+    )
+    assert res_dep_missing_tcle.status_code == 422
+
     res_dep1 = await async_client.post(
         f"/api/v1/pacientes/{titular_id}/dependentes",
         json={
@@ -444,6 +459,7 @@ async def test_dependente_management_lifecycle(
             "nome_completo": "Enzo Gabriel Ribeiro",
             "data_nascimento": "2020-06-15",
             "cns": "800000000000001",
+            "outorga_tcle": True,
         },
         headers=headers,
     )
@@ -451,6 +467,7 @@ async def test_dependente_management_lifecycle(
     data_dep1 = cast("dict[str, object]", res_dep1.json())
     assert data_dep1["titular_id"] == titular_id
     assert data_dep1["grau_parentesco"] == "FILHO"
+    assert data_dep1["outorga_tcle"] is True
     dep1_id = cast("str", data_dep1["dependente_id"])
 
     # 4. Duplicate linkage fails with 409 Conflict
@@ -554,11 +571,11 @@ async def test_dependente_security_rejections(
 
 
 @pytest.mark.asyncio
-async def test_dependente_allowed_with_gestor_unidade_jwt(
+async def test_dependente_and_onboarding_fase2_forbidden_with_gestor_unidade_jwt(
     async_client: AsyncClient,
     seeded_unidade: None,
 ) -> None:
-    """Validate GESTOR_UNIDADE role can register and list patient dependents."""
+    """RN-IDE-07: GESTOR_UNIDADE gets 403 on /onboarding/fase-2 and /dependentes."""
     settings = get_settings()
 
     intake_res = await async_client.post(
@@ -579,24 +596,45 @@ async def test_dependente_allowed_with_gestor_unidade_jwt(
         papel=Role.GESTOR_UNIDADE,
         secret_key=settings.JWT_SECRET_KEY,
     )
+    gestor_headers = {"Authorization": f"Bearer {gestor_jwt}"}
+
+    res_gestor_fase2 = await async_client.post(
+        "/api/v1/onboarding/fase-2",
+        json={
+            "paciente_id": titular_id,
+            "nome_mae": "Mae Teste Bloqueio Gestor",
+            "sexo_biologico": "F",
+            "cep": "01310-100",
+            "logradouro": "Avenida Paulista",
+            "numero": "100",
+            "bairro": "Bela Vista",
+            "cidade": "São Paulo",
+            "estado": "SP",
+        },
+        headers=gestor_headers,
+    )
+    assert res_gestor_fase2.status_code == 403
+    assert cast("dict[str, object]", res_gestor_fase2.json())["code"] == "FORBIDDEN"
+
     res_gestor_create = await async_client.post(
         f"/api/v1/pacientes/{titular_id}/dependentes",
         json={
             "grau_parentesco": "FILHO",
-            "nome_completo": "Dependente Cadastrado Por Gestor",
+            "nome_completo": "Dependente Bloqueado Para Gestor",
             "data_nascimento": "2019-02-15",
             "cns": "800000000000001",
         },
-        headers={"Authorization": f"Bearer {gestor_jwt}"},
+        headers=gestor_headers,
     )
-    assert res_gestor_create.status_code == 201
+    assert res_gestor_create.status_code == 403
+    assert cast("dict[str, object]", res_gestor_create.json())["code"] == "FORBIDDEN"
 
     res_gestor_list = await async_client.get(
         f"/api/v1/pacientes/{titular_id}/dependentes",
-        headers={"Authorization": f"Bearer {gestor_jwt}"},
+        headers=gestor_headers,
     )
-    assert res_gestor_list.status_code == 200
-    assert len(cast("list[dict[str, object]]", res_gestor_list.json())) == 1
+    assert res_gestor_list.status_code == 403
+    assert cast("dict[str, object]", res_gestor_list.json())["code"] == "FORBIDDEN"
 
 
 @pytest.mark.asyncio
@@ -708,3 +746,76 @@ async def test_onboarding_fase_2_aceita_sexo_biologico_textual_normalizado(
     data2 = cast("dict[str, object]", res2.json())
     assert data2["sexo_biologico"] == "F"
     assert data2["status"] == "DADOS_COMPLETOS"
+
+
+@pytest.mark.asyncio
+async def test_onboarding_fase_1_ato_bloqueios_conta_existente_e_token_restrito(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+    seeded_unidade: None,
+) -> None:
+    """Re-acolhimento exige DOB, protege telefone e restringe Passkeys/dependentes."""
+    cpf = "52998224725"
+    res_init = await async_client.post(
+        "/api/v1/onboarding/fase-1",
+        json={
+            "nome_completo": "Pac Original",
+            "data_nascimento": "1982-09-10",
+            "telefone": "11988887777",
+            "queixa_principal": "Dor torácica leve",
+            "tcle_hash": SAMPLE_TCLE_HASH,
+            "cpf": cpf,
+        },
+    )
+    assert res_init.status_code == 201
+    pac_id = cast("str", cast("dict[str, object]", res_init.json())["paciente_id"])
+
+    # 1. Re-acolhimento com data_nascimento divergente -> 401
+    res_wrong_dob = await async_client.post(
+        "/api/v1/onboarding/fase-1",
+        json={
+            "nome_completo": "Atacante",
+            "data_nascimento": "1999-01-01",
+            "telefone": "11900009999",
+            "queixa_principal": "Sintoma teste",
+            "tcle_hash": SAMPLE_TCLE_HASH,
+            "cpf": cpf,
+        },
+    )
+    assert res_wrong_dob.status_code == 401
+
+    # 2. Re-acolhimento com data_nascimento correta não altera telefone no banco
+    res_re = await async_client.post(
+        "/api/v1/onboarding/fase-1",
+        json={
+            "nome_completo": "Nome Tentativa Alteracao",
+            "data_nascimento": "1982-09-10",
+            "telefone": "11999990000",
+            "queixa_principal": "Retorno clínico",
+            "tcle_hash": SAMPLE_TCLE_HASH,
+            "cpf": cpf,
+        },
+    )
+    assert res_re.status_code == 201
+    re_data = cast("dict[str, object]", res_re.json())
+    assert re_data["is_novo_paciente"] is False
+    restricted_token = cast("str", re_data["token"])
+
+    pac_db = (
+        await db_session.execute(select(Paciente).where(Paciente.id == UUID(pac_id)))
+    ).scalar_one()
+    assert pac_db.telefone == "11988887777"
+    assert pac_db.nome_completo == "Pac Original"
+
+    # 3. Token restrito de conta existente é bloqueado em Passkeys e Dependentes (403)
+    res_passkey = await async_client.post(
+        "/api/v1/auth/patient/webauthn/register/options",
+        headers={"Authorization": f"Bearer {restricted_token}"},
+    )
+    assert res_passkey.status_code == 403
+
+    res_deps = await async_client.get(
+        f"/api/v1/pacientes/{pac_id}/dependentes",
+        headers={"Authorization": f"Bearer {restricted_token}"},
+    )
+    assert res_deps.status_code == 403

@@ -3,10 +3,9 @@
 from fastapi import APIRouter
 
 from src.core.config import get_settings
-from src.core.dependencies import ValkeyDep
 from src.core.logging import get_current_request_id
 from src.core.schemas import HealthCheckResponse, ValkeyHealth
-from src.core.valkey import check_valkey_health
+from src.core.valkey import ValkeyDep, check_valkey_health
 
 __all__ = ["health_router"]
 

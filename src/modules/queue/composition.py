@@ -1,7 +1,7 @@
 """Queue composition root: concrete adapter wiring (DI Fase 3).
 
 Single place in queue module allowed to import infrastructure adapters.
-Services and tests must resolve allocation via get_alocacao_service.
+Services and tests must resolve queue operations via FilaServiceDep and builders.
 """
 
 import logging
@@ -16,18 +16,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.audit import AuditTrailPort, SqlAuditTrailAdapter
 from src.core.config import get_settings
-from src.core.database import DbSessionDep
-from src.core.dependencies import ValkeyDep
-from src.core.realtime import publish_realtime_event
-from src.core.valkey import get_arq_pool, get_valkey_pool
+from src.core.database import DbSessionDep, get_session_factory
+from src.core.valkey import ValkeyDep, get_arq_pool, get_valkey_pool
 from src.modules.consultation.application.realtime_channels import (
     channel_doctor_calls,
 )
-from src.modules.queue.application.ports.allocation_port import AllocationPort
-from src.modules.queue.application.ports.doctor_call_notifier_port import (
-    DoctorCallNotifierPort,
-)
 from src.modules.queue.application.ports.notification_port import NotificationPort
+from src.modules.queue.application.ports.queue_engine_port import QueueEnginePort
+from src.modules.queue.application.ports.shift_policy_reader_port import (
+    ShiftPolicyDTO,
+    ShiftPolicyReaderPort,
+)
 from src.modules.queue.application.ports.triage_port import TriagePort
 from src.modules.queue.application.services.alocacao_service import (
     AlocacaoChamadaService,
@@ -39,21 +38,55 @@ from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.infrastructure.active_attendance_reader_sql import (
     SqlActiveAttendanceReader,
 )
+from src.modules.queue.infrastructure.attendance_snapshot_reader_sql import (
+    SqlAttendanceSnapshotReader,
+)
 from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 from src.modules.queue.infrastructure.notifications import (
     LoggingNotificationAdapter,
     NotificationRateLimiter,
     RateLimitedNotificationAdapter,
 )
+from src.modules.queue.infrastructure.valkey_queue_engine import ValkeyQueueEngine
+from src.modules.telemetry.composition import ler_politica_plantao_snapshot
 from src.modules.triage.composition import (
     TriageServiceDep,
     build_triage_service_for_session,
 )
 
+logger = logging.getLogger("medisync.queue.composition")
 
-def get_lua_manager() -> AllocationPort:
-    """Provide singleton Lua script manager satisfying the application port."""
-    return get_lua_script_manager()
+
+class TelemetryShiftPolicyReaderAdapter(ShiftPolicyReaderPort):
+    """Cross-module reader adapting telemetry shift config into ShiftPolicyDTO."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def obter_politica_atual(self) -> ShiftPolicyDTO:
+        """Read active shift policy from telemetry without mutating DB."""
+        snapshot = await ler_politica_plantao_snapshot(self._session)
+        return ShiftPolicyDTO(
+            alpha_backpressure=snapshot.alpha_backpressure,
+            cota_diaria_maxima=snapshot.cota_diaria_maxima,
+            tma_padrao_segundos=snapshot.tma_padrao_segundos,
+            tempo_tolerancia_ring_segundos=snapshot.tempo_tolerancia_ring_segundos,
+        )
+
+
+def build_queue_engine(valkey: Redis | None = None) -> ValkeyQueueEngine:
+    """Build deep Valkey queue engine with Lua script manager and Pub/Sub channel fn."""
+    client = valkey if valkey is not None else Redis(connection_pool=get_valkey_pool())
+    return ValkeyQueueEngine(
+        valkey=client,
+        lua_manager=get_lua_script_manager(),
+        doctor_channel_fn=channel_doctor_calls,
+    )
+
+
+def build_doctor_presence_engine(valkey: Redis | None = None) -> QueueEnginePort:
+    """Expose QueueEnginePort for cross-module doctor shift presence hooks (auth/WS)."""
+    return build_queue_engine(valkey=valkey)
 
 
 def get_notification_rate_limiter(
@@ -62,7 +95,6 @@ def get_notification_rate_limiter(
     """Instancia o rate limiter de notificações a partir das variáveis de ambiente.
 
     Regras: ADR-009 e docs/reference/environment/variables.md.
-    Protege provedores contra picos de tráfego e custos por telefone.
     """
     settings = get_settings()
     return NotificationRateLimiter(
@@ -77,7 +109,6 @@ def get_notification_adapter(valkey: Redis | None = None) -> NotificationPort | 
     """Resolve o adaptador de notificações decorado com rate limiting por chamada.
 
     Regras: ADR-001, ADR-009 e docs/reference/environment/variables.md.
-    Retorna None quando configurado como noop ou decora o logger com token bucket.
     """
     settings = get_settings()
     if settings.NOTIFICATION_PROVIDER == "noop":
@@ -85,9 +116,6 @@ def get_notification_adapter(valkey: Redis | None = None) -> NotificationPort | 
     delegate = LoggingNotificationAdapter()
     rate_limiter = get_notification_rate_limiter(valkey=valkey)
     return RateLimitedNotificationAdapter(delegate=delegate, rate_limiter=rate_limiter)
-
-
-logger = logging.getLogger("medisync.queue.composition")
 
 
 async def on_startup(pool: ConnectionPool | None = None) -> None:
@@ -116,64 +144,23 @@ async def get_arq_pool_dep() -> ArqRedis | None:
 ArqPoolDep = Annotated[ArqRedis | None, Depends(get_arq_pool_dep)]
 
 
-class ValkeyDoctorCallNotifier(DoctorCallNotifierPort):
-    """Adaptador concreto para notificação realtime via Valkey Pub/Sub.
-
-    Regras: ADR-001, ADR-002 e docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md.
-    """
-
-    def __init__(self, valkey: Redis) -> None:
-        self._valkey = valkey
-
-    async def notificar_chamada_iniciada(
-        self,
-        medico_id: UUID,
-        atendimento_id: UUID,
-        ttl_segundos: int,
-        chamada_iniciada_em: str,
-    ) -> None:
-        """Dispara evento INCOMING_CALL para o canal Pub/Sub do médico."""
-        await publish_realtime_event(
-            valkey=self._valkey,
-            channel=channel_doctor_calls(medico_id),
-            payload={
-                "event": "INCOMING_CALL",
-                "atendimento_id": str(atendimento_id),
-                "medico_id": str(medico_id),
-                "ttl_segundos": ttl_segundos,
-                "chamada_iniciada_em": chamada_iniciada_em,
-            },
-        )
-
-
 def build_alocacao_service_for_session(
     valkey: Redis,
     session: AsyncSession,
     arq_pool: ArqRedis | None = None,
-    doctor_notifier: DoctorCallNotifierPort | None = None,
     audit_trail: AuditTrailPort | None = None,
+    queue_engine: QueueEnginePort | None = None,
 ) -> AlocacaoChamadaService:
     """Build allocation service outside request scope (tests/worker tooling)."""
-    notifier = doctor_notifier or ValkeyDoctorCallNotifier(valkey=valkey)
     resolved_audit: AuditTrailPort = audit_trail or SqlAuditTrailAdapter(session)
+    resolved_engine: QueueEnginePort = queue_engine or build_queue_engine(valkey=valkey)
     return AlocacaoChamadaService(
-        valkey=valkey,
+        queue_engine=resolved_engine,
         db_session=session,
-        lua_manager=get_lua_manager(),
         arq_pool=arq_pool,
         notification_adapter=get_notification_adapter(valkey=valkey),
-        doctor_notifier=notifier,
         audit_trail=resolved_audit,
     )
-
-
-def get_alocacao_service(
-    valkey: ValkeyDep,
-    session: DbSessionDep,
-    arq_pool: ArqPoolDep = None,
-) -> AlocacaoChamadaService:
-    """Build allocation service with mandatory Lua and ARQ pool wired."""
-    return build_alocacao_service_for_session(valkey, session, arq_pool=arq_pool)
 
 
 def build_fila_service_for_session(
@@ -182,21 +169,32 @@ def build_fila_service_for_session(
     triage_port: TriagePort | None = None,
     arq_pool: ArqRedis | None = None,
     audit_trail: AuditTrailPort | None = None,
+    queue_engine: QueueEnginePort | None = None,
+    shift_policy_reader: ShiftPolicyReaderPort | None = None,
 ) -> FilaService:
     """Build queue service outside request scope (tests/worker tooling)."""
     client = valkey if valkey is not None else Redis(connection_pool=get_valkey_pool())
+    resolved_engine: QueueEnginePort = queue_engine or build_queue_engine(valkey=client)
     resolved_triage: TriagePort = triage_port or build_triage_service_for_session(
         session=session
     )
     resolved_audit: AuditTrailPort = audit_trail or SqlAuditTrailAdapter(session)
+    resolved_policy: ShiftPolicyReaderPort = (
+        shift_policy_reader or TelemetryShiftPolicyReaderAdapter(session=session)
+    )
     return FilaService(
-        valkey=client,
+        queue_engine=resolved_engine,
         db_session=session,
         alocacao_service=build_alocacao_service_for_session(
-            client, session, arq_pool=arq_pool, audit_trail=resolved_audit
+            client,
+            session,
+            arq_pool=arq_pool,
+            audit_trail=resolved_audit,
+            queue_engine=resolved_engine,
         ),
-        controle_admissao=ControleAdmissaoService(valkey=client),
+        controle_admissao=ControleAdmissaoService(queue_engine=resolved_engine),
         triage_port=resolved_triage,
+        shift_policy_reader=resolved_policy,
         arq_pool=arq_pool,
         audit_trail=resolved_audit,
     )
@@ -208,7 +206,7 @@ def get_fila_service(
     triage_service: TriageServiceDep,
     arq_pool: ArqPoolDep,
 ) -> FilaService:
-    """Build queue service with allocation and admission control wired."""
+    """Build queue service with allocation, admission, and shift policy wired."""
     return build_fila_service_for_session(
         session=session,
         valkey=valkey,
@@ -224,14 +222,9 @@ async def default_verificar_posse_paciente_fila(
     atendimento_id: UUID,
     paciente_id: UUID,
 ) -> bool:
-    """Verifica se o atendimento pertence ao paciente com sessão efêmera (Issue #42).
-
-    Abre uma sessão isolada pontual que é fechada imediatamente, evitando
-    reter conexões do pool de banco durante a vida do streaming WebSocket.
-    """
-    from src.core.database import async_session_factory
-
-    async with async_session_factory() as session:
+    """Verifica se o atendimento pertence ao paciente com sessão efêmera (Issue #42)."""
+    session_factory = get_session_factory()
+    async with session_factory() as session:
         queue_store = build_fila_service_for_session(session=session)
         snapshot = await queue_store.buscar_atendimento(atendimento_id)
         if snapshot is None:
@@ -260,3 +253,14 @@ def build_active_attendance_reader_for_session(
     Regras: ADR-001 e docs/user-stories/US-02-autenticacao-passwordless-otp.md.
     """
     return SqlActiveAttendanceReader(session=session)
+
+
+def build_attendance_lookup_reader(
+    session: AsyncSession,
+) -> SqlAttendanceSnapshotReader:
+    """Instancia leitor SQL leve de atendimentos para módulos consumidores (scheduling).
+
+    Zero dependência de Valkey, LuaScriptManager ou TriageService.
+    Regras: ADR-001 e docs/explanation/domains/scheduling-domain.md.
+    """
+    return SqlAttendanceSnapshotReader(session=session)

@@ -1,7 +1,7 @@
 """Unit tests for Patient Portal consultation history and documents endpoints."""
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -17,8 +17,8 @@ from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoResumoDTO,
     HistoricoAtendimentoReaderPort,
 )
-from src.modules.consultation.application.services.documento_service import (
-    DocumentoService,
+from src.modules.consultation.application.services.clinical_pdf_compiler import (
+    ClinicalPdfCompiler,
 )
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.composition import (
@@ -36,19 +36,15 @@ from src.modules.consultation.domain.models import (
 from src.modules.consultation.infrastructure.atendimento_reader_sql import (
     SqlAtendimentoReader,
 )
-from src.modules.consultation.infrastructure.memory_signed_cache import (
-    MemorySignedCache,
-)
 from src.modules.queue.application.ports.queue_store_port import (
     AtendimentoHistoricoQueueDTO,
     QueueStorePort,
 )
-from src.modules.queue.application.ports.triage_port import (
-    TriageQueixaReaderPort,
-)
+from src.modules.queue.application.ports.triage_port import TriagePort
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
+from src.modules.queue.infrastructure.valkey_queue_engine import ValkeyQueueEngine
 from src.modules.triage.application.dtos import TriageRiskEvaluationDTO
 from src.modules.triage.application.services.triage_service import TriageService
 from src.modules.triage.domain.models.triagem import Triagem
@@ -56,7 +52,9 @@ from src.modules.triage.domain.models.triagem import Triagem
 from tests.doubles import (
     FakeAsyncSession,
     FakeAtendimentoReader,
-    FakeICPBrasilSigner,
+    FakeDocumentDirectory,
+    FakeFilaService,
+    FakeHistoricoAtendimentoReader,
     FakeMemoryStorage,
     FakePDFGenerator,
     FakeResult,
@@ -69,78 +67,23 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
-class _FakeMappings:
-    def __init__(self, rows: list[dict[str, Any]]) -> None:
-        self._rows = rows
-
-    def all(self) -> list[dict[str, Any]]:
-        return list(self._rows)
-
-    def one_or_none(self) -> dict[str, Any] | None:
-        return self._rows[0] if self._rows else None
-
-    def first(self) -> dict[str, Any] | None:
-        return self._rows[0] if self._rows else None
-
-
-class _FakeMappingsResult:
-    def __init__(self, rows: list[dict[str, Any]]) -> None:
-        self._rows = rows
-
-    def mappings(self) -> _FakeMappings:
-        return _FakeMappings(self._rows)
-
-
-class _FakeHistoricoAtendimentoReader(AtendimentoReaderPort):
-    """In-memory double implementing AtendimentoReaderPort and Historico port."""
-
-    def __init__(
-        self,
-        historico: list[AtendimentoHistoricoDTO] | None = None,
-        resumos: dict[UUID, AtendimentoResumoDTO] | None = None,
-    ) -> None:
-        self._historico = historico or []
-        self._resumos = resumos or {}
-        self.chamadas_historico: list[UUID] = []
-
-    async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
-        return self._resumos.get(atendimento_id)
-
-    async def concluir_atendimento(self, atendimento_id: UUID) -> None:
-        return None
-
-    async def atender_chamada(self, atendimento_id: UUID) -> None:
-        return None
-
-    async def listar_historico_paciente(
-        self,
-        paciente_id: UUID,
-    ) -> list[AtendimentoHistoricoDTO]:
-        self.chamadas_historico.append(paciente_id)
-        return [item for item in self._historico if item.paciente_id == paciente_id]
-
-
 def _build_pep_service(
     session: FakeAsyncSession,
     reader: AtendimentoReaderPort | None = None,
     pdf_bytes: bytes = b"%PDF-1.4-paciente-portal%",
 ) -> PEPService:
     pdf_gen = FakePDFGenerator(content=pdf_bytes)
-    signer = FakeICPBrasilSigner()
     storage = FakeMemoryStorage()
-    doc_svc = DocumentoService(
-        session=cast("AsyncSession", session),
+    typed_session = cast("AsyncSession", session)
+    compiler = ClinicalPdfCompiler(
+        session=typed_session,
         pdf_generator=pdf_gen,
-        signer=signer,
         storage=storage,
-        cache=MemorySignedCache(),
+        directory=FakeDocumentDirectory(),
     )
     return PEPService(
-        session=cast("AsyncSession", session),
-        pdf_generator=pdf_gen,
-        signer=signer,
-        storage=storage,
-        documento_service=doc_svc,
+        session=typed_session,
+        pdf_compiler=compiler,
         atendimento_reader=reader,
     )
 
@@ -150,34 +93,6 @@ def _issue_jwt(usuario_id: UUID, papel: Role) -> str:
         usuario_id=usuario_id,
         papel=papel.value,
     )
-
-
-class _RecordingMappingsSession(FakeAsyncSession):
-    """Fake session capturing executed SQL/ORM statements for inspection."""
-
-    def __init__(self, results: list[Any] | None = None) -> None:
-        super().__init__(results=results)
-        self.executed_statements: list[Any] = []
-
-    async def execute(self, *args: Any, **kwargs: Any) -> Any:
-        if args:
-            self.executed_statements.append(args[0])
-        return await super().execute(*args, **kwargs)
-
-
-class _FakeQueueStoreHistorico:
-    """Minimal in-memory QueueStore double for QueueStoreAtendimentoReaderAdapter."""
-
-    def __init__(self, historico: list[AtendimentoHistoricoQueueDTO]) -> None:
-        self._historico = historico
-        self.chamadas: list[UUID] = []
-
-    async def listar_historico_paciente(
-        self,
-        paciente_id: UUID,
-    ) -> list[AtendimentoHistoricoQueueDTO]:
-        self.chamadas.append(paciente_id)
-        return [item for item in self._historico if item.paciente_id == paciente_id]
 
 
 @pytest.mark.asyncio
@@ -190,10 +105,10 @@ async def test_sql_atendimento_reader_listar_historico_paciente_maps_rows() -> N
     t1 = datetime(2026, 11, 10, 14, 0, tzinfo=UTC)
     t2 = datetime(2026, 11, 11, 10, 30, tzinfo=UTC)
 
-    fake_session = _RecordingMappingsSession(
+    fake_session = FakeAsyncSession(
         results=[
-            _FakeMappingsResult(
-                [
+            FakeResult(
+                mappings_rows=[
                     {
                         "atendimento_id": atend_2,
                         "paciente_id": paciente_id,
@@ -221,8 +136,8 @@ async def test_sql_atendimento_reader_listar_historico_paciente_maps_rows() -> N
 
     items = await reader.listar_historico_paciente(paciente_id)
 
-    assert len(fake_session.executed_statements) == 1
-    sql_text = str(fake_session.executed_statements[0]).lower()
+    assert len(fake_session.executed_sql) == 1
+    sql_text = fake_session.executed_sql[0][0].lower()
     assert "from atendimentos" in sql_text
     assert "triagens" not in sql_text
     assert "join" not in sql_text
@@ -289,7 +204,7 @@ async def test_pep_service_listar_historico_omits_unfinalized_soap_notes() -> No
     )
 
     fake_session = FakeAsyncSession(results=[FakeResult([ev_finalizada, ev_rascunho])])
-    reader = _FakeHistoricoAtendimentoReader(historico=historico)
+    reader = FakeHistoricoAtendimentoReader(historico=historico)
     svc = _build_pep_service(fake_session, reader=reader)
 
     resultado = await svc.listar_historico_paciente(paciente_id)
@@ -349,7 +264,7 @@ async def test_queue_store_adapter_implements_historico_port_and_maps_dtos() -> 
     atend_id = uuid7()
     now = datetime.now(UTC)
 
-    queue_store = _FakeQueueStoreHistorico(
+    queue_store = FakeFilaService(
         historico=[
             AtendimentoHistoricoQueueDTO(
                 atendimento_id=atend_id,
@@ -368,7 +283,7 @@ async def test_queue_store_adapter_implements_historico_port_and_maps_dtos() -> 
     assert isinstance(adapter, HistoricoAtendimentoReaderPort)
 
     items = await adapter.listar_historico_paciente(paciente_id)
-    assert queue_store.chamadas == [paciente_id]
+    assert queue_store.historico_calls == [paciente_id]
     assert len(items) == 1
     assert isinstance(items[0], AtendimentoHistoricoDTO)
     assert items[0].atendimento_id == atend_id
@@ -397,7 +312,7 @@ async def test_triage_service_obter_queixas_por_atendimentos() -> None:
     )
     triage_session = FakeAsyncSession(results=[FakeResult([triagem_1])])
     svc = TriageService(session=cast("AsyncSession", triage_session))
-    assert isinstance(svc, TriageQueixaReaderPort)
+    assert isinstance(svc, TriagePort)
 
     queixas = await svc.obter_queixas_por_atendimentos([atend_1, atend_2])
     assert queixas == {atend_1: "Dor de garganta leve"}
@@ -441,7 +356,7 @@ async def test_hexagonal_chain_pep_queue_triage_without_raw_sql() -> None:
         session=cast("AsyncSession", FakeAsyncSession(results=[FakeResult([triagem])]))
     )
     fila_svc = FilaService(
-        valkey=cast("Redis", FakeValkey()),
+        queue_engine=ValkeyQueueEngine(valkey=cast("Redis", FakeValkey())),
         db_session=cast(
             "AsyncSession", FakeAsyncSession(results=[FakeResult([atendimento])])
         ),
@@ -466,8 +381,8 @@ async def test_hexagonal_chain_pep_queue_triage_without_raw_sql() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fila_service_listar_historico_tolerates_plain_triage_port() -> None:
-    """FilaService keeps working with FakeTriagePort lacking TriageQueixaReaderPort."""
+async def test_fila_service_listar_historico_com_fake_triage_port_unificado() -> None:
+    """FilaService queries unified FakeTriagePort without isinstance splits."""
     paciente_id = uuid7()
     atend_id = uuid7()
     now = datetime.now(UTC)
@@ -484,12 +399,13 @@ async def test_fila_service_listar_historico_tolerates_plain_triage_port() -> No
         evaluation=TriageRiskEvaluationDTO(
             prioridade_clinica=3,
             tcle_hash="b" * 64,
-        )
+        ),
+        queixas={atend_id: "Cefaleia intensa"},
     )
-    assert not isinstance(fake_triage, TriageQueixaReaderPort)
+    assert isinstance(fake_triage, TriagePort)
 
     fila_svc = FilaService(
-        valkey=cast("Redis", FakeValkey()),
+        queue_engine=ValkeyQueueEngine(valkey=cast("Redis", FakeValkey())),
         db_session=cast(
             "AsyncSession", FakeAsyncSession(results=[FakeResult([atendimento])])
         ),
@@ -498,7 +414,7 @@ async def test_fila_service_listar_historico_tolerates_plain_triage_port() -> No
     items = await fila_svc.listar_historico_paciente(paciente_id)
     assert len(items) == 1
     assert items[0].atendimento_id == atend_id
-    assert items[0].queixa_principal is None
+    assert items[0].queixa_principal == "Cefaleia intensa"
 
 
 @pytest.mark.asyncio
@@ -549,7 +465,7 @@ async def test_pep_service_listar_docs_paciente_orders_desc_and_omits_s3() -> No
     fake_session = FakeAsyncSession(
         results=[FakeResult([doc_old, doc_new, doc_outro_paciente])]
     )
-    reader = _FakeHistoricoAtendimentoReader(historico=historico)
+    reader = FakeHistoricoAtendimentoReader(historico=historico)
     svc = _build_pep_service(fake_session, reader=reader)
 
     docs = await svc.listar_documentos_paciente(paciente_id)
@@ -588,7 +504,7 @@ async def test_pep_service_compilar_pdf_para_paciente_enforces_ownership() -> No
         tcle_hash="t" * 64,
         is_terminal=True,
     )
-    reader = _FakeHistoricoAtendimentoReader(resumos={atend_id: resumo})
+    reader = FakeHistoricoAtendimentoReader(resumos={atend_id: resumo})
 
     # 1. Owner succeeds
     svc_ok = _build_pep_service(
@@ -618,7 +534,7 @@ async def test_pep_service_compilar_pdf_para_paciente_enforces_ownership() -> No
     # 4. Missing attendance -> NotFoundError
     svc_no_atend = _build_pep_service(
         FakeAsyncSession(results=[FakeResult(doc)]),
-        reader=_FakeHistoricoAtendimentoReader(resumos={}),
+        reader=FakeHistoricoAtendimentoReader(resumos={}),
     )
     with pytest.raises(NotFoundError, match=str(atend_id)):
         await svc_no_atend.compilar_pdf_para_paciente(doc_id, paciente_dono)
@@ -672,7 +588,7 @@ async def test_patient_portal_routes_enforce_rbac_anti_idor_and_contracts() -> N
         tcle_hash="t" * 64,
         is_terminal=True,
     )
-    reader = _FakeHistoricoAtendimentoReader(
+    reader = FakeHistoricoAtendimentoReader(
         historico=historico,
         resumos={atend_id: resumo},
     )

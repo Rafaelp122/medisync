@@ -8,7 +8,7 @@ import { settings } from "@/config/settings";
 export interface UsePosicaoFilaParams {
   atendimentoId?: string;
   token?: string;
-  pollingInterval?: number | false;
+  pollingInterval?: UseQueryOptions<PosicaoFilaResponse, ProblemDetailsError>["refetchInterval"];
   enabled?: boolean;
 }
 

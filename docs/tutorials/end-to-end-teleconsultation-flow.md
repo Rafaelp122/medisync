@@ -4,7 +4,7 @@
 
 ## Contexto
 
-O Pronto Atendimento Virtual (PA Virtual) do MediSync Express opera um ciclo assistencial crítico que conecta múltiplos domínios de negócio sob requisitos rigorosos de disponibilidade, governança clínica e conformidade legal (Resoluções CFM nº 2.314/2022 e CFM nº 2.299/2021, além da LGPD). Quando um paciente busca socorro na plataforma, sua sessão transita sequencialmente por cinco fronteiras modulares independentes: acolhimento e classificação de risco, admissão com elegibilidade em fila, alocação médica sem concorrência destrutiva, teleconsulta com prontuário estruturado e emissão documental com assinatura digital em nuvem.
+O Pronto Atendimento Virtual (PA Virtual) do MediSync Express opera um ciclo assistencial crítico que conecta múltiplos domínios de negócio sob requisitos rigorosos de disponibilidade, governança clínica e conformidade legal (Resoluções CFM nº 2.314/2022 e CFM nº 2.299/2021, além da LGPD). Quando um paciente busca socorro na plataforma, sua sessão transita sequencialmente por cinco fronteiras modulares independentes: acolhimento e classificação de risco, admissão direta 100% SUS em fila, alocação médica sem concorrência destrutiva, teleconsulta com prontuário estruturado e emissão documental com assinatura digital em nuvem.
 
 Este tutorial adota a metodologia Diátaxis orientada ao aprendizado prático: guiamos o desenvolvedor passo a passo pela simulação e inspeção de cada transição de estado da jornada clínica completa. Você aprenderá como os módulos colaboram por meio de eventos, comandos e portas abstratas, comprovando o funcionamento fim a fim através de baterias executáveis de testes de integração.
 
@@ -36,19 +36,19 @@ Para pacientes estáveis (Níveis 2 a 5), o caso de uso `FilaService.admitir_pac
 - **Pontuação 64-bit Canônica (RN01, ADR-002):** A função `calcular_score` computa o score único `(prioridade_clinica * 10^12) + timestamp_epoch`. O paciente é inserido diretamente em `APTO_PARA_CHAMADA` no Sorted Set do Valkey na chave `fila:aptos`, garantindo que emergências sempre precedam urgências e que o desempate ocorra por estrita ordem de chegada (FIFO).
 - **Inspeção no Valkey:** A ordenação pode ser inspecionada via comando de terminal `valkey-cli ZRANGE "fila:aptos" 0 -1 WITHSCORES`.
 
-### 3. Alocação médica atômica e salvaguarda de toque (Lua 45s)
+### 3. Alocação médica atômica e salvaguarda de toque (Lua 4-Keys / 45s)
 
 Quando um médico plantonista solicita atendimento via `POST /api/v1/fila/chamar-proximo`, o MediSync realiza o matching determinístico sem condições de corrida:
-- **Script Atômico Lua (RN02, ADR-002):** O script `alocar_chamada.lua` opera dentro de uma única execução atômica no motor Valkey, manipulando simultaneamente três chaves:
+- **Scripts Atômicos Lua 4-Keys (RN02, ADR-002):** `alocar_proximo.lua` (varredura atômica via `ZRANGE`) e `alocar_chamada.lua` operam dentro de uma única execução atômica no Valkey via `ValkeyQueueEngine`, manipulando quatro chaves:
   * `KEYS[1]`: O lock temporário do médico (`lock:medico:{medico_id}`).
-  * `KEYS[2]`: O lock temporário do atendimento (`lock:atendimento:{atendimento_id}`).
+  * `KEYS[2]`: O lock temporário do atendimento (`lock:atendimento:{atendimento_id}` ou prefixo `lock:atendimento:` para varredura).
   * `KEYS[3]`: O Sorted Set da fila (`fila:aptos`).
-- **Códigos Determinísticos de Retorno:**
-  * `1`: Alocação concluída com sucesso (locks de 45s adquiridos).
-  * `0`: Médico já em atendimento ou com lock ativo pendente.
-  * `-1`: Paciente indisponível ou capturado simultaneamente por outro profissional.
-  * `-2`: Fila de atendimento vazia na plataforma.
-- **Ring Timeout (45s):** O atendimento passa para `CHAMANDO_PACIENTE`. Um timer assíncrono é agendado no worker; se o paciente não responder ao toque em 45 segundos, o status comuta para `PACIENTE_AUSENTE`, desfazendo o lock e liberando o profissional para o próximo chamado da fila.
+  * `KEYS[4]`: O lock de consulta ativa do médico (`lock:consulta_ativa:medico:{medico_id}`), bloqueando overbooking em `EM_ATENDIMENTO`.
+- **Códigos Determinísticos de Retorno (`AlocacaoCodigo`):**
+  * `1` (ou `{1, cand}`): Alocação concluída com sucesso (locks de 45s adquiridos e removido do ZSET).
+  * `0` (ou `{0, ""}`): Médico já em chamada ou com consulta ativa (`MedicoOcupadoError` HTTP 409).
+  * `-1` (ou `{-1, ""}`): Atendimento indisponível ou fila sem candidatos desbloqueados na janela (`POST /api/v1/fila/chamar-proximo` retorna HTTP 200 `{alocado: false}`).
+- **Ring Timeout (45s):** O atendimento passa para `CHAMANDO_PACIENTE`. Um timer assíncrono (`resolver_ring_timeout_task`) é agendado no worker; se o paciente não responder ao toque em 45 segundos, o status comuta para `PACIENTE_AUSENTE`, desfazendo o lock e liberando o profissional. Caso o paciente recuse a chamada, `POST /api/v1/fila/cancelar/{atendimento_id}` limpa os locks pós-commit e emite `CALL_CANCELLED` para o médico.
 
 ### 4. Teleconsulta e prontuário eletrônico (SOAP em transação única)
 
@@ -74,19 +74,21 @@ Após o diagnóstico, o médico prescreve medicamentos e sela o atendimento com 
 - Impl: `src/modules/queue/presentation/routers/admissao_router.py:admitir_paciente`
 - Impl: `src/modules/queue/application/services/fila_service.py:FilaService.admitir_paciente`
 - Impl: `src/modules/queue/domain/scoring.py:calcular_score`
-- Impl: `src/modules/queue/infrastructure/lua/alocar_chamada.lua:alocar_chamada`
+- Impl: `src/modules/queue/infrastructure/lua/alocar_chamada.lua`
+- Impl: `src/modules/queue/infrastructure/lua/alocar_proximo.lua`
+- Impl: `src/modules/queue/infrastructure/valkey_queue_engine.py:ValkeyQueueEngine`
 - Impl: `src/modules/queue/presentation/routers/alocacao_router.py:chamar_proximo_paciente`
 - Impl: `src/modules/consultation/presentation/routers/consultation_router.py:salvar_evolucao_soap`
 - Impl: `src/modules/consultation/application/services/pep_service.py:PEPService.salvar_evolucao_soap`
 - Impl: `src/modules/consultation/infrastructure/pyhanko_signer.py:FakeICPBrasilSigner`
-- Impl: `src/worker/tasks/eligibility.py:validar_elegibilidade_task`
+- Impl: `src/worker/tasks/ring_timeout.py:resolver_ring_timeout_task`
 - Spec: `docs/explanation/domains/triage-domain.md`
 - Spec: `docs/explanation/domains/queue-domain.md`
 - Spec: `docs/explanation/domains/consultation-domain.md`
 - Spec: `docs/adrs/ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md`
 - Spec: `docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md`
 - Spec: `docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md`
-- Prova viva: `tests/integration/test_admissao_integrada_flow.py:test_admissao_integrada_persists_both_models_and_enqueues_arq_job`
+- Prova viva: `tests/integration/test_admissao_integrada_flow.py:test_admissao_integrada_persists_both_models_and_ingests_zset`
 - Prova viva: `tests/integration/test_admissao_integrada_flow.py:test_admissao_integrada_emergencia_samu_dispatches_alert_and_blocks_db`
 - Prova viva: `tests/integration/test_lua_scripts.py:test_alocar_chamada_adr002_scenarios`
 - Prova viva: `tests/integration/test_ring_timeout_flow.py:test_alocar_chamada_schedules_arq_job_in_valkey`
@@ -94,10 +96,10 @@ Após o diagnóstico, o médico prescreve medicamentos e sela o atendimento com 
 - Prova viva: `tests/integration/test_pep_transaction.py:test_assinar_documento_service_commit_visivel_outra_sessao`
 - Prova viva: `tests/integration/test_document_signing_endpoint.py:test_assinar_documento_clinico_pades_flow`
 - Ver: `rg -n "admitir_paciente" src/modules/queue/application/services/fila_service.py`
-- Ver: `rg -n "alocar_chamada" src/modules/queue/infrastructure/lua/`
+- Ver: `rg -n "alocar_chamada|alocar_proximo" src/modules/queue/infrastructure/lua/`
 - Ver: `rg -n "salvar_evolucao_soap" src/modules/consultation/application/services/pep_service.py`
 - Ver: `rg -n "FakeICPBrasilSigner" src/modules/consultation/infrastructure/`
-- Ver: `rg -n "validar_elegibilidade_task" src/worker/tasks/eligibility.py`
+- Ver: `rg -n "resolver_ring_timeout_task" src/worker/tasks/ring_timeout.py`
 
 ---
 
@@ -113,8 +115,8 @@ Cada teste atua como prova viva de uma etapa crítica da teleconsulta:
 
 1. **Admissão e Fila (`test_admissao_integrada_flow.py`):**
    - Comprova a persistência atômica das entidades relacionais `Atendimento` e `Triagem`.
-   - Verifica o agendamento do job ARQ e a promoção do atendimento para `APTO_PARA_CHAMADA`.
-   - Inspeciona a presença do score 64-bit ordenado no ZSET do Valkey.
+   - Verifica a admissão direta em `APTO_PARA_CHAMADA` sem dependência de worker assíncrono de elegibilidade.
+   - Inspeciona a presença do score 64-bit ordenado no ZSET `fila:aptos` do Valkey.
 
 2. **Salvaguarda SAMU (`test_admissao_integrada_flow.py`):**
    - Comprova que sintomas críticos disparam o adaptador de notificação do SAMU 192.

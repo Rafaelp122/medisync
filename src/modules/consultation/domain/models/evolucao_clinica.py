@@ -157,7 +157,11 @@ class EvolucaoClinica(Base):
             exame_fisico_virtual=clean_exame,
             cid10_principal=clean_cid10,
             conduta=conduta.strip(),
-            codigo_sigtap=codigo_sigtap.strip() if codigo_sigtap else "03.01.01.025-0",
+            codigo_sigtap=(
+                codigo_sigtap.strip()
+                if codigo_sigtap and codigo_sigtap.strip()
+                else "03.01.01.025-0"
+            ),
             ia_utilizada=ia_utilizada,
             ia_modelo=ia_modelo.strip() if ia_modelo else None,
             ia_sugestao_bruta=ia_sugestao_bruta,
@@ -169,7 +173,6 @@ class EvolucaoClinica(Base):
             registrado_em=registrado_em or datetime.now(UTC),
             finalizado_em=finalizado_em,
         )
-        self._is_finalizado: bool = finalizado_em is not None
 
     @property
     def is_finalizado(self) -> bool:
@@ -187,7 +190,6 @@ class EvolucaoClinica(Base):
         Regras: RN06 e docs/explanation/domains/consultation-domain.md.
         """
         self.finalizado_em = datetime.now(UTC)
-        self._is_finalizado = True
 
     def atualizar_soap(
         self,
@@ -243,7 +245,7 @@ class EvolucaoClinica(Base):
             else None
         )
         self.cid10_principal = clean_cid10
-        if codigo_sigtap is not None:
+        if codigo_sigtap is not None and codigo_sigtap.strip():
             self.codigo_sigtap = codigo_sigtap.strip()
         if ia_utilizada is not None:
             self.ia_utilizada = ia_utilizada

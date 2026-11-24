@@ -10,12 +10,20 @@ from src.modules.queue.application.dtos import (
     AdmissaoAtendimentoResult,
     AlocacaoChamadaResult,
     PioraClinicaResult,
+    PosicaoFilaResult,
 )
 from src.modules.queue.presentation.schemas import (
+    AdmissaoRequest,
     AdmissaoResponse,
     ChamarProximoResponse,
     PioraClinicaResponse,
+    PosicaoFilaResponse,
 )
+
+
+def test_admissao_request_nao_expoe_medicos_ativos() -> None:
+    """AdmissaoRequest must not accept client-spoofed medicos_ativos (RN05)."""
+    assert "medicos_ativos" not in AdmissaoRequest.model_fields
 
 
 def test_admissao_response_model_validate_com_tcle_hash() -> None:
@@ -25,21 +33,43 @@ def test_admissao_response_model_validate_com_tcle_hash() -> None:
         atendimento_id=uuid4(),
         triagem_id=uuid4(),
         paciente_id=uuid4(),
-        status_atendimento="TRIADO_AGUARDANDO_ELEGIBILIDADE",
+        status_atendimento="APTO_PARA_CHAMADA",
         prioridade_clinica=3,
         alerta_samu_disparado=False,
-        instrucoes="Aguarde validação de elegibilidade",
+        instrucoes=None,
         tcle_hash=tcle_hash,
     )
     resp = AdmissaoResponse.model_validate(result)
     assert resp.tcle_hash == tcle_hash
     assert resp.atendimento_id == result.atendimento_id
     assert resp.prioridade_clinica == 3
-    assert resp.status_atendimento == "TRIADO_AGUARDANDO_ELEGIBILIDADE"
+    assert resp.status_atendimento == "APTO_PARA_CHAMADA"
+
+
+def test_posicao_fila_response_serializa_timer_e_prioridade() -> None:
+    """PosicaoFilaResponse exposes chamada_iniciada_em, ttl_segundos, prioridade."""
+    chamada_em = datetime.now(UTC)
+    result = PosicaoFilaResult(
+        atendimento_id=uuid4(),
+        status="CHAMANDO_PACIENTE",
+        posicao=0,
+        total_aguardando=3,
+        tempo_estimado_segundos=0,
+        prioridade_clinica=2,
+        chamada_iniciada_em=chamada_em,
+        ttl_segundos=45,
+    )
+    resp = PosicaoFilaResponse.model_validate(result)
+    assert resp.prioridade_clinica == 2
+    assert resp.chamada_iniciada_em == chamada_em
+    assert resp.ttl_segundos == 45
 
 
 def test_piora_clinica_response_campos_canonicos_emergencia() -> None:
-    """Verifica contrato de resposta para piora crítica SAMU Nível 1 (US-06)."""
+    """Verifica contrato canônico sem espelhos para piora crítica SAMU Nível 1."""
+    assert "nova_prioridade" not in PioraClinicaResponse.model_fields
+    assert "orientacoes_emergencia" not in PioraClinicaResponse.model_fields
+
     atend_id = uuid4()
     instrucao_samu = "Ligue imediatamente para o SAMU 192 ou dirija-se à UPA."
     result = PioraClinicaResult(
@@ -49,20 +79,19 @@ def test_piora_clinica_response_campos_canonicos_emergencia() -> None:
         redirecionado_emergencia=True,
         nova_posicao=None,
         instrucoes=instrucao_samu,
-        nova_prioridade=1,
-        status_atendimento="CANCELADO_PELO_PACIENTE",
-        orientacoes_emergencia=instrucao_samu,
+        status_atendimento="CANCELADO_PACIENTE",
     )
     resp = PioraClinicaResponse.model_validate(result)
     assert resp.atendimento_id == atend_id
-    assert resp.nova_prioridade == 1
-    assert resp.status_atendimento == "CANCELADO_PELO_PACIENTE"
+    assert resp.prioridade_clinica == 1
+    assert resp.status_atendimento == "CANCELADO_PACIENTE"
     assert resp.alerta_samu_disparado is True
-    assert resp.orientacoes_emergencia == instrucao_samu
+    assert resp.redirecionado_emergencia is True
+    assert resp.instrucoes == instrucao_samu
 
 
 def test_piora_clinica_response_campos_canonicos_agravamento() -> None:
-    """Verifica contrato de resposta para agravamento sem emergência Nível 2 (US-06)."""
+    """Verifica contrato canônico sem espelhos para agravamento Nível 2."""
     atend_id = uuid4()
     result = PioraClinicaResult(
         atendimento_id=atend_id,
@@ -71,23 +100,19 @@ def test_piora_clinica_response_campos_canonicos_agravamento() -> None:
         redirecionado_emergencia=False,
         nova_posicao=1,
         instrucoes="Prioridade recalculada com sucesso na fila de espera.",
-        nova_prioridade=2,
         status_atendimento="APTO_PARA_CHAMADA",
-        orientacoes_emergencia=None,
     )
     resp = PioraClinicaResponse.model_validate(result)
     assert resp.atendimento_id == atend_id
-    assert resp.nova_prioridade == 2
+    assert resp.prioridade_clinica == 2
     assert resp.status_atendimento == "APTO_PARA_CHAMADA"
     assert resp.alerta_samu_disparado is False
     assert resp.nova_posicao == 1
-    assert resp.orientacoes_emergencia is None
+    assert resp.instrucoes == "Prioridade recalculada com sucesso na fila de espera."
 
 
 def test_chamar_proximo_response_model_validate_paciente_e_prioridade() -> None:
-    """Verifica que ChamarProximoResponse expõe paciente_id e
-    prioridade_clinica (US-07).
-    """
+    """Verifica que ChamarProximoResponse expõe paciente_id e prioridade_clinica."""
     atend_id = uuid4()
     medico_id = uuid4()
     paciente_id = uuid4()

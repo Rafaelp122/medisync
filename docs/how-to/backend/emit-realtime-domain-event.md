@@ -36,7 +36,7 @@ Sempre envolva a emissão em bloco de proteção (`try/except`) para evitar que 
 
 ### 3. Expor o endpoint WebSocket
 
-No roteador de apresentação, receba o canal e faça o streaming com `stream_channel`:
+No roteador de apresentação, injete `ValkeyDep` (de `src/core/valkey.py`), proteja o handshake com o guard autenticado via `resolve_bearer_principal(..., transport="ws")` (`QueueWsAuthDep` / `DoctorWsAuthDep`) e faça o streaming com `stream_channel`:
 
 ```python
 @queue_ws_router.websocket("/ws/queue/{atendimento_id}")
@@ -52,9 +52,10 @@ O utilitário `forward_pubsub_to_websocket` mantém a subscrição ativa e cance
 
 ## Onde no código
 
-- Utilitários centrais de Pub/Sub: `src/core/realtime.py:publish_realtime_event`
+- Utilitários centrais de Pub/Sub e `ValkeyDep`: `src/core/realtime.py:publish_realtime_event`, `src/core/valkey.py:ValkeyDep`
+- Guard de handshake WebSocket: `src/core/authz/dependencies.py:resolve_bearer_principal`
 - Roteador WebSocket da fila de espera: `src/modules/queue/presentation/routers/queue_ws_router.py:ws_queue_patient`
-- Emissão de chamada médica no serviço: `src/modules/queue/application/services/alocacao_service.py:AlocacaoService`
+- Emissão de chamada médica no serviço: `src/modules/queue/application/services/alocacao_service.py:AlocacaoChamadaService` e `src/modules/queue/infrastructure/valkey_queue_engine.py:ValkeyQueueEngine` (`QueueEnginePort`)
 - Suíte de integração WebSocket: `tests/integration/test_websocket_endpoints.py`
 - Referência de canais em tempo real: `docs/reference/api/websocket-channels.md`
 

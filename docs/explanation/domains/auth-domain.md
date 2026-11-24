@@ -8,13 +8,13 @@ O domínio de Autenticação gerencia a identificação e o ciclo de sessões pa
 
 Profissionais de saúde e colaboradores corporativos (médicos, gestores de unidade e faturamento) autenticam-se em `/api/v1/auth/login` com credenciais estáticas persistidas na tabela `usuarios_credenciais`. O hash de senhas utiliza Argon2id através de `PasswordHasherPort`. A proteção contra timing attacks e enumeração de contas executa `dummy_verify` em tempo constante para identificadores inexistentes, inativos ou pertencentes a pacientes (`Role.PACIENTE` é explicitamente rejeitado no login corporativo).
 
-Pacientes e acolhidos utilizam o fluxo híbrido do cidadão (`/api/v1/auth/patient/*`): ingresso e reconexão sem senha via código OTP de 6 dígitos enviado por SMS (`secrets.randbelow(1_000_000)`, validade de 5 minutos / 300s), autenticação biométrica FIDO2/WebAuthn (`Passkeys`), desambiguação civil CADSUS/Gov.br (`/cadsus`), auto-cadastro com e-mail obrigatório (`/register`) e senha Argon2id opcional (`/login-password`, sem MFA TOTP). Quando a senha é omitida no auto-cadastro, `UsuarioCredencial` recebe marcador não-autenticável (`!UNUSABLE:<hex>`).
+Pacientes e acolhidos utilizam o fluxo híbrido do cidadão (`/api/v1/auth/patient/*`): ingresso e reconexão sem senha via código OTP de 6 dígitos enviado por SMS (`secrets.randbelow(1_000_000)`, validade de 5 minutos / 300s) armazenado via `ChallengeStorePort` (`ValkeyChallengeStore` com script Lua atômico), autenticação biométrica FIDO2/WebAuthn (`Passkeys`), desambiguação civil CADSUS/Gov.br (`/cadsus` com `data_nascimento`, 2º fator civil e rate limit por IP), auto-cadastro com e-mail obrigatório (`/register`) e senha Argon2id opcional (`/login-password`, sem MFA TOTP). Quando a senha é omitida no auto-cadastro, `UsuarioCredencial` recebe marcador não-autenticável (`!UNUSABLE:<hex>`).
 
-A contenção contra ataques de força bruta combina rate limiting por janela deslizante na borda (Valkey via `AuthRateLimiterPort` com fallback em memória) e lockout progressivo na entidade rica: 5 falhas consecutivas bloqueiam a conta por 15 minutos (`bloqueado_ate`). O modelo `UsuarioCredencial` auto-reseta o bloqueio após expiração na consulta de `is_bloqueado`.
+A contenção contra ataques de força bruta combina rate limiting por janela deslizante na borda (Valkey via `AuthRateLimiterPort` obrigatório, sem dupla prefixação) e lockout progressivo na entidade rica: 5 falhas consecutivas bloqueiam a conta por 15 minutos (`bloqueado_ate`). O modelo `UsuarioCredencial` auto-reseta o bloqueio após expiração na consulta de `is_bloqueado`.
 
-A revogação de tokens é distribuída e imediata: a rotação de refresh token segue a política de uso único, registrando o `jti` consumido no Valkey sob a chave `auth:revoked:{jti}` com TTL dinâmico residual do JWT. Apresentações repetidas disparam `TokenRevogadoError`. O logout explícito invalida refresh e access tokens instantaneamente no cluster de cache.
+A revogação de tokens é distribuída e imediata: a rotação de refresh token e o consumo do token temporário MFA (`temp_token` `mfa_pending` após `mfa_ativo=True`) usam marcação atômica `SET NX` (`TokenRevocationPort.marcar_revogado_se_nao_revogado`) em `auth:revoked:{jti}` pelo TTL residual, bloqueando corridas TOCTOU. No primeiro acesso sem MFA ativo, `/auth/mfa/setup` e `/auth/mfa/activate` aceitam `mfa_pending` via `MfaSetupOrAccessUserDep`. O logout explícito invalida refresh e/ou access token instantaneamente no cluster de cache (`if token or access_token`).
 
-Vocabulário ubíquo: `UsuarioCredencial`, `senha_hash`, `UNUSABLE_CREDENTIAL_MARKER` (`!UNUSABLE:`), `Argon2id`, `dummy_verify`, `lockout`, `OTP SMS`, `WebAuthn Passkeys`, `CADSUS`, `refresh_token`, `jti`, `TokenRevocationPort`, `ValkeyTokenRevocation`, `IdentityWriterPort`.
+Vocabulário ubíquo: `UsuarioCredencial`, `senha_hash`, `UNUSABLE_CREDENTIAL_MARKER` (`!UNUSABLE:`), `Argon2id`, `dummy_verify`, `lockout`, `OTP SMS`, `WebAuthn Passkeys`, `CADSUS`, `ChallengeStorePort`, `ValkeyChallengeStore`, `refresh_token`, `jti`, `TokenRevocationPort`, `ValkeyTokenRevocation`, `IdentityWriterPort`.
 
 Plataforma única: credenciais corporativas e de cidadãos mantêm unicidade global por identificador (`UniqueConstraint("identificador", name="uq_usuarios_credenciais_identificador")`), sem partição por `organizacao_id`.
 
@@ -24,11 +24,11 @@ Plataforma única: credenciais corporativas e de cidadãos mantêm unicidade glo
 - **RN-AUT-02 — Lockout progressivo de 15 minutos após 5 falhas consecutivas.** `UsuarioCredencial.registrar_falha_login` incrementa contadores e bloqueia a conta ao atingir `max_falhas = 5` por 15 minutos. `is_bloqueado` auto-reseta falhas quando o tempo expira. Autenticação válida executa `registrar_sucesso_login()`, zerando as falhas. [Fonte](../product-specification.md) (RF-01)
 - **RN-AUT-03 — Autenticação passwordless de paciente por OTP SMS (6 dígitos).** `PatientAuthService.solicitar_otp` gera código numérico criptograficamente seguro via `secrets.randbelow(1_000_000)` formatado com zero-padding (`:06d`) e TTL de 5 minutos (300s), armazenado em hash SHA-256 e transmitido via `SmsSenderPort`. A propriedade `codigo_debug` só é exposta quando `expose_debug_otp=True`, restrito no `composition.py` a `DEBUG=True` e `ENVIRONMENT in ("development", "test")`. [Fonte](../product-specification.md) (RF-01)
 - **RN-AUT-04 — Rate limiting estrito de OTP e contenção de brute-force.** Janela deslizante de 15 minutos (900s) com limite de 3 solicitações de OTP por número telefônico (`OtpRateLimitExcedidoError`). Máximo de 3 tentativas de validação por código OTP gerado: as 2 primeiras falhas retornam HTTP 401 (`OtpInvalidoOuExpiradoError`); a 3ª falha invalida o OTP e levanta `OtpTentativasExcedidasError` (HTTP 429 Too Many Requests com cabeçalho `Retry-After: 900`). Ambas as violações de limite retornam HTTP 429 com `Retry-After`. [Fonte](../product-specification.md) (RF-01)
-- **RN-AUT-05 — Rotação de refresh token com transporte seguro via Cookie HttpOnly, SameSite=Strict e revogação de uso único.** Cada refresh token consumido em `AuthService.rotacionar_refresh_token` é marcado como revogado via `TokenRevocationPort.revogar` com chave `auth:revoked:{jti}` pelo TTL restante. O transporte prioritário é realizado via Cookie `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`, `Max-Age=604800` (7 dias) com fallback retrocompatível para payload JSON. Apresentações repetidas abortam o ciclo com `TokenRevogadoError`. Ausência de cookie e payload levanta `TokenInvalidoError` (HTTP 401). [Fonte](../product-specification.md) (RF-01, Issue #144)
-- **RN-AUT-06 — Logout com revogação síncrona e expurgo de cookie.** `AuthService.revogar_sessao` invalida imediatamente o refresh token no Valkey, e o presentation layer emite cabeçalho `Set-Cookie: refresh_token=; Max-Age=0; Path=/api/v1/auth; HttpOnly; SameSite=Strict`, eliminando a credencial persistente no navegador. [Fonte](../product-specification.md) (RF-01, Issue #144)
-- **RN-AUT-07 — Access tokens de curta duração e segregação de armazenamento no navegador (OWASP ASVS V3.5.2 / LGPD Art. 46).** Tokens de acesso JWT possuem validade padrão de 15 minutos (`JWT_ACCESS_TOKEN_EXPIRE_MINUTES=15`, injetado via `composition.py` tanto em `JWTTokenService` quanto em `PatientAuthService` e `PatientWebAuthnService`). Para a equipe corporativa, o token reside exclusivamente em closure JavaScript volátil (`frontend/src/lib/auth-token.ts`), sendo proibido em Web Storage e reidratado no reload (F5) via silent refresh por cookie `HttpOnly`. Para o cidadão, a sessão (`StoredPatientSession` em `frontend/src/lib/session-storage.ts`) persiste no `localStorage` sob a chave `medisync_session` (`settings.storage.patientSession`). [Fonte](../product-specification.md) (RF-01, Issue #144)
-- **RN-AUT-08 — Atributos de segurança mandatórios para cookies (OWASP ASVS V3.4.1).** Todo cookie emitido para transporte de refresh token possui obrigatoriamente `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`, `Max-Age=604800` (7 dias) e flag `Secure` dinamicamente resolvida com base no cabeçalho `X-Forwarded-Proto` e no ambiente de execução (ativo em HTTPS e produção). [Fonte](../product-specification.md) (RF-01, Issue #144)
-- **RN-AUT-09 — IAM Híbrido do Cidadão, Auto-Cadastro, CADSUS e WebAuthn.** `PatientAuthService` suporta: (a) auto-cadastro (`POST /auth/patient/register` via `IdentityWriterPort`) com e-mail obrigatório (`RegistrarPacienteRequest.email`), aceite LGPD, disparo inicial de OTP e senha Argon2id opcional (ou marcador `!UNUSABLE:` via `UNUSABLE_CREDENTIAL_MARKER`); (b) identificação anti-enumeração (`POST /auth/patient/identify`); (c) login tradicional por senha (`POST /auth/patient/login-password` com lockout de 5 falhas/15 min e sem MFA TOTP); (d) desambiguação civil CADSUS/Gov.br (`POST /auth/patient/cadsus`); e (e) capacidades dinâmicas (`GET /auth/patient/methods` com `GOVBR_OIDC_ENABLED` injetado via `composition.py` sob ADR-009). Os endpoints `/register` (10 req/IP/15 min), `/identify` (15 req/IP e 10 req/identificador em 15 min) e `/login-password` (15 req/IP/15 min) aplicam janela deslizante lançando `IdentificacaoRateLimitExcedidoError` (`429` com `Retry-After`). Em complemento, `PatientWebAuthnService` (`/auth/patient/webauthn/*`) provê cadastro e login 1-toque FIDO2/Passkeys com desafios de 60s consumidos atomicamente via `getdel` no Valkey. [Fonte](../product-specification.md) (RF-01, [ADR-012](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md))
+- **RN-AUT-05 — Rotação de refresh token e consumo único de `temp_token` MFA com `SET NX`.** Cada refresh token consumido em `AuthService.rotacionar_refresh_token` e cada `temp_token` (`mfa_pending`) validado em `AuthService.verificar_mfa_login` (que exige `cred.mfa_ativo is True`) são marcados atomicamente via `TokenRevocationPort.marcar_revogado_se_nao_revogado` (`SET NX` em `auth:revoked:{jti}` pelo TTL restante). O transporte prioritário é realizado via Cookie `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`, `Max-Age=604800` (7 dias) com fallback retrocompatível para payload JSON e resolução de flag `Secure` por perfil via `composition.py`. Apresentações repetidas ou concorrentes abortam com `TokenRevogadoError`. [Fonte](../product-specification.md) (RF-01, Issue #144, Issue #162)
+- **RN-AUT-06 — Logout com revogação síncrona e expurgo de cookie.** `AuthService.revogar_sessao` aceita `refresh_token` opcional e revoga imediatamente refresh e/ou access token no Valkey sempre que presentes no payload/cookie ou no cabeçalho `Authorization`, enquanto a camada HTTP emite `Set-Cookie: refresh_token=; Max-Age=0`. [Fonte](../product-specification.md) (RF-01, Issue #144)
+- **RN-AUT-07 — Access tokens de curta duração e segregação de armazenamento no navegador (OWASP ASVS V3.5.2 / LGPD Art. 46).** Tokens de acesso JWT possuem validade padrão de 15 minutos (`JWT_ACCESS_TOKEN_EXPIRE_MINUTES=15`, emitidos uniformemente via `TokenServicePort` em `AuthService`, `PatientAuthService` e `PatientWebAuthnService`). Para a equipe corporativa, o token reside exclusivamente em closure JavaScript volátil (`frontend/src/lib/auth-token.ts`), sendo proibido em Web Storage e reidratado no reload (F5) via silent refresh por cookie `HttpOnly`. Para o cidadão, a sessão (`StoredPatientSession` em `frontend/src/lib/session-storage.ts`) persiste no `localStorage` sob a chave `medisync_session` (`settings.storage.patientSession`). [Fonte](../product-specification.md) (RF-01, Issue #144)
+- **RN-AUT-08 — Atributos de segurança mandatórios para cookies (OWASP ASVS V3.4.1).** Todo cookie emitido para transporte de refresh token possui obrigatoriamente `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`, `Max-Age=604800` (7 dias) e flag `Secure` resolvida sem `get_settings()` em `helpers.py`, combinando HTTPS/`X-Forwarded-Proto` com `CookieSecureDep` da composition root. [Fonte](../product-specification.md) (RF-01, Issue #144)
+- **RN-AUT-09 — IAM Híbrido do Cidadão, Auto-Cadastro, CADSUS endurecido e WebAuthn.** `PatientAuthService` utiliza `ChallengeStorePort` + `ValkeyChallengeStore` (Lua `verify_and_increment_otp` sem fallback implícito em memória) e `FakeSmsSenderAdapter` (localizado em `auth/infrastructure/`), suportando: (a) auto-cadastro (`POST /auth/patient/register` via `IdentityWriterPort`) com e-mail obrigatório, aceite LGPD, OTP inicial e senha Argon2id opcional; (b) identificação anti-enumeração (`POST /auth/patient/identify`); (c) login tradicional por senha (`POST /auth/patient/login-password` com lockout de 5 falhas/15 min e sem MFA TOTP); (d) CADSUS/Gov.br (`POST /auth/patient/cadsus`) exigindo `data_nascimento` obrigatória, 2º fator civil (`nome_mae` ou `cns` higienizado via `validate_cns` ao autenticar por CPF), rate limit por IP (10 req/IP/15 min) e preenchimento de `atendimento_id`; e (e) capacidades dinâmicas (`GET /auth/patient/methods`). Em complemento, `PatientWebAuthnService` (`/auth/patient/webauthn/*`) chaveia desafios de registro por `webauthn:reg:{paciente_id}:{challenge}` (isolamento multi-aba) consumidos atomicamente via `GETDEL`, persiste passkeys via `IdentityWriterPort` e bloqueia `intake_token` restrito (`is_novo_paciente=False`). [Fonte](../product-specification.md) (RF-01, [ADR-012](../../adrs/ADR-012-Transicao-100-SUS-Consorcios-Intermunicipais-e-Autenticacao-Tripartida.md), Issue #162)
 
 Guardiões: `UsuarioCredencial` normaliza identificadores para minúsculas sem espaços, valida papéis e bloqueia autenticação de contas marcadas com `ativo = False` ou sob lockout ativo.
 
@@ -65,18 +65,17 @@ flowchart TD
     Token --> Paciente
 ```
 
-Fluxo de rotação de refresh token com revogação distribuída:
+Fluxo de rotação de refresh token com revogação distribuída atômica (anti-TOCTOU):
 
 ```mermaid
 flowchart TD
     Client[Cliente HTTP] -->|POST /auth/refresh| Router[auth_router]
     Router --> Service[AuthService.rotacionar_refresh_token]
     Service -->|1. Valida Assinatura JWT| TokenService[TokenServicePort]
-    Service -->|2. Checa Revogação| Revocation{TokenRevocationPort}
-    Revocation -->|auth:revoked:jti existe| Abort[Erro: TokenRevogadoError 401]
-    Revocation -->|Não revogado| RevokeOld[3. Revoga jti antigo no Valkey TTL restante]
-    RevokeOld --> CheckCred[4. Valida credencial ativa no BD]
-    CheckCred --> IssueNew[5. Emite novo par Access + Refresh]
+    Service -->|2. marcar_revogado_se_nao_revogado SET NX| Revocation{TokenRevocationPort}
+    Revocation -->|False: jti já revogado| Abort[Erro: TokenRevogadoError 401]
+    Revocation -->|True: TTL restante gravado| CheckCred[3. Valida credencial ativa no BD]
+    CheckCred --> IssueNew[4. Emite novo par Access + Refresh]
     IssueNew --> Client
 ```
 
@@ -88,6 +87,7 @@ flowchart TD
 - Revogação distribuída: `TokenRevocationPort` implementada por `ValkeyTokenRevocation` (`auth:revoked:{jti}`).
 - Integração com identidade: `IdentityReaderPort` valida existência, telefone, dados CADSUS e passkeys de pacientes; `IdentityWriterPort` (`SqlIdentityWriter` em `src/modules/identity/infrastructure/identity_writer_sql.py`) persiste novos pacientes no auto-cadastro dentro da mesma transação antes do `commit` em `PatientAuthService`.
 - Credenciais de pacientes e lookup de fila: `PatientCredentialRepositoryPort` (`SqlPatientCredentialRepository`) persiste credenciais do cidadão; `ActiveAttendanceLookupPort` resolve eventual `atendimento_id` ativo no retorno do login.
+- Presença médica no plantão: `DoctorPresencePort` (`src/modules/auth/application/ports/doctor_presence_port.py`), plugada em `auth/composition.py` via `build_doctor_presence_engine`, registra `Role.MEDICO` em `plantao:medicos_ativos` ao autenticar (`/login` ou `/mfa/verify`) e desregistra no `/logout` (`revogar_sessao`).
 - Provedor de SMS: `SmsSenderPort` implementa envio de mensagens de texto assíncronas.
 - Biometria FIDO2/WebAuthn: `PatientWebAuthnService` e `patient_webauthn_router.py` orquestram registro e login 1-toque com desafios em Valkey.
 - Rotas REST finas: `auth_router.py`, `patient_auth_router.py` e `patient_webauthn_router.py` delegam execução a `AuthServiceDep`, `PatientAuthServiceDep` e `PatientWebAuthnServiceDep`, sem regras de autenticação nos routers.
@@ -107,25 +107,32 @@ flowchart TD
 - `src/modules/auth/application/dtos.py`
 - `src/modules/auth/application/ports/password_hasher_port.py`
 - `src/modules/auth/application/ports/token_service_port.py`
-- `src/modules/auth/application/ports/token_revocation_port.py`
+- `src/core/authz/revocation.py`
+- `src/core/authz/dependencies.py`
+- `src/core/privacy.py`
 - `src/modules/auth/application/ports/auth_rate_limiter_port.py`
+- `src/modules/auth/application/ports/challenge_store_port.py`
 - `src/modules/auth/application/ports/sms_sender_port.py`
 - `src/modules/auth/application/ports/identity_reader_port.py`
 - `src/modules/auth/application/ports/identity_writer_port.py`
 - `src/modules/auth/application/ports/patient_credential_repository_port.py`
 - `src/modules/auth/application/ports/active_attendance_lookup_port.py`
+- `src/modules/auth/application/ports/doctor_presence_port.py`
 - `src/modules/auth/application/services/auth_service.py`
 - `src/modules/auth/application/services/patient_auth_service.py`
 - `src/modules/auth/application/services/patient_webauthn_service.py`
 - `src/modules/auth/application/services/webauthn_crypto.py`
 - `src/modules/auth/infrastructure/argon2_hasher.py`
+- `src/modules/auth/infrastructure/fake_sms_adapter.py`
 - `src/modules/auth/infrastructure/jwt_token_service.py`
 - `src/modules/auth/infrastructure/patient_credential_repository_sql.py`
-- `src/modules/auth/infrastructure/valkey_token_revocation.py`
+- `src/modules/auth/infrastructure/valkey_challenge_store.py`
 - `src/modules/auth/infrastructure/valkey_rate_limiter.py`
 - `src/modules/identity/application/ports/identity_writer_port.py`
 - `src/modules/identity/infrastructure/identity_writer_sql.py`
+- `src/modules/auth/presentation/dependencies.py`
 - `src/modules/auth/presentation/helpers.py`
+- `src/modules/auth/presentation/schemas.py`
 - `src/modules/auth/presentation/routers/auth_router.py`
 - `src/modules/auth/presentation/routers/patient_auth_router.py`
 - `src/modules/auth/presentation/routers/patient_webauthn_router.py`
@@ -153,11 +160,14 @@ ls tests/unit | rg -E "argon2|jwt|patient_auth|patient_hybrid|webauthn|token_rev
 ## 7. Verificação
 
 ```bash
-rg -n "UsuarioCredencial|AuthService|PatientAuthService|PatientWebAuthnService" src/modules/auth/
-# usuario_credencial.py:23 | auth_service.py:46 | patient_auth_service.py:99 | patient_webauthn_service.py:54
+rg -n "class UsuarioCredencial|class AuthService|class PatientAuthService|class PatientWebAuthnService|class ChallengeStorePort" src/modules/auth/
+# usuario_credencial.py:21 | auth_service.py:48 | patient_auth_service.py:94 | patient_webauthn_service.py:57 | challenge_store_port.py:9
+
+rg -n "class TokenRevocationPort|def resolve_bearer_principal" src/core/authz/
+# revocation.py:TokenRevocationPort | dependencies.py:resolve_bearer_principal
 
 uv run pytest tests/unit/test_argon2_hasher.py tests/unit/test_jwt_token_service.py tests/unit/test_patient_auth_service.py tests/unit/test_patient_hybrid_auth.py tests/unit/test_patient_webauthn_service.py tests/unit/test_token_revocation.py tests/unit/test_authz_rbac.py -q --no-cov
-# 77 passed
+# 85 passed
 ```
 
 Sem corrigir código. Divergência entre documentação e invariantes do modelo exige ajuste na documentação para refletir as regras de segurança vigentes.

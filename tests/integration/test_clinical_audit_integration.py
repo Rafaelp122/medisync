@@ -5,8 +5,6 @@ Referência: docs/reference/audit/event-catalog.md
 """
 
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass
-from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import text
@@ -14,7 +12,7 @@ from sqlalchemy.exc import DBAPIError
 from src.core.audit.adapter import SqlAuditTrailAdapter
 from src.core.audit.models import AtorPapel, AtorTipo
 from src.core.audit.service import AuditService
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.uuid7 import uuid7
 from src.modules.consultation.application.dtos import (
     CriarItemPrescricaoDTO,
@@ -25,37 +23,28 @@ from src.modules.consultation.application.dtos import (
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
 )
-from src.modules.consultation.application.services.evolucao_service import (
-    EvolucaoService,
-)
 from src.modules.queue.application.dtos import AdmissaoAtendimentoCommand
-from src.modules.queue.application.services.alocacao_service import (
-    AlocacaoChamadaService,
-)
 from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.domain.models import PrioridadeClinica
+from src.modules.triage.application.dtos import TriageRiskEvaluationDTO
 
 from tests.doubles import (
     FakeICPBrasilSigner,
     FakeMemoryStorage,
     FakePDFGenerator,
-    FakeValkey,
+    FakeQueueEngine,
+    FakeTriagePort,
 )
 from tests.factories.identity import make_paciente
 from tests.factories.queue import make_atendimento
 from tests.factories.scenarios import seed_clinical_scenario
-from tests.helpers import clean_database_tables, make_pep_service
+from tests.helpers import (
+    clean_database_tables,
+    make_documento_service,
+    make_pep_service,
+)
 
 _SAMPLE_TCLE_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
-
-@dataclass
-class DummyTriageEvaluation:
-    prioridade_clinica: int
-    alerta_samu_disparado: bool = False
-    tcle_hash: str = ""
-    tcle_texto: str = ""
-    instrucao_redirecionamento: str | None = None
 
 
 @pytest.fixture(autouse=True)
@@ -69,29 +58,25 @@ async def setup_clean_db() -> AsyncGenerator[None, None]:
 @pytest.mark.asyncio
 async def test_admissao_paciente_records_audit_event_in_postgres() -> None:
     """Validate persistence of Atendimento and ADMISSAO_PACIENTE in PostgreSQL."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="10101010199")
         session.add(paciente)
         await session.commit()
         await session.refresh(paciente)
 
-        fake_valkey = FakeValkey()
-        mock_triage = AsyncMock()
-        mock_triage.avaliar_risco = AsyncMock(
-            return_value=DummyTriageEvaluation(
+        fake_engine = FakeQueueEngine(medicos_ativos={uuid7()})
+        fake_triage = FakeTriagePort(
+            evaluation=TriageRiskEvaluationDTO(
                 prioridade_clinica=PrioridadeClinica.POUCO_URGENTE,
                 alerta_samu_disparado=False,
                 tcle_hash=_SAMPLE_TCLE_HASH,
-                tcle_texto="Termo de Consentimento Livre e Esclarecido",
             )
         )
-        mock_triage.registrar_triagem = AsyncMock(return_value=uuid7())
 
         fila_svc = FilaService(
-            valkey=fake_valkey,  # type: ignore[reportArgumentType]
+            queue_engine=fake_engine,
             db_session=session,
-            alocacao_service=AsyncMock(spec=AlocacaoChamadaService),
-            triage_port=mock_triage,
+            triage_port=fake_triage,
             audit_trail=SqlAuditTrailAdapter(session),
         )
 
@@ -108,7 +93,7 @@ async def test_admissao_paciente_records_audit_event_in_postgres() -> None:
         atend_id = result.atendimento_id
 
     # Verify in separate session that both Atendimento and AuditEvent are committed
-    async with async_session_factory() as verify_session:
+    async with get_session_factory()() as verify_session:
         events = await AuditService.list_events_by_atendimento(
             verify_session,
             atendimento_id=atend_id,
@@ -128,7 +113,7 @@ async def test_admissao_paciente_records_audit_event_in_postgres() -> None:
 @pytest.mark.asyncio
 async def test_rollback_reverts_audit_event_atomically() -> None:
     """Rollback reverts clinical entities and audit events (zero orphans)."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="20202020299")
         session.add(paciente)
         await session.commit()
@@ -155,7 +140,7 @@ async def test_rollback_reverts_audit_event_atomically() -> None:
         atend_id = atend.id
 
     # Verify zero records in separate session
-    async with async_session_factory() as verify_session:
+    async with get_session_factory()() as verify_session:
         events = await AuditService.list_events_by_atendimento(
             verify_session,
             atendimento_id=atend_id,
@@ -166,7 +151,7 @@ async def test_rollback_reverts_audit_event_atomically() -> None:
 @pytest.mark.asyncio
 async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
     """Validate clinical audit trail reconstruction in chronological order."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         cenario = await seed_clinical_scenario(
             session,
             unidade_cnpj="30303030000199",
@@ -178,12 +163,21 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
         atend_id = cenario.atendimento.id
         medico_id = cenario.medico.id
 
+        audit_adapter = SqlAuditTrailAdapter(session)
+        fake_pdf = FakePDFGenerator()
+        fake_storage = FakeMemoryStorage()
         pep_svc = make_pep_service(
             session,
-            audit_trail=SqlAuditTrailAdapter(session),
-            pdf_generator=FakePDFGenerator(),
+            audit_trail=audit_adapter,
+            pdf_generator=fake_pdf,
+            storage=fake_storage,
+        )
+        doc_svc = make_documento_service(
+            session,
+            audit_trail=audit_adapter,
+            pdf_generator=fake_pdf,
             signer=FakeICPBrasilSigner(),
-            storage=FakeMemoryStorage(),
+            storage=fake_storage,
         )
 
         # 1. Salvar Evolução SOAP
@@ -212,12 +206,12 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
                 )
             ],
         )
-        doc = await pep_svc.emitir_documento(cmd_doc)
+        doc = await doc_svc.emitir_documento(cmd_doc)
         assert doc.tipo_documento == "RECEITA_SIMPLES"
 
         # 3. Assinar Documento Clínico com ICP-Brasil
         creds = DoctorCertificateCredentials(token="fake-icp-brasil-token")
-        assinado = await pep_svc.assinar_documento(
+        assinado = await doc_svc.assinar(
             documento_id=doc.id,
             atendimento_id=atend_id,
             credenciais=creds,
@@ -233,7 +227,7 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
         assert finalizada.is_finalizado is True
 
     # Reconstruct audit trail from separate session
-    async with async_session_factory() as verify_session:
+    async with get_session_factory()() as verify_session:
         events = await AuditService.list_events_by_atendimento(
             verify_session,
             atendimento_id=atend_id,
@@ -291,7 +285,7 @@ async def test_pep_workflow_full_audit_trail_reconstruction() -> None:
 @pytest.mark.asyncio
 async def test_clinical_audit_event_immutability_trigger() -> None:
     """Clinical audit events are protected by append-only trigger."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         cenario = await seed_clinical_scenario(
             session,
             unidade_cnpj="50505050000199",
@@ -300,7 +294,7 @@ async def test_clinical_audit_event_immutability_trigger() -> None:
             medico_email="dr.immutability@medisync.local",
             tcle_hash=_SAMPLE_TCLE_HASH,
         )
-        ev_svc = EvolucaoService(
+        pep_imm_svc = make_pep_service(
             session=session,
             audit_trail=SqlAuditTrailAdapter(session),
         )
@@ -311,7 +305,7 @@ async def test_clinical_audit_event_immutability_trigger() -> None:
             conduta="Orientações gerais.",
             cid10_principal="J02.9",
         )
-        await ev_svc.salvar_evolucao_soap(cmd_soap)
+        await pep_imm_svc.salvar_evolucao_soap(cmd_soap)
 
         # Retrieve the generated audit event
         events = await AuditService.list_events_by_atendimento(
@@ -322,7 +316,7 @@ async def test_clinical_audit_event_immutability_trigger() -> None:
         event_id = events[0].id
 
     # Attempt forbidden UPDATE
-    async with async_session_factory() as evil_session:
+    async with get_session_factory()() as evil_session:
         with pytest.raises(DBAPIError, match="append-only"):
             await evil_session.execute(
                 text("UPDATE audit_events SET payload = '{}'::jsonb WHERE id = :id"),
@@ -331,7 +325,7 @@ async def test_clinical_audit_event_immutability_trigger() -> None:
             await evil_session.commit()
 
     # Attempt forbidden DELETE
-    async with async_session_factory() as evil_session:
+    async with get_session_factory()() as evil_session:
         with pytest.raises(DBAPIError, match="append-only"):
             await evil_session.execute(
                 text("DELETE FROM audit_events WHERE id = :id"),

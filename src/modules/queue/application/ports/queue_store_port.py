@@ -23,6 +23,7 @@ class AtendimentoSnapshotDTO:
     data_entrada_fila: datetime | None
     criado_em: datetime
     is_terminal: bool
+    chamada_iniciada_em: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -90,13 +91,27 @@ class QueueStorePort(Protocol):
     async def concluir_atendimento(
         self,
         atendimento_id: UUID,
-    ) -> None:
-        """Transition attendance in EM_ATENDIMENTO to CONCLUIDO and persist."""
+        *,
+        auto_commit: bool = True,
+    ) -> UUID | None:
+        """Transition attendance in EM_ATENDIMENTO to CONCLUIDO and persist.
+
+        When ``auto_commit=False``, flushes DB changes without committing so the caller
+        (e.g. PEPService.finalizar_consulta) can commit atomically and then
+        release ``lock:consulta_ativa:medico:{medico_id}`` via
+        ``liberar_consulta_ativa_medico``.
+        Returns the assigned ``medico_id`` (if any) for post-commit release.
+        """
+        ...
+
+    async def liberar_consulta_ativa_medico(self, medico_id: UUID) -> None:
+        """Release active consultation lock after atomic commit completes."""
         ...
 
     async def reconciliar_fila_orfaos(
         self,
         cutoff_em: datetime,
+        batch_size: int = 200,
     ) -> tuple[int, list[str]]:
         """Find orphan APTO attendances missing in Valkey and reinject them.
 

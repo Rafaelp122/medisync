@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 
 from tests.factories.identity import make_paciente
 from tests.factories.queue import make_atendimento
@@ -24,7 +24,7 @@ async def setup_triage_tables() -> AsyncGenerator[None, None]:
 
 @pytest.mark.asyncio
 async def test_persist_triagem_success() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="11122233301")
         session.add(paciente)
         await session.commit()
@@ -55,7 +55,7 @@ async def test_persist_triagem_success() -> None:
 
 @pytest.mark.asyncio
 async def test_triagem_foreign_key_violation_atendimento() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         non_existent_atendimento_id = uuid4()
         triagem = make_triagem(atendimento_id=non_existent_atendimento_id)
         session.add(triagem)
@@ -67,7 +67,7 @@ async def test_triagem_foreign_key_violation_atendimento() -> None:
 
 @pytest.mark.asyncio
 async def test_triagem_unique_1_to_1_per_atendimento() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="22233344402")
         session.add(paciente)
         await session.commit()
@@ -93,7 +93,7 @@ async def test_triagem_unique_1_to_1_per_atendimento() -> None:
 
 @pytest.mark.asyncio
 async def test_triagem_chk_prioridade_violation_raw_db() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="33344455503")
         session.add(paciente)
         await session.commit()
@@ -125,7 +125,7 @@ async def test_triagem_chk_prioridade_violation_raw_db() -> None:
 
 @pytest.mark.asyncio
 async def test_triagem_emergency_samu_persistence() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="44455566604")
         session.add(paciente)
         await session.commit()

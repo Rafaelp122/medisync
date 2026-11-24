@@ -22,11 +22,11 @@ from src.modules.consultation.application.dtos import (
 from src.modules.consultation.application.ports.icp_brasil_signer_port import (
     DoctorCertificateCredentials,
 )
+from src.modules.consultation.application.services.clinical_pdf_compiler import (
+    ClinicalPdfCompiler,
+)
 from src.modules.consultation.application.services.documento_service import (
     DocumentoService,
-)
-from src.modules.consultation.application.services.evolucao_service import (
-    EvolucaoService,
 )
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.domain.models import DocumentoClinico, EvolucaoClinica
@@ -35,9 +35,9 @@ from src.modules.consultation.infrastructure.memory_signed_cache import (
 )
 
 from tests.doubles import (
-    FakeAddedResult,
     FakeAsyncSession,
     FakeAuditTrail,
+    FakeDocumentDirectory,
     FakeICPBrasilSigner,
     FakeMemoryStorage,
     FakePDFGenerator,
@@ -58,8 +58,16 @@ async def test_salvar_evolucao_soap_records_evolucao_audit_event(
     med_id = uuid7()
 
     fake_session = FakeAsyncSession([FakeResult(None)])
-    svc = EvolucaoService(
-        session=cast("AsyncSession", fake_session),
+    typed_session = cast("AsyncSession", fake_session)
+    compiler = ClinicalPdfCompiler(
+        session=typed_session,
+        pdf_generator=FakePDFGenerator(),
+        storage=FakeMemoryStorage(),
+        directory=FakeDocumentDirectory(),
+    )
+    svc = PEPService(
+        session=typed_session,
+        pdf_compiler=compiler,
         audit_trail=fake_audit_trail,
     )
 
@@ -100,9 +108,7 @@ async def test_emitir_documento_records_documento_emitido_audit_event(
         conduta="Conduta teste",
         identidade_verificada=True,
     )
-    fake_session = FakeAsyncSession(
-        [FakeResult(evolucao), FakeAddedResult(added)], added=added
-    )
+    fake_session = FakeAsyncSession([FakeResult(evolucao)], added=added)
 
     svc = DocumentoService(
         session=cast("AsyncSession", fake_session),
@@ -110,6 +116,7 @@ async def test_emitir_documento_records_documento_emitido_audit_event(
         signer=FakeICPBrasilSigner(),
         storage=FakeMemoryStorage(),
         cache=MemorySignedCache(),
+        directory=FakeDocumentDirectory(),
         audit_trail=fake_audit_trail,
     )
 
@@ -163,7 +170,7 @@ async def test_assinar_documento_records_documento_assinado_audit_event(
             FakeResult(doc),  # query do assinar
             FakeResult(doc),  # query do compilar_pdf
             FakeResult(None),  # query evolucao
-            FakeResult(None),  # query organizacao
+            FakeResult(None),  # query configuracao_unidade
             FakeResult(None),  # query paciente
             FakeResult(None),  # query medico
         ],
@@ -177,6 +184,7 @@ async def test_assinar_documento_records_documento_assinado_audit_event(
         signer=FakeICPBrasilSigner(),
         storage=storage,
         cache=MemorySignedCache(),
+        directory=FakeDocumentDirectory(),
         audit_trail=fake_audit_trail,
     )
 
@@ -225,20 +233,16 @@ async def test_finalizar_consulta_records_consulta_finalizada_audit_event(
         entities={evolucao_id: evolucao},
     )
 
-    doc_svc = DocumentoService(
-        session=cast("AsyncSession", fake_session),
+    typed_session = cast("AsyncSession", fake_session)
+    compiler = ClinicalPdfCompiler(
+        session=typed_session,
         pdf_generator=FakePDFGenerator(),
-        signer=FakeICPBrasilSigner(),
         storage=FakeMemoryStorage(),
-        cache=MemorySignedCache(),
+        directory=FakeDocumentDirectory(),
     )
-
     pep_svc = PEPService(
-        session=cast("AsyncSession", fake_session),
-        pdf_generator=FakePDFGenerator(),
-        signer=FakeICPBrasilSigner(),
-        storage=FakeMemoryStorage(),
-        documento_service=doc_svc,
+        session=typed_session,
+        pdf_compiler=compiler,
         audit_trail=fake_audit_trail,
     )
 

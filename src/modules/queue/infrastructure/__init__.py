@@ -1,5 +1,11 @@
-"""Queue infrastructure module exporting Valkey and Lua script execution components."""
+"""Queue infrastructure module exporting Valkey engine, Lua, and notifications."""
 
+from src.modules.queue.infrastructure.active_attendance_reader_sql import (
+    SqlActiveAttendanceReader,
+)
+from src.modules.queue.infrastructure.attendance_snapshot_reader_sql import (
+    SqlAttendanceSnapshotReader,
+)
 from src.modules.queue.infrastructure.lua_loader import (
     LuaScriptError,
     LuaScriptManager,
@@ -12,8 +18,17 @@ from src.modules.queue.infrastructure.notifications import (
     RateLimitedNotificationAdapter,
     RateLimitResult,
 )
+from src.modules.queue.infrastructure.valkey_queue_engine import (
+    FILA_APTOS_KEY,
+    PLANTAO_MEDICOS_KEY,
+    SWEEPER_LOCK_KEY,
+    ValkeyQueueEngine,
+)
 
 __all__ = [
+    "FILA_APTOS_KEY",
+    "PLANTAO_MEDICOS_KEY",
+    "SWEEPER_LOCK_KEY",
     "LoggingNotificationAdapter",
     "LuaScriptError",
     "LuaScriptManager",
@@ -21,5 +36,8 @@ __all__ = [
     "NotificationRateLimiter",
     "RateLimitResult",
     "RateLimitedNotificationAdapter",
+    "SqlActiveAttendanceReader",
+    "SqlAttendanceSnapshotReader",
+    "ValkeyQueueEngine",
     "get_lua_script_manager",
 ]

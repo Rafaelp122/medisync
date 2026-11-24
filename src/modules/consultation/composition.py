@@ -5,7 +5,6 @@ Routers and tests must resolve PEPService via get_pep_service/PEPServiceDep
 and LiveKit service via get_teleconsulta_service/TeleconsultaServiceDep.
 """
 
-import contextlib
 import logging
 from functools import lru_cache
 from typing import Annotated
@@ -18,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.audit import AuditTrailPort, SqlAuditTrailAdapter
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
-from src.core.valkey import get_valkey_client, get_valkey_pool
+from src.core.valkey import ValkeyDep, get_valkey_client, get_valkey_pool
 from src.modules.ambulatory.application.dtos import ConsolidarTeleconsultaCommand
 from src.modules.ambulatory.application.services.producao_service import (
     ProducaoAmbulatorialService,
@@ -57,14 +56,14 @@ from src.modules.consultation.application.ports.storage_port import StoragePort
 from src.modules.consultation.application.ports.validation_rate_limiter_port import (
     ValidationRateLimiterPort,
 )
+from src.modules.consultation.application.services.clinical_pdf_compiler import (
+    ClinicalPdfCompiler,
+)
 from src.modules.consultation.application.services.document_validation_service import (
     DocumentValidationService,
 )
 from src.modules.consultation.application.services.documento_service import (
     DocumentoService,
-)
-from src.modules.consultation.application.services.evolucao_service import (
-    EvolucaoService,
 )
 from src.modules.consultation.application.services.pep_service import PEPService
 from src.modules.consultation.application.services.teleconsulta_service import (
@@ -88,7 +87,10 @@ from src.modules.consultation.infrastructure.memory_signed_cache import (
 from src.modules.consultation.infrastructure.pdf_generator import (
     ReportLabPDFGenerator,
 )
-from src.modules.consultation.infrastructure.pyhanko_signer import PyHankoSigner
+from src.modules.consultation.infrastructure.pyhanko_signer import (
+    CloudPSCOAuth2Client,
+    PyHankoSigner,
+)
 from src.modules.consultation.infrastructure.s3_storage import (
     FakeStorageAdapter,
     S3StorageAdapter,
@@ -104,36 +106,60 @@ from src.modules.identity.application.ports.identity_reader_port import (
     IdentityReaderPort,
 )
 from src.modules.identity.composition import get_identity_reader
+from src.modules.queue.application.ports.queue_engine_port import QueueEnginePort
 from src.modules.queue.application.ports.queue_store_port import QueueStorePort
-from src.modules.queue.composition import build_fila_service_for_session
+from src.modules.queue.composition import (
+    build_doctor_presence_engine,
+    build_fila_service_for_session,
+)
 
 logger = logging.getLogger("medisync.consultation.composition")
 
 
 class QueueStoreAtendimentoReaderAdapter:
-    """Adapts QueueStorePort to consultation's AtendimentoReaderPort without raw SQL."""
+    """Adapts QueueStorePort to AtendimentoReaderPort with per-request memoization."""
 
     def __init__(self, queue_store: QueueStorePort) -> None:
         self._queue_store = queue_store
+        self._resumo_cache: dict[UUID, AtendimentoResumoDTO | None] = {}
 
     async def obter_resumo(self, atendimento_id: UUID) -> AtendimentoResumoDTO | None:
+        if atendimento_id in self._resumo_cache:
+            return self._resumo_cache[atendimento_id]
         snapshot = await self._queue_store.buscar_atendimento(atendimento_id)
         if snapshot is None:
+            self._resumo_cache[atendimento_id] = None
             return None
-        return AtendimentoResumoDTO(
+        resumo = AtendimentoResumoDTO(
             atendimento_id=snapshot.id,
             medico_id=snapshot.medico_id,
             status=snapshot.status,
             tcle_hash=snapshot.tcle_hash,
             is_terminal=snapshot.is_terminal,
             paciente_id=snapshot.paciente_id,
+            chamada_iniciada_em=snapshot.chamada_iniciada_em,
             criado_em=snapshot.criado_em,
         )
+        self._resumo_cache[atendimento_id] = resumo
+        return resumo
 
-    async def concluir_atendimento(self, atendimento_id: UUID) -> None:
-        await self._queue_store.concluir_atendimento(atendimento_id)
+    async def concluir_atendimento(
+        self,
+        atendimento_id: UUID,
+        *,
+        auto_commit: bool = True,
+    ) -> UUID | None:
+        self._resumo_cache.pop(atendimento_id, None)
+        return await self._queue_store.concluir_atendimento(
+            atendimento_id,
+            auto_commit=auto_commit,
+        )
+
+    async def liberar_consulta_ativa_medico(self, medico_id: UUID) -> None:
+        await self._queue_store.liberar_consulta_ativa_medico(medico_id)
 
     async def atender_chamada(self, atendimento_id: UUID) -> None:
+        self._resumo_cache.pop(atendimento_id, None)
         await self._queue_store.atender_chamada(atendimento_id)
 
     async def listar_historico_paciente(
@@ -203,14 +229,36 @@ class IdentityDocumentDirectoryAdapter:
             if dto.paciente_data_nascimento
             else None
         )
+        ausentes = [
+            campo
+            for campo, valor in (
+                ("organizacao_nome", dto.organizacao_nome),
+                ("medico_nome", dto.medico_nome),
+                ("medico_crm", dto.medico_crm),
+                ("medico_crm_uf", dto.medico_crm_uf),
+                ("paciente_nome", dto.paciente_nome),
+                ("paciente_cpf", dto.paciente_cpf),
+            )
+            if not valor or not str(valor).strip()
+        ]
+        if (
+            ausentes
+            or dto.medico_crm is None
+            or dto.medico_crm_uf is None
+            or dto.paciente_cpf is None
+        ):
+            raise DocumentoIntegridadeError(
+                f"Dados obrigatórios de diretório ausentes para médico '{medico_id}' e "
+                f"atendimento '{atendimento_id}': campos {ausentes}."
+            )
 
         return DadosVerificacaoDirectory(
-            organizacao_nome=dto.organizacao_nome,
-            medico_nome=dto.medico_nome,
-            medico_crm=dto.medico_crm or "00000",
-            medico_crm_uf=dto.medico_crm_uf or "BR",
-            paciente_nome=dto.paciente_nome,
-            paciente_cpf=dto.paciente_cpf or "000.000.000-00",
+            organizacao_nome=dto.organizacao_nome.strip(),
+            medico_nome=dto.medico_nome.strip(),
+            medico_crm=dto.medico_crm.strip(),
+            medico_crm_uf=dto.medico_crm_uf.strip(),
+            paciente_nome=dto.paciente_nome.strip(),
+            paciente_cpf=dto.paciente_cpf.strip(),
             organizacao_cnpj=dto.organizacao_cnpj,
             paciente_data_nascimento=nasc_str,
             paciente_endereco=dto.paciente_endereco,
@@ -241,13 +289,18 @@ class AmbulatoryProducaoAdapter(ProducaoAmbulatorialPort):
     ) -> None:
         cnes_final = cnes
         if not cnes_final and self._directory is not None:
-            dados = None
-            with contextlib.suppress(Exception):
+            try:
                 dados = await self._directory.obter_dados_verificacao(
                     medico_id=profissional_id,
                     atendimento_id=atendimento_id,
                 )
-            cnes_final = getattr(dados, "cnes", None)
+                cnes_final = dados.cnes
+            except Exception as exc:
+                logger.warning(
+                    "Falha ao obter CNES do diretório para atendimento '%s': %s",
+                    atendimento_id,
+                    exc,
+                )
 
         cnes_final = cnes_final or "0000000"
 
@@ -259,7 +312,7 @@ class AmbulatoryProducaoAdapter(ProducaoAmbulatorialPort):
             codigo_sigtap=codigo_sigtap,
             carater_atendimento=carater_atendimento,
         )
-        await self._producao_service.consolidar_teleconsulta(cmd)
+        await self._producao_service.consolidar_teleconsulta(cmd, auto_commit=False)
 
 
 @lru_cache(maxsize=1)
@@ -286,10 +339,17 @@ def get_pdf_generator() -> PDFGeneratorPort:
 
 
 def get_signer() -> ICPBrasilSignerPort:
-    """Provide ICP-Brasil PAdES signer adapter."""
+    """Provide ICP-Brasil PAdES signer adapter with injected PSC endpoints."""
     settings = get_settings()
     allow_fake = settings.ENVIRONMENT != "production" or settings.DEBUG
-    return PyHankoSigner(allow_fake=allow_fake)
+    psc_client = CloudPSCOAuth2Client(
+        provider_endpoints={
+            "birdid": settings.PSC_BIRDID_ENDPOINT,
+            "safeid": settings.PSC_SAFEID_ENDPOINT,
+            "vidaas": settings.PSC_VIDAAS_ENDPOINT,
+        }
+    )
+    return PyHankoSigner(psc_client=psc_client, allow_fake=allow_fake)
 
 
 @lru_cache(maxsize=1)
@@ -301,10 +361,16 @@ def get_signed_cache() -> SignedCachePort:
     return ValkeySignedCache()
 
 
-def get_atendimento_reader(session: DbSessionDep) -> AtendimentoReaderPort:
-    """Provide attendance reader adapting QueueStorePort with ORM models."""
+def build_atendimento_reader_for_session(
+    session: AsyncSession,
+    valkey: Redis | None = None,
+) -> AtendimentoReaderPort:
+    """Build attendance reader adapting QueueStorePort with optional Valkey client."""
     try:
-        queue_store: QueueStorePort = build_fila_service_for_session(session=session)
+        queue_store: QueueStorePort = build_fila_service_for_session(
+            session=session,
+            valkey=valkey,
+        )
         return QueueStoreAtendimentoReaderAdapter(queue_store)
     except Exception as exc:
         logger.warning(
@@ -315,13 +381,34 @@ def get_atendimento_reader(session: DbSessionDep) -> AtendimentoReaderPort:
         return SqlAtendimentoReader(session)
 
 
+def get_atendimento_reader(
+    session: DbSessionDep,
+    valkey: Annotated[Redis | None, Depends(get_valkey_client)] = None,
+) -> AtendimentoReaderPort:
+    """Provide attendance reader adapting QueueStorePort with ORM models."""
+    return build_atendimento_reader_for_session(session=session, valkey=valkey)
+
+
+def get_doctor_presence_registrar(valkey: ValkeyDep) -> QueueEnginePort:
+    """Provide QueueEnginePort for registering connected doctors on WS connect."""
+    return build_doctor_presence_engine(valkey=valkey)
+
+
+DoctorPresenceDep = Annotated[QueueEnginePort, Depends(get_doctor_presence_registrar)]
+
+
 def get_document_directory(session: DbSessionDep) -> DocumentDirectoryPort:
     """Provide directory adapter using identity and queue ORM ports."""
     try:
         identity_reader: IdentityReaderPort = get_identity_reader(session)
         queue_store: QueueStorePort = build_fila_service_for_session(session=session)
         return IdentityDocumentDirectoryAdapter(identity_reader, queue_store)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Falha ao instanciar IdentityDocumentDirectoryAdapter, "
+            "usando fallback SqlDocumentDirectory: %s",
+            exc,
+        )
         return SqlDocumentDirectory(session)
 
 
@@ -349,33 +436,60 @@ def get_liveness_verifier(valkey: Redis | None = None) -> LivenessVerificationPo
     )
 
 
-def get_documento_service(
-    session: DbSessionDep,
-    valkey: Annotated[Redis | None, Depends(get_valkey_client)] = None,
-) -> DocumentoService:
-    """Build DocumentoService owning emitir/compilar/assinar canonical keys."""
-    return DocumentoService(
+def build_pdf_compiler_for_session(
+    session: AsyncSession,
+    pdf_generator: PDFGeneratorPort | None = None,
+    storage: StoragePort | None = None,
+    document_directory: DocumentDirectoryPort | None = None,
+) -> ClinicalPdfCompiler:
+    """Build ClinicalPdfCompiler without Signer/Liveness overhead (ADR-001/006)."""
+    return ClinicalPdfCompiler(
         session=session,
-        pdf_generator=get_pdf_generator(),
-        signer=get_signer(),
-        storage=get_storage(),
-        cache=get_signed_cache(),
-        atendimento_reader=get_atendimento_reader(session),
-        directory=get_document_directory(session),
-        audit_trail=SqlAuditTrailAdapter(session),
-        liveness_verifier=get_liveness_verifier(valkey),
+        pdf_generator=pdf_generator
+        if pdf_generator is not None
+        else get_pdf_generator(),
+        storage=storage if storage is not None else get_storage(),
+        directory=(
+            document_directory
+            if document_directory is not None
+            else get_document_directory(session)
+        ),
     )
 
 
-def get_evolucao_service(
+def get_documento_service(
     session: DbSessionDep,
-    reader: AtendimentoReaderPort | None = None,
-) -> EvolucaoService:
-    """Build EvolucaoService owning SOAP persistence with terminal guard."""
-    return EvolucaoService(
+    reader: Annotated[
+        AtendimentoReaderPort | None, Depends(get_atendimento_reader)
+    ] = None,
+    valkey: Annotated[Redis | None, Depends(get_valkey_client)] = None,
+) -> DocumentoService:
+    """Build DocumentoService owning emitir/compilar/assinar canonical keys."""
+    resolved_reader = (
+        reader
+        if reader is not None
+        else build_atendimento_reader_for_session(session=session, valkey=valkey)
+    )
+    directory = get_document_directory(session)
+    pdf_gen = get_pdf_generator()
+    stor = get_storage()
+    compiler = build_pdf_compiler_for_session(
         session=session,
-        reader=reader if reader is not None else get_atendimento_reader(session),
+        pdf_generator=pdf_gen,
+        storage=stor,
+        document_directory=directory,
+    )
+    return DocumentoService(
+        session=session,
+        pdf_generator=pdf_gen,
+        signer=get_signer(),
+        storage=stor,
+        cache=get_signed_cache(),
+        atendimento_reader=resolved_reader,
+        directory=directory,
         audit_trail=SqlAuditTrailAdapter(session),
+        liveness_verifier=get_liveness_verifier(valkey),
+        pdf_compiler=compiler,
     )
 
 
@@ -387,30 +501,33 @@ def build_pep_service_for_session(
     atendimento_reader: AtendimentoReaderPort | None = None,
     document_directory: DocumentDirectoryPort | None = None,
     pdf_generator: PDFGeneratorPort | None = None,
-    signer: ICPBrasilSignerPort | None = None,
     storage: StoragePort | None = None,
-    signed_cache: SignedCachePort | None = None,
-    evolucao_service: EvolucaoService | None = None,
-    documento_service: DocumentoService | None = None,
+    pdf_compiler: ClinicalPdfCompiler | None = None,
     audit_trail: AuditTrailPort | None = None,
     producao_port: ProducaoAmbulatorialPort | None = None,
-    liveness_verifier: LivenessVerificationPort | None = None,
+    valkey: Redis | None = None,
 ) -> PEPService:
-    """Build PEPService with all mandatory ports wired (outside request scope)."""
+    """Build deep PEPService without Signer/Liveness dependencies."""
     reader = (
         atendimento_reader
         if atendimento_reader is not None
-        else get_atendimento_reader(session)
+        else build_atendimento_reader_for_session(session, valkey=valkey)
     )
     directory = (
         document_directory
         if document_directory is not None
         else get_document_directory(session)
     )
-    pdf_gen = pdf_generator if pdf_generator is not None else get_pdf_generator()
-    sig = signer if signer is not None else get_signer()
-    stor = storage if storage is not None else get_storage()
-    cache = signed_cache if signed_cache is not None else get_signed_cache()
+    compiler = (
+        pdf_compiler
+        if pdf_compiler is not None
+        else build_pdf_compiler_for_session(
+            session=session,
+            pdf_generator=pdf_generator,
+            storage=storage,
+            document_directory=directory,
+        )
+    )
     audit = audit_trail if audit_trail is not None else SqlAuditTrailAdapter(session)
 
     prod_port = (
@@ -425,42 +542,10 @@ def build_pep_service_for_session(
         )
     )
 
-    doc_svc = (
-        documento_service
-        if documento_service is not None
-        else DocumentoService(
-            session=session,
-            pdf_generator=pdf_gen,
-            signer=sig,
-            storage=stor,
-            cache=cache,
-            atendimento_reader=reader,
-            directory=directory,
-            audit_trail=audit,
-            liveness_verifier=(
-                liveness_verifier
-                if liveness_verifier is not None
-                else get_liveness_verifier()
-            ),
-        )
-    )
-    ev_svc = (
-        evolucao_service
-        if evolucao_service is not None
-        else EvolucaoService(
-            session=session,
-            reader=reader,
-            audit_trail=audit,
-        )
-    )
     return PEPService(
         session=session,
-        pdf_generator=pdf_gen,
-        signer=sig,
-        storage=stor,
-        documento_service=doc_svc,
+        pdf_compiler=compiler,
         atendimento_reader=reader,
-        evolucao_service=ev_svc,
         audit_trail=audit,
         producao_port=prod_port,
     )
@@ -468,12 +553,16 @@ def build_pep_service_for_session(
 
 def get_pep_service(
     session: DbSessionDep,
+    reader: Annotated[
+        AtendimentoReaderPort | None, Depends(get_atendimento_reader)
+    ] = None,
     valkey: Annotated[Redis | None, Depends(get_valkey_client)] = None,
 ) -> PEPService:
-    """Build PEPService with all mandatory ports wired (no infra defaults)."""
+    """Build PEPService sharing request-scoped AtendimentoReaderPort."""
     return build_pep_service_for_session(
         session,
-        liveness_verifier=get_liveness_verifier(valkey),
+        atendimento_reader=reader,
+        valkey=valkey,
     )
 
 
@@ -495,20 +584,21 @@ ValidationRateLimiterDep = Annotated[
 
 def get_document_validation_service(
     session: DbSessionDep,
-    documento_service: Annotated[DocumentoService, Depends(get_documento_service)],
 ) -> DocumentValidationService:
-    """Build DocumentValidationService with directory, storage and PDF compiler."""
-    directory = (
-        documento_service.directory
-        if documento_service.directory is not None
-        else get_document_directory(session)
+    """Build DocumentValidationService directly on ClinicalPdfCompiler seam."""
+    directory = get_document_directory(session)
+    stor = get_storage()
+    compiler = build_pdf_compiler_for_session(
+        session=session,
+        storage=stor,
+        document_directory=directory,
     )
     return DocumentValidationService(
         session=session,
         directory=directory,
-        storage=documento_service.storage,
-        compilador_pdf=documento_service.compilar_pdf,
-        cache=documento_service.cache,
+        storage=stor,
+        compilador_pdf=compiler.compilar,
+        cache=get_signed_cache(),
     )
 
 

@@ -32,7 +32,7 @@ export function TaxasOperacionaisCard({ painel }: TaxasOperacionaisCardProps) {
             </span>
           </div>
           <span data-testid="taxa-no-show" className="text-lg font-bold text-foreground">
-            {painel ? `${(painel.no_show_rate * 100).toFixed(1)}%` : "0.0%"}
+            {painel ? `${painel.no_show_rate.toFixed(1)}%` : "0.0%"}
           </span>
         </div>
 
@@ -46,7 +46,7 @@ export function TaxasOperacionaisCard({ painel }: TaxasOperacionaisCardProps) {
             </span>
           </div>
           <span data-testid="taxa-evasao" className="text-lg font-bold text-foreground">
-            {painel ? `${(painel.evasao_rate * 100).toFixed(1)}%` : "0.0%"}
+            {painel ? `${painel.evasao_rate.toFixed(1)}%` : "0.0%"}
           </span>
         </div>
       </CardContent>

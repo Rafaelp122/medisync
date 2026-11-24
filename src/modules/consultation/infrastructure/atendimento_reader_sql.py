@@ -73,7 +73,12 @@ class SqlAtendimentoReader:
             criado_em=row.get("criado_em"),
         )
 
-    async def concluir_atendimento(self, atendimento_id: UUID) -> None:
+    async def concluir_atendimento(
+        self,
+        atendimento_id: UUID,
+        *,
+        auto_commit: bool = True,
+    ) -> UUID | None:
         await self._session.execute(
             text(
                 "UPDATE atendimentos SET status = 'CONCLUIDO', "
@@ -82,7 +87,15 @@ class SqlAtendimentoReader:
             ),
             {"id": atendimento_id},
         )
-        await self._session.commit()
+        if auto_commit:
+            await self._session.commit()
+        else:
+            await self._session.flush()
+        return None
+
+    async def liberar_consulta_ativa_medico(self, medico_id: UUID) -> None:
+        """No-op fallback when SQL reader runs without Valkey queue engine."""
+        return None
 
     async def atender_chamada(self, atendimento_id: UUID) -> None:
         await self._session.execute(

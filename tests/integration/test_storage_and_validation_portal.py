@@ -260,3 +260,47 @@ async def test_validation_and_download_not_found(
     # Download invalid token format
     resp4 = await client.get("/api/v1/documents/download/invalid-token-123")
     assert resp4.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_validation_portal_pos_24h_cache_miss_usa_postgres_como_autoridade(
+    db_session: AsyncSession,
+    async_client: AsyncClient,
+) -> None:
+    """After cache eviction (>24h TTL), /validate still sees ASSINADO from DB."""
+    cenario = await seed_clinical_scenario(
+        db_session,
+        unidade_cnpj="99888777000196",
+        paciente_cpf="44455566688",
+        medico_cpf="88899900022",
+        medico_email="dr.pos24h@telemed.com.br",
+    )
+    doc_id = uuid7()
+    s3_key = f"consultations/{cenario.atendimento.id}/documents/{doc_id}.pdf"
+    doc = make_documento_clinico(
+        cenario.atendimento.id,
+        cenario.medico.id,
+        chave_s3=s3_key,
+        sha256_hash="f" * 64,
+        assinado_em=datetime.now(UTC),
+        id=doc_id,
+    )
+    item = make_documento_item(doc.id, medicamento="Dipirona 500mg")
+    db_session.add_all([doc, item])
+    await db_session.commit()
+
+    cache = get_signed_cache()
+    assinados_mem = getattr(cache, "_assinados", None)
+    if isinstance(assinados_mem, set):
+        cast("set[UUID]", assinados_mem).discard(doc_id)
+    valkey_client = getattr(cache, "_valkey", None)
+    if valkey_client is not None:
+        await valkey_client.delete(f"doc_assinado:{doc_id}")
+
+    val_resp = await async_client.get(f"/api/v1/documents/validate/{doc_id}")
+    assert val_resp.status_code == 200
+    body = cast("dict[str, object]", val_resp.json())
+    assert body["status_documento"] == "ASSINADO"
+    assert body["assinatura_digital_valida"] is True
+    assert body["conformidade_icp_brasil"] is True
+    assert await cache.is_assinado(doc_id) is True

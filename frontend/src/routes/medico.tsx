@@ -1,44 +1,51 @@
-import { createRoute, redirect } from "@tanstack/react-router";
-import { silentRefreshToken } from "@/api/client";
-import { DoctorWorkstationPage } from "@/features/consultation/pages/doctor-workstation-page";
-import { ProfessionalSchedulePanel } from "@/features/scheduling/components/professional-schedule-panel";
+import { createRoute, lazyRouteComponent, redirect } from "@tanstack/react-router";
+import { Suspense } from "react";
+import { RoutePendingFallback } from "@/components/route-fallbacks";
 import { ClinicalPageLayout } from "@/layouts/clinical-page-layout";
-import { getAccessToken } from "@/lib/auth-token";
-import {
-  clearStoredDoctorSession,
-  getStoredDoctorSession,
-  type StoredDoctorSession,
-} from "@/lib/session-storage";
+import type { StoredDoctorSession } from "@/lib/session-storage";
+import { sessionTransport } from "@/lib/session-transport";
 import { rootRoute } from "./root";
+
+const LazyDoctorWorkstationPage = lazyRouteComponent(
+  () => import("@/features/consultation/pages/doctor-workstation-page"),
+  "DoctorWorkstationPage",
+);
+
+const LazyProfessionalSchedulePanel = lazyRouteComponent(
+  () => import("@/features/scheduling/components/professional-schedule-panel"),
+  "ProfessionalSchedulePanel",
+);
 
 export const medicoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/medico",
   beforeLoad: async () => {
-    const doctorSession = getStoredDoctorSession();
-    if (!doctorSession) {
-      throw redirect({ to: "/interno/login" });
-    }
-    if (!getAccessToken()) {
-      await silentRefreshToken();
-      if (!getAccessToken()) {
-        clearStoredDoctorSession();
+    try {
+      const staff = await sessionTransport.ensureStaffSession("MEDICO");
+      if (staff.role !== "MEDICO") {
         throw redirect({ to: "/interno/login" });
       }
+      return { doctorSession: staff.doctorSession };
+    } catch {
+      throw redirect({ to: "/interno/login" });
     }
-    return { doctorSession };
   },
   component: function RouteComponent() {
     const { doctorSession } = medicoRoute.useRouteContext() as {
       doctorSession: StoredDoctorSession;
     };
-    const token = getAccessToken() ?? undefined;
     return (
       <ClinicalPageLayout subtitle="Estação Clínica do Profissional de Saúde">
-        <DoctorWorkstationPage
-          doctorSession={doctorSession}
-          renderSchedulePanel={<ProfessionalSchedulePanel token={token} />}
-        />
+        <Suspense fallback={<RoutePendingFallback />}>
+          <LazyDoctorWorkstationPage
+            doctorSession={doctorSession}
+            renderSchedulePanel={(onAtendimentoIniciado) => (
+              <Suspense fallback={<RoutePendingFallback />}>
+                <LazyProfessionalSchedulePanel onAtendimentoIniciado={onAtendimentoIniciado} />
+              </Suspense>
+            )}
+          />
+        </Suspense>
       </ClinicalPageLayout>
     );
   },

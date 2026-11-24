@@ -16,21 +16,21 @@
 
 **Como** médico plantonista (Dr. Eduardo Rocha),  
 **Quero** acompanhar o painel operacional de telemetria durante o plantão,  
-**Para que** eu tenha visibilidade da carga da fila, tempos médios de espera e alinhamento assistencial com as metas da unidade, sem permissão para alterar as políticas de capacidade da organização.
+**Para que** eu tenha visibilidade da carga da fila, tempos médios de espera e alinhamento assistencial com as metas da unidade, sem permissão para alterar as políticas de capacidade da unidade.
 
 ---
 
 ## 2. Critérios de Aceite Formais (Gherkin)
 
-### Cenário 1: Consulta do Painel no Dashboard Gerencial (`/gestor`) (Caso Feliz - Issue #141)
+### Cenário 1: Consulta do Painel no Dashboard Gerencial (`/gestor`) (Caso Feliz - Issue #141 / #167)
 - **Dado que** o plantão possui atendimentos em andamento, concluídos e ausências registradas,
-- **E** o gestor acessa a rota protegida `/gestor` (`frontend/src/routes/gestor.tsx`) com sessão corporativa sem tokens em storage (Issue #144), access token mantido exclusivamente em memória volátil e reidratado via cookie HttpOnly silencioso no F5 (caso contrário o guard `beforeLoad` redireciona para `/interno/login`),
-- **Quando** o painel operacional consulta `GET /api/v1/telemetria/painel`,
+- **E** o **Gestor da Unidade** (`Role.GESTOR_UNIDADE`) acessa a rota protegida `/gestor` (`frontend/src/routes/gestor.tsx`) via `SessionTransport.ensureStaffSession("GESTOR_UNIDADE")`, mantendo o access token exclusivamente em memória privada e reidratando-o via cookie HttpOnly silencioso no F5 (caso contrário redireciona para `/interno/login`),
+- **Quando** a subárvore `PainelMetricasAoVivo` (`frontend/src/features/telemetry/components/painel/painel-metricas-ao-vivo.tsx`) consulta `GET /api/v1/telemetria/painel` via hook compartilhado `usePainelTelemetria` (`frontend/src/api/hooks/use-painel-telemetria.ts`),
 - **Então** o sistema apresenta os indicadores consolidados de desempenho:
   1. Tempo Médio de Espera (TME) geral e estratificado pelos 5 níveis de triagem;
-  2. Tempo Médio de Atendimento (TMA) real geral e detalhado por médico plantonista;
+  2. Tempo Médio de Atendimento (TMA) real geral (com fallback de meta padrão de `600s` quando sem configuração prévia) e detalhado por médico plantonista;
   3. Índice percentual de cumprimento de SLA da unidade ($\ge 95\%$);
-  4. Índices percentuais de ausência (no-show) e de desistências voluntárias;
+  4. Índices percentuais de ausência (no-show) e de desistências voluntárias exibidos diretamente na escala `0..100` em `TaxasOperacionaisCard`, além de **"Cota Livre SUS"** quando sem limite diário;
 - **E** responde com tempo de resposta em tempo hábil para monitoramento operacional (< 100ms em cache).
 
 ### Cenário 2: Verificação do indicador de conformidade de SLA (Meta SMART 1)
@@ -52,28 +52,34 @@
 ## 3. Contrato de API
 
 * **Endpoint:** `GET /api/v1/telemetria/painel`
-* **Headers:** `Authorization: Bearer <jwt_gestor_ou_medico>`
-* **Resposta Esperada (`200 OK`):**
+* **Query Params:** `desconsiderar_cache` (`bool`, opcional, default `false`)
+* **Headers:** `Authorization: Bearer <jwt_gestor_ou_medico>` (`Role.GESTOR_UNIDADE` ou `Role.MEDICO`)
+* **Resposta Esperada (`200 OK` — `PainelTelemetriaResponse`):**
   ```json
   {
-    "data_referencia": "2026-10-17",
-    "total_atendimentos_dia": 42,
-    "tme_geral_segundos": 412,
-    "tme_por_nivel": {
-      "1": 45,
-      "2": 180,
-      "3": 450,
-      "4": 920,
-      "5": 1200
-    },
-    "tma_medio_segundos": 780,
-    "tma_por_medico": {
-      "018f3a5b-...": 750
-    },
-    "sla_cumprimento_percentual": 96.5,
+    "gerado_em": "2026-11-23T13:00:00Z",
+    "tme_medio_segundos": 412.0,
+    "tme_nivel_1_segundos": 45.0,
+    "tme_nivel_2_segundos": 180.0,
+    "tme_nivel_3_segundos": 450.0,
+    "tme_nivel_4_segundos": 920.0,
+    "tme_nivel_5_segundos": 1200.0,
+    "tma_medio_segundos": 780.0,
+    "medicos_tma": [
+      {
+        "medico_id": "018f3a5b-0000-7000-8000-000000000001",
+        "nome": "Dr. Eduardo Rocha",
+        "total_atendimentos": 12,
+        "tma_segundos": 750.0
+      }
+    ],
+    "no_show_rate": 4.76,
+    "evasao_rate": 1.2,
+    "sla_compliance_percentual": 96.5,
     "sla_em_conformidade": true,
-    "total_no_shows": 2,
-    "taxa_no_show_percentual": 4.76
+    "medicos_ativos_count": 3,
+    "total_pacientes_fila": 4,
+    "total_atendimentos": 42
   }
   ```
 
@@ -81,13 +87,13 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Read Model Desacoplado:** Leitor puro SQL com queries agregadas assíncronas (`src/modules/telemetry/infrastructure/telemetry_reader_sql.py`).
-- [x] **Cache Volátil no Valkey:** Caching de telemetria para garantir alta performance sem onerar o Postgres (`src/modules/telemetry/application/services/telemetry_service.py`).
-- [x] **Ajuste de TTL (NC-TEL-01):** Reduzir `_CACHE_TTL_SEGUNDOS` de 15s para 5s via injeção IoC (ADR-009) para cumprir RNF-10 e Meta SMART 5 (Resolvido na Issue #76).
+- [x] **Read Model Desacoplado:** `TelemetryReaderPort` com método único `obter_painel_telemetria(config, data_inicio)` (`src/modules/telemetry/application/ports/telemetry_reader_port.py`) e leitor SQL `SqlTelemetryReader` reutilizando `config.obter_sla_segundos(1..5)` (`src/modules/telemetry/infrastructure/telemetry_reader_sql.py`).
+- [x] **Cache Volátil no Valkey:** `ValkeyTelemetryCache` (`src/modules/telemetry/infrastructure/valkey_telemetry_cache.py`) serializa `PainelTelemetriaDTO` via Pydantic `TypeAdapter` sob a chave `telemetry:painel` com TTL de 5s (`TelemetryService.obter_painel`).
+- [x] **Ajuste de TTL (NC-TEL-01):** TTL de 5s via injeção IoC (ADR-009) para cumprir RNF-10 e Meta SMART 5 (Resolvido na Issue #76).
 - [x] **Acesso Clínico ao Painel (NC-TEL-02):** Dependência `require_telemetry_view_auth` permitindo `Role.MEDICO` e `Role.GESTOR_UNIDADE` no `GET /painel`, mantendo `config-plantao` restrito à gestão (`src/modules/telemetry/presentation/dependencies.py`).
 - [x] **Segurança e Singleton Operacional (NC-SEC-01 / ADR-013):** Tabela singleton `configuracoes_plantao` (`singleton_guard IS TRUE`) e controle RBAC sem bypass global validados na suíte de integração com PostgreSQL real (`tests/integration/test_migrations.py` e `tests/integration/test_telemetry_router.py`).
 - [x] **Apresentação:** Router fino `telemetry_router.py` montado em `/api/v1/telemetria/painel`.
-- [x] **Frontend Rota & Painel Gestor (Issue #141 / Issue #144):** Rota declarativa `/gestor` (`frontend/src/routes/gestor.tsx`) com guard `beforeLoad` validando sessão de gestor e reidratação silenciosa de access token via cookie HttpOnly, sem persistência de credenciais em Web Storage.
+- [x] **Frontend Rota & Painel do Gestor da Unidade (Issue #141 / #144 / #167):** Rota `/gestor` (`frontend/src/routes/gestor.tsx`) validando papel `GESTOR_UNIDADE` via `SessionTransport` (`frontend/src/lib/session-transport.ts`), polling de 5s isolado em `PainelMetricasAoVivo` (`frontend/src/features/telemetry/components/painel/painel-metricas-ao-vivo.tsx`) consumindo `usePainelTelemetria` (`frontend/src/api/hooks/use-painel-telemetria.ts`) e fallback de `600s` sem re-renderizar `ConfigPlantaoCard` ou o slot BPA-I.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_telemetry_service.py`
   - `tests/unit/test_telemetry_infra.py`

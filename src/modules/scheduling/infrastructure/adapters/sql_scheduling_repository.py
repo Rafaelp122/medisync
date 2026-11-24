@@ -1,10 +1,11 @@
 """Adaptador SQLAlchemy 2.0 assíncrono para SchedulingRepositoryPort."""
 
+import hashlib
 from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.scheduling.application.ports.scheduling_repository_port import (
@@ -48,8 +49,13 @@ class SqlSchedulingRepository(SchedulingRepositoryPort):
         self,
         inicio: datetime,
         fim: datetime,
+        profissional_ids: Sequence[UUID],
     ) -> Sequence[Agendamento]:
+        ids_unicos = tuple(dict.fromkeys(profissional_ids))
+        if not ids_unicos:
+            return []
         stmt = select(Agendamento).where(
+            Agendamento.profissional_id.in_(ids_unicos),
             Agendamento.status.notin_(_STATUS_INATIVOS_STR),
             Agendamento.slot_inicio < fim,
             Agendamento.slot_fim > inicio,
@@ -62,11 +68,21 @@ class SqlSchedulingRepository(SchedulingRepositoryPort):
         profissional_id: UUID,
         slot_inicio: datetime,
         slot_fim: datetime,
+        *,
+        paciente_id: UUID | None = None,
     ) -> Agendamento | None:
+        criterio_sujeito = (
+            or_(
+                Agendamento.profissional_id == profissional_id,
+                Agendamento.paciente_id == paciente_id,
+            )
+            if paciente_id is not None
+            else Agendamento.profissional_id == profissional_id
+        )
         stmt = (
             select(Agendamento)
             .where(
-                Agendamento.profissional_id == profissional_id,
+                criterio_sujeito,
                 Agendamento.status.notin_(_STATUS_INATIVOS_STR),
                 Agendamento.slot_inicio < slot_fim,
                 Agendamento.slot_fim > slot_inicio,
@@ -75,6 +91,29 @@ class SqlSchedulingRepository(SchedulingRepositoryPort):
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    @staticmethod
+    def _calcular_chave_lock_disponibilidade(
+        profissional_id: UUID, dia_semana: int
+    ) -> int:
+        digest = hashlib.blake2b(
+            f"agenda_disp:{profissional_id}:{dia_semana}".encode(),
+            digest_size=8,
+        ).digest()
+        return int.from_bytes(digest, byteorder="big", signed=True)
+
+    async def adquirir_lock_disponibilidade(
+        self,
+        profissional_id: UUID,
+        dia_semana: int,
+    ) -> None:
+        lock_key = self._calcular_chave_lock_disponibilidade(
+            profissional_id, dia_semana
+        )
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(CAST(:lock_key AS bigint))"),
+            {"lock_key": lock_key},
+        )
 
     async def buscar_disponibilidade_profissional(
         self,

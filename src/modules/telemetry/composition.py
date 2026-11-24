@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.database import DbSessionDep
-from src.core.dependencies import ValkeyDep
+from src.core.valkey import ValkeyDep
+from src.modules.telemetry.application.dtos import PoliticaPlantaoSnapshotDTO
 from src.modules.telemetry.application.ports.telemetry_cache_port import (
     TelemetryCachePort,
 )
@@ -101,3 +102,19 @@ def get_config_plantao_service(
 ConfigPlantaoServiceDep = Annotated[
     ConfigPlantaoService, Depends(get_config_plantao_service)
 ]
+
+
+async def ler_politica_plantao_snapshot(
+    session: AsyncSession,
+) -> PoliticaPlantaoSnapshotDTO:
+    """Read shift operational parameters without mutating state when absent."""
+    repo = SqlConfigPlantaoRepository(session)
+    config = await repo.obter_atual()
+    if config is None:
+        return PoliticaPlantaoSnapshotDTO()
+    return PoliticaPlantaoSnapshotDTO(
+        alpha_backpressure=float(config.alpha_backpressure),
+        cota_diaria_maxima=config.cota_diaria_maxima,
+        tma_padrao_segundos=config.tma_padrao_segundos,
+        tempo_tolerancia_ring_segundos=config.tempo_tolerancia_ring_segundos,
+    )

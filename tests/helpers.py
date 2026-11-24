@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
-from unittest.mock import AsyncMock
 
 from sqlalchemy import text
 from src.core.config import get_settings
-from src.core.database import engine
+from src.core.database import get_engine
 
 if TYPE_CHECKING:
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
     from src.modules.auth.application.services.auth_service import AuthService
+    from src.modules.consultation.application.services.documento_service import (
+        DocumentoService,
+    )
     from src.modules.consultation.application.services.pep_service import PEPService
     from src.modules.queue.application.services.alocacao_service import (
         AlocacaoChamadaService,
@@ -32,7 +34,7 @@ CLEAN_TABLES_SQL = text(
 
 async def clean_database_tables() -> None:
     """Safely truncate all domain tables respecting foreign keys."""
-    async with engine.begin() as conn:
+    async with get_engine().begin() as conn:
         await conn.execute(CLEAN_TABLES_SQL)
 
 
@@ -40,9 +42,9 @@ DEFAULT_VALKEY_TEST_PATTERNS: tuple[str, ...] = (
     "fila:*",
     "lock:*",
     "plantao:*",
+    "queue:*",
     "cota:*",
     "arq:*",
-    "test_org:*",
     "auth:ratelimit:*",
     "otp:*",
     "ratelimit:otp:*",
@@ -83,15 +85,19 @@ def auth_headers(papel: str, usuario_id: UUID) -> dict[str, str]:
 
 
 def make_auth_service(session: AsyncSession, **overrides: Any) -> AuthService:
-    """Build AuthService with AsyncMock fakes unless overridden."""
+    """Build AuthService with named fakes unless overridden."""
+    from src.core.authz.revocation import MemoryTokenRevocation
     from src.modules.auth.application.services.auth_service import AuthService
-    from src.modules.auth.infrastructure.valkey_token_revocation import (
-        MemoryTokenRevocation,
-    )
+    from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
+    from src.modules.auth.infrastructure.valkey_rate_limiter import FakeAuthRateLimiter
 
-    hasher: Any = overrides.get("hasher", AsyncMock())
-    token_service: Any = overrides.get("token_service", AsyncMock())
-    rate_limiter: Any = overrides.get("rate_limiter", AsyncMock())
+    from tests.doubles import FakePasswordHasher
+
+    hasher: Any = overrides.get("hasher", FakePasswordHasher())
+    token_service: Any = overrides.get(
+        "token_service", JWTTokenService(secret_key=get_settings().JWT_SECRET_KEY)
+    )
+    rate_limiter: Any = overrides.get("rate_limiter", FakeAuthRateLimiter())
     revocation: Any = overrides.get("revocation", MemoryTokenRevocation())
     return AuthService(
         session=session,
@@ -102,89 +108,131 @@ def make_auth_service(session: AsyncSession, **overrides: Any) -> AuthService:
     )
 
 
-def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
-    """Build PEPService with AsyncMock fakes unless overridden."""
+def _resolve_consultation_reader(
+    session: AsyncSession,
+    atendimento_reader: Any,
+) -> Any:
+    if atendimento_reader is not None:
+        return atendimento_reader
+    from tests.doubles import FakeAsyncSession, FakeAtendimentoReader
+
+    if isinstance(session, FakeAsyncSession):
+        return FakeAtendimentoReader()
+    from src.modules.consultation.composition import QueueStoreAtendimentoReaderAdapter
+    from src.modules.queue.composition import build_fila_service_for_session
+
+    queue_store: Any = build_fila_service_for_session(session=session)
+    return QueueStoreAtendimentoReaderAdapter(queue_store)
+
+
+def make_documento_service(session: AsyncSession, **overrides: Any) -> DocumentoService:
+    """Build DocumentoService with named fakes unless overridden."""
+    from src.modules.consultation.application.services.clinical_pdf_compiler import (
+        ClinicalPdfCompiler,
+    )
     from src.modules.consultation.application.services.documento_service import (
         DocumentoService,
     )
-    from src.modules.consultation.application.services.evolucao_service import (
-        EvolucaoService,
-    )
-    from src.modules.consultation.application.services.pep_service import PEPService
     from src.modules.consultation.infrastructure.memory_signed_cache import (
         MemorySignedCache,
     )
 
-    pdf_generator: Any = overrides.get("pdf_generator", AsyncMock())
-    signer: Any = overrides.get("signer", AsyncMock())
-    storage: Any = overrides.get("storage", AsyncMock())
+    from tests.doubles import (
+        FakeDocumentDirectory,
+        FakeICPBrasilSigner,
+        FakeMemoryStorage,
+        FakePDFGenerator,
+    )
+
+    pdf_generator: Any = overrides.get("pdf_generator", FakePDFGenerator())
+    signer: Any = overrides.get("signer", FakeICPBrasilSigner())
+    storage: Any = overrides.get("storage", FakeMemoryStorage())
     cache: Any = overrides.get("cache", MemorySignedCache())
-    atendimento_reader: Any = overrides.get("atendimento_reader")
-    if atendimento_reader is None:
-        if isinstance(session, AsyncMock):
-            atendimento_reader = AsyncMock()
-            atendimento_reader.obter_resumo.return_value = None
-        else:
-            from src.modules.consultation.composition import (
-                QueueStoreAtendimentoReaderAdapter,
-            )
-            from src.modules.queue.composition import build_fila_service_for_session
-
-            queue_store: Any = build_fila_service_for_session(session=session)
-            atendimento_reader = QueueStoreAtendimentoReaderAdapter(queue_store)
-
-    audit_trail: Any = overrides.get("audit_trail")
-    producao_port: Any = overrides.get("producao_port")
-    liveness_verifier: Any = overrides.get("liveness_verifier")
-    documento_service: Any = overrides.get("documento_service")
-    if documento_service is None:
-        directory: Any = overrides.get("directory")
-        documento_service = DocumentoService(
-            session=session,
-            pdf_generator=pdf_generator,
-            signer=signer,
-            storage=storage,
-            cache=cache,
-            atendimento_reader=atendimento_reader,
-            directory=directory,
-            audit_trail=audit_trail,
-            liveness_verifier=liveness_verifier,
-        )
-    evolucao_service: Any = overrides.get("evolucao_service")
-    if evolucao_service is None:
-        evolucao_service = EvolucaoService(
-            session=session,
-            reader=atendimento_reader,
-            audit_trail=audit_trail,
-        )
-    return PEPService(
+    directory: Any = overrides.get("directory")
+    if directory is None and "directory" not in overrides:
+        directory = FakeDocumentDirectory()
+    atendimento_reader = _resolve_consultation_reader(
+        session, overrides.get("atendimento_reader")
+    )
+    pdf_compiler: Any = overrides.get("pdf_compiler") or ClinicalPdfCompiler(
+        session=session,
+        pdf_generator=pdf_generator,
+        storage=storage,
+        directory=directory,
+    )
+    return DocumentoService(
         session=session,
         pdf_generator=pdf_generator,
         signer=signer,
         storage=storage,
-        documento_service=documento_service,
+        cache=cache,
         atendimento_reader=atendimento_reader,
-        evolucao_service=evolucao_service,
-        audit_trail=audit_trail,
-        producao_port=producao_port,
+        directory=directory,
+        audit_trail=overrides.get("audit_trail"),
+        liveness_verifier=overrides.get("liveness_verifier"),
+        pdf_compiler=pdf_compiler,
+    )
+
+
+def make_pep_service(session: AsyncSession, **overrides: Any) -> PEPService:
+    """Build deep PEPService with ClinicalPdfCompiler and named fakes."""
+    from src.modules.consultation.application.services.clinical_pdf_compiler import (
+        ClinicalPdfCompiler,
+    )
+    from src.modules.consultation.application.services.pep_service import PEPService
+
+    from tests.doubles import (
+        FakeDocumentDirectory,
+        FakeMemoryStorage,
+        FakePDFGenerator,
+    )
+
+    pdf_generator: Any = overrides.get("pdf_generator", FakePDFGenerator())
+    storage: Any = overrides.get("storage", FakeMemoryStorage())
+    directory: Any = overrides.get("directory")
+    if directory is None and "directory" not in overrides:
+        directory = FakeDocumentDirectory()
+    atendimento_reader = _resolve_consultation_reader(
+        session, overrides.get("atendimento_reader")
+    )
+    pdf_compiler: Any = overrides.get("pdf_compiler") or ClinicalPdfCompiler(
+        session=session,
+        pdf_generator=pdf_generator,
+        storage=storage,
+        directory=directory,
+    )
+    return PEPService(
+        session=session,
+        pdf_compiler=pdf_compiler,
+        atendimento_reader=atendimento_reader,
+        audit_trail=overrides.get("audit_trail"),
+        producao_port=overrides.get("producao_port"),
     )
 
 
 def make_alocacao(
     valkey: Any, db_session: AsyncSession, **overrides: Any
 ) -> AlocacaoChamadaService:
-    """Build AlocacaoChamadaService with AsyncMock Lua manager unless overridden."""
+    """Build AlocacaoChamadaService with FakeQueueEngine or ValkeyQueueEngine."""
     from src.modules.queue.application.services.alocacao_service import (
         AlocacaoChamadaService,
     )
+    from src.modules.queue.infrastructure.valkey_queue_engine import ValkeyQueueEngine
 
-    lua_manager: Any = overrides.get("lua_manager", AsyncMock())
+    from tests.doubles import FakeQueueEngine
+
+    queue_engine = overrides.get("queue_engine")
+    if queue_engine is None:
+        queue_engine = (
+            ValkeyQueueEngine(valkey=valkey)
+            if valkey is not None
+            else FakeQueueEngine()
+        )
     arq_pool: Any = overrides.get("arq_pool")
     notification_adapter: Any = overrides.get("notification_adapter")
     return AlocacaoChamadaService(
-        valkey=valkey,
+        queue_engine=queue_engine,
         db_session=db_session,
-        lua_manager=lua_manager,
         arq_pool=arq_pool,
         notification_adapter=notification_adapter,
     )
@@ -193,13 +241,27 @@ def make_alocacao(
 def make_fila_service(
     valkey: Any, db_session: AsyncSession, **overrides: Any
 ) -> FilaService:
-    """Build FilaService with AsyncMock collaborators unless overridden."""
+    """Build FilaService with FakeQueueEngine or real engine unless overridden."""
     from src.modules.queue.application.services.fila_service import FilaService
+    from src.modules.queue.infrastructure.valkey_queue_engine import ValkeyQueueEngine
 
-    alocacao_service: Any = overrides.get("alocacao_service", AsyncMock())
-    controle_admissao: Any = overrides.get("controle_admissao", AsyncMock())
-    return FilaService(
+    from tests.doubles import FakeQueueEngine
+
+    queue_engine = overrides.get("queue_engine")
+    if queue_engine is None:
+        queue_engine = (
+            ValkeyQueueEngine(valkey=valkey)
+            if valkey is not None
+            else FakeQueueEngine()
+        )
+    alocacao_service: Any = overrides.get("alocacao_service") or make_alocacao(
         valkey=valkey,
+        db_session=db_session,
+        queue_engine=queue_engine,
+    )
+    controle_admissao: Any = overrides.get("controle_admissao")
+    return FilaService(
+        queue_engine=queue_engine,
         db_session=db_session,
         alocacao_service=alocacao_service,
         controle_admissao=controle_admissao,

@@ -1,22 +1,30 @@
 """Unit tests for Clinical AI Governance under CFM nº 2.454/2026 and SIGTAP codes."""
 
 from typing import TYPE_CHECKING, cast
-from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
 from src.core.audit import AtorPapel, AtorTipo
-from src.core.errors import IANaoRatificadaError
 from src.modules.consultation.application.dtos import RegistrarEvolucaoSOAPCommand
 from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoResumoDTO,
 )
-from src.modules.consultation.application.services.evolucao_service import (
-    EvolucaoService,
+from src.modules.consultation.application.services.clinical_pdf_compiler import (
+    ClinicalPdfCompiler,
 )
+from src.modules.consultation.application.services.pep_service import PEPService
+from src.modules.consultation.domain.exceptions import IANaoRatificadaError
 from src.modules.consultation.domain.models import EvolucaoClinica
 
-from tests.doubles import FakeAsyncSession, FakeAuditTrail, FakeResult
+from tests.doubles import (
+    FakeAsyncSession,
+    FakeAtendimentoReader,
+    FakeAuditTrail,
+    FakeDocumentDirectory,
+    FakeMemoryStorage,
+    FakePDFGenerator,
+    FakeResult,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,15 +40,34 @@ def _make_resumo_nao_terminal(atendimento_id: UUID) -> AtendimentoResumoDTO:
     )
 
 
+def _make_pep(
+    session: FakeAsyncSession,
+    reader: FakeAtendimentoReader,
+    audit_trail: FakeAuditTrail | None = None,
+) -> PEPService:
+    typed_session = cast("AsyncSession", session)
+    compiler = ClinicalPdfCompiler(
+        session=typed_session,
+        pdf_generator=FakePDFGenerator(),
+        storage=FakeMemoryStorage(),
+        directory=FakeDocumentDirectory(),
+    )
+    return PEPService(
+        session=typed_session,
+        pdf_compiler=compiler,
+        atendimento_reader=reader,
+        audit_trail=audit_trail,
+    )
+
+
 @pytest.mark.asyncio
 async def test_evolucao_rejeita_ia_nao_ratificada() -> None:
-    session = AsyncMock()
-    reader = AsyncMock()
+    session = FakeAsyncSession()
     atendimento_id = uuid4()
     medico_id = uuid4()
-    reader.obter_resumo.return_value = _make_resumo_nao_terminal(atendimento_id)
+    reader = FakeAtendimentoReader(resumo=_make_resumo_nao_terminal(atendimento_id))
 
-    svc = EvolucaoService(session=session, reader=reader)
+    svc = _make_pep(session=session, reader=reader)
 
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
@@ -65,17 +92,12 @@ async def test_evolucao_rejeita_ia_nao_ratificada() -> None:
 @pytest.mark.asyncio
 async def test_evolucao_aceita_ia_ratificada_com_diff_automatico() -> None:
     session = FakeAsyncSession(results=[FakeResult(None)])
-    reader = AsyncMock()
     atendimento_id = uuid4()
     medico_id = uuid4()
-    reader.obter_resumo.return_value = _make_resumo_nao_terminal(atendimento_id)
+    reader = FakeAtendimentoReader(resumo=_make_resumo_nao_terminal(atendimento_id))
     fake_audit = FakeAuditTrail()
 
-    svc = EvolucaoService(
-        session=cast("AsyncSession", session),
-        reader=reader,
-        audit_trail=fake_audit,
-    )
+    svc = _make_pep(session=session, reader=reader, audit_trail=fake_audit)
 
     sugestao_bruta = "Conduta sugerida: Repouso e hidratação oral."
     conduta_final = (
@@ -104,7 +126,6 @@ async def test_evolucao_aceita_ia_ratificada_com_diff_automatico() -> None:
     assert "+++ plano_ratificado" in evolucao.ia_diff_modificacao
     assert evolucao.codigo_sigtap == "03.01.01.025-0"
 
-    # Verificação de registro forense na trilha de auditoria (CFM nº 2.454/2026)
     events = fake_audit.get_events_by_type("IA_DECISAO_MEDICA_REGISTRADA")
     assert len(events) == 1
     evt = events[0]
@@ -131,15 +152,10 @@ async def test_evolucao_update_com_ia_registra_evento_auditoria() -> None:
         conduta="Conduta inicial",
     )
     session = FakeAsyncSession(results=[FakeResult(existing)])
-    reader = AsyncMock()
-    reader.obter_resumo.return_value = _make_resumo_nao_terminal(atendimento_id)
+    reader = FakeAtendimentoReader(resumo=_make_resumo_nao_terminal(atendimento_id))
     fake_audit = FakeAuditTrail()
 
-    svc = EvolucaoService(
-        session=cast("AsyncSession", session),
-        reader=reader,
-        audit_trail=fake_audit,
-    )
+    svc = _make_pep(session=session, reader=reader, audit_trail=fake_audit)
 
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,
@@ -170,17 +186,12 @@ async def test_evolucao_update_com_ia_registra_evento_auditoria() -> None:
 @pytest.mark.asyncio
 async def test_evolucao_persiste_codigo_sigtap_customizado() -> None:
     session = FakeAsyncSession(results=[FakeResult(None)])
-    reader = AsyncMock()
     atendimento_id = uuid4()
     medico_id = uuid4()
-    reader.obter_resumo.return_value = _make_resumo_nao_terminal(atendimento_id)
+    reader = FakeAtendimentoReader(resumo=_make_resumo_nao_terminal(atendimento_id))
     fake_audit = FakeAuditTrail()
 
-    svc = EvolucaoService(
-        session=cast("AsyncSession", session),
-        reader=reader,
-        audit_trail=fake_audit,
-    )
+    svc = _make_pep(session=session, reader=reader, audit_trail=fake_audit)
 
     cmd = RegistrarEvolucaoSOAPCommand(
         atendimento_id=atendimento_id,

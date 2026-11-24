@@ -7,16 +7,13 @@ from arq.connections import create_pool
 from arq.worker import create_worker
 from httpx import ASGITransport, AsyncClient
 from src.core.config import get_settings
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.core.security import create_intake_token
 from src.main import app
 from src.modules.queue.application.dtos import AlocarChamadaCommand
-from src.modules.queue.application.services.alocacao_service import (
-    AlocacaoChamadaService,
-)
+from src.modules.queue.composition import build_alocacao_service_for_session
 from src.modules.queue.domain.models import Atendimento
 from src.modules.queue.domain.models.atendimento import StatusAtendimento
-from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 from src.worker.settings import WorkerSettings
 
 from tests.factories.scenarios import seed_clinical_scenario
@@ -27,7 +24,7 @@ pytestmark = pytest.mark.usefixtures("clean_db_and_valkey")
 @pytest.mark.asyncio
 async def test_end_to_end_ring_timeout_releases_locks_and_marks_no_show() -> None:
     """Worker resolves no-show, marks attendance absent and frees doctor immediately."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         cenario = await seed_clinical_scenario(
             session,
             status_atendimento=StatusAtendimento.CHAMANDO_PACIENTE,
@@ -64,7 +61,7 @@ async def test_end_to_end_ring_timeout_releases_locks_and_marks_no_show() -> Non
         assert worker.jobs_complete >= 1
 
         # 1. Verify PostgreSQL persistence: state must be PACIENTE_AUSENTE
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             refreshed = await session.get(Atendimento, atendimento.id)
             assert refreshed is not None
             assert refreshed.status == StatusAtendimento.PACIENTE_AUSENTE.value
@@ -82,7 +79,7 @@ async def test_end_to_end_ring_timeout_releases_locks_and_marks_no_show() -> Non
 @pytest.mark.asyncio
 async def test_end_to_end_answered_call_promotes_active_consultation_lock() -> None:
     """When patient answers in time, worker preserves call and promotes lock."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         cenario = await seed_clinical_scenario(
             session,
             status_atendimento=StatusAtendimento.EM_ATENDIMENTO,
@@ -118,7 +115,7 @@ async def test_end_to_end_answered_call_promotes_active_consultation_lock() -> N
         await worker.main()
 
         # 1. Verify PostgreSQL persistence: state must remain EM_ATENDIMENTO
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             refreshed = await session.get(Atendimento, atendimento.id)
             assert refreshed is not None
             assert refreshed.status == StatusAtendimento.EM_ATENDIMENTO.value
@@ -139,7 +136,7 @@ async def test_end_to_end_answered_call_promotes_active_consultation_lock() -> N
 @pytest.mark.asyncio
 async def test_alocar_chamada_schedules_arq_job_in_valkey() -> None:
     """alocar_chamada service schedules deferred job with deduplicated ID in Valkey."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         cenario = await seed_clinical_scenario(
             session,
             status_atendimento=StatusAtendimento.APTO_PARA_CHAMADA,
@@ -157,11 +154,10 @@ async def test_alocar_chamada_schedules_arq_job_in_valkey() -> None:
         k_fila = "fila:aptos"
         await pool.zadd(k_fila, {str(atendimento.id): 100.0})
 
-        async with async_session_factory() as session:
-            service = AlocacaoChamadaService(
+        async with get_session_factory()() as session:
+            service = build_alocacao_service_for_session(
                 valkey=pool,
-                db_session=session,
-                lua_manager=get_lua_script_manager(),
+                session=session,
                 arq_pool=pool,
             )
             cmd = AlocarChamadaCommand(
@@ -186,7 +182,7 @@ async def test_end_to_end_patient_livekit_token_issuance_prevents_noshow() -> No
 
     and locks promote, preventing false no-show when ring timeout worker fires.
     """
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         cenario = await seed_clinical_scenario(
             session,
             status_atendimento=StatusAtendimento.CHAMANDO_PACIENTE,
@@ -243,7 +239,7 @@ async def test_end_to_end_patient_livekit_token_issuance_prevents_noshow() -> No
 
         # Verify PostgreSQL persistence: state must remain EM_ATENDIMENTO
         # (NOT PACIENTE_AUSENTE)
-        async with async_session_factory() as session:
+        async with get_session_factory()() as session:
             refreshed = await session.get(Atendimento, atendimento.id)
             assert refreshed is not None
             assert refreshed.status == StatusAtendimento.EM_ATENDIMENTO.value

@@ -6,7 +6,7 @@ from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.modules.auth.domain.models import UsuarioCredencial
 from src.modules.auth.infrastructure.argon2_hasher import Argon2PasswordHasher
 from src.modules.identity.domain.models import (
@@ -22,7 +22,7 @@ logger = logging.getLogger("medisync.seed_dev")
 
 async def main() -> None:
     """Popula o banco local com a unidade singleton, pacientes e médico demo."""
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         # 1. Garante Configuração Singleton da Unidade SUS
         stmt_unidade = select(ConfiguracaoUnidade).limit(1)
         res_unidade = await session.execute(stmt_unidade)

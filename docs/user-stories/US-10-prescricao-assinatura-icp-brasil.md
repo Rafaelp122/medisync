@@ -47,15 +47,23 @@
 * **Finalização de Documento e Assinatura:** `POST /api/v1/consultations/{atendimento_id}/documents/{documento_id}/sign`
 * **Download Público de Documento:** `GET /api/v1/documents/download/{token_validacao}`
 * **Validação Pública de Autenticidade:** `GET /api/v1/documents/validate/{token_validacao}`
-  *Resposta (`200 OK`):*
+  *Resposta (`200 OK`, `ValidarDocumentoResponse` — mantendo campo `organizacao_nome` preenchido por `ConfiguracaoUnidade.nome_fantasia`):*
   ```json
   {
-    "documento_valido": true,
-    "medico_emissor": "Dr. Eduardo Rocha",
-    "crm_uf": "123456/SP",
-    "assinado_em": "2026-10-17T09:40:00Z",
+    "documento_id": "0195a1b2-0000-7000-8000-000000000001",
     "tipo_documento": "RECEITA_SIMPLES",
-    "certificado_emissor": "ICP-Brasil / PSC Nuvem"
+    "status_documento": "ASSINADO",
+    "sha256_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "assinado_em": "2026-10-17T09:40:00Z",
+    "emissor_medico_nome": "Dr. Eduardo Rocha",
+    "emissor_medico_crm": "123456",
+    "emissor_medico_uf": "SP",
+    "organizacao_nome": "MediSync Pronto-Atendimento Virtual",
+    "paciente_nome_mascarado": "M**** S****",
+    "paciente_cpf_mascarado": "123.***.***-00",
+    "assinatura_digital_valida": true,
+    "conformidade_icp_brasil": true,
+    "itens": []
   }
   ```
 
@@ -63,10 +71,10 @@
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Salvaguardas Farmacêuticas:** Blacklist de Notificação A/B e 2 vias para antimicrobianos (`src/modules/consultation/domain/models/documento_clinico.py`).
-- [x] **Compilador PDF/A:** ReportLab gerando PDF/A-1b com QR Code do ITI (`src/modules/consultation/infrastructure/pdf_generator.py`).
-- [x] **Assinador ICP-Brasil:** Adaptador PyHanko aplicando assinatura digital padrão ICP-Brasil PAdES e handshake CSC com suporte a contêiner CMS (`src/modules/consultation/infrastructure/pyhanko_signer.py`).
-- [x] **Cache Distribuído de Integridade:** `SignedCachePort` respaldado por `ValkeySignedCache` (`src/modules/consultation/infrastructure/valkey_signed_cache.py`) sob `SIGNED_CACHE_BACKEND` para validação sem sobrecarga no storage.
+- [x] **Salvaguardas Farmacêuticas:** Blacklist de Notificação A/B e 2 vias para antimicrobianos (`src/modules/consultation/domain/models/documento_clinico.py` e `src/modules/consultation/domain/models/documento_item.py`).
+- [x] **Compilador PDF/A Compartilhado:** `ClinicalPdfCompiler` (`src/modules/consultation/application/services/clinical_pdf_compiler.py`) valida posse de `atendimento_id` (Anti-IDOR), exige dados cadastrais sem placeholders (`DocumentoIntegridadeError`) e aciona `ReportLabPDFGenerator` (`src/modules/consultation/infrastructure/pdf_generator.py`).
+- [x] **Assinador ICP-Brasil:** `PyHankoSigner` incorpora contêiner CMS retornado pelo PSC via `ExternalSigner`/`PdfTBSDocument` e falha explicitamente com `AssinaturaDigitalInvalidaError` quando `allow_fake=False` (`src/modules/consultation/infrastructure/pyhanko_signer.py`).
+- [x] **Cache Fast-Path + Fallback Autoritativo em Banco (>24h):** `SignedCachePort` (`src/modules/consultation/infrastructure/valkey_signed_cache.py`) acelera leitura com TTL de 24h e `DocumentValidationService._is_assinado` / `DocumentoService.is_assinado` validam `assinado_em` + `sha256_hash` no PostgreSQL reaquecendo o cache após expiração.
 - [x] **Armazenamento em Nuvem:** Adaptador MinIO/S3 com chaves canônicas e portal de validação público (`src/modules/consultation/infrastructure/s3_storage.py`).
 - [x] **Frontend Pós-Consulta & Portal (`/pos-consulta` e `/receitas`):** Rota `/pos-consulta` (`frontend/src/routes/pos-consulta.tsx`) e central de receitas `/receitas` (`frontend/src/routes/receitas.tsx`, `PrescriptionsPage`) para visualização de documentos assinados e download autorizado de PDF/A.
 - [x] **Frontend Validação Pública (`/validar` e `/validar/$token`):** Página `DocumentValidationPage` (`frontend/src/features/consultation/pages/document-validation-page.tsx`), hook `useValidateDocument` (`frontend/src/features/consultation/api/use-validate-document.ts`) e rotas `frontend/src/routes/validar.tsx` e `frontend/src/routes/validar-token.tsx` com preenchimento automático do token de QR Code.

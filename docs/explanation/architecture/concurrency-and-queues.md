@@ -35,19 +35,19 @@ A busca do próximo atendimento opera em tempo logarítmico $\mathcal{O}(\log N)
 ZRANGE fila:aptos 0 0
 ```
 
-### 2. Alocação Atômica Médico-Paciente via Script Lua (RN02)
+### 2. Alocação Atômica Médico-Paciente via Scripts Lua 4-Keys (RN02)
 
-Para garantir que a verificação de disponibilidade do médico, a reserva exclusiva do paciente e a remoção da fila ocorram em uma única etapa indivisível sem race conditions, executa-se o script Lua atômico via `EVALSHA`:
+Para garantir que a verificação de disponibilidade do médico (tanto em toque quanto em teleconsulta ativa), a seleção e reserva exclusiva do paciente e a remoção da fila ocorram em uma única etapa indivisível sem race conditions, o motor `ValkeyQueueEngine` (`QueueEnginePort`) executa scripts Lua 4-Keys via `EVALSHA`:
 
 ```lua
--- KEYS[1]: lock:medico:{medico_id} | KEYS[2]: lock:atendimento:{atendimento_id} | KEYS[3]: fila:aptos
--- ARGV[1]: medico_id | ARGV[2]: atendimento_id | ARGV[3]: ttl_segundos (45s)
--- Retorno: 1 (Sucesso: locks ativados e removido do ZSET) | 0 (Conflito: médico ocupado - HTTP 409)
---         -1 (Indisponível: atendimento capturado concorrentemente - aciona retry em memória)
+-- KEYS[1]: lock:medico:{medico_id} | KEYS[2]: lock:atendimento:{id} (ou prefixo) | KEYS[3]: fila:aptos
+-- KEYS[4]: lock:consulta_ativa:medico:{medico_id}
+-- alocar_chamada.lua -> 1 (sucesso), 0 (medico ocupado/consulta ativa), -1 (indisponivel)
+-- alocar_proximo.lua -> {1, cand}, {0, ''}, {-1, ''} apos varredura ZRANGE 0..(max_scan-1)
 ```
-Script canônico em `src/modules/queue/infrastructure/lua/alocar_chamada.lua`.
+Scripts canônicos em `src/modules/queue/infrastructure/lua/alocar_chamada.lua` e `src/modules/queue/infrastructure/lua/alocar_proximo.lua`.
 
-Quando o script retorna `-1`, o serviço em Python executa um retry em memória (até 3 tentativas) buscando o próximo elemento retornado por `ZRANGE`.
+Em `/chamar-proximo`, `alocar_proximo.lua` verifica `KEYS[1]` e `KEYS[4]`, percorre a janela `ZRANGE KEYS[3] 0 (max_scan - 1)` (padrão `max_scan=50`) pulando candidatos já bloqueados por `lock:atendimento:{cand}`, executa `ZREM` + `SET EX` atômico e retorna `{1, cand}` em um único round-trip — eliminando corridas em cascata quando 10+ médicos chamam simultaneamente. Em falha de persistência no PostgreSQL ou de enfileiramento no ARQ pós-Lua, `AlocacaoChamadaService` compensa devolvendo o atendimento ao ZSET (`devolver_para_fila(..., nx=True)`).
 
 ### 3. Resolução Determinística de No-Show e Ciclo de Vida de Locks
 
@@ -57,53 +57,59 @@ Notificações pub/sub baseadas em expiração de chave (`notify-keyspace-events
 await arq_pool.enqueue_job(
     "resolver_ring_timeout_task",
     atendimento_id=str(atendimento_id), medico_id=str(medico_id),
-    _defer_by=timedelta(seconds=45), _job_id=f"ring_timeout:{atendimento_id}",
+    _defer_by=timedelta(seconds=ttl_segundos), _job_id=f"ring_timeout:{atendimento_id}",
 )
 ```
 
-No vencimento dos 45 segundos, o worker ARQ despacha a resolução delegando a transição de estado e limpeza de locks ao serviço de domínio:
+No vencimento do ring (`tempo_tolerancia_ring_segundos`, padrão 45s), o worker ARQ despacha a resolução delegando a transição de estado e limpeza de locks ao serviço de domínio:
 
 ```python
 action = await fila_service.resolver_ring_timeout(
-    atendimento_id=atend_uuid,
-    medico_id=med_uuid, notifier=notifier,
+    atendimento_id=atend_uuid, medico_id=med_uuid, notifier=notifier,
 )
 ```
 
-#### Transição de Locks
-1. **Fase de Toque (Ring - 45s)**: Protegida por `lock:medico:{medico_id}` com TTL de 45s.
-2. **Fase de Teleconsulta (`EM_ATENDIMENTO`)**: Ao atender, o lock é promovido para `lock:consulta_ativa:medico:{medico_id}` com renovação por heartbeat da sessão WebRTC.
-3. **Conclusão Clínica**: O lock é removido explicitamente quando o médico finaliza o atendimento (`CONCLUIDO`).
+#### Transição de Locks e Transação Única PEP
+1. **Fase de Toque (Ring - 45s)**: Protegida por `lock:medico:{medico_id}` e `lock:atendimento:{atendimento_id}` com TTL configurado.
+2. **Fase de Teleconsulta (`EM_ATENDIMENTO`)**: Ao atender, `ValkeyQueueEngine.promover_para_consulta` apaga os locks de ring em pipeline e grava `lock:consulta_ativa:medico:{medico_id}` (TTL 7200s), bloqueando novas chamadas em `KEYS[4]` dos scripts Lua.
+3. **Conclusão Clínica (ADR-001 §6)**: `PEPService.finalizar_consulta` chama `concluir_atendimento(..., auto_commit=False)` (que carrega `Atendimento` com `with_for_update=True` e faz apenas `flush()`), executa um único `commit()` no PostgreSQL e libera `lock:consulta_ativa:medico:{medico_id}` estritamente pós-commit via `liberar_consulta_ativa_medico`.
 
-### 4. Controle de Admissão e Backpressure Estocástico (RN05)
+### 4. Controle de Admissão, Política de Plantão e Backpressure Estocástico (RN05)
 
-O ingresso de novos atendimentos na fila virtual é preventivamente suspenso se:
-1. **Ausência de Médicos**: $\text{Médicos Ativos} \le 0$.
-2. **Cota Diária**: $\text{Total de Admissões do Dia} \ge \text{Cota Diária Máxima}$.
-3. **Capacidade vs. Demanda Restante**:
+`FilaService.admitir_paciente` lê parâmetros operacionais em `ConfiguracaoPlantao` via `ShiftPolicyReaderPort` e consulta médicos ativos diretamente em `plantao:medicos_ativos` (alimentado por login/MFA/logout em `auth` via `DoctorPresencePort`, `/chamar-proximo` e `/ws/doctor/{id}`). A entrada é preventivamente suspensa com `AdmissaoFilaSuspensaError` (HTTP 503) e log estruturado se:
+1. **Ausência de Médicos**: $\text{Médicos Ativos} \le 0$ (`SEM_MEDICOS_ATIVOS`).
+2. **Cota Diária**: Reserva atômica via `consumir_cota_ou_bloquear` (`INCR` + `DECR` imediato se estourar `cota_diaria_maxima`, com `estornar_cota_diaria` em rollback de banco — `COTA_ATINGIDA`).
+3. **Capacidade vs. Demanda Restante (`CAPACIDADE_EXCEDIDA`)**:
 
 $$\frac{\text{Pacientes Aguardando} \times \text{TMA Estimado} \times \alpha}{\text{Médicos Ativos no Turno}} > \text{Tempo Restante de Plantão}$$
 
-Onde $\alpha$ representa a margem estocástica de segurança operacional ($1{,}20 \le \alpha \le 1{,}30$). Quando suspenso, o sistema dispara o evento `QUEUE_OVERFLOW_TRANSIT`.
+Onde $\alpha$ provém da configuração do plantão (padrão `1,25`; intervalo válido $1{,}20 \le \alpha \le 1{,}30$). Todas as inserções no ZSET `fila:aptos` ocorrem exclusivamente **após** o `commit()` no PostgreSQL.
 
-### 5. Auto-Cura e Reconciliação (Sweeper Periódico)
+### 5. Auto-Cura e Reconciliação (Sweeper Blindado)
 
-Caso ocorra uma interrupção inesperada do servidor após o script Lua mas antes da persistência no banco, um sweeper periódico no ARQ executa a cada 60 segundos reconciliando atendimentos em `APTO_PARA_CHAMADA` órfãos no PostgreSQL de volta ao ZSET do Valkey com pontuação e prioridade originais.
+Caso ocorra interrupção entre escrita no PostgreSQL e mutação pós-commit no Valkey, `reconciliar_fila_orphans_task` executa a cada 60 segundos adquirindo `lock:sweeper:fila_aptos` (`NX EX 55`), paginando órfãos em lotes keyset (`LIMIT 200` por `(criado_em, id)`), checando ZSET e locks em 1 pipeline (`esta_bloqueado_para_reconciliacao`), revalidando status `APTO_PARA_CHAMADA` e reinjetando no ZSET via `ZADD NX`.
 
 ## Onde no código
 
-- Impl: `src/modules/queue/infrastructure/lua/alocar_chamada.lua:alocar_chamada`
-- Impl: `src/modules/queue/application/services/alocacao_service.py:AlocacaoService.alocar_chamada`
+- Impl: `src/modules/queue/infrastructure/lua/alocar_chamada.lua`
+- Impl: `src/modules/queue/infrastructure/lua/alocar_proximo.lua`
+- Impl: `src/modules/queue/infrastructure/valkey_queue_engine.py:ValkeyQueueEngine`
+- Impl: `src/modules/queue/application/services/alocacao_service.py:AlocacaoChamadaService.alocar_chamada`
 - Impl: `src/modules/queue/application/services/fila_service.py:FilaService.resolver_ring_timeout`
+- Impl: `src/modules/queue/application/services/fila_service.py:FilaService.reconciliar_fila_orfaos`
 - Impl: `src/modules/queue/application/services/controle_admissao_service.py:ControleAdmissaoService`
 - Impl: `src/worker/tasks/ring_timeout.py:resolver_ring_timeout_task`
-- Spec: `src/modules/queue/application/ports/allocation_port.py:AllocationPort`
+- Impl: `src/worker/tasks/sweeper.py:reconciliar_fila_orphans_task`
+- Spec: `src/modules/queue/application/ports/queue_engine_port.py:QueueEnginePort`
+- Spec: `src/modules/queue/application/ports/shift_policy_reader_port.py:ShiftPolicyReaderPort`
+- Spec: `src/modules/queue/application/ports/allocation_port.py:AlocacaoCodigo`
 - Spec: `docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md`
 - Prova viva: `tests/unit/test_alocacao_service.py:test_alocar_chamada_sucesso`
 - Prova viva: `tests/unit/test_fila_service.py`
 - Prova viva: `tests/unit/test_ring_timeout_task.py`
+- Prova viva: `tests/unit/test_sweeper_task.py`
 - Ver: `rg -n "resolver_ring_timeout" src/modules/queue/application/services/fila_service.py`
-- Ver: `rg -n "alocar_chamada" src/modules/queue/infrastructure/lua/`
+- Ver: `rg -n "alocar_chamada|alocar_proximo" src/modules/queue/infrastructure/lua/`
 
 ## Verificação
 

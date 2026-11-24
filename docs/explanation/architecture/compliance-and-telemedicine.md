@@ -6,7 +6,7 @@
 | :--- | :--- |
 | **Mídia em Tempo Real** | Servidor LiveKit SFU (Go) desacoplado via WebRTC / SRTP |
 | **Assinatura Digital** | Padrão PAdES-LTV ICP-Brasil em Nuvem via PSCs (OAuth2) e PyHanko |
-| **Armazenamento de PDFs** | Object Storage S3 / MinIO com Presigned URLs temporárias (15 min) |
+| **Armazenamento de PDFs** | Object Storage S3 / MinIO com Presigned URLs temporárias (300s / 5 min) |
 | **Marco Regulatório** | Resolução CFM nº 2.314/2022 \| Portaria SVS/MS nº 344/98 \| RDC ANVISA nº 20/2011 |
 | **Status** | Aprovado (Documento Vivo de Engenharia) |
 
@@ -76,7 +76,7 @@ O sistema modela 5 tipos de documentos emitíveis via telemedicina e veda a pres
 * **Proibidos Digitalmente (Exigência Legal de Talonário Físico)**:
   * `NOTIFICACAO_RECEITA_A` (Talonário Amarelo - Entorpecentes como Morfina, Fentanil).
   * `NOTIFICACAO_RECEITA_B` (Talonário Azul - Psicotrópicos como Clonazepam, Diazepam).
-  * A tentativa de prescrição dessas substâncias dispara `PrescricaoFisicaObrigatoriaException`, retornando HTTP 422 ao médico com orientações legais.
+  * A tentativa de prescrição dessas substâncias dispara `PrescricaoFisicaObrigatoriaError`, retornando HTTP 422 ao médico com orientações legais.
 
 ---
 
@@ -86,7 +86,7 @@ O sistema modela 5 tipos de documentos emitíveis via telemedicina e veda a pres
 sequenceDiagram
     autonumber
     actor Med as Médico (Frontend)
-    participant PEP as PEP Service (Backend)
+    participant PEP as Documento/PEP Service (Backend)
     participant Rep as ReportLab Adapter
     participant PSC as PSC Cloud (OAuth2)
     participant S3 as StoragePort (S3/MinIO)
@@ -96,7 +96,7 @@ sequenceDiagram
     Med->>PEP: Conclui Consulta & Solicita Emissão Documentos
     PEP->>PEP: Valida Medicamentos (Portaria 344/98)
     alt Medicamento Proibido Digitalmente
-        PEP-->>Med: 422 Unprocessable (PrescricaoFisicaObrigatoriaException)
+        PEP-->>Med: 422 Unprocessable (PrescricaoFisicaObrigatoriaError)
     else Medicamentos Válidos
         PEP->>Rep: Compilar PDF/A com dados do paciente e QR Code
         Rep-->>PEP: Binário PDF Bruto
@@ -105,7 +105,7 @@ sequenceDiagram
         PEP->>S3: salvar_documento("consultations/{atendimento_id}/documents/{doc_id}.pdf", pdf_bytes)
         S3-->>PEP: chave_s3
         PEP->>Aud: Gravar evento imutável com SHA-256 e chave_s3
-        PEP->>S3: gerar_presigned_url(chave_s3, expiracao=900)
+        PEP->>S3: gerar_presigned_url(chave_s3, expiracao=300)
         S3-->>PEP: presigned_url
         PEP->>Pac: Enviar Presigned URL via WhatsApp/SMS
         PEP-->>Med: Confirmação de Atendimento Concluído
@@ -116,7 +116,7 @@ sequenceDiagram
 1. **Geração do PDF/A**: Geração via `ReportLab`, inserindo QR Code de autenticidade, cabeçalho da unidade de saúde e declaração de atendimento virtual nos termos do CFM nº 2.314/2022.
 2. **Assinatura PAdES em Nuvem ([ADR-006](../../adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md))**: Integração via `PyHanko` com provedores PSC (BirdID, SafeID, Vidaas) através de OAuth2, dispensando tokens físicos USB e viabilizando plantões ágeis.
 3. **Persistência em Object Storage**: O PDF assinado é salvo no bucket MinIO/S3 (`s3://medisync-docs/consultations/{atendimento_id}/documents/{documento_id}.pdf`). O PostgreSQL armazena apenas a chave S3 e o hash SHA-256 no log de auditoria imutável.
-4. **Presigned URLs**: Entrega ao paciente e farmacêutico via link de validação pública que gera uma *Presigned URL* fresca com validade de 15 minutos (900 segundos).
+4. **Presigned URLs**: Entrega ao paciente e farmacêutico via link de validação pública que gera uma *Presigned URL* fresca com validade de 5 minutos (300 segundos).
 
 ---
 

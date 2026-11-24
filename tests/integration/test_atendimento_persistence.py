@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
-from src.core.database import async_session_factory
+from src.core.database import get_session_factory
 from src.modules.queue.domain.models import (
     Atendimento,
     PrioridadeClinica,
@@ -31,7 +31,7 @@ async def setup_atendimento_tables() -> AsyncGenerator[None, None]:
 
 @pytest.mark.asyncio
 async def test_persist_atendimento_lifecycle_happy_path() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         # 1. Setup base relational entities
         paciente = make_paciente(cpf="11122233344")
         medico = make_profissional(
@@ -91,7 +91,7 @@ async def test_persist_atendimento_lifecycle_happy_path() -> None:
 
 @pytest.mark.asyncio
 async def test_atendimento_foreign_key_violation_paciente() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         # Atendimento referencing nonexistent paciente_id
         non_existent_paciente_id = uuid4()
         atendimento = make_atendimento(
@@ -107,7 +107,7 @@ async def test_atendimento_foreign_key_violation_paciente() -> None:
 
 @pytest.mark.asyncio
 async def test_atendimento_foreign_key_violation_medico() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="22233344455")
         session.add(paciente)
         await session.commit()
@@ -127,7 +127,7 @@ async def test_atendimento_foreign_key_violation_medico() -> None:
 
 @pytest.mark.asyncio
 async def test_atendimento_chk_status_violation_raw_db() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="33344455566")
         session.add(paciente)
         await session.commit()
@@ -153,7 +153,7 @@ async def test_atendimento_chk_status_violation_raw_db() -> None:
 
 @pytest.mark.asyncio
 async def test_atendimento_chk_prioridade_violation_raw_db() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="44455566677")
         session.add(paciente)
         await session.commit()
@@ -179,7 +179,7 @@ async def test_atendimento_chk_prioridade_violation_raw_db() -> None:
 
 @pytest.mark.asyncio
 async def test_atendimento_no_show_persistence() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="55566677788")
         medico = make_profissional(
             cpf="88877766655",
@@ -210,7 +210,7 @@ async def test_atendimento_no_show_persistence() -> None:
 
 @pytest.mark.asyncio
 async def test_atendimento_cancelamento_paciente_persistence() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         paciente = make_paciente(cpf="66677788899")
         session.add(paciente)
         await session.commit()
@@ -231,7 +231,7 @@ async def test_atendimento_cancelamento_paciente_persistence() -> None:
 
 @pytest.mark.asyncio
 async def test_atendimento_query_by_fila_composite_index() -> None:
-    async with async_session_factory() as session:
+    async with get_session_factory()() as session:
         p1 = make_paciente(cpf="77711122233", telefone="11987654301")
         p2 = make_paciente(cpf="77722233344", telefone="11987654302")
         p3 = make_paciente(cpf="77733344455", telefone="11987654303")

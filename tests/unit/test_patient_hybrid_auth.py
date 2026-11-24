@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.authz.roles import Role
 from src.core.authz.token import decode_access_token
-from src.core.config import CommonSettings
+from src.core.config import CommonSettings, get_settings
 from src.core.errors import (
     ConflictError,
     NotFoundError,
@@ -32,7 +32,9 @@ from src.modules.auth.domain.exceptions import (
     CredenciaisInvalidasError,
     IdentificacaoRateLimitExcedidoError,
 )
-from src.modules.identity.infrastructure.fake_sms_adapter import FakeSmsSenderAdapter
+from src.modules.auth.infrastructure.fake_sms_adapter import FakeSmsSenderAdapter
+from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
+from src.modules.auth.infrastructure.valkey_rate_limiter import FakeAuthRateLimiter
 
 from tests.doubles import (
     FakeAsyncSession,
@@ -40,6 +42,7 @@ from tests.doubles import (
     FakeIdentityWriter,
     FakePasswordHasher,
     FakePatientCredentialRepository,
+    MemoryChallengeStore,
 )
 
 
@@ -63,7 +66,15 @@ def _build_service(
     sms = FakeSmsSenderAdapter()
     sms.clear()
     session = FakeAsyncSession()
+    settings = get_settings()
     service = PatientAuthService(
+        token_service=JWTTokenService(
+            secret_key=settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+            access_token_expire_minutes=15,
+        ),
+        challenge_store=MemoryChallengeStore(),
+        rate_limiter=FakeAuthRateLimiter(),
         identity_reader=reader,
         sms_sender=sms,
         identity_writer=writer,
@@ -213,7 +224,7 @@ async def test_registrar_paciente_duplicado_mascara_cpf_em_conflict() -> None:
 
 @pytest.mark.asyncio
 async def test_identificar_paciente_por_cpf_e_email_sem_vazar_pii() -> None:
-    service, reader, _, _, _, _, _ = _build_service(govbr_oidc_enabled=True)
+    service, _, writer, _, _, _, _ = _build_service(govbr_oidc_enabled=True)
 
     reg = await service.registrar_paciente(
         RegistrarPacienteCommand(
@@ -226,7 +237,7 @@ async def test_identificar_paciente_por_cpf_e_email_sem_vazar_pii() -> None:
             senha="SenhaSegura123",
         ),
     )
-    await reader.registrar_passkey_paciente(
+    await writer.registrar_passkey_paciente(
         paciente_id=reg.paciente_id,
         credential_id="cred-1",
         public_key="pk",
@@ -593,7 +604,15 @@ def test_identity_writer_integrity_error_classification() -> None:
 async def test_registrar_e_login_exigem_session_nao_nula() -> None:
     """Métodos persistentes devem falhar rápido quando session=None."""
     reader = FakeIdentityReader(pacientes=[])
+    settings = get_settings()
     service = PatientAuthService(
+        token_service=JWTTokenService(
+            secret_key=settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+            access_token_expire_minutes=15,
+        ),
+        challenge_store=MemoryChallengeStore(),
+        rate_limiter=FakeAuthRateLimiter(),
         identity_reader=reader,
         identity_writer=FakeIdentityWriter(reader),
         credential_repo=FakePatientCredentialRepository(),

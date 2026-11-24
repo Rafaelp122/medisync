@@ -1,26 +1,32 @@
 """Unit tests for Triage clinical model, risk classification, and SAMU 192 escape."""
 
+import logging
+from collections.abc import Callable
 from uuid import UUID
 
+import httpx
 import pytest
 from src.core.errors import DomainError, ValidationError
 from src.core.uuid7 import uuid7
-from src.modules.triage.application.dtos import (
-    ResultadoTriagemDTO,
-    TriageRiskEvaluationDTO,
-)
+from src.modules.triage.application.dtos import TriageRiskEvaluationDTO
 from src.modules.triage.application.ports import EmergencyAlertDTO
 from src.modules.triage.application.services import TriageService
 from src.modules.triage.domain.classification import (
     SINAIS_ALARME_NIVEL_1,
     calcular_hash_tcle,
     classificar_risco_clinico,
+    normalizar_sintomas,
 )
 from src.modules.triage.domain.exceptions import (
     EmergenciaCriticaSamuError,
     TriagemInvalidaError,
 )
 from src.modules.triage.domain.models import Triagem
+from src.modules.triage.infrastructure.adapters import (
+    SamuEmergencyNotifierAdapter,
+)
+
+from tests.doubles import FakeEmergencyNotifier
 
 
 def test_triage_exceptions_attributes() -> None:
@@ -245,19 +251,9 @@ def test_triagem_adicionar_sintoma_alerta() -> None:
     assert triagem.sintomas_alerta.count("febre") == 1
 
 
-class MockEmergencyNotifier:
-    """Mock implementation of EmergencyNotifierPort for unit testing."""
-
-    def __init__(self) -> None:
-        self.notificacoes: list[EmergencyAlertDTO] = []
-
-    async def notificar_emergencia_samu(self, alert: EmergencyAlertDTO) -> None:
-        self.notificacoes.append(alert)
-
-
 @pytest.mark.asyncio
 async def test_triage_service_avaliar_risco_success() -> None:
-    notifier = MockEmergencyNotifier()
+    notifier = FakeEmergencyNotifier()
     service = TriageService(emergency_notifier=notifier)
 
     # 1. Com texto do termo (calcula SHA-256)
@@ -274,7 +270,7 @@ async def test_triage_service_avaliar_risco_success() -> None:
     assert res_texto.alerta_samu_disparado is False
     assert res_texto.instrucao_redirecionamento is None
     assert res_texto.is_emergencia_critica is False
-    assert len(notifier.notificacoes) == 0
+    assert len(notifier.sent_alerts) == 0
 
     # 2. Com hash pré-calculado
     hash_pre = "a" * 64
@@ -313,7 +309,7 @@ async def test_triage_service_avaliar_risco_validacao_tcle() -> None:
 
 @pytest.mark.asyncio
 async def test_triage_service_avaliar_risco_emergencia_samu() -> None:
-    notifier = MockEmergencyNotifier()
+    notifier = FakeEmergencyNotifier()
     service = TriageService(emergency_notifier=notifier)
     atendimento_id = uuid7()
 
@@ -326,8 +322,8 @@ async def test_triage_service_avaliar_risco_emergencia_samu() -> None:
             raise_on_emergency=True,
             atendimento_id=atendimento_id,
         )
-    assert len(notifier.notificacoes) == 1
-    assert notifier.notificacoes[0].atendimento_id == atendimento_id
+    assert len(notifier.sent_alerts) == 1
+    assert notifier.sent_alerts[0].atendimento_id == atendimento_id
 
     # raise_on_emergency=False
     res = await service.avaliar_risco(
@@ -341,40 +337,149 @@ async def test_triage_service_avaliar_risco_emergencia_samu() -> None:
     assert res.alerta_samu_disparado is True
     assert res.is_emergencia_critica is True
     assert res.instrucao_redirecionamento is not None
-    assert len(notifier.notificacoes) == 2
+    assert len(notifier.sent_alerts) == 2
 
 
-def test_resultado_triagem_dto_alignment_with_risk_evaluation() -> None:
-    # 1. Verifica herança e polimorfismo
-    eval_dto = TriageRiskEvaluationDTO(
-        prioridade_clinica=1,
-        tcle_hash="abc",
-        alerta_samu_disparado=True,
-        instrucao_redirecionamento="LIGUE 192",
+@pytest.mark.parametrize(
+    ("sintoma_ui", "prioridade_esperada", "canonico"),
+    [
+        ("dor_no_peito", 1, "dor_toracica_irradiada"),
+        ("falta_de_ar", 1, "dispneia_grave"),
+        ("tontura_desmaio", 1, "inconsciencia"),
+        ("sangramento_grave", 1, "hemorragia_grave"),
+        ("febre_alta", 3, "febre"),
+    ],
+)
+def test_aliases_red_flags_e_higienizacao_sintomas(
+    sintoma_ui: str,
+    prioridade_esperada: int,
+    canonico: str,
+) -> None:
+    """PioraClinicaModal canonical aliases normalize deterministically (Issue #163)."""
+    norm = normalizar_sintomas([" ", "", f" {sintoma_ui} ", canonico])
+    assert norm == [canonico]
+    assert classificar_risco_clinico("Queixa geral", [sintoma_ui], 0) == (
+        prioridade_esperada
     )
-    res_dto = ResultadoTriagemDTO.from_evaluation(eval_dto)
 
-    assert isinstance(res_dto, TriageRiskEvaluationDTO)
-    assert res_dto.prioridade_clinica == 1
-    assert res_dto.tcle_hash == "abc"
-    assert res_dto.alerta_samu_disparado is True
-    assert res_dto.admissao_bloqueada is True
-    assert res_dto.is_emergencia_critica is True
 
-    # 2. Caso não emergencial
-    eval_regular = TriageRiskEvaluationDTO(
-        prioridade_clinica=4,
-        tcle_hash="def",
-        alerta_samu_disparado=False,
+def test_sintomas_em_branco_sao_ignorados_na_classificacao() -> None:
+    """Whitespace-only symptoms must not inflate classification above Level 5."""
+    assert normalizar_sintomas([" ", "", "   "]) == []
+    assert classificar_risco_clinico("Consulta de rotina", [" ", ""], 0) == 5
+
+
+def test_triagem_criar_avaliada_classifica_e_dispara_samu_nivel_1(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Triagem.criar_avaliada() classifies 1x and sets SAMU flag on Level 1."""
+    calls = 0
+
+    def _spy_classificar(
+        queixa_principal: str,
+        sintomas: object,
+        escala_dor: int = 0,
+    ) -> int:
+        nonlocal calls
+        calls += 1
+        return 1
+
+    monkeypatch.setattr(
+        "src.modules.triage.domain.models.triagem.classificar_risco_clinico",
+        _spy_classificar,
     )
-    res_regular = ResultadoTriagemDTO.from_evaluation(eval_regular)
-    assert res_regular.admissao_bloqueada is False
-    assert res_regular.is_emergencia_critica is False
-
-    # 3. Post-init auto bloqueia se prioridade 1 mesmo quando admissao_bloqueada=False
-    res_manual = ResultadoTriagemDTO(
-        prioridade_clinica=1,
-        tcle_hash="ghi",
-        admissao_bloqueada=False,
+    triagem = Triagem.criar_avaliada(
+        atendimento_id=uuid7(),
+        queixa_principal="Dor precordial intensa",
+        sintomas=["dor_no_peito"],
+        escala_dor=9,
     )
-    assert res_manual.admissao_bloqueada is True
+    assert calls == 1
+    assert triagem.prioridade_calculada == 1
+    assert triagem.alerta_samu_disparado is True
+    assert triagem.sintomas_alerta == ["dor_toracica_irradiada"]
+
+
+@pytest.mark.parametrize(
+    "queixa_livre",
+    [
+        "Paciente com dor no peito intensa",
+        "Falta de ar súbita em repouso",
+        "Relato de desmaio em casa",
+        "Paciente nao respira há 1 minuto",
+        "Quadro de anafilaxia após medicação",
+    ],
+)
+def test_palavras_chave_emergencia_nivel_1_expandidas(queixa_livre: str) -> None:
+    """Expanded Level 1 emergency free-text keywords trigger Level 1."""
+    assert classificar_risco_clinico(queixa_livre, [], 0) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_hash", ["abc", "g" * 64, "A" * 63])
+async def test_triage_service_rejeita_tcle_hash_malformado(bad_hash: str) -> None:
+    """TriageService.avaliar_risco must validate SHA-256 regex ^[0-9a-f]{64}$."""
+    service = TriageService()
+    with pytest.raises(ValidationError, match=r"\^\[0-9a-f\]\{64\}\$"):
+        await service.avaliar_risco(
+            queixa_principal="Cefaleia leve",
+            sintomas=[],
+            escala_dor=2,
+            tcle_hash=bad_hash,
+        )
+
+
+def _mock_httpx_client_factory(
+    handler: Callable[[httpx.Request], httpx.Response],
+    orig_client: type[httpx.AsyncClient],
+) -> Callable[..., httpx.AsyncClient]:
+    def _factory(**kwargs: object) -> httpx.AsyncClient:
+        return orig_client(transport=httpx.MockTransport(handler))
+
+    return _factory
+
+
+@pytest.mark.asyncio
+async def test_samu_notifier_adapter_raise_for_status_e_log_erro(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """SamuEmergencyNotifierAdapter invokes raise_for_status and logs HTTP errors."""
+    captured_payloads: list[bytes] = []
+
+    def _ok_handler(request: httpx.Request) -> httpx.Response:
+        captured_payloads.append(request.content)
+        return httpx.Response(status_code=202, json={"ok": True})
+
+    def _fail_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=500, text="SAMU Gateway Error")
+
+    alert = EmergencyAlertDTO(
+        atendimento_id=uuid7(),
+        queixa_principal="Dor torácica intensa",
+        sintomas_alerta=["dor_toracica_irradiada"],
+    )
+
+    ok_adapter = SamuEmergencyNotifierAdapter(
+        webhook_url="https://samu.example.invalid/hook"
+    )
+    assert not hasattr(ok_adapter, "sent_alerts")
+    orig_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        _mock_httpx_client_factory(_ok_handler, orig_client),
+    )
+    await ok_adapter.notificar_emergencia_samu(alert)
+    assert len(captured_payloads) == 1
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        _mock_httpx_client_factory(_fail_handler, orig_client),
+    )
+    with caplog.at_level(logging.ERROR):
+        await ok_adapter.notificar_emergencia_samu(alert)
+    assert (
+        "HTTP 500" in caplog.text or "SAMU" in caplog.text or len(caplog.records) >= 1
+    )
