@@ -46,18 +46,26 @@ Enquanto aguarda na fila, o paciente pode visualizar o `PasskeyInvitationCard` c
 
 ## Onde no código
 
-- Orquestrador da tela: `frontend/src/features/queue/components/virtual-waiting-room.tsx:VirtualWaitingRoom`
+- Orquestrador visual da tela (<150L): `frontend/src/features/queue/components/virtual-waiting-room.tsx:VirtualWaitingRoom`
+- Orquestrador headless (polling, WS, TTL pós-F5, parada terminal e recusa): `frontend/src/features/queue/hooks/use-virtual-queue.ts:useVirtualQueue`
 - Card de posição e TMA: `frontend/src/features/queue/components/queue-position-card.tsx:QueuePositionCard`
+- Ações e estados terminais: `frontend/src/features/queue/components/queue-waiting-actions-card.tsx:QueueWaitingActionsCard` e `frontend/src/features/queue/components/queue-terminal-state-card.tsx:QueueTerminalStateCard`
 - Ring modal de 45s: `frontend/src/features/queue/components/incoming-call-ring-modal.tsx:IncomingCallRingModal`
+- Contagem isolada em folha (`motion-reduce:animate-none`): `frontend/src/features/queue/components/ring-countdown.tsx:RingCountdown`
 - Alerta sonoro sintetizado: `frontend/src/features/queue/lib/audio-chime.ts:iniciarToqueChamadaMedica`
-- Modal de piora clínica: `frontend/src/features/queue/components/piora-clinica-modal.tsx:PioraClinicaModal`
+- Modal de piora clínica (RHF + Zod, IDs canônicos): `frontend/src/features/queue/components/piora-clinica-modal.tsx:PioraClinicaModal`
 - Diálogo de desistência (RN06): `frontend/src/features/queue/components/cancelar-fila-dialog.tsx:CancelarFilaDialog`
-- Card de convite Passkey: `frontend/src/features/queue/components/passkey-invitation-card.tsx:PasskeyInvitationCard`
+- Card de convite Passkey: `frontend/src/features/queue/components/passkey-invitation-card.tsx:PasskeyInvitationCard` (hook em `frontend/src/features/auth/api/use-passkey-register.ts:usePasskeyRegister`)
 - Salvaguarda SAMU compartilhada: `frontend/src/components/samu-emergency-modal.tsx:SamuEmergencyModal`
 - Formatação e estimativas: `frontend/src/lib/formatters.ts:formatarPosicaoOrdinal`
 - Hook de WebSocket: `frontend/src/features/queue/api/use-queue-socket.ts:useQueueSocket`
 - Hook de posição REST: `frontend/src/features/queue/api/use-posicao-fila.ts:usePosicaoFila`
 - Hook de teleconsulta: `frontend/src/features/queue/api/use-atender-chamada.ts:useAtenderChamada`
+
+### Invariantes da Fila na Issue #168
+- **Parada terminal:** `useVirtualQueue` desativa o polling REST e fecha o socket `/ws/queue/` ao atingir `PACIENTE_AUSENTE`, `CANCELADO_PACIENTE` ou `CONCLUIDO`.
+- **Restauração pós-F5:** O deadline da contagem de 45s é recalculado deterministicamente com `chamada_iniciada_em` + `ttl_segundos` de `PosicaoFilaResponse`.
+- **Recusa da chamada:** O botão "Não posso atender agora" envia `POST /api/v1/fila/cancelar/{atendimento_id}` via `useCancelarFila` antes de liberar o estado local.
 
 ## Verificação
 

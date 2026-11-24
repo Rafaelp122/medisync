@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { settings } from "@/config/settings";
 import { limparDigitos, validarCEP } from "@/lib/validators";
 
@@ -9,19 +9,34 @@ export interface EnderecoViaCep {
   estado: string;
 }
 
+function createCombinedSignal(externalSignal?: AbortSignal): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(settings.network.viaCepTimeoutMs);
+  if (!externalSignal) {
+    return timeoutSignal;
+  }
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([externalSignal, timeoutSignal]);
+  }
+  return externalSignal;
+}
+
 /**
- * Consulta a API pública do ViaCEP com proteção de timeout nativo e validação prévia.
- * Em caso de erro, timeout ou CEP inexistente, retorna null com resiliência.
+ * Consulta a API pública do ViaCEP com proteção de timeout nativo, validação prévia e cancelamento via AbortSignal.
+ * Em caso de erro, cancelamento, timeout ou CEP inexistente, retorna null com resiliência.
+ * @see docs/user-stories/US-03-elegibilidade-onboarding-fase2.md
  */
-export async function buscarEnderecoPorCep(cep: string): Promise<EnderecoViaCep | null> {
-  if (!validarCEP(cep)) {
+export async function buscarEnderecoPorCep(
+  cep: string,
+  signal?: AbortSignal,
+): Promise<EnderecoViaCep | null> {
+  if (signal?.aborted || !validarCEP(cep)) {
     return null;
   }
   const clean = limparDigitos(cep);
 
   try {
     const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`, {
-      signal: AbortSignal.timeout(settings.network.viaCepTimeoutMs),
+      signal: createCombinedSignal(signal),
     });
     if (!res.ok) {
       return null;
@@ -43,46 +58,29 @@ export async function buscarEnderecoPorCep(cep: string): Promise<EnderecoViaCep 
 }
 
 /**
- * Hook headless para busca e autopreenchimento dinâmico de endereço a partir de CEP.
+ * Query headless com TanStack Query para busca de endereço ViaCEP com cancelamento automático por AbortSignal.
+ * @see docs/user-stories/US-03-elegibilidade-onboarding-fase2.md
  */
-export function useViaCep(cep: string) {
-  const [endereco, setEndereco] = useState<EnderecoViaCep | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [erro, setErro] = useState<string | null>(null);
+export function useViaCepQuery(cep: string) {
+  const valid = validarCEP(cep);
+  const clean = valid ? limparDigitos(cep) : "";
 
-  useEffect(() => {
-    let active = true;
+  const query = useQuery({
+    queryKey: ["onboarding", "viacep", clean],
+    enabled: valid,
+    staleTime: 1000 * 60 * 10,
+    retry: false,
+    queryFn: ({ signal }) => buscarEnderecoPorCep(clean, signal),
+  });
 
-    if (!validarCEP(cep)) {
-      setEndereco(null);
-      setErro(null);
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setErro(null);
-
-    buscarEnderecoPorCep(cep).then((resultado) => {
-      if (!active) return;
-      setIsLoading(false);
-      if (resultado) {
-        setEndereco(resultado);
-        setErro(null);
-      } else {
-        setEndereco(null);
-        setErro("CEP não localizado. Preencha o endereço manualmente.");
-      }
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [cep]);
+  const erro =
+    valid && query.isFetched && !query.isFetching && !query.data
+      ? "CEP não localizado. Preencha o endereço manualmente."
+      : null;
 
   return {
-    endereco,
-    isLoading,
+    endereco: valid ? (query.data ?? null) : null,
+    isLoading: valid && query.isLoading,
     erro,
   };
 }

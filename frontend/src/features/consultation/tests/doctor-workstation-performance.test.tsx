@@ -27,33 +27,32 @@ describe("DoctorWorkstation Performance & WebRTC Media Isolation (ADR-011)", () 
 
     const initialProps = {
       atendimentoId: "atend-123",
-      medicoNome: "Dr. Eduardo Rocha",
-      remoteParticipantName: "Juliana Silva (Paciente)",
+      medicoNome: "Dra. Ana Souza",
+      remoteParticipantName: "Paciente #11223344",
       onRender,
     };
 
     const { rerender } = render(<TestMediaPane {...initialProps} />);
     expect(renderCount).toBe(1);
 
-    // Rerender com as mesmas props (simulando re-render do componente pai por SOAP ou Telemetria)
     rerender(<TestMediaPane {...initialProps} />);
     expect(renderCount).toBe(1);
 
-    // Rerender com alteração real em atendimentoId
     rerender(<TestMediaPane {...initialProps} atendimentoId="atend-456" />);
     expect(renderCount).toBe(2);
   });
 
-  it("IT-PERF-02: Renderiza VideoPane no estado desconectado de forma acessível", () => {
+  it("IT-PERF-02: Renderiza VideoCallStage no estado offline/conectando de forma acessível sem boolean props", () => {
     render(
       <WorkstationMediaPane
         atendimentoId="atend-123"
-        medicoNome="Dr. Eduardo Rocha"
-        remoteParticipantName="Juliana Silva (Paciente)"
+        medicoNome="Dra. Ana Souza"
+        remoteParticipantName="Paciente #11223344"
       />,
     );
 
-    expect(screen.getAllByText("Juliana Silva (Paciente)").length).toBeGreaterThan(0);
-    expect(screen.getByText("Dr. Eduardo Rocha")).toBeInTheDocument();
+    expect(screen.getAllByText("Paciente #11223344").length).toBeGreaterThan(0);
+    expect(screen.getByText("Dra. Ana Souza")).toBeInTheDocument();
+    expect(screen.getByText(/conectando ao livekit/i)).toBeInTheDocument();
   });
 });

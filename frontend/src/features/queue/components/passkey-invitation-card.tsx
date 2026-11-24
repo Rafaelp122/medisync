@@ -1,26 +1,28 @@
 import { Loader2, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
+import { extractProblemDetail } from "@/api/errors";
+import type { WebAuthnRegisterVerifyResponse } from "@/api/generated/types.gen";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { settings } from "@/config/settings";
 import { cn } from "@/lib/utils";
-import { isWebAuthnSupported } from "@/lib/webauthn";
-import { usePasskeyRegister } from "../api/use-passkey-register";
+import { isWebAuthnSupported, type RegisterPasskeyCredentialParams } from "@/lib/webauthn";
 
 export interface PasskeyInvitationCardProps {
   className?: string;
   onAtivarBiometria?: () => void;
+  onRegisterPasskey?: (
+    params: RegisterPasskeyCredentialParams,
+  ) => Promise<WebAuthnRegisterVerifyResponse>;
+  isRegistering?: boolean;
   token?: string;
 }
 
 const DISMISSED_KEY = settings.storage.passkeyDismissed;
 
 /**
- * Card Informativo de Convite Não-Bloqueante de Biometria Passkeys (US-14).
- *
- * Apresentado exclusivamente em dispositivos compatíveis com Web Authentication
- * API (PublicKeyCredential), convidando o paciente a utilizar autenticação
- * biométrica nativa (TouchID, FaceID ou impressão digital Android).
+ * Card Informativo Visual e Headless de Convite Não-Bloqueante de Biometria Passkeys (US-14).
+ * Toda lógica de rede/mutação FIDO2 reside no hook externo (`usePasskeyRegister`) injetado via prop.
  *
  * @see docs/user-stories/US-14-biometria-passkeys-webauthn.md
  * @see docs/how-to/patient-virtual-waiting-room.md
@@ -28,12 +30,15 @@ const DISMISSED_KEY = settings.storage.passkeyDismissed;
 export function PasskeyInvitationCard({
   className,
   onAtivarBiometria,
+  onRegisterPasskey,
+  isRegistering = false,
   token,
 }: PasskeyInvitationCardProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [registrado, setRegistrado] = useState(false);
+  const [isPendingLocal, setIsPendingLocal] = useState(false);
   const [erroRegistro, setErroRegistro] = useState<string | null>(null);
-  const registerPasskey = usePasskeyRegister();
+  const isPending = isRegistering || isPendingLocal;
 
   useEffect(() => {
     if (!isWebAuthnSupported()) return;
@@ -53,7 +58,7 @@ export function PasskeyInvitationCard({
     }
   };
 
-  const handleAtivar = () => {
+  const handleAtivar = async () => {
     if (onAtivarBiometria) {
       onAtivarBiometria();
       return;
@@ -61,10 +66,11 @@ export function PasskeyInvitationCard({
 
     const canCreateCredential =
       Boolean(token) &&
+      Boolean(onRegisterPasskey) &&
       typeof navigator !== "undefined" &&
       typeof navigator.credentials?.create === "function";
 
-    if (!canCreateCredential || !token) {
+    if (!canCreateCredential || !token || !onRegisterPasskey) {
       setErroRegistro(
         "Sessão ou suporte biométrico indisponível neste navegador para ativar Passkey.",
       );
@@ -72,17 +78,17 @@ export function PasskeyInvitationCard({
     }
 
     setErroRegistro(null);
-    registerPasskey.mutate(
-      { token },
-      {
-        onSuccess: () => {
-          setRegistrado(true);
-        },
-        onError: (err) => {
-          setErroRegistro(err.detail || "Não foi possível cadastrar a biometria neste aparelho.");
-        },
-      },
-    );
+    setIsPendingLocal(true);
+    try {
+      await onRegisterPasskey({ token });
+      setRegistrado(true);
+    } catch (err) {
+      setErroRegistro(
+        extractProblemDetail(err, "Não foi possível cadastrar a biometria neste aparelho."),
+      );
+    } finally {
+      setIsPendingLocal(false);
+    }
   };
 
   return (
@@ -131,11 +137,11 @@ export function PasskeyInvitationCard({
               type="button"
               size="sm"
               variant="default"
-              disabled={registerPasskey.isPending}
+              disabled={isPending}
               className="bg-blue-600 hover:bg-blue-700 text-white text-xs min-h-[38px] px-3.5"
               onClick={handleAtivar}
             >
-              {registerPasskey.isPending ? (
+              {isPending ? (
                 <>
                   <Loader2 className="mr-1.5 size-3.5 animate-spin" />
                   Cadastrando biometria…
@@ -148,7 +154,7 @@ export function PasskeyInvitationCard({
               type="button"
               size="sm"
               variant="ghost"
-              disabled={registerPasskey.isPending}
+              disabled={isPending}
               className="text-xs text-muted-foreground hover:text-foreground min-h-[38px]"
               onClick={handleDismiss}
             >

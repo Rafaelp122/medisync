@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, http, ws } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  handleAdmitirPacienteApiV1FilaAdmissaoPost,
   handleGetAuthPatientMethods,
   handleListarAgendaDiaApiV1SchedulingAgendaDiaGet,
   handleListarEspecialidadesApiV1SchedulingEspecialidadesGet,
@@ -252,5 +253,60 @@ describe("App (Orquestração de Rotas Declarativas, Portal Fechado e Guards)", 
     await waitFor(() => {
       expect(history.location.pathname).toBe("/entrar");
     });
+  });
+
+  it("IT-APP-11: Cidadão autenticado com JWT 3-partes navega de /home para /triagem sem redigitar dados civis e preserva o JWT em medisync_session", async () => {
+    const validThreePartJwt =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMThmM2E1Yi03YjJjLTRiMmMtOGIyYy0wMThmM2E1YjdiMmMiLCJyb2xlIjoiUEFDSUVOVEUifQ.sig-app-preserve";
+    saveStoredSession({
+      ...basePatientSession,
+      token: validThreePartJwt,
+    });
+
+    server.use(
+      handleAdmitirPacienteApiV1FilaAdmissaoPost(() =>
+        HttpResponse.json(
+          {
+            atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2d",
+            triagem_id: "018f3a5b-1111-4b2c-8b2c-018f3a5b7b2c",
+            paciente_id: basePatientSession.pacienteId,
+            status_atendimento: "TRIADO_AGUARDANDO_ELEGIBILIDADE",
+            prioridade_clinica: 3,
+            alerta_samu_disparado: false,
+            instrucoes: null,
+            tcle_hash: "a".repeat(64),
+          },
+          { status: 201 },
+        ),
+      ),
+    );
+
+    const user = userEvent.setup();
+    const { history } = renderApp(["/home"]);
+
+    const triageLink = await screen.findByRole("link", { name: /iniciar triagem rápida/i });
+    await user.click(triageLink);
+
+    expect(await screen.findByLabelText(/o que você está sentindo\?/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/nome completo/i)).not.toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText(/o que você está sentindo\?/i),
+      "Dor abdominal leve sem sinais de alarme",
+    );
+    await user.click(screen.getByLabelText(/termo de consentimento livre e esclarecido/i));
+    await user.click(screen.getByRole("button", { name: /entrar na fila virtual/i }));
+
+    expect(
+      await screen.findByRole("heading", { name: /completar prontuário regulatório/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /completar mais tarde/i }));
+
+    await waitFor(() => {
+      expect(history.location.pathname).toBe("/fila");
+    });
+    expect(getStoredSession()?.token).toBe(validThreePartJwt);
+    expect(getStoredSession()?.token.split(".")).toHaveLength(3);
   });
 });

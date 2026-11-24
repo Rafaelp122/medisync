@@ -1,16 +1,18 @@
 import {
+  AlertCircle,
   CheckCircle2,
   Download,
   FileCheck2,
   FileText,
   Loader2,
-  Pill,
   QrCode,
   RotateCcw,
   ShieldCheck,
   Stethoscope,
 } from "lucide-react";
-import type { DocumentoClinicoResponse } from "@/api/generated/types.gen";
+import { extractProblemDetail } from "@/api/errors";
+import type { PacienteDocumentoItemResponse } from "@/api/generated/types.gen";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,9 +23,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { getTipoDocumentoLabel } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
-import { useDownloadDocumentoPdf } from "../api/use-download-document-pdf";
-import { useProntuario } from "../api/use-prontuario";
+import {
+  useDownloadPatientConsultationPdf,
+  usePatientConsultationDocuments,
+} from "../api/use-patient-consultation-documents";
 
 export interface PosConsultaSummaryProps {
   atendimentoId: string;
@@ -31,34 +36,39 @@ export interface PosConsultaSummaryProps {
   medicoNome?: string;
   crmUf?: string;
   token?: string;
-  documentos?: DocumentoClinicoResponse[];
+  documentos?: PacienteDocumentoItemResponse[];
   onNovaConsulta?: () => void;
   className?: string;
 }
 
-const TIPO_DOC_LABELS: Record<string, string> = {
-  RECEITA_SIMPLES: "Receita Médica Simples",
-  RECEITA_CONTROLE_ESPECIAL: "Receita de Controle Especial (Portaria 344/98)",
-  ATESTADO_MEDICO: "Atestado Médico / Comparecimento",
-  PEDIDO_EXAME: "Pedido de Exames Complementares",
-};
-
+/**
+ * Resumo Pós-Consulta do Paciente consumindo `/consultations/me/documentos`
+ * e `/consultations/me/documents/{documento_id}/pdf` com rótulos canônicos.
+ * @see docs/user-stories/US-09-teleconsulta-pep-soap.md
+ */
 export function PosConsultaSummary({
   atendimentoId,
   pacienteNome = "Cidadão",
-  medicoNome = "Dr. Eduardo Rocha",
-  crmUf = "123456/SP",
+  medicoNome = "Médico Plantonista",
+  crmUf,
   token,
   documentos: docsProps,
   onNovaConsulta,
   className,
 }: PosConsultaSummaryProps) {
-  const { data: prontuario, isLoading } = useProntuario(atendimentoId, token, {
-    enabled: !docsProps || docsProps.length === 0,
+  const {
+    data: fetchedDocs,
+    isLoading,
+    isError: isDocsError,
+    error: docsError,
+  } = usePatientConsultationDocuments(token, {
+    enabled: !docsProps,
   });
 
-  const docs = docsProps && docsProps.length > 0 ? docsProps : (prontuario?.documentos ?? []);
-  const { downloadPdf, downloadingId } = useDownloadDocumentoPdf(atendimentoId);
+  const docs = docsProps
+    ? docsProps
+    : (fetchedDocs ?? []).filter((doc) => !atendimentoId || doc.atendimento_id === atendimentoId);
+  const { downloadPdf, downloadingId, downloadError } = useDownloadPatientConsultationPdf();
 
   const handleDownloadPdf = async (documentoId: string, tipoDoc: string) => {
     await downloadPdf(documentoId, token, tipoDoc);
@@ -66,7 +76,6 @@ export function PosConsultaSummary({
 
   return (
     <div className={cn("w-full max-w-2xl mx-auto space-y-4", className)}>
-      {/* Banner de Consulta Concluída */}
       <Card className="border-emerald-500/40 bg-card shadow-md text-left">
         <CardHeader className="pb-3 space-y-2">
           <div className="flex items-center gap-3">
@@ -95,12 +104,11 @@ export function PosConsultaSummary({
               <p className="font-semibold text-foreground text-sm flex items-center gap-1.5">
                 <Stethoscope className="size-3.5 text-primary" />
                 <span>{medicoNome}</span>
-                <span className="text-[11px] text-muted-foreground">(CRM {crmUf})</span>
+                {crmUf && <span className="text-[11px] text-muted-foreground">(CRM {crmUf})</span>}
               </p>
             </div>
           </div>
 
-          {/* Selo ITI / ICP-Brasil */}
           <div className="flex items-start gap-2.5 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-950 dark:text-emerald-100">
             <ShieldCheck className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
             <div className="space-y-0.5">
@@ -117,7 +125,6 @@ export function PosConsultaSummary({
         </CardContent>
       </Card>
 
-      {/* Lista de Documentos Clínicos Emitidos */}
       <Card className="border-border shadow-sm text-left">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -136,7 +143,23 @@ export function PosConsultaSummary({
         </CardHeader>
 
         <CardContent className="space-y-3">
-          {isLoading && (!docs || docs.length === 0) ? (
+          {downloadError && (
+            <Alert variant="destructive" role="alert" className="py-2.5 text-xs">
+              <AlertCircle className="size-4" aria-hidden="true" />
+              <AlertDescription className="text-xs">{downloadError}</AlertDescription>
+            </Alert>
+          )}
+          {!docsProps && isDocsError ? (
+            <Alert variant="destructive" role="alert" className="py-2.5 text-xs">
+              <AlertCircle className="size-4" aria-hidden="true" />
+              <AlertDescription className="text-xs">
+                {extractProblemDetail(
+                  docsError,
+                  "Não foi possível carregar os documentos emitidos. Tente novamente.",
+                )}
+              </AlertDescription>
+            </Alert>
+          ) : isLoading && docs.length === 0 ? (
             <div className="flex items-center justify-center p-6 text-muted-foreground gap-2">
               <Loader2 className="size-4 animate-spin text-primary" />
               <span className="text-xs">Carregando documentos assinados…</span>
@@ -150,12 +173,12 @@ export function PosConsultaSummary({
             </div>
           ) : (
             docs.map((doc) => {
-              const labelDoc = TIPO_DOC_LABELS[doc.tipo_documento] || doc.tipo_documento;
-              const hasItens = doc.itens && doc.itens.length > 0;
+              const labelDoc = getTipoDocumentoLabel(doc.tipo_documento);
+              const isAssinado = Boolean(doc.assinado_em) || doc.status_assinatura === "ASSINADO";
 
               return (
                 <div
-                  key={doc.id}
+                  key={doc.documento_id}
                   className="p-3.5 rounded-lg border border-border bg-card space-y-2.5 transition-colors hover:border-primary/40"
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -164,48 +187,32 @@ export function PosConsultaSummary({
                         <FileText className="size-4 text-primary shrink-0" />
                         <h4 className="font-semibold text-xs text-foreground">{labelDoc}</h4>
                       </div>
-                      {doc.sha256_hash && (
+                      {doc.token_validacao && (
                         <p className="text-[11px] text-muted-foreground font-mono">
-                          Código / Validação ITI: <strong>{doc.sha256_hash}</strong>
+                          Código / Validação ITI: <strong>{doc.token_validacao}</strong>
                         </p>
                       )}
                     </div>
                     <Badge
-                      variant={doc.assinado_em ? "success" : "secondary"}
+                      variant={isAssinado ? "success" : "secondary"}
                       className="text-[10px] py-0.5 px-2 shrink-0"
                     >
-                      {doc.assinado_em ? "Assinado ICP-Brasil" : "Processado"}
+                      {isAssinado ? "Assinado ICP-Brasil" : "Processado"}
                     </Badge>
                   </div>
 
-                  {hasItens && (
-                    <div className="p-2 rounded bg-muted/40 border border-border/50 text-[11px] space-y-1">
-                      <div className="font-medium text-foreground flex items-center gap-1">
-                        <Pill className="size-3 text-primary" />
-                        <span>Prescrição:</span>
-                      </div>
-                      <ul className="list-disc list-inside text-muted-foreground space-y-0.5">
-                        {doc.itens?.map((item) => (
-                          <li key={item.medicamento}>
-                            <strong>{item.medicamento}</strong> — {item.posologia}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-[10px] text-muted-foreground">
-                      ID: {doc.id.substring(0, 8)}…
+                      ID: {doc.documento_id.substring(0, 8)}…
                     </span>
                     <Button
                       type="button"
                       size="sm"
-                      onClick={() => handleDownloadPdf(doc.id, doc.tipo_documento)}
-                      disabled={downloadingId === doc.id}
+                      onClick={() => handleDownloadPdf(doc.documento_id, doc.tipo_documento)}
+                      disabled={downloadingId === doc.documento_id}
                       className="h-8 text-xs px-3 gap-1.5"
                     >
-                      {downloadingId === doc.id ? (
+                      {downloadingId === doc.documento_id ? (
                         <>
                           <Loader2 className="size-3.5 animate-spin" />
                           <span>Baixando…</span>

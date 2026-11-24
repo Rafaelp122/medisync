@@ -64,7 +64,10 @@ Como canal complementar à notificação visual para pacientes com baixa visão,
 * Prova viva: `frontend/src/components/ui/badge.test.tsx`
 * Prova viva: `frontend/src/components/ui/dialog.test.tsx`
 * Prova viva: `frontend/src/features/onboarding/tests/pain-scale-selector.test.tsx`
-* Prova viva: `frontend/src/features/onboarding/tests/samu-emergency-modal.test.tsx`
+* Impl: `frontend/src/features/queue/components/ring-countdown.tsx:RingCountdown` (contagem isolada com `motion-reduce:animate-none`)
+* Impl: `frontend/src/features/onboarding/components/sexo-biologico-fieldset.tsx:SexoBiologicoFieldset` (`<fieldset>`/`<legend>` e propagação de `{...field}` antes de `onChange` nos inputs mascarados)
+* Prova viva: `frontend/src/components/samu-emergency-modal.test.tsx`
+* Prova viva: `frontend/src/features/onboarding/tests/enriquecimento-fase2-form.test.tsx` (auditoria `@axe-core/playwright` em jsdom validando WCAG 2.1 AA em `EnriquecimentoFase2Form`)
 * Prova viva: `frontend/src/features/queue/tests/incoming-call-ring-modal.test.tsx`
 * Ver: `rg -n "min-w-\[44px\]" frontend/src/`
 * Ver: `rg -n "safe-area-inset-bottom" frontend/src/`
