@@ -12,7 +12,6 @@ import { useLiveKitToken } from "../use-livekit-token";
 import { usePrescricaoValidator } from "../use-prescricao-validator";
 import { useProntuario } from "../use-prontuario";
 import { useSalvarSoap } from "../use-soap-evolucao";
-import { useTmaStatus } from "../use-tma-status";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -245,17 +244,8 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
     expect(assinarResult.current.data?.status).toBe("ASSINADO");
   });
 
-  it("HK-CONS-07: useTmaStatus e useFinalizarConsulta respeitam imutabilidade e telemetria (RN06)", async () => {
+  it("HK-CONS-07: useFinalizarConsulta respeita imutabilidade e telemetria (RN06)", async () => {
     server.use(
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/tma-status`, () => {
-        return HttpResponse.json({
-          atendimento_id: MOCK_ATENDIMENTO_ID,
-          tempo_decorrido_segundos: 950,
-          tma_planejado_segundos: 900,
-          excedeu_tma: true,
-          aviso_visual: "TMA excedido em 50s. Atendimento preservado sob RN06.",
-        });
-      }),
       http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/finalize`, () => {
         return HttpResponse.json({
           status: "FINALIZADO",
@@ -265,13 +255,6 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
         });
       }),
     );
-
-    const { result: tmaResult } = renderHook(() => useTmaStatus(MOCK_ATENDIMENTO_ID), {
-      wrapper: TestWrapper,
-    });
-
-    await waitFor(() => expect(tmaResult.current.isSuccess).toBe(true));
-    expect(tmaResult.current.data?.excedeu_tma).toBe(true);
 
     const { result: finalizarResult } = renderHook(
       () => useFinalizarConsulta(MOCK_ATENDIMENTO_ID),

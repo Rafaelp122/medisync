@@ -1,4 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
+import { sessionTransport } from "./session-transport";
 
 export const defaultQueryClient = new QueryClient({
   defaultOptions: {
@@ -7,4 +8,8 @@ export const defaultQueryClient = new QueryClient({
       retry: 1,
     },
   },
+});
+
+sessionTransport.subscribeInvalidated(() => {
+  defaultQueryClient.clear();
 });

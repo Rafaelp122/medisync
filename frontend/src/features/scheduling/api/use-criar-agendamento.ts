@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation, useQueryClient } from "@tanstack/react-query";
-import { client, resolveExplicitAuthHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { criarAgendamentoApiV1SchedulingAgendamentosPost } from "@/api/generated/sdk.gen";
 import type { AgendamentoResponse, CriarAgendamentoRequest } from "@/api/generated/types.gen";
@@ -7,7 +7,6 @@ import { MEUS_AGENDAMENTOS_QUERY_KEY_PREFIX } from "@/api/hooks/use-meus-agendam
 
 export interface CriarAgendamentoParams {
   body: CriarAgendamentoRequest;
-  token?: string;
 }
 
 /**
@@ -20,12 +19,11 @@ export function useCriarAgendamento(
 
   return useMutation<AgendamentoResponse, ProblemDetailsError, CriarAgendamentoParams>({
     ...options,
-    mutationFn: async ({ body, token }: CriarAgendamentoParams) => {
+    mutationFn: async ({ body }: CriarAgendamentoParams) => {
       try {
         const response = await criarAgendamentoApiV1SchedulingAgendamentosPost({
           client,
           body,
-          headers: resolveExplicitAuthHeaders(token),
           throwOnError: true,
         });
         return response.data;

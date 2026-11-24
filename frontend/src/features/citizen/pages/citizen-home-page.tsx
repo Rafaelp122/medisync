@@ -34,7 +34,7 @@ const FALLBACK_ESPECIALIDADES: EspecialidadeResponse[] = [
     codigo: "PSICOLOGIA",
     nome: "Psicologia",
     descricao: "Acompanhamento psicológico agendado com profissionais da equipe eMulti.",
-    duracao_padrao_minutos: 45,
+    duracao_padrao_minutos: 50,
   },
   {
     codigo: "NUTRICAO",
@@ -52,9 +52,7 @@ const FALLBACK_ESPECIALIDADES: EspecialidadeResponse[] = [
 export function CitizenHomePage({ session }: CitizenHomePageProps) {
   const activeSession = session ?? getStoredSession();
   const hasActiveAtendimento = Boolean(activeSession?.atendimentoId);
-  const { data: especialidades, isLoading: loadingEspecialidades } = useEspecialidades({
-    token: activeSession?.token,
-  });
+  const { data: especialidades, isLoading: loadingEspecialidades } = useEspecialidades();
 
   const listaEspecialidades =
     especialidades && especialidades.length > 0 ? especialidades : FALLBACK_ESPECIALIDADES;

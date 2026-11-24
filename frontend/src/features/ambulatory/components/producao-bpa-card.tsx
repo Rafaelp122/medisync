@@ -6,33 +6,51 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useExportarBpa, useProducaoBpa } from "../../api/use-producao-bpa";
+import { formatarDataBR } from "@/lib/formatters";
+import { useExportarBpa, useProducaoBpa } from "../api/use-producao-bpa";
 
-export interface ProducaoBpaCardProps {
-  token?: string;
+/**
+ * Retorna competência mensal canônica (YYYYMM) em UTC, alinhada ao servidor DATASUS.
+ */
+export function getCompetenciaAtualUtc(now: Date = new Date()): string {
+  const ano = now.getUTCFullYear();
+  const mes = String(now.getUTCMonth() + 1).padStart(2, "0");
+  return `${ano}${mes}`;
+}
+
+/**
+ * Extrai CNES real de 7 dígitos da linha `03` DATASUS BPA-I (posições 3..9),
+ * evitando o prefixo literal `01#BPA#` do cabeçalho.
+ */
+export function extractCnesFromBpaContent(conteudo: string): string | null {
+  for (const linha of conteudo.split(/\r?\n/)) {
+    const trimmed = linha.trim();
+    const matchLinha03 = trimmed.match(/^03(\d{7})/);
+    if (matchLinha03?.[1]) {
+      return matchLinha03[1];
+    }
+  }
+  return null;
 }
 
 /**
  * Cartão de apuração ambulatorial SUS BPA-I e exportação oficial .txt (US-11 / RF-08).
  */
-export function ProducaoBpaCard({ token }: ProducaoBpaCardProps) {
-  const [competencia, setCompetencia] = useState("202611");
+export function ProducaoBpaCard() {
+  const [competencia, setCompetencia] = useState(() => getCompetenciaAtualUtc());
   const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   const competenciaValida = /^\d{6}$/.test(competencia);
-  const { data: producao, isLoading, error: listError } = useProducaoBpa(competencia, token);
-  const { mutate: exportarBpa, isPending: isExporting, error: exportError } = useExportarBpa(token);
+  const { data: producao, isLoading, error: listError } = useProducaoBpa(competencia);
+  const { mutate: exportarBpa, isPending: isExporting, error: exportError } = useExportarBpa();
 
   const handleExportar = () => {
     if (!competenciaValida) return;
     setExportStatus(null);
     exportarBpa(competencia, {
-      onSuccess: (conteudo) => {
-        const cnesFromHeader = conteudo.startsWith("01#")
-          ? conteudo.split("#")[1]?.trim()
-          : undefined;
-        const cnes = producao?.items[0]?.cnes || cnesFromHeader || "0000000";
-        const filename = `BPA_I_${competencia}_${cnes}.txt`;
+      onSuccess: ({ conteudo, filename: serverFilename }) => {
+        const cnes = producao?.items[0]?.cnes || extractCnesFromBpaContent(conteudo) || "0000000";
+        const filename = serverFilename || `BPA_I_${competencia}_${cnes}.txt`;
 
         if (typeof URL.createObjectURL === "function") {
           const blob = new Blob([conteudo], { type: "text/plain;charset=utf-8" });
@@ -81,7 +99,7 @@ export function ProducaoBpaCard({ token }: ProducaoBpaCardProps) {
               maxLength={6}
               value={competencia}
               onChange={(e) => setCompetencia(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="202611"
+              placeholder="YYYYMM"
             />
           </div>
           <Button
@@ -149,7 +167,7 @@ export function ProducaoBpaCard({ token }: ProducaoBpaCardProps) {
                     <td className="px-3 py-2 font-mono">{item.cnes}</td>
                     <td className="px-3 py-2">{item.carater_atendimento}</td>
                     <td className="px-3 py-2 text-muted-foreground">
-                      {new Date(item.consolidado_em).toLocaleDateString("pt-BR")}
+                      {formatarDataBR(item.consolidado_em)}
                     </td>
                   </tr>
                 ))}

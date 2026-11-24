@@ -1,8 +1,18 @@
-import { createRoute, redirect } from "@tanstack/react-router";
-import { ProfilePage } from "@/features/citizen/pages/profile-page";
-import { EnriquecimentoFase2Form } from "@/features/onboarding/components/enriquecimento-fase2-form";
+import { createRoute, lazyRouteComponent, redirect } from "@tanstack/react-router";
+import { Suspense } from "react";
+import { RoutePendingFallback } from "@/components/route-fallbacks";
 import { getStoredSession, type StoredPatientSession } from "@/lib/session-storage";
 import { rootRoute } from "./root";
+
+const LazyProfilePage = lazyRouteComponent(
+  () => import("@/features/citizen/pages/profile-page"),
+  "ProfilePage",
+);
+
+const LazyEnriquecimentoFase2Form = lazyRouteComponent(
+  () => import("@/features/onboarding/components/enriquecimento-fase2-form"),
+  "EnriquecimentoFase2Form",
+);
 
 export const perfilRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -17,16 +27,20 @@ export const perfilRoute = createRoute({
   component: function PerfilRouteComponent() {
     const { session } = perfilRoute.useRouteContext() as { session: StoredPatientSession };
     return (
-      <ProfilePage
-        session={session}
-        renderEnrichmentForm={({ pacienteId, token, onConcluido }) => (
-          <EnriquecimentoFase2Form
-            pacienteId={pacienteId}
-            token={token}
-            onConcluido={onConcluido}
-          />
-        )}
-      />
+      <Suspense fallback={<RoutePendingFallback />}>
+        <LazyProfilePage
+          session={session}
+          renderEnrichmentForm={({ pacienteId, token, onConcluido }) => (
+            <Suspense fallback={<RoutePendingFallback />}>
+              <LazyEnriquecimentoFase2Form
+                pacienteId={pacienteId}
+                token={token}
+                onConcluido={onConcluido}
+              />
+            </Suspense>
+          )}
+        />
+      </Suspense>
     );
   },
 });
