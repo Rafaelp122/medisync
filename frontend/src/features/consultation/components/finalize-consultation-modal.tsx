@@ -16,12 +16,13 @@ import { Label } from "@/components/ui/label";
 import { settings } from "@/config/settings";
 import { useAssinarDocumento } from "../api/use-assinar-documento";
 import { useFinalizarConsulta } from "../api/use-finalizar-consulta";
+import { useOptionalConsultationEncounter } from "../context/consultation-encounter-provider";
 
 export interface FinalizeConsultationModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   atendimentoId: string;
-  identidadeVerificada: boolean;
+  identidadeVerificada?: boolean;
   documentoPendente?: DocumentoClinicoResponse | null;
   onFinalized?: () => void;
   token?: string;
@@ -29,7 +30,8 @@ export interface FinalizeConsultationModalProps {
 
 /**
  * Modal de finalização formal da teleconsulta e aplicação de assinatura ICP-Brasil.
- * Trava o prontuário em modo imutável (CFM nº 1.821/2007) e bloqueia se a identidade não foi verificada (CFM 2.314).
+ * Consome estado isolado do `ConsultationEncounterProvider` (impedindo vazamento de
+ * `documentoAssinado` entre pacientes) ou aceita props explícitas em modo isolado.
  * Regras: RF-07, RF-08, US-09, US-10.
  */
 export function FinalizeConsultationModal({
@@ -41,21 +43,29 @@ export function FinalizeConsultationModal({
   onFinalized,
   token,
 }: FinalizeConsultationModalProps) {
+  const encounter = useOptionalConsultationEncounter();
   const [pscToken, setPscToken] = useState(settings.env.isDemoMode ? settings.demo.pscToken : "");
   const [pscProvider, setPscProvider] = useState(settings.env.defaultPscProvider);
-  const [documentoAssinado, setDocumentoAssinado] = useState(false);
+  const [documentoAssinadoLocal, setDocumentoAssinadoLocal] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  const resolvedIdentidadeVerificada =
+    identidadeVerificada ?? encounter?.identidadeVerificada ?? false;
+  const resolvedDocPendente =
+    documentoPendente !== undefined ? documentoPendente : (encounter?.documentoPendente ?? null);
+  const resolvedToken = token ?? encounter?.atendimento.token;
+  const documentoAssinado = encounter ? encounter.documentoAssinado : documentoAssinadoLocal;
 
   const { mutate: assinarDocumento, isPending: isSigning } = useAssinarDocumento(atendimentoId);
   const { mutate: finalizarConsulta, isPending: isFinalizing } =
     useFinalizarConsulta(atendimentoId);
 
   const precisaAssinar = Boolean(
-    documentoPendente && !documentoPendente.assinado_em && !documentoAssinado,
+    resolvedDocPendente && !resolvedDocPendente.assinado_em && !documentoAssinado,
   );
 
   const handleAssinarDocumento = () => {
-    if (!documentoPendente || !pscToken.trim()) {
+    if (!resolvedDocPendente || !pscToken.trim()) {
       setErro("Informe o token de autorização emitido pelo seu provedor PSC.");
       return;
     }
@@ -63,8 +73,8 @@ export function FinalizeConsultationModal({
 
     assinarDocumento(
       {
-        token,
-        documento_id: documentoPendente.id,
+        token: resolvedToken,
+        documento_id: resolvedDocPendente.id,
         payload: {
           token: pscToken.trim(),
           provider: pscProvider,
@@ -72,7 +82,8 @@ export function FinalizeConsultationModal({
       },
       {
         onSuccess: () => {
-          setDocumentoAssinado(true);
+          setDocumentoAssinadoLocal(true);
+          encounter?.marcarDocumentoAssinado();
           setPscToken("");
         },
         onError: (err) => {
@@ -83,7 +94,7 @@ export function FinalizeConsultationModal({
   };
 
   const handleConfirmarFinalizacao = () => {
-    if (!identidadeVerificada) {
+    if (!resolvedIdentidadeVerificada) {
       setErro("A conferência de identidade oficial com foto é obrigatória (CFM nº 2.314/2022).");
       return;
     }
@@ -94,9 +105,10 @@ export function FinalizeConsultationModal({
     setErro(null);
 
     finalizarConsulta(
-      { token },
+      { token: resolvedToken },
       {
         onSuccess: () => {
+          encounter?.marcarFinalizado();
           onFinalized?.();
           onOpenChange(false);
         },
@@ -123,7 +135,7 @@ export function FinalizeConsultationModal({
 
         <div className="space-y-4 py-2 text-xs">
           {/* Bloqueio se identidade não verificada */}
-          {!identidadeVerificada && (
+          {!resolvedIdentidadeVerificada && (
             <Alert variant="destructive">
               <AlertCircle className="size-4" />
               <AlertTitle className="font-semibold text-xs">Bloqueio Ético Regulatório</AlertTitle>
@@ -136,7 +148,7 @@ export function FinalizeConsultationModal({
           )}
 
           {/* Etapa de Assinatura Digital ICP-Brasil se houver receita emitida */}
-          {precisaAssinar && identidadeVerificada && (
+          {precisaAssinar && resolvedIdentidadeVerificada && (
             <div className="p-3 rounded-lg border border-border bg-muted/40 space-y-3">
               <div className="flex items-center gap-2 font-semibold text-foreground">
                 <KeyRound className="size-4 text-primary" />
@@ -260,7 +272,7 @@ export function FinalizeConsultationModal({
             type="button"
             size="sm"
             onClick={handleConfirmarFinalizacao}
-            disabled={!identidadeVerificada || precisaAssinar || isFinalizing}
+            disabled={!resolvedIdentidadeVerificada || precisaAssinar || isFinalizing}
             className="text-xs font-medium h-8 gap-1.5 bg-primary text-primary-foreground"
           >
             {isFinalizing ? (

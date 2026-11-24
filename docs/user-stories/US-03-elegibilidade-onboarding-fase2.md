@@ -71,7 +71,7 @@
 - [x] **Modelo:** Suporte a `nome_social` e dados completos do CFM em `Paciente` (`src/modules/identity/domain/models/paciente.py`).
 - [x] **Adaptadores:** `SusEligibilityAdapter` (isenção universal `SUS-ISENTO` no SUS / ADR-012) em `src/modules/ambulatory/infrastructure/adapters/sus_adapter.py`.
 - [x] **Débito NC-IDN-01:** Dependência `validar_intake_fase2` aceitar polimorfismo de token JWT OTP (Resolvido na Issue #76).
-- [x] **Frontend (Fase 2, ViaCEP & `/perfil`):** Formulário em `frontend/src/features/onboarding/components/enriquecimento-fase2-form.tsx` com autopreenchimento assíncrono e timeout de 5000ms (`frontend/src/features/onboarding/api/use-via-cep.ts`), integrado tanto à sala de espera `/fila` quanto ao perfil do cidadão em `/perfil` (`frontend/src/routes/perfil.tsx`, `ProfilePage`).
+- [x] **Frontend (Fase 2, ViaCEP & `/perfil`):** Formulário em `frontend/src/features/onboarding/components/enriquecimento-fase2-form.tsx` (com `<fieldset>`/`<legend>` via `frontend/src/features/onboarding/components/sexo-biologico-fieldset.tsx`, `cfm-address-fields.tsx` e propagação `{...field}` antes de `onChange`) e consulta `useQuery` cancelável via `AbortSignal` (`frontend/src/features/onboarding/api/use-via-cep.ts:useViaCepQuery`), integrado tanto à sala de espera `/fila` quanto ao perfil do cidadão em `/perfil` (`frontend/src/routes/perfil.tsx`, `ProfilePage`).
 - [x] **Frontend Hook:** `frontend/src/features/onboarding/api/use-enrichment-fase2.ts` integrando com SDK Hey API.
 - [x] **Testes Automatizados:**
   - Backend: `tests/unit/test_onboarding_schemas.py`, `tests/unit/test_fila_regularizacao.py`, `tests/integration/test_eligibility_flow.py`

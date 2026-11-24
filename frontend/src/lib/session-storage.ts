@@ -112,6 +112,17 @@ export function getStoredToken(): string | null {
   return getStoredSession()?.token ?? null;
 }
 
+/**
+ * Verifica estruturalmente se um token de sessão possui formato JWT de 3 segmentos (header.payload.signature).
+ * Tokens de acolhimento (intake_token) possuem apenas 2 segmentos (payload.sig).
+ * @see docs/user-stories/US-01-acolhimento-triagem-tcle.md
+ */
+export function isThreePartJwt(token?: string | null): boolean {
+  if (!token) return false;
+  const parts = token.trim().split(".");
+  return parts.length === 3 && parts.every((part) => part.length > 0);
+}
+
 export const MEDISYNC_DOCTOR_SESSION_KEY = settings.storage.doctorSession;
 
 /**

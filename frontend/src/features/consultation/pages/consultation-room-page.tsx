@@ -1,16 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
-import { lazy, Suspense, useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { LiveKitTokenResponse, LivenessChallengeResponse } from "@/api/generated/types.gen";
 import { PatientLivenessModal } from "@/features/consultation/components/patient-liveness-modal";
+import { VideoCallStage } from "@/features/consultation/components/video-call-stage";
 import type {
   LivenessChannelMessage,
   LivenessResultMessage,
 } from "@/features/consultation/lib/liveness-channel";
 import { clearStoredCallData, type StoredPatientSession } from "@/lib/session-storage";
-
-const LazyLiveKitVideoCall = lazy(
-  () => import("@/features/consultation/components/livekit-video-call"),
-);
 
 export interface ConsultationRoomPageProps {
   session: StoredPatientSession;
@@ -68,25 +65,17 @@ export function ConsultationRoomPage({ session, callData }: ConsultationRoomPage
       className="min-h-screen w-full flex flex-col items-center justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-background text-foreground"
     >
       <div className="w-full max-w-2xl mx-auto space-y-4">
-        <Suspense
-          fallback={
-            <div className="h-80 flex items-center justify-center bg-slate-900 rounded-xl text-slate-300 text-xs">
-              Conectando à Sala de Teleconsulta LiveKit SFU…
-            </div>
-          }
-        >
-          <LazyLiveKitVideoCall
-            wsUrl={callData.server_url}
-            token={callData.token}
-            roomName={callData.room_name}
-            participantName={callData.participant_identity}
-            remoteParticipantName="Dr. Eduardo Rocha (Médico Plantonista)"
-            onDisconnected={handleTeleconsultaEncerrada}
-            onLivenessMessage={handleLivenessMessage}
-            onRegisterLivenessSender={handleRegisterLivenessSender}
-            className="min-h-[420px]"
-          />
-        </Suspense>
+        <VideoCallStage
+          serverUrl={callData.server_url}
+          token={callData.token}
+          roomName={callData.room_name}
+          participantName={callData.participant_identity}
+          remoteParticipantName="Médico Plantonista"
+          onDisconnected={handleTeleconsultaEncerrada}
+          onLivenessMessage={handleLivenessMessage}
+          onRegisterLivenessSender={handleRegisterLivenessSender}
+          className="min-h-[420px]"
+        />
 
         {activeChallenge && session.atendimentoId && (
           <PatientLivenessModal
