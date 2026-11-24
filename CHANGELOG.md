@@ -1,3 +1,16 @@
+## v0.19.1 (2026-11-24)
+
+### Fix
+
+- **frontend**: preservar JWT em /triagem, podar OTP e aprofundar onboarding, queue e consultation
+- **frontend**: extrair SessionTransport, hidratar login /auth/me e corrigir Painel do Gestor
+- **scheduling**: aprofundar AgendaDisponibilidade, travas GiST/for_update e reader SQL leve
+- **consultation**: fechar IDOR PDF, ativar trava 180s RN09, validacao >24h e commit unico PEP
+- **ambulatory,telemetry**: corrigir integridade BPA-I, idempotencia e aprofundar Telemetry Core
+- **triage,queue,worker**: unificar Red Flags SAMU, extrair ValkeyQueueEngine Lua 4-Keys e blindar Sweeper ARQ
+- **auth,identity**: fechar ATO CADSUS/Fase 1, destravar MFA e extrair ChallengeStorePort
+- **authz,core**: unificar resolve_bearer_principal, revogacao fail-closed e hardening de CORS
+
 ## v0.19.0 (2026-11-21)
 
 ### BREAKING CHANGE
