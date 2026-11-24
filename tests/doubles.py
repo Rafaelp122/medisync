@@ -57,6 +57,10 @@ from src.modules.queue.application.ports.triage_port import (
     TriageEvaluationDTO,
     TriagePort,
 )
+from src.modules.scheduling.application.ports.attendance_lookup_port import (
+    AttendanceLookupPort,
+    AttendanceSnapshot,
+)
 from src.modules.scheduling.application.ports.scheduling_repository_port import (
     SchedulingRepositoryPort,
 )
@@ -1519,6 +1523,21 @@ class FakePatientCredentialRepository(PatientCredentialRepositoryPort):
         return credencial
 
 
+class FakeAttendanceLookup(AttendanceLookupPort):
+    """Canonical in-memory AttendanceLookupPort double for scheduling tests."""
+
+    def __init__(self) -> None:
+        self.atendimentos: dict[UUID, AttendanceSnapshot] = {}
+        self.calls: list[UUID] = []
+
+    async def buscar_atendimento(
+        self,
+        atendimento_id: UUID,
+    ) -> AttendanceSnapshot | None:
+        self.calls.append(atendimento_id)
+        return self.atendimentos.get(atendimento_id)
+
+
 class FakeSchedulingRepository(SchedulingRepositoryPort):
     """Canonical in-memory SchedulingRepositoryPort double."""
 
@@ -1526,6 +1545,8 @@ class FakeSchedulingRepository(SchedulingRepositoryPort):
         self.disponibilidades: list[AgendaDisponibilidade] = []
         self.agendamentos: list[Agendamento] = []
         self.last_for_update: bool | None = None
+        self.lock_calls: list[tuple[UUID, int]] = []
+        self.last_ocupados_profissional_ids: set[UUID] | None = None
 
     async def listar_disponibilidades_ativas(
         self,
@@ -1541,12 +1562,20 @@ class FakeSchedulingRepository(SchedulingRepositoryPort):
         self,
         inicio: datetime,
         fim: datetime,
+        profissional_ids: Sequence[UUID],
     ) -> Sequence[Agendamento]:
+        ids_set = set(profissional_ids)
+        self.last_ocupados_profissional_ids = ids_set
+        if not ids_set:
+            return []
         inativos = {StatusAgendamento.CANCELADO.value, StatusAgendamento.FALTA.value}
         return [
             a
             for a in self.agendamentos
-            if a.status not in inativos and a.slot_inicio < fim and a.slot_fim > inicio
+            if a.profissional_id in ids_set
+            and a.status not in inativos
+            and a.slot_inicio < fim
+            and a.slot_fim > inicio
         ]
 
     async def buscar_agendamento_conflitante(
@@ -1554,17 +1583,27 @@ class FakeSchedulingRepository(SchedulingRepositoryPort):
         profissional_id: UUID,
         slot_inicio: datetime,
         slot_fim: datetime,
+        *,
+        paciente_id: UUID | None = None,
     ) -> Agendamento | None:
         inativos = {StatusAgendamento.CANCELADO.value, StatusAgendamento.FALTA.value}
         for a in self.agendamentos:
-            if (
-                a.profissional_id == profissional_id
-                and a.status not in inativos
-                and a.slot_inicio < slot_fim
-                and a.slot_fim > slot_inicio
+            if a.status in inativos:
+                continue
+            if not (a.slot_inicio < slot_fim and a.slot_fim > slot_inicio):
+                continue
+            if a.profissional_id == profissional_id or (
+                paciente_id is not None and a.paciente_id == paciente_id
             ):
                 return a
         return None
+
+    async def adquirir_lock_disponibilidade(
+        self,
+        profissional_id: UUID,
+        dia_semana: int,
+    ) -> None:
+        self.lock_calls.append((profissional_id, dia_semana))
 
     async def buscar_disponibilidade_profissional(
         self,

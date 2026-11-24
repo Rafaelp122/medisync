@@ -12,6 +12,7 @@ from src.modules.scheduling.domain.models import (
     Agendamento,
     EspecialidadeAgenda,
     EspecialidadeMetadata,
+    SlotDisponivelDTO,
     StatusAgendamento,
     validar_especialidade_agenda,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "AgendamentoNaoEncontradoError",
     "EspecialidadeAgenda",
     "EspecialidadeMetadata",
+    "SlotDisponivelDTO",
     "SlotIndisponivelError",
     "StatusAgendamento",
     "TransicaoAgendamentoInvalidaError",

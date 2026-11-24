@@ -1,5 +1,6 @@
 """Modelos ricos e agregados do módulo scheduling (eMulti multiprofissional)."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
@@ -25,7 +26,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.core.database import Base
 from src.core.errors import ValidationError
 from src.core.uuid7 import uuid7
-from src.modules.scheduling.domain.exceptions import TransicaoAgendamentoInvalidaError
+from src.modules.scheduling.domain.exceptions import (
+    SlotIndisponivelError,
+    TransicaoAgendamentoInvalidaError,
+)
 
 
 class EspecialidadeAgenda(StrEnum):
@@ -49,6 +53,20 @@ class StatusAgendamento(StrEnum):
 STATUS_AGENDAMENTO_INATIVOS: frozenset[StatusAgendamento] = frozenset(
     {StatusAgendamento.CANCELADO, StatusAgendamento.FALTA}
 )
+_STATUS_AGENDAMENTO_INATIVOS_STR: frozenset[str] = frozenset(
+    s.value for s in STATUS_AGENDAMENTO_INATIVOS
+)
+
+
+@dataclass(frozen=True)
+class SlotDisponivelDTO:
+    """Slot livre gerado a partir das janelas de disponibilidade ativas."""
+
+    profissional_id: UUID
+    especialidade: str
+    slot_inicio: datetime
+    slot_fim: datetime
+    duracao_minutos: int
 
 
 @dataclass(frozen=True)
@@ -129,6 +147,21 @@ class AgendaDisponibilidade(Base):
         CheckConstraint(
             "duracao_minutos BETWEEN 15 AND 120",
             name="chk_agenda_disp_duracao",
+        ),
+        ExcludeConstraint(
+            ("profissional_id", "="),
+            ("dia_semana", "="),
+            (
+                func.numrange(
+                    func.extract("epoch", column("hora_inicio")),
+                    func.extract("epoch", column("hora_fim")),
+                    "[)",
+                ),
+                "&&",
+            ),
+            name="excl_agenda_disp_sobreposicao",
+            using="gist",
+            where=text("ativo IS TRUE"),
         ),
         Index(
             "idx_agenda_disp_esp",
@@ -264,6 +297,131 @@ class AgendaDisponibilidade(Base):
             (inicio_utc - janela_inicio) % passo == timedelta(0)
         )
 
+    def _slot_colide(
+        self,
+        slot_inicio: datetime,
+        slot_fim: datetime,
+        ocupados: Sequence["Agendamento"],
+    ) -> bool:
+        return any(
+            ag.profissional_id == self.profissional_id
+            and ag.status not in _STATUS_AGENDAMENTO_INATIVOS_STR
+            and normalizar_utc(ag.slot_inicio) < slot_fim
+            and normalizar_utc(ag.slot_fim) > slot_inicio
+            for ag in ocupados
+        )
+
+    def _viola_grade(
+        self,
+        dia: date,
+        slot_inicio_utc: datetime,
+        slot_fim_utc: datetime,
+    ) -> bool:
+        janela_ini = datetime.combine(dia, self.hora_inicio, tzinfo=UTC)
+        janela_fim = datetime.combine(dia, self.hora_fim, tzinfo=UTC)
+        if not (janela_ini <= slot_inicio_utc < janela_fim):
+            return False
+        passo = timedelta(minutes=self.duracao_minutos)
+        desalinhado = (slot_inicio_utc - janela_ini) % passo != timedelta(0)
+        duracao_divergente = (slot_fim_utc - slot_inicio_utc) != passo
+        return desalinhado or duracao_divergente
+
+    def gerar_slots_disponiveis(
+        self,
+        dia: date,
+        *,
+        agora_utc: datetime,
+        ocupados: Sequence["Agendamento"],
+    ) -> list[SlotDisponivelDTO]:
+        """Gera slots livres futuros da janela no dia filtrando passado e colisões.
+
+        Regras: docs/explanation/domains/scheduling-domain.md
+        """
+        corte_utc = normalizar_utc(agora_utc)
+        gerados: list[SlotDisponivelDTO] = []
+        for slot_inicio, slot_fim in self.gerar_intervalos(dia):
+            if slot_inicio < corte_utc:
+                continue
+            if self._slot_colide(slot_inicio, slot_fim, ocupados):
+                continue
+            gerados.append(
+                SlotDisponivelDTO(
+                    profissional_id=self.profissional_id,
+                    especialidade=self.especialidade,
+                    slot_inicio=slot_inicio,
+                    slot_fim=slot_fim,
+                    duracao_minutos=self.duracao_minutos,
+                )
+            )
+        return gerados
+
+    @classmethod
+    def resolver_slot_em_janelas(
+        cls,
+        disponibilidades: Sequence["AgendaDisponibilidade"],
+        *,
+        profissional_id: UUID,
+        especialidade: EspecialidadeAgenda,
+        slot_inicio_utc: datetime,
+        slot_fim_explicito: datetime | None,
+    ) -> datetime:
+        """Resolve o término de slot válido ou diagnostica violação de grade/agenda.
+
+        Regras: docs/explanation/domains/scheduling-domain.md
+        """
+        inicio_utc = normalizar_utc(slot_inicio_utc)
+        fim_explicito_utc = (
+            normalizar_utc(slot_fim_explicito)
+            if slot_fim_explicito is not None
+            else None
+        )
+        if fim_explicito_utc is not None and fim_explicito_utc <= inicio_utc:
+            raise ValidationError(
+                f"slot_fim '{fim_explicito_utc.isoformat()}' inválido; deve ser "
+                f"estritamente posterior a slot_inicio '{inicio_utc.isoformat()}'."
+            )
+
+        elegiveis = [
+            disp
+            for disp in disponibilidades
+            if disp.ativo
+            and disp.profissional_id == profissional_id
+            and disp.especialidade == especialidade.value
+            and disp.dia_semana == inicio_utc.weekday()
+        ]
+        if not elegiveis:
+            raise SlotIndisponivelError(
+                f"Profissional '{profissional_id}' sem agenda ativa em "
+                f"'{especialidade.value}' para o dia da semana {inicio_utc.weekday()}."
+            )
+
+        dia = inicio_utc.date()
+        violacao_grade = False
+        for disp in elegiveis:
+            slot_fim_esperado = inicio_utc + timedelta(minutes=disp.duracao_minutos)
+            slot_fim = (
+                fim_explicito_utc
+                if fim_explicito_utc is not None
+                else slot_fim_esperado
+            )
+            if disp.cobre_slot(inicio_utc, slot_fim):
+                return slot_fim
+            if disp._viola_grade(dia, inicio_utc, slot_fim):
+                violacao_grade = True
+
+        if violacao_grade:
+            duracoes = sorted({d.duracao_minutos for d in elegiveis})
+            fim_desc = fim_explicito_utc.isoformat() if fim_explicito_utc else "auto"
+            raise ValidationError(
+                f"Slot [{inicio_utc.isoformat()}, {fim_desc}) diverge da "
+                f"grade ou duração permitida {duracoes} min da agenda do "
+                f"profissional '{profissional_id}'."
+            )
+        raise SlotIndisponivelError(
+            f"Horário '{inicio_utc.isoformat()}' indisponível na agenda de "
+            f"'{especialidade.value}' do profissional '{profissional_id}'."
+        )
+
 
 class Agendamento(Base):
     """Agregado de agendamento multiprofissional com máquina de estados estrita.
@@ -295,6 +453,20 @@ class Agendamento(Base):
                 "&&",
             ),
             name="excl_agendamento_slot_ativo",
+            using="gist",
+            where=text("status NOT IN ('CANCELADO', 'FALTA')"),
+        ),
+        ExcludeConstraint(
+            ("paciente_id", "="),
+            (
+                func.tstzrange(
+                    column("slot_inicio"),
+                    column("slot_fim"),
+                    "[)",
+                ),
+                "&&",
+            ),
+            name="excl_agendamento_paciente_ativo",
             using="gist",
             where=text("status NOT IN ('CANCELADO', 'FALTA')"),
         ),
@@ -476,3 +648,29 @@ class Agendamento(Base):
         )
         if atendimento_id is not None:
             self.atendimento_id = atendimento_id
+
+    def concluir(self) -> None:
+        """Conclui um agendamento em atendimento clínico (EM_ATENDIMENTO -> CONCLUIDO).
+
+        Regras: docs/explanation/domains/scheduling-domain.md
+        """
+        self._transicionar(
+            destino=StatusAgendamento.CONCLUIDO,
+            permitidos=frozenset({StatusAgendamento.EM_ATENDIMENTO}),
+        )
+
+    def marcar_falta(self) -> None:
+        """Registra ausência do paciente liberando o slot ou encerrando atendimento.
+
+        Regras: docs/explanation/domains/scheduling-domain.md
+        """
+        self._transicionar(
+            destino=StatusAgendamento.FALTA,
+            permitidos=frozenset(
+                {
+                    StatusAgendamento.AGENDADO,
+                    StatusAgendamento.CONFIRMADO,
+                    StatusAgendamento.EM_ATENDIMENTO,
+                }
+            ),
+        )

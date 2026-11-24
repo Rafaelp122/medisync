@@ -1,13 +1,18 @@
 """Serviço de aplicação para agenda programada multiprofissional (eMulti)."""
 
-from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.errors import DomainError, ForbiddenError, NotFoundError, ValidationError
+from src.core.errors import (
+    ConflictError,
+    DomainError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationError,
+)
 from src.modules.scheduling.application.dtos import (
     AgendarConsultaCommand,
     CriarDisponibilidadeCommand,
@@ -36,52 +41,6 @@ from src.modules.scheduling.domain.models import (
 _MAX_JANELA_SLOTS_DIAS = 31
 
 
-def _slot_colide(
-    profissional_id: UUID,
-    inicio: datetime,
-    fim: datetime,
-    ocupados: Sequence[Agendamento],
-) -> bool:
-    return any(
-        ag.profissional_id == profissional_id
-        and ag.slot_inicio < fim
-        and ag.slot_fim > inicio
-        for ag in ocupados
-    )
-
-
-def _gerar_slots_janela(
-    disp: AgendaDisponibilidade,
-    dia: date,
-    ocupados: Sequence[Agendamento],
-) -> list[SlotDisponivelDTO]:
-    gerados: list[SlotDisponivelDTO] = []
-    for slot_inicio, slot_fim in disp.gerar_intervalos(dia):
-        if _slot_colide(disp.profissional_id, slot_inicio, slot_fim, ocupados):
-            continue
-        gerados.append(
-            SlotDisponivelDTO(
-                profissional_id=disp.profissional_id,
-                especialidade=disp.especialidade,
-                slot_inicio=slot_inicio,
-                slot_fim=slot_fim,
-                duracao_minutos=disp.duracao_minutos,
-            )
-        )
-    return gerados
-
-
-def _gerar_slots_no_dia(
-    disponibilidades: Sequence[AgendaDisponibilidade],
-    dia: date,
-    ocupados: Sequence[Agendamento],
-) -> list[SlotDisponivelDTO]:
-    slots_dia: list[SlotDisponivelDTO] = []
-    for disp in disponibilidades:
-        slots_dia.extend(_gerar_slots_janela(disp, dia, ocupados))
-    return slots_dia
-
-
 def _validar_intervalo_datas(data_inicio: date, data_fim: date) -> None:
     if data_fim < data_inicio:
         raise ValidationError(
@@ -96,20 +55,10 @@ def _validar_intervalo_datas(data_inicio: date, data_fim: date) -> None:
         )
 
 
-def _eh_violacao_grade(
-    disp: AgendaDisponibilidade,
-    dia: date,
-    slot_inicio_utc: datetime,
-    slot_fim_utc: datetime,
-) -> bool:
-    janela_ini = datetime.combine(dia, disp.hora_inicio, tzinfo=UTC)
-    janela_fim = datetime.combine(dia, disp.hora_fim, tzinfo=UTC)
-    if not (janela_ini <= slot_inicio_utc < janela_fim):
-        return False
-    passo = timedelta(minutes=disp.duracao_minutos)
-    desalinhado = (slot_inicio_utc - janela_ini) % passo != timedelta(0)
-    duracao_divergente = (slot_fim_utc - slot_inicio_utc) != passo
-    return desalinhado or duracao_divergente
+def _extrair_erro_pg(exc: IntegrityError) -> tuple[str | None, str | None]:
+    sqlstate = getattr(exc.orig, "sqlstate", None)
+    constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    return sqlstate, constraint
 
 
 def _traduzir_integrity_error_agendamento(
@@ -117,12 +66,18 @@ def _traduzir_integrity_error_agendamento(
     cmd: AgendarConsultaCommand,
     slot_inicio_utc: datetime,
 ) -> DomainError:
-    sqlstate = getattr(exc.orig, "sqlstate", None)
-    constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    sqlstate, constraint = _extrair_erro_pg(exc)
     if sqlstate in {"23505", "23P01"}:
+        if constraint == "excl_agendamento_paciente_ativo":
+            return SlotIndisponivelError(
+                f"Conflito concorrente: paciente '{cmd.paciente_id}' já possui "
+                f"agendamento ativo em '{slot_inicio_utc.isoformat()}' "
+                f"(sqlstate={sqlstate}, constraint='{constraint}')."
+            )
         return SlotIndisponivelError(
             f"Conflito concorrente ao reservar '{slot_inicio_utc.isoformat()}' "
-            f"para o profissional '{cmd.profissional_id}' (sqlstate={sqlstate})."
+            f"para o profissional '{cmd.profissional_id}' "
+            f"(sqlstate={sqlstate}, constraint='{constraint}')."
         )
     if sqlstate == "23503":
         return NotFoundError(
@@ -132,6 +87,54 @@ def _traduzir_integrity_error_agendamento(
     return ValidationError(
         f"Dados inválidos ao persistir agendamento para "
         f"'{slot_inicio_utc.isoformat()}' "
+        f"(sqlstate={sqlstate}, constraint='{constraint}')."
+    )
+
+
+def _traduzir_integrity_error_disponibilidade(
+    exc: IntegrityError,
+    cmd: CriarDisponibilidadeCommand,
+) -> DomainError:
+    sqlstate, constraint = _extrair_erro_pg(exc)
+    if sqlstate in {"23505", "23P01"}:
+        return SlotIndisponivelError(
+            f"Janela [{cmd.hora_inicio.isoformat()}, {cmd.hora_fim.isoformat()}) "
+            f"conflita concorrentemente na agenda do profissional "
+            f"'{cmd.profissional_id}' no dia {cmd.dia_semana} "
+            f"(sqlstate={sqlstate}, constraint='{constraint}')."
+        )
+    if sqlstate == "23503":
+        return NotFoundError(
+            f"Profissional '{cmd.profissional_id}' não localizado "
+            f"(constraint='{constraint}')."
+        )
+    return ValidationError(
+        f"Dados inválidos ao persistir disponibilidade para o profissional "
+        f"'{cmd.profissional_id}' (sqlstate={sqlstate}, constraint='{constraint}')."
+    )
+
+
+def _traduzir_integrity_error_inicio_atendimento(
+    exc: IntegrityError,
+    *,
+    agendamento_id: UUID,
+    atendimento_id: UUID | None,
+) -> DomainError:
+    sqlstate, constraint = _extrair_erro_pg(exc)
+    if sqlstate in {"23505", "23P01"}:
+        return ConflictError(
+            f"Conflito ao vincular atendimento '{atendimento_id}' ao "
+            f"agendamento '{agendamento_id}' (sqlstate={sqlstate}, "
+            f"constraint='{constraint}')."
+        )
+    if sqlstate == "23503":
+        return NotFoundError(
+            f"Atendimento '{atendimento_id}' não localizado ao iniciar "
+            f"agendamento '{agendamento_id}' (constraint='{constraint}')."
+        )
+    return ValidationError(
+        f"Dados inválidos ao iniciar agendamento '{agendamento_id}' com "
+        f"atendimento '{atendimento_id}' "
         f"(sqlstate={sqlstate}, constraint='{constraint}')."
     )
 
@@ -146,7 +149,7 @@ class SchedulingService:
         self,
         session: AsyncSession,
         repository: SchedulingRepositoryPort,
-        attendance_lookup: AttendanceLookupPort | None = None,
+        attendance_lookup: AttendanceLookupPort,
     ) -> None:
         """Inicializa o serviço com sessão transacional e portas de domínio."""
         self._session = session
@@ -167,7 +170,7 @@ class SchedulingService:
         data_inicio: date,
         data_fim: date,
     ) -> list[SlotDisponivelDTO]:
-        """Gera slots livres no período subtraindo agendamentos ativos ocupados.
+        """Gera slots livres futuros no período subtraindo agendamentos ocupados.
 
         Regras: docs/explanation/domains/scheduling-domain.md
         """
@@ -184,15 +187,27 @@ class SchedulingService:
         fim_dt = datetime.combine(
             data_fim + timedelta(days=1), datetime.min.time(), tzinfo=UTC
         )
+        profissional_ids = tuple(
+            dict.fromkeys(disp.profissional_id for disp in disponibilidades)
+        )
         ocupados = await self._repository.listar_agendamentos_ocupados(
             inicio=inicio_dt,
             fim=fim_dt,
+            profissional_ids=profissional_ids,
         )
 
+        agora_utc = datetime.now(UTC)
         slots: list[SlotDisponivelDTO] = []
         dia_atual = data_inicio
         while dia_atual <= data_fim:
-            slots.extend(_gerar_slots_no_dia(disponibilidades, dia_atual, ocupados))
+            for disp in disponibilidades:
+                slots.extend(
+                    disp.gerar_slots_disponiveis(
+                        dia_atual,
+                        agora_utc=agora_utc,
+                        ocupados=ocupados,
+                    )
+                )
             dia_atual += timedelta(days=1)
 
         return sorted(slots, key=lambda s: (s.slot_inicio, str(s.profissional_id)))
@@ -213,6 +228,10 @@ class SchedulingService:
             hora_fim=cmd.hora_fim,
             duracao_minutos=cmd.duracao_minutos,
         )
+        await self._repository.adquirir_lock_disponibilidade(
+            profissional_id=cmd.profissional_id,
+            dia_semana=cmd.dia_semana,
+        )
         existentes = await self._repository.buscar_disponibilidade_profissional(
             profissional_id=cmd.profissional_id,
             especialidade=None,
@@ -231,7 +250,11 @@ class SchedulingService:
                 )
 
         self._repository.adicionar_disponibilidade(disponibilidade)
-        await self._session.commit()
+        try:
+            await self._session.commit()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise _traduzir_integrity_error_disponibilidade(exc, cmd) from exc
         return disponibilidade
 
     async def _validar_e_resolver_slot(
@@ -245,65 +268,12 @@ class SchedulingService:
             especialidade=esp.value,
             dia_semana=slot_inicio_utc.weekday(),
         )
-        if not disponibilidades:
-            raise SlotIndisponivelError(
-                f"Profissional '{cmd.profissional_id}' sem agenda ativa em "
-                f"'{esp.value}' para o dia da semana {slot_inicio_utc.weekday()}."
-            )
-
-        slot_fim_explicito = (
-            normalizar_utc(cmd.slot_fim) if cmd.slot_fim is not None else None
-        )
-        if slot_fim_explicito is not None and slot_fim_explicito <= slot_inicio_utc:
-            raise ValidationError(
-                f"slot_fim '{slot_fim_explicito.isoformat()}' inválido; deve ser "
-                f"estritamente posterior a slot_inicio '{slot_inicio_utc.isoformat()}'."
-            )
-
-        return self._casar_disponibilidade(
-            disponibilidades=disponibilidades,
+        return AgendaDisponibilidade.resolver_slot_em_janelas(
+            disponibilidades,
             profissional_id=cmd.profissional_id,
             especialidade=esp,
             slot_inicio_utc=slot_inicio_utc,
-            slot_fim_explicito=slot_fim_explicito,
-        )
-
-    @staticmethod
-    def _casar_disponibilidade(
-        *,
-        disponibilidades: Sequence[AgendaDisponibilidade],
-        profissional_id: UUID,
-        especialidade: EspecialidadeAgenda,
-        slot_inicio_utc: datetime,
-        slot_fim_explicito: datetime | None,
-    ) -> datetime:
-        dia = slot_inicio_utc.date()
-        violacao_grade = False
-        for disp in disponibilidades:
-            slot_fim_esperado = slot_inicio_utc + timedelta(
-                minutes=disp.duracao_minutos
-            )
-            slot_fim = (
-                slot_fim_explicito
-                if slot_fim_explicito is not None
-                else slot_fim_esperado
-            )
-            if disp.cobre_slot(slot_inicio_utc, slot_fim):
-                return slot_fim
-            if _eh_violacao_grade(disp, dia, slot_inicio_utc, slot_fim):
-                violacao_grade = True
-
-        if violacao_grade:
-            duracoes = sorted({d.duracao_minutos for d in disponibilidades})
-            fim_desc = slot_fim_explicito.isoformat() if slot_fim_explicito else "auto"
-            raise ValidationError(
-                f"Slot [{slot_inicio_utc.isoformat()}, {fim_desc}) diverge da "
-                f"grade ou duração permitida {duracoes} min da agenda do "
-                f"profissional '{profissional_id}'."
-            )
-        raise SlotIndisponivelError(
-            f"Horário '{slot_inicio_utc.isoformat()}' indisponível na agenda de "
-            f"'{especialidade.value}' do profissional '{profissional_id}'."
+            slot_fim_explicito=cmd.slot_fim,
         )
 
     async def agendar_consulta(
@@ -329,11 +299,18 @@ class SchedulingService:
             profissional_id=cmd.profissional_id,
             slot_inicio=slot_inicio_utc,
             slot_fim=slot_fim_utc,
+            paciente_id=cmd.paciente_id,
         )
         if conflito is not None:
+            if conflito.profissional_id == cmd.profissional_id:
+                raise SlotIndisponivelError(
+                    f"Horário '{slot_inicio_utc.isoformat()}' já ocupado para o "
+                    f"profissional '{cmd.profissional_id}'."
+                )
             raise SlotIndisponivelError(
-                f"Horário '{slot_inicio_utc.isoformat()}' já ocupado para o "
-                f"profissional '{cmd.profissional_id}'."
+                f"Paciente '{cmd.paciente_id}' já possui agendamento ativo "
+                f"conflitante em '{slot_inicio_utc.isoformat()}' "
+                f"(agendamento '{conflito.id}')."
             )
 
         agendamento = Agendamento(
@@ -421,6 +398,27 @@ class SchedulingService:
         )
         return list(itens)
 
+    async def _buscar_agendamento_do_profissional(
+        self,
+        *,
+        agendamento_id: UUID,
+        profissional_id: UUID,
+    ) -> Agendamento:
+        agendamento = await self._repository.buscar_agendamento_por_id(
+            agendamento_id=agendamento_id,
+            for_update=True,
+        )
+        if agendamento is None:
+            raise AgendamentoNaoEncontradoError(
+                f"Agendamento '{agendamento_id}' não encontrado."
+            )
+        if agendamento.profissional_id != profissional_id:
+            raise ForbiddenError(
+                f"Acesso negado: agendamento '{agendamento_id}' pertence a outro "
+                f"profissional (solicitante: '{profissional_id}')."
+            )
+        return agendamento
+
     async def _validar_atendimento_vinculado(
         self,
         *,
@@ -428,11 +426,6 @@ class SchedulingService:
         agendamento: Agendamento,
         profissional_id: UUID,
     ) -> None:
-        if self._attendance_lookup is None:
-            raise RuntimeError(
-                "AttendanceLookupPort não configurado em SchedulingService para "
-                f"validar o atendimento '{atendimento_id}'."
-            )
         atendimento = await self._attendance_lookup.buscar_atendimento(atendimento_id)
         if atendimento is None:
             raise NotFoundError(f"Atendimento '{atendimento_id}' não encontrado.")
@@ -463,19 +456,10 @@ class SchedulingService:
 
         Regras: docs/explanation/domains/scheduling-domain.md
         """
-        agendamento = await self._repository.buscar_agendamento_por_id(
+        agendamento = await self._buscar_agendamento_do_profissional(
             agendamento_id=agendamento_id,
-            for_update=True,
+            profissional_id=profissional_id,
         )
-        if agendamento is None:
-            raise AgendamentoNaoEncontradoError(
-                f"Agendamento '{agendamento_id}' não encontrado."
-            )
-        if agendamento.profissional_id != profissional_id:
-            raise ForbiddenError(
-                f"Acesso negado: agendamento '{agendamento_id}' pertence a outro "
-                f"profissional (solicitante: '{profissional_id}')."
-            )
         if atendimento_id is not None:
             await self._validar_atendimento_vinculado(
                 atendimento_id=atendimento_id,
@@ -484,5 +468,49 @@ class SchedulingService:
             )
 
         agendamento.iniciar_atendimento(atendimento_id=atendimento_id)
+        try:
+            await self._session.commit()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise _traduzir_integrity_error_inicio_atendimento(
+                exc,
+                agendamento_id=agendamento_id,
+                atendimento_id=atendimento_id,
+            ) from exc
+        return agendamento
+
+    async def concluir_agendamento(
+        self,
+        *,
+        agendamento_id: UUID,
+        profissional_id: UUID,
+    ) -> Agendamento:
+        """Conclui agendamento em atendimento pertencente ao profissional.
+
+        Regras: docs/explanation/domains/scheduling-domain.md
+        """
+        agendamento = await self._buscar_agendamento_do_profissional(
+            agendamento_id=agendamento_id,
+            profissional_id=profissional_id,
+        )
+        agendamento.concluir()
+        await self._session.commit()
+        return agendamento
+
+    async def marcar_falta_agendamento(
+        self,
+        *,
+        agendamento_id: UUID,
+        profissional_id: UUID,
+    ) -> Agendamento:
+        """Registra falta do paciente em agendamento pertencente ao profissional.
+
+        Regras: docs/explanation/domains/scheduling-domain.md
+        """
+        agendamento = await self._buscar_agendamento_do_profissional(
+            agendamento_id=agendamento_id,
+            profissional_id=profissional_id,
+        )
+        agendamento.marcar_falta()
         await self._session.commit()
         return agendamento
