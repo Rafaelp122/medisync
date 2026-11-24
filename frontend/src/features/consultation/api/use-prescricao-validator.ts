@@ -6,6 +6,7 @@ import type {
   ValidarPrescricaoRequest,
   ValidarPrescricaoResponse,
 } from "@/api/generated/types.gen";
+import { zValidarPrescricaoRequest, zValidarPrescricaoResponse } from "@/api/generated/zod.gen";
 
 export interface PrescricaoValidatorParams extends ValidarPrescricaoRequest {
   token?: string;
@@ -13,7 +14,7 @@ export interface PrescricaoValidatorParams extends ValidarPrescricaoRequest {
 
 /**
  * Hook headless de validação prévia de substâncias contra a Portaria SVS/MS nº 344/98.
- * Bloqueia medicamentos das Listas A e B (talonário físico obrigatório).
+ * Valida entrada e resposta em runtime via `zValidarPrescricaoRequest` / `zValidarPrescricaoResponse`.
  * Regras: RF-07, US-10.
  */
 export function usePrescricaoValidator(
@@ -25,8 +26,9 @@ export function usePrescricaoValidator(
   >,
 ) {
   return useMutation<ValidarPrescricaoResponse, ProblemDetailsError, PrescricaoValidatorParams>({
-    mutationFn: async ({ token, ...body }: PrescricaoValidatorParams) => {
+    mutationFn: async ({ token, ...rawBody }: PrescricaoValidatorParams) => {
       try {
+        const parsedBody = zValidarPrescricaoRequest.parse(rawBody);
         const headers: Record<string, string> = {};
         if (token) {
           headers.Authorization = `Bearer ${token}`;
@@ -39,12 +41,12 @@ export function usePrescricaoValidator(
               path: {
                 atendimento_id: atendimentoId,
               },
-              body,
+              body: parsedBody,
               headers,
               throwOnError: true,
             },
           );
-        return response.data;
+        return zValidarPrescricaoResponse.parse(response.data);
       } catch (err) {
         throw toProblemDetailsError(err);
       }

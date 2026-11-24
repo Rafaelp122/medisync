@@ -1,7 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
 import type React from "react";
 import { useState } from "react";
-import type { LiveKitTokenResponse } from "@/api/generated/types.gen";
+import type {
+  LiveKitTokenResponse,
+  WebAuthnRegisterVerifyResponse,
+} from "@/api/generated/types.gen";
 import {
   Dialog,
   DialogContent,
@@ -15,9 +18,13 @@ import {
   saveStoredCallData,
   saveStoredSession,
 } from "@/lib/session-storage";
+import type { RegisterPasskeyCredentialParams } from "@/lib/webauthn";
 
 export interface QueuePageProps {
   session: StoredPatientSession;
+  onRegisterPasskey?: (
+    params: RegisterPasskeyCredentialParams,
+  ) => Promise<WebAuthnRegisterVerifyResponse>;
   renderComplementarForm?: (props: {
     pacienteId: string;
     token: string;
@@ -26,7 +33,7 @@ export interface QueuePageProps {
   }) => React.ReactNode;
 }
 
-export function QueuePage({ session, renderComplementarForm }: QueuePageProps) {
+export function QueuePage({ session, onRegisterPasskey, renderComplementarForm }: QueuePageProps) {
   const navigate = useNavigate();
   const [modalComplementarAberto, setModalComplementarAberto] = useState(false);
 
@@ -56,6 +63,7 @@ export function QueuePage({ session, renderComplementarForm }: QueuePageProps) {
         onEncerrarSessao={handleEncerrarSessao}
         onAtendimentoIniciado={handleAtendimentoIniciado}
         onComplementarCadastro={() => setModalComplementarAberto(true)}
+        onRegisterPasskey={onRegisterPasskey}
       />
 
       <Dialog open={modalComplementarAberto} onOpenChange={setModalComplementarAberto}>

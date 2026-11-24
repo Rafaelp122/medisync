@@ -16,6 +16,45 @@ export interface PatientLivenessModalProps {
   onClose: () => void;
 }
 
+function LivenessTimeoutCountdown({ timeoutSegundos }: { timeoutSegundos: number }) {
+  const [segundosRestantes, setSegundosRestantes] = useState(Math.max(0, timeoutSegundos));
+
+  useEffect(() => {
+    const initial = Math.max(0, timeoutSegundos);
+    setSegundosRestantes(initial);
+    if (initial <= 0) return;
+
+    const timer = setInterval(() => {
+      setSegundosRestantes((prev) => {
+        const next = Math.max(0, prev - 1);
+        if (next <= 0) {
+          clearInterval(timer);
+        }
+        return next;
+      });
+    }, 1000);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [timeoutSegundos]);
+
+  return (
+    <span
+      role="timer"
+      data-testid="liveness-timeout-countdown"
+      className={cn(
+        "text-[11px] font-semibold px-2 py-0.5 rounded-full border",
+        segundosRestantes <= 10
+          ? "border-destructive/60 text-destructive bg-destructive/10"
+          : "border-slate-700 text-sky-300 bg-slate-800/80",
+      )}
+    >
+      Expira em {segundosRestantes}s
+    </span>
+  );
+}
+
 const PATIENT_INSTRUCTION_LABELS: Record<string, string> = {
   piscar_olhos: "Pisque os olhos lentamente para a câmera",
   sorrir: "Sorria brevemente olhando para a tela",
@@ -144,21 +183,24 @@ export function PatientLivenessModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs"
     >
       <Card className="w-full max-w-md border-slate-700 bg-slate-900 text-slate-100 shadow-2xl">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
           <CardTitle id={titleId} className="text-base font-semibold flex items-center gap-2">
             <Camera className="size-4 text-sky-400" />
             Confirmação Facial para Receita Controlada
           </CardTitle>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            aria-label="Fechar verificação facial"
-            className="size-7 text-slate-400 hover:text-slate-100"
-          >
-            <X className="size-4" />
-          </Button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <LivenessTimeoutCountdown timeoutSegundos={challenge.timeout_segundos ?? 60} />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              aria-label="Fechar verificação facial"
+              className="size-7 text-slate-400 hover:text-slate-100"
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
         </CardHeader>
 
         <CardContent className="space-y-4">

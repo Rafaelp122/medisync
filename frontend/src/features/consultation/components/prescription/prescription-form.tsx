@@ -9,7 +9,7 @@ import { usePrescricaoValidator } from "../../api/use-prescricao-validator";
 export interface PrescriptionFormProps {
   atendimentoId: string;
   token?: string;
-  isReadOnly?: boolean;
+  accessMode?: "editable" | "readonly";
   onAddItem: (item: ItemPrescricaoRequest) => void;
   onError: (erro: string | null) => void;
 }
@@ -21,10 +21,11 @@ export interface PrescriptionFormProps {
 export function PrescriptionForm({
   atendimentoId,
   token,
-  isReadOnly = false,
+  accessMode = "editable",
   onAddItem,
   onError,
 }: PrescriptionFormProps) {
+  const isLocked = accessMode === "readonly";
   const [medicamento, setMedicamento] = useState("");
   const [dosagem, setDosagem] = useState("");
   const [posologia, setPosologia] = useState("");
@@ -36,7 +37,7 @@ export function PrescriptionForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isReadOnly) return;
+    if (isLocked) return;
     onError(null);
 
     const medTrim = medicamento.trim();
@@ -79,7 +80,7 @@ export function PrescriptionForm({
     );
   };
 
-  if (isReadOnly) return null;
+  if (isLocked) return null;
 
   return (
     <form
