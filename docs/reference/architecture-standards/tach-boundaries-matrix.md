@@ -60,7 +60,7 @@ A separação modular segue o princípio *Inside-Out* estrito (Stage B), onde ca
 | `src.modules.scheduling.domain` | `src.core` | Isolado. Agregados `AgendaDisponibilidade` e `Agendamento`, enums e exceções eMulti. |
 | `src.modules.scheduling.application` | `src.core`, `scheduling.domain` | Orquestra geração de slots, reservas e portas `SchedulingRepositoryPort` / `AttendanceLookupPort`. |
 | `src.modules.scheduling.infrastructure` | `src.core`, `scheduling.application`, `scheduling.domain` | `SqlSchedulingRepository` assíncrono com `for_update=True` e checagens de conflito temporal. |
-| `src.modules.scheduling.composition` | `src.core`, `scheduling.*`, `queue.application`, `queue.composition` | Adapta `QueueStorePort` para `AttendanceLookupPort` e injeta `SchedulingServiceDep`. |
+| `src.modules.scheduling.composition` | `src.core`, `scheduling.*`, `queue.application`, `queue.composition` | Adapta `SqlAttendanceSnapshotReader` (`build_attendance_lookup_reader` de `queue.composition`, usando `AtendimentoSnapshotDTO` de `queue.application` via `QueueAttendanceSnapshotLookupAdapter`) para `AttendanceLookupPort`, mantendo `QueueStorePort` restrito a `consultation`, e injeta `SchedulingServiceDep`. |
 | `src.modules.scheduling.presentation` | `src.core`, `scheduling.application`, `scheduling.composition` | Router fino `/api/v1/scheduling` (`scheduling_router.py`), schemas e dependências RBAC. |
 | `src.modules.telemetry.domain` | `src.core` | Isolado. Modelos de telemetria, painel e plantão. |
 | `src.modules.telemetry.application` | `src.core`, `telemetry.domain` | Define portas de métricas operacionais e plantão. |

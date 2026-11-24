@@ -222,3 +222,100 @@ def test_get_signed_cache_returns_valkey_when_configured(
     )
     cache = composition.get_signed_cache()
     assert isinstance(cache, ValkeySignedCache)
+
+
+def test_build_scheduling_service_wires_lightweight_sql_reader_without_valkey() -> None:
+    """Scheduling composition must use lightweight SQL reader without Valkey/Triage."""
+    import ast
+    from pathlib import Path
+
+    from src.modules.queue.composition import build_attendance_lookup_reader
+    from src.modules.queue.infrastructure.attendance_snapshot_reader_sql import (
+        SqlAttendanceSnapshotReader,
+    )
+    from src.modules.scheduling import composition as sched_comp
+    from src.modules.scheduling.composition import (
+        QueueAttendanceSnapshotLookupAdapter,
+        build_scheduling_service,
+    )
+
+    from tests.doubles import FakeAsyncSession
+
+    session = cast("AsyncSession", FakeAsyncSession())
+    reader = build_attendance_lookup_reader(session=session)
+    assert isinstance(reader, SqlAttendanceSnapshotReader)
+    assert reader._session is session  # pyright: ignore[reportPrivateUsage]
+
+    service = build_scheduling_service(session=session)
+    assert isinstance(
+        service._attendance_lookup,  # pyright: ignore[reportPrivateUsage]
+        QueueAttendanceSnapshotLookupAdapter,
+    )
+    assert isinstance(
+        service._attendance_lookup._reader,  # pyright: ignore[reportPrivateUsage]
+        SqlAttendanceSnapshotReader,
+    )
+
+    assert sched_comp.__file__ is not None
+    comp_source = Path(sched_comp.__file__).read_text(encoding="utf-8")
+    imported_names: set[str] = set()
+    for node in ast.walk(ast.parse(comp_source)):
+        if isinstance(node, (ast.ImportFrom, ast.Import)):
+            imported_names.update(alias.name for alias in node.names)
+    proibidos = {
+        "Redis",
+        "LuaScriptManager",
+        "TriageService",
+        "AlocacaoChamadaService",
+        "FilaService",
+        "build_fila_service_for_session",
+    }
+    assert imported_names.isdisjoint(proibidos)
+
+
+@pytest.mark.asyncio
+async def test_sql_attendance_snapshot_reader_e_lookup_adapter() -> None:
+    """SqlAttendanceSnapshotReader and QueueAttendanceSnapshotLookupAdapter contract."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from src.modules.queue.composition import build_attendance_lookup_reader
+    from src.modules.queue.domain.enums import StatusAtendimento
+    from src.modules.scheduling.composition import QueueAttendanceSnapshotLookupAdapter
+
+    from tests.doubles import FakeAsyncSession, FakeResult
+
+    atend_id = uuid4()
+    pac_id = uuid4()
+    med_id = uuid4()
+    agora = datetime.now(UTC)
+    session = FakeAsyncSession(
+        results=[
+            FakeResult(),
+            FakeResult(
+                mappings_rows=[
+                    {
+                        "id": atend_id,
+                        "paciente_id": pac_id,
+                        "medico_id": med_id,
+                        "status": StatusAtendimento.CONCLUIDO.value,
+                        "prioridade_clinica": 3,
+                        "tcle_hash": "abc123",
+                        "data_entrada_fila": agora,
+                        "criado_em": agora,
+                        "chamada_iniciada_em": agora,
+                    }
+                ]
+            ),
+        ]
+    )
+    reader = build_attendance_lookup_reader(session=cast("AsyncSession", session))
+    adapter = QueueAttendanceSnapshotLookupAdapter(reader)
+
+    assert await adapter.buscar_atendimento(uuid4()) is None
+
+    snapshot = await adapter.buscar_atendimento(atend_id)
+    assert snapshot is not None
+    assert snapshot.id == atend_id
+    assert snapshot.paciente_id == pac_id
+    assert snapshot.medico_id == med_id
