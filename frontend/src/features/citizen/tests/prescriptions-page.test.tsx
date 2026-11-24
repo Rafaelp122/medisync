@@ -1,7 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleListarDocumentosPacienteApiV1ConsultationsMeDocumentosGet,
   handleObterDocumentoPdfPacienteApiV1ConsultationsMeDocumentsDocumentoIdPdfGet,
@@ -15,8 +15,23 @@ import { server } from "@/mocks/server";
 
 const MOCK_DOC_ID = "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b51";
 const MOCK_ATEND_ID = "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b50";
+const originalClipboardDescriptor =
+  typeof navigator !== "undefined"
+    ? Object.getOwnPropertyDescriptor(navigator, "clipboard")
+    : undefined;
 
 describe("PrescriptionsPage (/receitas)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (typeof navigator !== "undefined") {
+      if (originalClipboardDescriptor) {
+        Object.defineProperty(navigator, "clipboard", originalClipboardDescriptor);
+      } else {
+        Reflect.deleteProperty(navigator, "clipboard");
+      }
+    }
+  });
+
   beforeEach(() => {
     server.use(
       handleListarDocumentosPacienteApiV1ConsultationsMeDocumentosGet({
@@ -51,10 +66,13 @@ describe("PrescriptionsPage (/receitas)", () => {
   });
 
   it("lista documentos com selo ICP-Brasil e permite baixar PDF via Blob", async () => {
-    const createObjectURLMock = vi.fn().mockReturnValue("blob:http://localhost/doc-1");
-    const revokeObjectURLMock = vi.fn();
-    window.URL.createObjectURL = createObjectURLMock;
-    window.URL.revokeObjectURL = revokeObjectURLMock;
+    const createObjectURLMock = vi
+      .spyOn(window.URL, "createObjectURL")
+      .mockReturnValue("blob:http://localhost/doc-1");
+    const revokeObjectURLMock = vi
+      .spyOn(window.URL, "revokeObjectURL")
+      .mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
     renderCitizenRoute(<PrescriptionsPage session={MOCK_CITIZEN_SESSION} />, "/receitas");
     const user = userEvent.setup();

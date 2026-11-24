@@ -77,7 +77,7 @@ O carregamento e despacho de scripts é orquestrado por `LuaScriptManager` (`src
 - Prova viva: `tests/integration/test_lua_scripts.py:test_lua_manager_self_healing_after_script_flush`
 - Prova viva: `tests/integration/test_alocar_chamada_concurrency.py:test_parallel_race_condition_50_doctors_single_winner`
 - Prova viva: `tests/unit/test_lua_manager.py:test_execute_script_recovers_from_noscript_error`
-- Prova viva: `tests/unit/test_alocacao_service.py:test_alocar_chamada_medico_ocupado_retorna_409`
+- Prova viva: `tests/unit/test_alocacao_service.py:test_alocar_chamada_medico_ocupado_por_ring_ou_consulta_ativa`
 - Ver: `rg -n "alocar_chamada|alocar_proximo" src/modules/queue/infrastructure/`
 - Ver: `rg -n "evalsha" src/modules/queue/infrastructure/lua_loader.py`
 

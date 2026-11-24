@@ -9,11 +9,12 @@ import {
 } from "@tanstack/react-router";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleAdmitirPacienteApiV1FilaAdmissaoPost,
   handleEnrichmentFase2ApiV1OnboardingFase2Post,
+  handleIntakeFase1ApiV1OnboardingFase1Post,
 } from "@/api/generated/msw.gen";
 import { getStoredSession, saveStoredSession } from "@/lib/session-storage";
 import { server } from "@/mocks/server";
@@ -89,9 +90,9 @@ describe("TriagemPage (Preservação de JWT 3-partes em /triagem)", () => {
     };
 
     server.use(
-      http.post("*/api/v1/onboarding/fase-1", () => {
+      handleIntakeFase1ApiV1OnboardingFase1Post(() => {
         fase1Spy();
-        return HttpResponse.json({ token: "two.parts" }, { status: 201 });
+        return HttpResponse.json({ token: "two.parts" } as never, { status: 201 });
       }),
       handleAdmitirPacienteApiV1FilaAdmissaoPost(async ({ request }) => {
         capture.authHeader = request.headers.get("authorization");

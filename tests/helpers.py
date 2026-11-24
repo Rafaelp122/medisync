@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
-from unittest.mock import AsyncMock
 
 from sqlalchemy import text
 from src.core.config import get_settings
@@ -46,7 +45,6 @@ DEFAULT_VALKEY_TEST_PATTERNS: tuple[str, ...] = (
     "queue:*",
     "cota:*",
     "arq:*",
-    "test_org:*",
     "auth:ratelimit:*",
     "otp:*",
     "ratelimit:otp:*",
@@ -87,13 +85,19 @@ def auth_headers(papel: str, usuario_id: UUID) -> dict[str, str]:
 
 
 def make_auth_service(session: AsyncSession, **overrides: Any) -> AuthService:
-    """Build AuthService with AsyncMock fakes unless overridden."""
+    """Build AuthService with named fakes unless overridden."""
     from src.core.authz.revocation import MemoryTokenRevocation
     from src.modules.auth.application.services.auth_service import AuthService
+    from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
+    from src.modules.auth.infrastructure.valkey_rate_limiter import FakeAuthRateLimiter
 
-    hasher: Any = overrides.get("hasher", AsyncMock())
-    token_service: Any = overrides.get("token_service", AsyncMock())
-    rate_limiter: Any = overrides.get("rate_limiter", AsyncMock())
+    from tests.doubles import FakePasswordHasher
+
+    hasher: Any = overrides.get("hasher", FakePasswordHasher())
+    token_service: Any = overrides.get(
+        "token_service", JWTTokenService(secret_key=get_settings().JWT_SECRET_KEY)
+    )
+    rate_limiter: Any = overrides.get("rate_limiter", FakeAuthRateLimiter())
     revocation: Any = overrides.get("revocation", MemoryTokenRevocation())
     return AuthService(
         session=session,
@@ -110,10 +114,10 @@ def _resolve_consultation_reader(
 ) -> Any:
     if atendimento_reader is not None:
         return atendimento_reader
-    if isinstance(session, AsyncMock):
-        reader = AsyncMock()
-        reader.obter_resumo.return_value = None
-        return reader
+    from tests.doubles import FakeAsyncSession, FakeAtendimentoReader
+
+    if isinstance(session, FakeAsyncSession):
+        return FakeAtendimentoReader()
     from src.modules.consultation.composition import QueueStoreAtendimentoReaderAdapter
     from src.modules.queue.composition import build_fila_service_for_session
 
@@ -250,7 +254,11 @@ def make_fila_service(
             if valkey is not None
             else FakeQueueEngine()
         )
-    alocacao_service: Any = overrides.get("alocacao_service", AsyncMock())
+    alocacao_service: Any = overrides.get("alocacao_service") or make_alocacao(
+        valkey=valkey,
+        db_session=db_session,
+        queue_engine=queue_engine,
+    )
     controle_admissao: Any = overrides.get("controle_admissao")
     return FilaService(
         queue_engine=queue_engine,

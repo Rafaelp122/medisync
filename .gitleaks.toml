@@ -11,6 +11,8 @@ paths = [
     '''(?i)\.agents/''',
     '''\.env\.example''',
     '''\.pytest_cache/''',
+    '''frontend/src/.*\.test\.tsx?$''',
+    '''frontend/e2e/.*\.spec\.ts$''',
 ]
 regexes = [
     '''dev-insecure-.*''',
