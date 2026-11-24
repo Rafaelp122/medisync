@@ -52,7 +52,7 @@ Serviço que orquestra: `src/modules/triage/application/services/triage_service.
 
 Consome `src/modules/queue/application/ports/triage_port.py` (unificando risco, persistência 1:1 e leitura de queixas em `TriagePort`) e `src/modules/queue/application/ports/shift_policy_reader_port.py` (`ShiftPolicyReaderPort`, plugada em `src/modules/queue/composition.py` via `TelemetryShiftPolicyReaderAdapter` $\to$ `telemetry.composition.ler_politica_plantao_snapshot`).
 
-Concentra operações Valkey/Lua 4-Keys/cota/PubSub em `src/modules/queue/application/ports/queue_engine_port.py` (`ValkeyQueueEngine`), expõe `src/modules/queue/application/ports/queue_store_port.py` (`QueueStorePort`) para `consultation` e `scheduling`, e `src/modules/queue/application/ports/paciente_ausente_notifier.py` para no-show de 45s.
+Concentra operações Valkey/Lua 4-Keys/cota/PubSub em `src/modules/queue/application/ports/queue_engine_port.py` (`ValkeyQueueEngine`), expõe `src/modules/queue/application/ports/queue_store_port.py` (`QueueStorePort`) restrita a `consultation` e `build_attendance_lookup_reader` (`SqlAttendanceSnapshotReader` / `AtendimentoSnapshotDTO` em `queue.composition` $\to$ `QueueAttendanceSnapshotLookupAdapter` em `scheduling/composition.py`) para `AttendanceLookupPort` em `scheduling`, além de `src/modules/queue/application/ports/paciente_ausente_notifier.py` para no-show de 45s.
 
 Expõe também `build_doctor_presence_engine` em `src/modules/queue/composition.py` para que `auth` (via `DoctorPresencePort` em `src/modules/auth/application/ports/doctor_presence_port.py`) e `consultation` WS (`/ws/doctor/{medico_id}`) atualizem `plantao:medicos_ativos`.
 

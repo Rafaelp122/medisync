@@ -19,7 +19,6 @@ from src.modules.scheduling.application.dtos import (
     CriarDisponibilidadeCommand,
 )
 from src.modules.scheduling.application.ports.attendance_lookup_port import (
-    AttendanceLookupPort,
     AttendanceSnapshot,
 )
 from src.modules.scheduling.application.services.scheduling_service import (
@@ -28,6 +27,7 @@ from src.modules.scheduling.application.services.scheduling_service import (
 from src.modules.scheduling.domain.exceptions import (
     AgendamentoNaoEncontradoError,
     SlotIndisponivelError,
+    TransicaoAgendamentoInvalidaError,
 )
 from src.modules.scheduling.domain.models import (
     AgendaDisponibilidade,
@@ -40,23 +40,15 @@ from src.modules.scheduling.infrastructure.adapters.sql_scheduling_repository im
     SqlSchedulingRepository,
 )
 
-from tests.doubles import FakeAsyncSession, FakeResult, FakeSchedulingRepository
+from tests.doubles import (
+    FakeAsyncSession,
+    FakeAttendanceLookup,
+    FakeResult,
+    FakeSchedulingRepository,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-
-class FakeAttendanceLookup(AttendanceLookupPort):
-    """Fake em memória para leitura cross-module de atendimentos."""
-
-    def __init__(self) -> None:
-        self.atendimentos: dict[UUID, AttendanceSnapshot] = {}
-
-    async def buscar_atendimento(
-        self,
-        atendimento_id: UUID,
-    ) -> AttendanceSnapshot | None:
-        return self.atendimentos.get(atendimento_id)
 
 
 def _dia_futuro(dias_a_frente: int = 7) -> date:
@@ -478,6 +470,34 @@ async def test_cancelar_agendamento_inexistente_lanca_404() -> None:
         )
 
 
+class _IntegrityErrorCommitSession(FakeAsyncSession):
+    """FakeAsyncSession that raises IntegrityError on commit and tracks rollback."""
+
+    def __init__(
+        self,
+        *,
+        sqlstate: str | None,
+        constraint_name: str = "constr_teste",
+    ) -> None:
+        super().__init__()
+        self._sqlstate = sqlstate
+        self._constraint_name = constraint_name
+        self.rolled_back = False
+
+    async def commit(self) -> None:
+        orig = cast(
+            "Any",
+            SimpleNamespace(
+                sqlstate=self._sqlstate,
+                diag=SimpleNamespace(constraint_name=self._constraint_name),
+            ),
+        )
+        raise IntegrityError("INSERT/UPDATE", {}, orig)
+
+    async def rollback(self) -> None:
+        self.rolled_back = True
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("sqlstate", "expected_exc"),
@@ -493,25 +513,7 @@ async def test_agendar_consulta_integrity_error_classifica_por_sqlstate(
     sqlstate: str | None,
     expected_exc: type[Exception],
 ) -> None:
-    class ConflictCommitSession(FakeAsyncSession):
-        def __init__(self) -> None:
-            super().__init__()
-            self.rolled_back = False
-
-        async def commit(self) -> None:
-            orig = cast(
-                "Any",
-                SimpleNamespace(
-                    sqlstate=sqlstate,
-                    diag=SimpleNamespace(constraint_name="constr_teste"),
-                ),
-            )
-            raise IntegrityError("INSERT", {}, orig)
-
-        async def rollback(self) -> None:
-            self.rolled_back = True
-
-    session = ConflictCommitSession()
+    session = _IntegrityErrorCommitSession(sqlstate=sqlstate)
     repo = FakeSchedulingRepository()
     lookup = FakeAttendanceLookup()
     service = SchedulingService(
@@ -627,10 +629,378 @@ async def test_sql_scheduling_repository_for_update_e_sem_especialidade() -> Non
     ).upper()
     assert "FOR UPDATE" in stmt_for_update
 
+    prof_id = uuid4()
+    ocupados_vazio = await repo.listar_agendamentos_ocupados(
+        datetime(2026, 11, 20, 8, 0, tzinfo=UTC),
+        datetime(2026, 11, 20, 12, 0, tzinfo=UTC),
+        profissional_ids=[],
+    )
+    assert ocupados_vazio == []
+    assert len(captured_stmts) == 1
+
     await repo.listar_agendamentos_ocupados(
         datetime(2026, 11, 20, 8, 0, tzinfo=UTC),
         datetime(2026, 11, 20, 12, 0, tzinfo=UTC),
+        profissional_ids=[prof_id, prof_id],
     )
     stmt_ocupados = str(captured_stmts[1].compile(dialect=postgresql.dialect()))
     where_clause = stmt_ocupados.split("WHERE", 1)[1]
     assert "agendamentos.especialidade" not in where_clause
+    assert "agendamentos.profissional_id IN" in where_clause
+
+
+def test_scheduling_service_exige_attendance_lookup_obrigatorio() -> None:
+    import inspect
+
+    param = inspect.signature(SchedulingService.__init__).parameters[
+        "attendance_lookup"
+    ]
+    assert param.default is inspect.Parameter.empty
+
+    kwargs: dict[str, Any] = {
+        "session": cast("AsyncSession", FakeAsyncSession()),
+        "repository": FakeSchedulingRepository(),
+    }
+    with pytest.raises(TypeError, match="attendance_lookup"):
+        SchedulingService(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_listar_slots_filtra_passado_e_repassa_profissional_ids() -> None:
+    service, _, repo, _ = _build_service()
+    prof_psi_ativo = uuid4()
+    prof_psi_inativo = uuid4()
+    prof_nutri = uuid4()
+    agora_inicio = datetime.now(UTC)
+    ontem = (agora_inicio - timedelta(days=1)).date()
+    hoje = agora_inicio.date()
+    amanha = (agora_inicio + timedelta(days=1)).date()
+
+    for dia in (ontem, hoje, amanha):
+        await _registrar_janela(
+            service,
+            prof_id=prof_psi_ativo,
+            dia=dia,
+            especialidade="PSICOLOGIA",
+            hora_inicio=time(0, 0),
+            hora_fim=time(23, 50),
+            duracao_minutos=50,
+        )
+    repo.adicionar_disponibilidade(
+        AgendaDisponibilidade(
+            profissional_id=prof_psi_inativo,
+            especialidade=EspecialidadeAgenda.PSICOLOGIA,
+            dia_semana=amanha.weekday(),
+            hora_inicio=time(8, 0),
+            hora_fim=time(12, 0),
+            duracao_minutos=50,
+            ativo=False,
+        )
+    )
+    await _registrar_janela(
+        service,
+        prof_id=prof_nutri,
+        dia=amanha,
+        especialidade="NUTRICAO",
+        hora_inicio=time(8, 0),
+        hora_fim=time(12, 0),
+        duracao_minutos=30,
+    )
+
+    slots_passado = await service.listar_slots_disponiveis(
+        especialidade="PSICOLOGIA",
+        data_inicio=ontem,
+        data_fim=ontem,
+    )
+    assert slots_passado == []
+    assert repo.last_ocupados_profissional_ids == {prof_psi_ativo}
+
+    slots_futuros = await service.listar_slots_disponiveis(
+        especialidade="PSICOLOGIA",
+        data_inicio=hoje,
+        data_fim=amanha,
+    )
+    assert slots_futuros
+    assert all(slot.slot_inicio >= agora_inicio for slot in slots_futuros)
+    assert repo.last_ocupados_profissional_ids == {prof_psi_ativo}
+
+
+@pytest.mark.asyncio
+async def test_cadastrar_disponibilidade_adquire_lock_e_traduz_concorrencia() -> None:
+    service, _, repo, _ = _build_service()
+    prof_id = uuid4()
+    dia = _dia_futuro(7)
+    await _registrar_janela(
+        service,
+        prof_id=prof_id,
+        dia=dia,
+        especialidade="PSICOLOGIA",
+        hora_inicio=time(8, 0),
+        hora_fim=time(12, 0),
+        duracao_minutos=50,
+    )
+    assert repo.lock_calls == [(prof_id, dia.weekday())]
+
+    session_err = _IntegrityErrorCommitSession(
+        sqlstate="23P01",
+        constraint_name="excl_agenda_disp_sobreposicao",
+    )
+    repo_err = FakeSchedulingRepository()
+    service_err = SchedulingService(
+        session=cast("AsyncSession", session_err),
+        repository=repo_err,
+        attendance_lookup=FakeAttendanceLookup(),
+    )
+    with pytest.raises(SlotIndisponivelError, match="23P01"):
+        await _registrar_janela(
+            service_err,
+            prof_id=prof_id,
+            dia=dia,
+            especialidade="NUTRICAO",
+            hora_inicio=time(13, 0),
+            hora_fim=time(15, 0),
+            duracao_minutos=30,
+        )
+    assert session_err.rolled_back is True
+    assert repo_err.lock_calls == [(prof_id, dia.weekday())]
+
+
+@pytest.mark.asyncio
+async def test_agendar_consulta_bloqueia_double_booking_paciente() -> None:
+    service, _, _, _ = _build_service()
+    paciente_id = uuid4()
+    prof_psi = uuid4()
+    prof_nutri = uuid4()
+    dia = _dia_futuro(7)
+    await _registrar_janela(
+        service,
+        prof_id=prof_psi,
+        dia=dia,
+        especialidade="PSICOLOGIA",
+        hora_inicio=time(9, 0),
+        hora_fim=time(12, 0),
+        duracao_minutos=50,
+    )
+    await _registrar_janela(
+        service,
+        prof_id=prof_nutri,
+        dia=dia,
+        especialidade="NUTRICAO",
+        hora_inicio=time(9, 0),
+        hora_fim=time(12, 0),
+        duracao_minutos=30,
+    )
+
+    ag_psi = await service.agendar_consulta(
+        AgendarConsultaCommand(
+            paciente_id=paciente_id,
+            profissional_id=prof_psi,
+            especialidade="PSICOLOGIA",
+            slot_inicio=datetime.combine(dia, time(9, 0), tzinfo=UTC),
+        )
+    )
+
+    with pytest.raises(SlotIndisponivelError, match=str(paciente_id)):
+        await service.agendar_consulta(
+            AgendarConsultaCommand(
+                paciente_id=paciente_id,
+                profissional_id=prof_nutri,
+                especialidade="NUTRICAO",
+                slot_inicio=datetime.combine(dia, time(9, 30), tzinfo=UTC),
+            )
+        )
+
+    await service.marcar_falta_agendamento(
+        agendamento_id=ag_psi.id,
+        profissional_id=prof_psi,
+    )
+    ag_nutri = await service.agendar_consulta(
+        AgendarConsultaCommand(
+            paciente_id=paciente_id,
+            profissional_id=prof_nutri,
+            especialidade="NUTRICAO",
+            slot_inicio=datetime.combine(dia, time(9, 30), tzinfo=UTC),
+        )
+    )
+    assert ag_nutri.profissional_id == prof_nutri
+
+    # Corrida de banco na constraint excl_agendamento_paciente_ativo -> 409 paciente
+    session_err = _IntegrityErrorCommitSession(
+        sqlstate="23P01",
+        constraint_name="excl_agendamento_paciente_ativo",
+    )
+    repo_err = FakeSchedulingRepository()
+    repo_err.adicionar_disponibilidade(
+        AgendaDisponibilidade(
+            profissional_id=prof_nutri,
+            especialidade=EspecialidadeAgenda.NUTRICAO,
+            dia_semana=dia.weekday(),
+            hora_inicio=time(9, 0),
+            hora_fim=time(12, 0),
+            duracao_minutos=30,
+        )
+    )
+    service_err = SchedulingService(
+        session=cast("AsyncSession", session_err),
+        repository=repo_err,
+        attendance_lookup=FakeAttendanceLookup(),
+    )
+    with pytest.raises(
+        SlotIndisponivelError, match="excl_agendamento_paciente_ativo"
+    ) as exc_race:
+        await service_err.agendar_consulta(
+            AgendarConsultaCommand(
+                paciente_id=paciente_id,
+                profissional_id=prof_nutri,
+                especialidade="NUTRICAO",
+                slot_inicio=datetime.combine(dia, time(9, 30), tzinfo=UTC),
+            )
+        )
+    assert str(paciente_id) in str(exc_race.value)
+    assert session_err.rolled_back is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("sqlstate", "expected_exc"),
+    [
+        ("23505", ConflictError),
+        ("23P01", ConflictError),
+        ("23503", NotFoundError),
+        ("23514", ValidationError),
+    ],
+)
+async def test_iniciar_atendimento_agendado_integrity_error_retorna_erro_com_ids(
+    sqlstate: str,
+    expected_exc: type[Exception],
+) -> None:
+    session = _IntegrityErrorCommitSession(
+        sqlstate=sqlstate,
+        constraint_name="uq_agendamento_atendimento_id",
+    )
+    repo = FakeSchedulingRepository()
+    lookup = FakeAttendanceLookup()
+    prof_id = uuid4()
+    paciente_id = uuid4()
+    atendimento_id = uuid4()
+    dia = _dia_futuro(7)
+    ag = Agendamento(
+        paciente_id=paciente_id,
+        profissional_id=prof_id,
+        especialidade=EspecialidadeAgenda.PSICOLOGIA,
+        slot_inicio=datetime.combine(dia, time(10, 0), tzinfo=UTC),
+        slot_fim=datetime.combine(dia, time(10, 50), tzinfo=UTC),
+    )
+    repo.adicionar_agendamento(ag)
+    lookup.atendimentos[atendimento_id] = AttendanceSnapshot(
+        id=atendimento_id,
+        paciente_id=paciente_id,
+        medico_id=prof_id,
+    )
+    service = SchedulingService(
+        session=cast("AsyncSession", session),
+        repository=repo,
+        attendance_lookup=lookup,
+    )
+
+    with pytest.raises(expected_exc) as exc_info:
+        await service.iniciar_atendimento_agendado(
+            agendamento_id=ag.id,
+            profissional_id=prof_id,
+            atendimento_id=atendimento_id,
+        )
+    assert session.rolled_back is True
+    assert str(ag.id) in str(exc_info.value)
+    assert str(atendimento_id) in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_concluir_e_marcar_falta_agendamento_ciclo_de_vida_e_anti_idor() -> None:
+    service, session, repo, _ = _build_service()
+    prof_id = uuid4()
+    outro_prof = uuid4()
+    paciente_id = uuid4()
+    dia = _dia_futuro(7)
+    await _registrar_janela(
+        service,
+        prof_id=prof_id,
+        dia=dia,
+        especialidade="PSICOLOGIA",
+        hora_inicio=time(8, 0),
+        hora_fim=time(12, 0),
+        duracao_minutos=50,
+    )
+
+    ag_concluir = await service.agendar_consulta(
+        AgendarConsultaCommand(
+            paciente_id=paciente_id,
+            profissional_id=prof_id,
+            especialidade="PSICOLOGIA",
+            slot_inicio=datetime.combine(dia, time(8, 0), tzinfo=UTC),
+        )
+    )
+    # Concluir antes de iniciar -> 409 TransicaoAgendamentoInvalidaError
+    with pytest.raises(TransicaoAgendamentoInvalidaError, match="AGENDADO"):
+        await service.concluir_agendamento(
+            agendamento_id=ag_concluir.id,
+            profissional_id=prof_id,
+        )
+
+    await service.iniciar_atendimento_agendado(
+        agendamento_id=ag_concluir.id,
+        profissional_id=prof_id,
+    )
+    with pytest.raises(ForbiddenError):
+        await service.concluir_agendamento(
+            agendamento_id=ag_concluir.id,
+            profissional_id=outro_prof,
+        )
+
+    commits_antes = session.commits
+    concluido = await service.concluir_agendamento(
+        agendamento_id=ag_concluir.id,
+        profissional_id=prof_id,
+    )
+    assert repo.last_for_update is True
+    assert session.commits == commits_antes + 1
+    assert concluido.status == StatusAgendamento.CONCLUIDO.value
+
+    # Marcar falta em estado terminal CONCLUIDO -> 409
+    with pytest.raises(TransicaoAgendamentoInvalidaError, match="CONCLUIDO"):
+        await service.marcar_falta_agendamento(
+            agendamento_id=ag_concluir.id,
+            profissional_id=prof_id,
+        )
+
+    # Marcar falta em AGENDADO -> FALTA e libera slot
+    ag_falta = await service.agendar_consulta(
+        AgendarConsultaCommand(
+            paciente_id=uuid4(),
+            profissional_id=prof_id,
+            especialidade="PSICOLOGIA",
+            slot_inicio=datetime.combine(dia, time(8, 50), tzinfo=UTC),
+        )
+    )
+    with pytest.raises(ForbiddenError):
+        await service.marcar_falta_agendamento(
+            agendamento_id=ag_falta.id,
+            profissional_id=outro_prof,
+        )
+    faltoso = await service.marcar_falta_agendamento(
+        agendamento_id=ag_falta.id,
+        profissional_id=prof_id,
+    )
+    assert repo.last_for_update is True
+    assert faltoso.status == StatusAgendamento.FALTA.value
+
+    # IDs inexistentes -> 404 AgendamentoNaoEncontradoError
+    with pytest.raises(AgendamentoNaoEncontradoError):
+        await service.concluir_agendamento(
+            agendamento_id=uuid4(),
+            profissional_id=prof_id,
+        )
+    with pytest.raises(AgendamentoNaoEncontradoError):
+        await service.marcar_falta_agendamento(
+            agendamento_id=uuid4(),
+            profissional_id=prof_id,
+        )

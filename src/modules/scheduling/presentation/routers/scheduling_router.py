@@ -206,3 +206,39 @@ async def iniciar_atendimento_agendado(
         atendimento_id=atendimento_id,
     )
     return AgendamentoResponse.model_validate(agendamento)
+
+
+@scheduling_router.post(
+    "/agendamentos/{agendamento_id}/concluir",
+    status_code=status.HTTP_200_OK,
+    summary="Conclui atendimento clínico de um agendamento",
+)
+async def concluir_agendamento(
+    agendamento_id: Annotated[UUID, Path(description="ID do agendamento")],
+    user: ProfissionalSchedulingAuthDep,
+    service: SchedulingServiceDep,
+) -> AgendamentoResponse:
+    """Transiciona o agendamento do profissional de EM_ATENDIMENTO para CONCLUIDO."""
+    agendamento = await service.concluir_agendamento(
+        agendamento_id=agendamento_id,
+        profissional_id=user.usuario_id,
+    )
+    return AgendamentoResponse.model_validate(agendamento)
+
+
+@scheduling_router.post(
+    "/agendamentos/{agendamento_id}/falta",
+    status_code=status.HTTP_200_OK,
+    summary="Registra ausência (falta) do paciente no agendamento",
+)
+async def marcar_falta_agendamento(
+    agendamento_id: Annotated[UUID, Path(description="ID do agendamento")],
+    user: ProfissionalSchedulingAuthDep,
+    service: SchedulingServiceDep,
+) -> AgendamentoResponse:
+    """Transiciona o agendamento ativo do profissional para FALTA."""
+    agendamento = await service.marcar_falta_agendamento(
+        agendamento_id=agendamento_id,
+        profissional_id=user.usuario_id,
+    )
+    return AgendamentoResponse.model_validate(agendamento)

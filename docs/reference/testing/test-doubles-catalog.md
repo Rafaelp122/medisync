@@ -46,6 +46,8 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 | `FakeDocumentDirectory` | `DocumentDirectoryPort` (`src.modules.consultation`) | `obter_dados_verificacao(medico_id, atendimento_id)` | `dados: DadosVerificacaoDirectory`, `error`, `calls: list[tuple]`. |
 | `FakeS3Session` | Sessão `aioboto3.Session` | `client()`, `put_object()`, `get_object()`, `generate_presigned_url()` | `objects`, `put_calls`, `get_calls`, `presign_calls`, `get_error`. |
 | `FakeCloudPSCOAuth2Client` | `CloudPSCOAuth2Client` (`src.modules.consultation`) | `obter_info_credencial()`, `assinar_hash()` | Gera certificado X.509/CMS real para validar `ExternalSigner`, rastreia `info_calls`/`sign_calls`. |
+| `FakeSchedulingRepository` | `SchedulingRepositoryPort` (`src.modules.scheduling`) | `listar_disponibilidades_ativas()`, `listar_agendamentos_ocupados()`, `buscar_agendamento_conflitante()`, `adquirir_lock_disponibilidade()`, `buscar_agendamento_por_id()`, `adicionar_*()` | Estado em memória (`disponibilidades`, `agendamentos`), `last_for_update: bool \| None`, `lock_calls: list[tuple[UUID, int]]`, `last_ocupados_profissional_ids: set[UUID] \| None`. |
+| `FakeAttendanceLookup` | `AttendanceLookupPort` (`src.modules.scheduling`) | `buscar_atendimento(atendimento_id)` | Dicionário `atendimentos: dict[UUID, AttendanceSnapshot]` e histórico `calls: list[UUID]` para validar vínculo clínico sem banco/Valkey. |
 
 ### Detalhamento dos Dublês e Mecânica de Estado
 
@@ -90,6 +92,10 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
    - `FakeShiftPolicyReader` fornece snapshots `ShiftPolicyDTO` para testar backpressure e estimativa de espera sem banco relacional.
    - `FakeQueueEngine` simula integralmente o contrato `QueueEnginePort` (ZSET ordenado, locks 4-Keys com `locks_consulta_ativa`, presença médica, cota atômica, lock do sweeper e Pub/Sub), substituindo mocks inline de `Redis` e dos antigos seams removidos.
 
+10. **`FakeSchedulingRepository` e `FakeAttendanceLookup` (`tests/doubles.py`)**:
+   - `FakeSchedulingRepository` emula o repositório transacional de `scheduling` (`AgendaDisponibilidade` e `Agendamento`), filtrando `listar_agendamentos_ocupados` por `profissional_ids` (registrado em `last_ocupados_profissional_ids`), detectando conflitos simultâneos por `profissional_id` ou `paciente_id` em `buscar_agendamento_conflitante`, registrando `lock_calls` e rastreando `last_for_update`.
+   - `FakeAttendanceLookup` implementa o contrato síncrono `AttendanceLookupPort` em memória via dicionário `atendimentos` e histórico `calls`, substituindo stubs locais nos testes unitários de `SchedulingService`.
+
 ## Onde no código
 
 - Impl: `tests/doubles.py:FakeAsyncSession`
@@ -115,6 +121,8 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Impl: `tests/doubles.py:FakeDocumentDirectory`
 - Impl: `tests/doubles.py:FakeS3Session`
 - Impl: `tests/doubles.py:FakeCloudPSCOAuth2Client`
+- Impl: `tests/doubles.py:FakeSchedulingRepository`
+- Impl: `tests/doubles.py:FakeAttendanceLookup`
 - Impl: `src/core/authz/revocation.py:MemoryTokenRevocation`
 - Impl: `src/modules/auth/infrastructure/fake_sms_adapter.py:FakeSmsSenderAdapter`
 - Spec: `src/core/audit/ports.py:AuditTrailPort`
@@ -137,6 +145,8 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Spec: `src/modules/ambulatory/application/ports/eligibility_provider.py:EligibilityProviderPort`
 - Spec: `src/modules/ambulatory/application/ports/eligibility_notifier.py:ElegibilidadeNotifierPort`
 - Spec: `src/core/authz/revocation.py:TokenRevocationPort`
+- Spec: `src/modules/scheduling/application/ports/scheduling_repository_port.py:SchedulingRepositoryPort`
+- Spec: `src/modules/scheduling/application/ports/attendance_lookup_port.py:AttendanceLookupPort`
 - Prova viva: `tests/unit/test_factories.py:test_seed_clinical_scenario_with_fake_session`
 - Prova viva: `tests/unit/test_pyhanko_signer.py:test_fake_icp_brasil_signer_success`
 - Prova viva: `tests/unit/test_ambulatory_production.py:test_elegibilidade_service_emits_failure_event_on_rejection`
@@ -145,6 +155,7 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Prova viva: `tests/unit/test_token_revocation.py:test_memory_token_revocation`
 - Prova viva: `tests/unit/test_documento_service.py:test_emitir_gera_chave_canonica_sem_legado`
 - Prova viva: `tests/unit/test_livekit_dependencies.py:test_validar_acesso_livekit_paciente_ausente_retorna_conflict_error`
+- Prova viva: `tests/unit/test_scheduling_service.py:test_concluir_e_marcar_falta_agendamento_ciclo_de_vida_e_anti_idor`
 - Ver: `uv run pytest tests/unit/ -k "fake" --no-cov`
 - Ver: `rg -n "class Fake" tests/doubles.py`
 
@@ -156,7 +167,7 @@ uv run pytest tests/unit/test_token_revocation.py -v
 rg -n "class Fake" tests/doubles.py
 ```
 
-Saída esperada: 18 testes selecionados (`-k "fake"`) executados com sucesso em memória, além dos testes dedicados em `test_token_revocation.py`, comprovando isolamento total sem I/O externo.
+Saída esperada: 21 testes selecionados (`-k "fake"`) executados com sucesso em memória, além dos testes dedicados em `test_token_revocation.py`, comprovando isolamento total sem I/O externo.
 
 ## Ver também
 
