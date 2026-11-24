@@ -38,14 +38,14 @@
 
 ### Cenário 3: Agendamento Programado eMulti e Prevenção de Double-Booking (`/agendar`)
 - **Dado que** estou autenticada no portal e acesso `/agendar`,
-- **Quando** seleciono uma especialidade (`PSICOLOGIA` ou `NUTRICAO`), consulto horários livres em `GET /api/v1/scheduling/slots` e reservo um slot futuro em `POST /api/v1/scheduling/agendamentos`,
+- **Quando** seleciono uma especialidade (`PSICOLOGIA` ou `NUTRICAO`), consulto horários livres em `GET /api/v1/scheduling/slots` (que omite horários já decorridos com `slot_inicio < agora_utc`) e reservo um slot futuro em `POST /api/v1/scheduling/agendamentos`,
 - **Então** o agendamento nasce em status `AGENDADO` e aparece em `GET /api/v1/scheduling/agendamentos/me`;
-- **Mas se** outro paciente reservar o mesmo intervalo simultaneamente, a exclusão temporal GiST (`excl_agendamento_slot_ativo`) rejeita a segunda transação com HTTP 409 (`code: SLOT_INDISPONIVEL`).
+- **Mas se** outro paciente reservar o mesmo intervalo simultaneamente ou se eu já possuir outro agendamento ativo sobreposto com outro profissional, as exclusões temporais GiST (`excl_agendamento_slot_ativo` e `excl_agendamento_paciente_ativo`) rejeitam a transação conflitante com HTTP 409 (`code: SLOT_INDISPONIVEL`).
 
-### Cenário 4: Gestão de Disponibilidade e Agenda do Profissional (`/medico`)
+### Cenário 4: Gestão de Disponibilidade, Agenda e Ciclo Clínico do Profissional (`/medico`)
 - **Dado que** estou autenticado como profissional (`Role.MEDICO`) em `/medico`,
-- **Quando** cadastro janela semanal em `POST /api/v1/scheduling/disponibilidades` e consulto `GET /api/v1/scheduling/agenda/dia`,
-- **Então** visualizo meus agendamentos da data UTC corrente e posso iniciar um atendimento via `POST /api/v1/scheduling/agendamentos/{agendamento_id}/iniciar` (`EM_ATENDIMENTO`).
+- **Quando** cadastro janela semanal em `POST /api/v1/scheduling/disponibilidades` (protegida contra janelas concorrentes sobrepostas por `pg_advisory_xact_lock` e `excl_agenda_disp_sobreposicao`) e consulto `GET /api/v1/scheduling/agenda/dia`,
+- **Então** visualizo meus agendamentos da data UTC corrente, inicio o atendimento via `POST /api/v1/scheduling/agendamentos/{agendamento_id}/iniciar` (`EM_ATENDIMENTO`, respondendo 409 `CONFLICT` em vínculo concorrente duplicado de `atendimento_id`), concluo via `POST /api/v1/scheduling/agendamentos/{agendamento_id}/concluir` (`CONCLUIDO`) ou registro ausência via `POST /api/v1/scheduling/agendamentos/{agendamento_id}/falta` (`FALTA`, liberando o slot nas constraints GiST).
 
 ### Cenário 5: Isolamento Estrito de Portais (`/interno/login`)
 - **Dado que** acesso a landing page `/` ou o portal do cidadão `/entrar`,
@@ -61,20 +61,20 @@
 * **Portal Longitudinal do Cidadão (`consultation`):**
   * `GET /api/v1/consultations/me/historico`, `GET /api/v1/consultations/me/documentos`, `GET /api/v1/consultations/me/documents/{documento_id}/pdf` (`PacienteAutenticadoDep` + Anti-IDOR).
 * **Agenda eMulti (`scheduling`):**
-  * `GET /api/v1/scheduling/especialidades` e `GET /api/v1/scheduling/slots` (consulta pública da unidade).
+  * `GET /api/v1/scheduling/especialidades` e `GET /api/v1/scheduling/slots` (consulta pública da unidade, omitindo slots no passado).
   * `POST /api/v1/scheduling/agendamentos`, `GET /api/v1/scheduling/agendamentos/me`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/cancelar` (`Role.PACIENTE`).
-  * `POST /api/v1/scheduling/disponibilidades`, `GET /api/v1/scheduling/agenda/dia`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/iniciar` (`Role.MEDICO`).
+  * `POST /api/v1/scheduling/disponibilidades`, `GET /api/v1/scheduling/agenda/dia`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/iniciar`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/concluir`, `POST /api/v1/scheduling/agendamentos/{agendamento_id}/falta` (`Role.MEDICO`).
 
 ---
 
 ## 4. Checklist de Inspeção de Código
 
-- [x] **Domínio & Persistência `scheduling`:** `src/modules/scheduling/domain/models.py`, `src/modules/scheduling/domain/exceptions.py`, `src/modules/scheduling/infrastructure/adapters/sql_scheduling_repository.py`, `migrations/versions/0001_initial_schema.py` (GiST `excl_agendamento_slot_ativo` sem RLS).
-- [x] **Serviços & Portas:** `src/modules/scheduling/application/services/scheduling_service.py:SchedulingService`, `AttendanceLookupPort` (`src/modules/scheduling/composition.py`), `PatientAuthService` (`src/modules/auth/application/services/patient_auth_service.py`), `IdentityWriterPort`/`SqlIdentityWriter` (`src/modules/identity/infrastructure/identity_writer_sql.py`) e `HistoricoAtendimentoReaderPort`/`QueueStoreAtendimentoReaderAdapter` (`src/modules/consultation/composition.py`).
+- [x] **Domínio & Persistência `scheduling`:** `src/modules/scheduling/domain/models.py`, `src/modules/scheduling/domain/exceptions.py`, `src/modules/scheduling/infrastructure/adapters/sql_scheduling_repository.py`, `migrations/versions/0001_initial_schema.py` e `migrations/versions/0003_scheduling_gist_constraints.py` (GiST `excl_agenda_disp_sobreposicao`, `excl_agendamento_slot_ativo` e `excl_agendamento_paciente_ativo` sem RLS).
+- [x] **Serviços & Portas:** `src/modules/scheduling/application/services/scheduling_service.py:SchedulingService`, `AttendanceLookupPort` (`src/modules/scheduling/composition.py:QueueAttendanceSnapshotLookupAdapter` + `src/modules/queue/composition.py:build_attendance_lookup_reader`), `PatientAuthService` (`src/modules/auth/application/services/patient_auth_service.py`), `IdentityWriterPort`/`SqlIdentityWriter` (`src/modules/identity/infrastructure/identity_writer_sql.py`) e `HistoricoAtendimentoReaderPort`/`QueueStoreAtendimentoReaderAdapter` (`src/modules/consultation/composition.py`).
 - [x] **Routers Finos:** `src/modules/scheduling/presentation/routers/scheduling_router.py`, `src/modules/auth/presentation/routers/patient_auth_router.py`, `src/modules/consultation/presentation/routers/consultation_router.py`.
 - [x] **Frontend Rotas & Features:** `/`, `/entrar`, `/cadastro`, `/interno/login`, `/home`, `/agendar`, `/historico`, `/receitas`, `/perfil`, `/validar/$token` em `frontend/src/routes/`, `frontend/src/features/auth/`, `frontend/src/features/citizen/`, `frontend/src/features/scheduling/` e `frontend/src/features/landing/`.
 - [x] **Testes Automatizados:**
-  - Backend: `tests/unit/test_patient_hybrid_auth.py`, `tests/unit/test_consultation_patient_portal.py`, `tests/unit/test_scheduling_models.py`, `tests/unit/test_scheduling_service.py`, `tests/unit/test_scheduling_router.py`
+  - Backend: `tests/unit/test_patient_hybrid_auth.py`, `tests/unit/test_consultation_patient_portal.py`, `tests/unit/test_scheduling_models.py`, `tests/unit/test_scheduling_service.py`, `tests/unit/test_scheduling_router.py`, `tests/integration/test_scheduling_persistence.py`
   - Frontend: `frontend/src/features/auth/tests/patient-hybrid-auth.test.tsx`, `frontend/src/features/auth/tests/staff-auth.test.tsx`, `frontend/src/features/citizen/tests/*.test.tsx`, `frontend/src/features/scheduling/tests/*.test.tsx`, `frontend/src/features/landing/tests/portfolio-landing-page.test.tsx`
   - E2E / A11y: `frontend/e2e/citizen-portal-and-scheduling.spec.ts` e `frontend/e2e/patient-hybrid-auth.spec.ts`
 

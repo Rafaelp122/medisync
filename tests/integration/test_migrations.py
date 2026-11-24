@@ -185,6 +185,32 @@ async def test_check_constraints_registered() -> None:
 
 
 @pytest.mark.asyncio
+async def test_gist_exclusion_constraints_registered() -> None:
+    """Verify GiST exclusion constraints on scheduling tables after head migration."""
+    async with get_engine().connect() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT c.conname
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE n.nspname = 'public'
+                  AND c.contype = 'x'
+                ORDER BY c.conname;
+                """
+            )
+        )
+        exclusions = {row[0] for row in result.fetchall()}
+
+    expected_exclusions = {
+        "excl_agenda_disp_sobreposicao",
+        "excl_agendamento_slot_ativo",
+        "excl_agendamento_paciente_ativo",
+    }
+    assert expected_exclusions.issubset(exclusions)
+
+
+@pytest.mark.asyncio
 async def test_singleton_constraints_on_unidade_and_plantao() -> None:
     """Verify singleton_guard prevents inserting second row or false guard."""
     async with get_engine().begin() as conn:

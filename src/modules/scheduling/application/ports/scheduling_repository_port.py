@@ -20,6 +20,7 @@ class SchedulingRepositoryPort(Protocol):
         self,
         inicio: datetime,
         fim: datetime,
+        profissional_ids: Sequence[UUID],
     ) -> Sequence[Agendamento]: ...
 
     async def buscar_agendamento_conflitante(
@@ -27,7 +28,15 @@ class SchedulingRepositoryPort(Protocol):
         profissional_id: UUID,
         slot_inicio: datetime,
         slot_fim: datetime,
+        *,
+        paciente_id: UUID | None = None,
     ) -> Agendamento | None: ...
+
+    async def adquirir_lock_disponibilidade(
+        self,
+        profissional_id: UUID,
+        dia_semana: int,
+    ) -> None: ...
 
     async def buscar_disponibilidade_profissional(
         self,

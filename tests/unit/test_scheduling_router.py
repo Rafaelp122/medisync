@@ -15,7 +15,10 @@ from src.modules.scheduling.application.dtos import (
     SlotDisponivelDTO,
 )
 from src.modules.scheduling.composition import get_scheduling_service
-from src.modules.scheduling.domain.exceptions import SlotIndisponivelError
+from src.modules.scheduling.domain.exceptions import (
+    AgendamentoNaoEncontradoError,
+    SlotIndisponivelError,
+)
 from src.modules.scheduling.domain.models import (
     ESPECIALIDADE_CATALOGO,
     AgendaDisponibilidade,
@@ -75,7 +78,11 @@ class FakeSchedulingService:
             if (
                 existing.profissional_id == cmd.profissional_id
                 and existing.slot_inicio == cmd.slot_inicio
-                and existing.status != StatusAgendamento.CANCELADO.value
+                and existing.status
+                not in {
+                    StatusAgendamento.CANCELADO.value,
+                    StatusAgendamento.FALTA.value,
+                }
             ):
                 raise SlotIndisponivelError(
                     f"Slot '{cmd.slot_inicio.isoformat()}' já ocupado."
@@ -105,7 +112,11 @@ class FakeSchedulingService:
         agendamento_id: UUID,
         paciente_id: UUID,
     ) -> Agendamento:
-        ag = self.agendamentos[agendamento_id]
+        ag = self.agendamentos.get(agendamento_id)
+        if ag is None:
+            raise AgendamentoNaoEncontradoError(
+                f"Agendamento '{agendamento_id}' não encontrado."
+            )
         if ag.paciente_id != paciente_id:
             raise ForbiddenError(
                 f"Agendamento '{agendamento_id}' não pertence a '{paciente_id}'."
@@ -126,6 +137,22 @@ class FakeSchedulingService:
             if a.profissional_id == profissional_id
         ]
 
+    def _buscar_do_profissional(
+        self,
+        agendamento_id: UUID,
+        profissional_id: UUID,
+    ) -> Agendamento:
+        ag = self.agendamentos.get(agendamento_id)
+        if ag is None:
+            raise AgendamentoNaoEncontradoError(
+                f"Agendamento '{agendamento_id}' não encontrado."
+            )
+        if ag.profissional_id != profissional_id:
+            raise ForbiddenError(
+                f"Agendamento '{agendamento_id}' pertence a outro profissional."
+            )
+        return ag
+
     async def iniciar_atendimento_agendado(
         self,
         *,
@@ -133,12 +160,28 @@ class FakeSchedulingService:
         profissional_id: UUID,
         atendimento_id: UUID | None = None,
     ) -> Agendamento:
-        ag = self.agendamentos[agendamento_id]
-        if ag.profissional_id != profissional_id:
-            raise ForbiddenError(
-                f"Agendamento '{agendamento_id}' pertence a outro profissional."
-            )
+        ag = self._buscar_do_profissional(agendamento_id, profissional_id)
         ag.iniciar_atendimento(atendimento_id=atendimento_id)
+        return ag
+
+    async def concluir_agendamento(
+        self,
+        *,
+        agendamento_id: UUID,
+        profissional_id: UUID,
+    ) -> Agendamento:
+        ag = self._buscar_do_profissional(agendamento_id, profissional_id)
+        ag.concluir()
+        return ag
+
+    async def marcar_falta_agendamento(
+        self,
+        *,
+        agendamento_id: UUID,
+        profissional_id: UUID,
+    ) -> Agendamento:
+        ag = self._buscar_do_profissional(agendamento_id, profissional_id)
+        ag.marcar_falta()
         return ag
 
 
@@ -354,3 +397,124 @@ def test_agenda_dia_documenta_default_utc_no_openapi() -> None:
     assert "UTC" in op["summary"]
     desc_params = " ".join(p.get("description", "") for p in op["parameters"])
     assert "UTC" in desc_params
+
+
+@pytest.mark.asyncio
+async def test_rotas_concluir_e_falta_rbac_anti_idor_e_estados() -> None:
+    app = create_app()
+    fake_service = FakeSchedulingService()
+    app.dependency_overrides[get_scheduling_service] = lambda: fake_service
+
+    medico_id = uuid4()
+    outro_medico_id = uuid4()
+    paciente_id = uuid4()
+    token_medico = _make_token(medico_id, Role.MEDICO)
+    token_outro_medico = _make_token(outro_medico_id, Role.MEDICO)
+    token_paciente = _make_token(paciente_id, Role.PACIENTE)
+
+    slot_1 = datetime(2026, 11, 20, 9, 0, tzinfo=UTC)
+    slot_2 = datetime(2026, 11, 20, 10, 0, tzinfo=UTC)
+    ag_1 = await fake_service.agendar_consulta(
+        AgendarConsultaCommand(
+            paciente_id=paciente_id,
+            profissional_id=medico_id,
+            especialidade="PSICOLOGIA",
+            slot_inicio=slot_1,
+        )
+    )
+    ag_2 = await fake_service.agendar_consulta(
+        AgendarConsultaCommand(
+            paciente_id=uuid4(),
+            profissional_id=medico_id,
+            especialidade="PSICOLOGIA",
+            slot_inicio=slot_2,
+        )
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Paciente não pode chamar /concluir nem /falta -> 403
+        assert (
+            await client.post(
+                f"/api/v1/scheduling/agendamentos/{ag_1.id}/concluir",
+                headers={"Authorization": f"Bearer {token_paciente}"},
+            )
+        ).status_code == 403
+        assert (
+            await client.post(
+                f"/api/v1/scheduling/agendamentos/{ag_2.id}/falta",
+                headers={"Authorization": f"Bearer {token_paciente}"},
+            )
+        ).status_code == 403
+
+        # Outro médico não pode concluir ou marcar falta -> 403
+        assert (
+            await client.post(
+                f"/api/v1/scheduling/agendamentos/{ag_1.id}/concluir",
+                headers={"Authorization": f"Bearer {token_outro_medico}"},
+            )
+        ).status_code == 403
+        assert (
+            await client.post(
+                f"/api/v1/scheduling/agendamentos/{ag_2.id}/falta",
+                headers={"Authorization": f"Bearer {token_outro_medico}"},
+            )
+        ).status_code == 403
+
+        # Concluir antes de iniciar (AGENDADO) -> 409
+        resp_concluir_cedo = await client.post(
+            f"/api/v1/scheduling/agendamentos/{ag_1.id}/concluir",
+            headers={"Authorization": f"Bearer {token_medico}"},
+        )
+        assert resp_concluir_cedo.status_code == 409
+        assert resp_concluir_cedo.json()["code"] == "TRANSICAO_AGENDAMENTO_INVALIDA"
+
+        # Iniciar + concluir -> 200 CONCLUIDO
+        assert (
+            await client.post(
+                f"/api/v1/scheduling/agendamentos/{ag_1.id}/iniciar",
+                headers={"Authorization": f"Bearer {token_medico}"},
+            )
+        ).status_code == 200
+        resp_concluir = await client.post(
+            f"/api/v1/scheduling/agendamentos/{ag_1.id}/concluir",
+            headers={"Authorization": f"Bearer {token_medico}"},
+        )
+        assert resp_concluir.status_code == 200
+        assert resp_concluir.json()["status"] == "CONCLUIDO"
+
+        # Marcar falta em ag_2 (AGENDADO) -> 200 FALTA; repetir -> 409
+        resp_falta = await client.post(
+            f"/api/v1/scheduling/agendamentos/{ag_2.id}/falta",
+            headers={"Authorization": f"Bearer {token_medico}"},
+        )
+        assert resp_falta.status_code == 200
+        assert resp_falta.json()["status"] == "FALTA"
+
+        resp_falta_dup = await client.post(
+            f"/api/v1/scheduling/agendamentos/{ag_2.id}/falta",
+            headers={"Authorization": f"Bearer {token_medico}"},
+        )
+        assert resp_falta_dup.status_code == 409
+        assert resp_falta_dup.json()["code"] == "TRANSICAO_AGENDAMENTO_INVALIDA"
+
+        # ID inexistente -> 404 AgendamentoNaoEncontradoError
+        inexistente = uuid4()
+        assert (
+            await client.post(
+                f"/api/v1/scheduling/agendamentos/{inexistente}/concluir",
+                headers={"Authorization": f"Bearer {token_medico}"},
+            )
+        ).status_code == 404
+        assert (
+            await client.post(
+                f"/api/v1/scheduling/agendamentos/{inexistente}/falta",
+                headers={"Authorization": f"Bearer {token_medico}"},
+            )
+        ).status_code == 404
+        assert (
+            await client.post(
+                f"/api/v1/scheduling/agendamentos/{inexistente}/cancelar",
+                headers={"Authorization": f"Bearer {token_paciente}"},
+            )
+        ).status_code == 404
