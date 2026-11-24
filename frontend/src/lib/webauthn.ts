@@ -1,7 +1,18 @@
 /**
- * Utilitários WebAuthn / FIDO2 para codificação Base64url <-> ArrayBuffer.
+ * Utilitários WebAuthn / FIDO2 para detecção de suporte e codificação Base64url <-> ArrayBuffer.
  * Regras: RF-01, ADR-005 e US-14.
  */
+
+/**
+ * Verifica de forma silenciosa e resiliente se o navegador/dispositivo possui suporte à Web Authentication API.
+ * Regras: US-14 (Passkeys / WebAuthn - Detecção silenciosa sem lançar exceções).
+ */
+export function isWebAuthnSupported(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return Boolean(window.PublicKeyCredential && typeof window.PublicKeyCredential === "function");
+}
 
 export function base64UrlToUint8Array(base64url: string): Uint8Array<ArrayBuffer> {
   const normalized = base64url.replace(/-/g, "+").replace(/_/g, "/");

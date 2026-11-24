@@ -1,13 +1,14 @@
 import { waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleCadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPost,
   handleIniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPost,
   handleListarAgendaDiaApiV1SchedulingAgendaDiaGet,
 } from "@/api/generated/msw.gen";
 import type { AgendamentoResponse } from "@/api/generated/types.gen";
+import { clearAccessToken, setAccessToken } from "@/lib/auth-token";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
 import { ProfessionalSchedulePanel } from "../components/professional-schedule-panel";
@@ -18,6 +19,14 @@ import {
 } from "./fixtures";
 
 describe("ProfessionalSchedulePanel (Agenda Programada do Profissional)", () => {
+  beforeEach(() => {
+    setAccessToken("profissional-token");
+  });
+
+  afterEach(() => {
+    clearAccessToken();
+  });
+
   it("lista agenda do dia e inicia teleconsulta agendada", async () => {
     const user = userEvent.setup();
     const onAtendimentoIniciado = vi.fn();
@@ -49,10 +58,7 @@ describe("ProfessionalSchedulePanel (Agenda Programada do Profissional)", () => 
     );
 
     const { findByRole, getByText, queryByRole } = renderWithProviders(
-      <ProfessionalSchedulePanel
-        token="profissional-token"
-        onAtendimentoIniciado={onAtendimentoIniciado}
-      />,
+      <ProfessionalSchedulePanel onAtendimentoIniciado={onAtendimentoIniciado} />,
     );
 
     const btnIniciar = await findByRole("button", { name: /iniciar teleconsulta agendada/i });
@@ -93,7 +99,7 @@ describe("ProfessionalSchedulePanel (Agenda Programada do Profissional)", () => 
     );
 
     const { getByRole, getByLabelText, findByRole, queryByRole, getByText } = renderWithProviders(
-      <ProfessionalSchedulePanel token="profissional-token" />,
+      <ProfessionalSchedulePanel />,
     );
 
     const btnAbrirModal = getByRole("button", { name: /cadastrar disponibilidade/i });
@@ -138,7 +144,7 @@ describe("ProfessionalSchedulePanel (Agenda Programada do Profissional)", () => 
     server.use(handleListarAgendaDiaApiV1SchedulingAgendaDiaGet({ body: [] }));
 
     const { getByRole, getByLabelText, findByText } = renderWithProviders(
-      <ProfessionalSchedulePanel token="profissional-token" />,
+      <ProfessionalSchedulePanel />,
     );
 
     await user.click(getByRole("button", { name: /cadastrar disponibilidade/i }));

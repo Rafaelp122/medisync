@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { settings } from "@/config/settings";
 import type { StoredPatientSession } from "@/lib/session-storage";
+import { sessionTransport } from "@/lib/session-transport";
 import { usePatientVerificarOtp } from "../api/use-patient-methods";
 import {
   patientOtpVerifySchema,
-  persistirSessaoPaciente,
+  toStoredPatientSession,
 } from "../schemas/patient-hybrid-auth-schemas";
 
 export interface PatientOtpVerifyStepProps {
@@ -44,7 +45,11 @@ export function PatientOtpVerifyStep({
   const [erroValidacao, setErroValidacao] = useState<string | null>(null);
 
   const verificarOtp = usePatientVerificarOtp({
-    onSuccess: (data) => persistirSessaoPaciente(data, onAuthenticated),
+    onSuccess: (data) => {
+      const session = toStoredPatientSession(data);
+      sessionTransport.activatePatientSession(session);
+      onAuthenticated(session);
+    },
   });
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {

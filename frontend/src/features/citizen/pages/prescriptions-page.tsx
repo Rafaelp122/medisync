@@ -40,7 +40,7 @@ export function PrescriptionsPage({ session }: PrescriptionsPageProps) {
   const navigate = useNavigate();
   const [copiedDocId, setCopiedDocId] = useState<string | null>(null);
 
-  const documentsQuery = usePatientDocuments(activeSession?.token);
+  const documentsQuery = usePatientDocuments();
   const { downloadPdf, downloadingId, downloadError } = useDownloadCitizenDocumentPdf();
 
   const handleCopyAndValidate = async (documentoId: string, tokenValidacao: string) => {
@@ -164,9 +164,7 @@ export function PrescriptionsPage({ session }: PrescriptionsPageProps) {
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
                         type="button"
-                        onClick={() =>
-                          downloadPdf(doc.documento_id, doc.tipo_documento, activeSession?.token)
-                        }
+                        onClick={() => downloadPdf(doc.documento_id, doc.tipo_documento)}
                         disabled={isDownloading}
                         className="min-h-[44px] gap-2"
                       >

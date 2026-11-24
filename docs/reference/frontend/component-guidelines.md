@@ -25,17 +25,18 @@ Em vez de concentrar múltiplos subprocessos em uma única função React, monó
   - `PrescriptionForm`: Seleção de medicamentos, posologia e duração.
   - `AtestadoForm`: Campos de afastamento, CID-10 e emissão de declarações.
   - `PrescriptionItemsList`: Tabela de itens acumulados com remoção e resumo.
-* **PainelGestor:** Decomposto em orquestrador de telemetria e cartões de visualização:
-  - `PainelHeader`: Cabeçalho institucional e indicador de atualização em tempo real.
-  - `AcrTriageDistributionGrid`: Grid de cartões de distribuição de gravidade SUS (Nível 1 a Nível 5).
-  - `TaxasOperacionaisCard`: Métricas de TMA, No-Show e evasão.
-  - `MedicosTmaCard`: Monitoramento individual de produtividade médica.
+* **PainelGestor:** Orquestrador de telemetria (`frontend/src/features/telemetry/components/painel-gestor.tsx`) composto com subárvores desacopladas para evitar re-renders durante o polling e acoplamento cruzado:
+  - `PainelMetricasAoVivo`: Única subárvore inscrita no polling de 5s (`usePainelTelemetria` em `frontend/src/api/hooks/use-painel-telemetria.ts`), encapsulando `PainelHeader`, KPIs (fallback `600s`), `AcrTriageDistributionGrid`, `TaxasOperacionaisCard` (`0..100`) e `MedicosTmaCard`.
+  - `ConfigPlantaoCard`: Cartão apresentacional puro (`ConfigPlantaoCardProps`, sem props booleanas de modo), recebendo `config` e callbacks sem sofrer re-render no tick de 5s.
+  - Slot `renderBpaCard`: Injeta `ProducaoBpaCard` (`frontend/src/features/ambulatory/components/producao-bpa-card.tsx`) na borda de roteamento (`frontend/src/routes/gestor.tsx`) mantendo `features/telemetry/` e `features/ambulatory/` estritamente isoladas.
 
-### 3. Isolamento de Mídia WebRTC com `React.memo`
+### 3. Isolamento de Mídia WebRTC com `React.memo` e Subtrees de Polling
 
 A renderização de fluxos de vídeo WebRTC consome buffers de decodificação de hardware e conexões SFU com o servidor LiveKit.
-* Mudanças de estado de alta frequência no componente pai (digitação no editor SOAP, inclusão de medicamentos na prescrição ou polling de telemetria da fila a cada 5s) não podem provocar re-renders no canvas de vídeo.
+* Mudanças de estado de alta frequência no componente pai (digitação no editor SOAP, inclusão de medicamentos na prescrição ou polling de telemetria da fila a cada 5s) não podem provocar re-renders no canvas de vídeo nem em formulários adjacentes.
 * O contêiner de videoconferência é encapsulado em `WorkstationMediaPane` memoizado com `React.memo`, re-renderizando estritamente quando `atendimentoId`, `livekitToken` ou participantes mudarem.
+* Slots persistentes em Web Storage utilizam obrigatoriamente `createStorageSlot<T>` (`frontend/src/lib/session-storage.ts`) com validação estrutural no `get()` e expurgo automático em JSON corrompido.
+* Primitivas de formulário baseadas em `react-hook-form` (`frontend/src/components/ui/form.tsx`) validam `if (!fieldContext)` **antes** de invocar `getFieldState(fieldContext.name, formState)`.
 
 ### 4. Padrões React 19 e Eliminação de Boolean Props
 
@@ -65,6 +66,10 @@ Em conformidade com a Portaria GM/MS nº 2.048/2002 e a WCAG 2.1 AA ([ADR-011](.
 * Impl: `frontend/src/features/consultation/components/workstation-media-pane.tsx:WorkstationMediaPane`
 * Impl: `frontend/src/features/consultation/components/prescription-builder.tsx:PrescriptionBuilder`
 * Impl: `frontend/src/features/telemetry/components/painel-gestor.tsx:PainelGestor`
+* Impl: `frontend/src/features/telemetry/components/painel/painel-metricas-ao-vivo.tsx:PainelMetricasAoVivo`
+* Impl: `frontend/src/api/hooks/use-painel-telemetria.ts:usePainelTelemetria`
+* Impl: `frontend/src/lib/session-storage.ts:createStorageSlot`
+* Impl: `frontend/src/components/ui/form.tsx:useFormField`
 * Prova viva: `tests/unit/test_audit_frontend_guidelines.py`
 * Prova viva: `frontend/src/components/ui/badge.test.tsx`
 * Prova viva: `frontend/src/features/consultation/tests/doctor-workstation-performance.test.tsx`

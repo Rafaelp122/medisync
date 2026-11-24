@@ -14,7 +14,6 @@ export const zAdmissaoRequest = z.object({
     escala_dor: z.int().gte(0).lte(10).optional().default(0),
     tcle_texto: z.string().optional().default(''),
     tcle_hash: z.string().length(64).nullish(),
-    medicos_ativos: z.int().gte(1).optional().default(1),
     cpf: z.string().nullish(),
     cns: z.string().nullish()
 });
@@ -82,12 +81,12 @@ export const zAssinarDocumentoResponse = z.object({
 /**
  * AutenticarCadsusRequest
  *
- * Payload to authenticate patient via CADSUS / Gov.br civil registry.
+ * Payload to authenticate patient via CADSUS / Gov.br with 2nd civil factor.
  */
 export const zAutenticarCadsusRequest = z.object({
     cpf: z.string().max(14).nullish(),
-    cns: z.string().max(15).nullish(),
-    data_nascimento: z.iso.date().nullish(),
+    cns: z.string().max(18).nullish(),
+    data_nascimento: z.iso.date(),
     nome_mae: z.string().max(200).nullish()
 });
 
@@ -148,20 +147,20 @@ export const zChamarProximoResponse = z.object({
  * Request payload for updating shift configuration and SLAs (RF-09).
  */
 export const zConfigPlantaoRequest = z.object({
-    medicos_ativos_planejados: z.int().gte(1).optional().default(1),
+    medicos_ativos_planejados: z.int().gte(1),
     alpha_backpressure: z.union([
         z.number().gte(1.2).lte(1.3),
         z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/)
-    ]).optional().default('1.25'),
-    cota_diaria_maxima: z.int().gt(0).nullish().default(300),
-    tma_padrao_segundos: z.int().gte(60).optional().default(600),
-    tempo_tolerancia_ring_segundos: z.int().gte(10).optional().default(45),
-    modo_operacao: z.enum(['SUS', 'PRIVADO']).optional().default('SUS'),
-    sla_minutos_nivel_1: z.int().gte(0).optional().default(0),
-    sla_minutos_nivel_2: z.int().gte(0).optional().default(10),
-    sla_minutos_nivel_3: z.int().gte(0).optional().default(60),
-    sla_minutos_nivel_4: z.int().gte(0).optional().default(120),
-    sla_minutos_nivel_5: z.int().gte(0).optional().default(240)
+    ]),
+    cota_diaria_maxima: z.int().gt(0).nullable(),
+    tma_padrao_segundos: z.int().gte(60),
+    tempo_tolerancia_ring_segundos: z.int().gte(10),
+    modo_operacao: z.enum(['SUS', 'PRIVADO']),
+    sla_minutos_nivel_1: z.int().gte(0),
+    sla_minutos_nivel_2: z.int().gte(0),
+    sla_minutos_nivel_3: z.int().gte(0),
+    sla_minutos_nivel_4: z.int().gte(0),
+    sla_minutos_nivel_5: z.int().gte(0)
 });
 
 /**
@@ -212,7 +211,8 @@ export const zCriarDependenteRequest = z.object({
     data_nascimento: z.iso.date().nullish(),
     cpf: z.string().max(14).nullish(),
     cns: z.string().max(18).nullish(),
-    telefone: z.string().max(20).nullish()
+    telefone: z.string().max(20).nullish(),
+    outorga_tcle: z.boolean().optional().default(false)
 });
 
 /**
@@ -242,7 +242,8 @@ export const zDependenteDetalheResponse = z.object({
     data_nascimento: z.iso.date(),
     cpf: z.string().nullable(),
     cns: z.string().nullable(),
-    vinculado_em: z.iso.datetime()
+    vinculado_em: z.iso.datetime(),
+    outorga_tcle: z.boolean().optional().default(false)
 });
 
 /**
@@ -255,7 +256,8 @@ export const zDependenteResponse = z.object({
     titular_id: z.uuid(),
     dependente_id: z.uuid(),
     grau_parentesco: z.string(),
-    vinculado_em: z.iso.datetime()
+    vinculado_em: z.iso.datetime(),
+    outorga_tcle: z.boolean().optional().default(false)
 });
 
 /**
@@ -349,6 +351,7 @@ export const zFase1Response = z.object({
  */
 export const zFase2Request = z.object({
     paciente_id: z.uuid(),
+    nome_social: z.string().max(255).nullish(),
     nome_mae: z.string().min(3).max(255),
     sexo_biologico: z.enum(['M', 'F']),
     cep: z.string().min(8).max(9),
@@ -357,7 +360,6 @@ export const zFase2Request = z.object({
     bairro: z.string().min(2).max(100),
     cidade: z.string().min(2).max(100),
     estado: z.string().length(2),
-    nome_social: z.string().max(255).nullish(),
     alergias: z.array(z.string()).optional(),
     token: z.string().nullish()
 });
@@ -748,26 +750,27 @@ export const zPioraClinicaRequest = z.object({
 export const zPioraClinicaResponse = z.object({
     atendimento_id: z.uuid(),
     prioridade_clinica: z.int(),
-    nova_prioridade: z.int().nullish(),
     status_atendimento: z.string().nullish(),
     alerta_samu_disparado: z.boolean(),
     redirecionado_emergencia: z.boolean(),
     nova_posicao: z.int().nullish(),
-    instrucoes: z.string().nullish(),
-    orientacoes_emergencia: z.string().nullish()
+    instrucoes: z.string().nullish()
 });
 
 /**
  * PosicaoFilaResponse
  *
- * Resposta com a posição ordinal e estimativa de espera na fila.
+ * Resposta com posição ordinal, timer de chamada e estimativa de espera.
  */
 export const zPosicaoFilaResponse = z.object({
     atendimento_id: z.uuid(),
     status: z.string(),
     posicao: z.int().nullable(),
     total_aguardando: z.int(),
-    tempo_estimado_segundos: z.int().nullable()
+    tempo_estimado_segundos: z.int().nullable(),
+    prioridade_clinica: z.int(),
+    chamada_iniciada_em: z.iso.datetime().nullish(),
+    ttl_segundos: z.int().nullish()
 });
 
 /**
@@ -1685,3 +1688,21 @@ export const zIniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoId
  * Successful Response
  */
 export const zIniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponse = zAgendamentoResponse;
+
+export const zConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostPath = z.object({
+    agendamento_id: z.uuid()
+});
+
+/**
+ * Successful Response
+ */
+export const zConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostResponse = zAgendamentoResponse;
+
+export const zMarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostPath = z.object({
+    agendamento_id: z.uuid()
+});
+
+/**
+ * Successful Response
+ */
+export const zMarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostResponse = zAgendamentoResponse;

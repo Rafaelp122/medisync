@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { client, getSessionQueryScope, resolveExplicitAuthHeaders } from "@/api/client";
+import { client, getSessionQueryScope } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
   cadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPost,
@@ -22,7 +22,6 @@ export interface UseAgendaDiaParams {
   data?: string;
   dataInicio?: string;
   dataFim?: string;
-  token?: string;
   enabled?: boolean;
 }
 
@@ -30,10 +29,10 @@ export interface UseAgendaDiaParams {
  * Hook headless para listar a agenda de agendamentos do profissional autenticado no período.
  */
 export function useAgendaDia(
-  { data, dataInicio, dataFim, token, enabled = true }: UseAgendaDiaParams = {},
+  { data, dataInicio, dataFim, enabled = true }: UseAgendaDiaParams = {},
   options?: Partial<UseQueryOptions<AgendamentoResponse[], ProblemDetailsError>>,
 ) {
-  const scopeKey = getSessionQueryScope(token);
+  const scopeKey = getSessionQueryScope();
   return useQuery<AgendamentoResponse[], ProblemDetailsError>({
     queryKey: [
       "scheduling",
@@ -52,7 +51,6 @@ export function useAgendaDia(
             ...(dataInicio ? { data_inicio: dataInicio } : {}),
             ...(dataFim ? { data_fim: dataFim } : {}),
           },
-          headers: resolveExplicitAuthHeaders(token),
           throwOnError: true,
         });
         return response.data;
@@ -67,7 +65,6 @@ export function useAgendaDia(
 
 export interface CadastrarDisponibilidadeParams {
   body: CriarDisponibilidadeRequest;
-  token?: string;
 }
 
 /**
@@ -84,12 +81,11 @@ export function useCadastrarDisponibilidade(
 
   return useMutation<DisponibilidadeResponse, ProblemDetailsError, CadastrarDisponibilidadeParams>({
     ...options,
-    mutationFn: async ({ body, token }: CadastrarDisponibilidadeParams) => {
+    mutationFn: async ({ body }: CadastrarDisponibilidadeParams) => {
       try {
         const response = await cadastrarDisponibilidadeApiV1SchedulingDisponibilidadesPost({
           client,
           body,
-          headers: resolveExplicitAuthHeaders(token),
           throwOnError: true,
         });
         return response.data;
@@ -108,7 +104,6 @@ export function useCadastrarDisponibilidade(
 export interface IniciarAtendimentoAgendadoParams {
   agendamentoId: string;
   atendimentoId?: string | null;
-  token?: string;
 }
 
 /**
@@ -125,18 +120,13 @@ export function useIniciarAtendimentoAgendado(
 
   return useMutation<AgendamentoResponse, ProblemDetailsError, IniciarAtendimentoAgendadoParams>({
     ...options,
-    mutationFn: async ({
-      agendamentoId,
-      atendimentoId,
-      token,
-    }: IniciarAtendimentoAgendadoParams) => {
+    mutationFn: async ({ agendamentoId, atendimentoId }: IniciarAtendimentoAgendadoParams) => {
       try {
         const response =
           await iniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPost({
             client,
             path: { agendamento_id: agendamentoId },
             body: atendimentoId !== undefined ? { atendimento_id: atendimentoId } : null,
-            headers: resolveExplicitAuthHeaders(token),
             throwOnError: true,
           });
         return response.data;

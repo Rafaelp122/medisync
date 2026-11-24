@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { PatientHybridAuthCard } from "@/features/auth/components/patient-hybrid-auth-card";
-import { type StoredPatientSession, saveStoredSession } from "@/lib/session-storage";
+import type { StoredPatientSession } from "@/lib/session-storage";
 
 /**
  * Página pública de entrada do cidadão (/entrar) no fluxo IAM Híbrido.
@@ -11,7 +11,6 @@ export function PatientAuthPage() {
   const navigate = useNavigate();
 
   const handleAuthenticated = (session: StoredPatientSession) => {
-    saveStoredSession(session);
     if (session.atendimentoId) {
       void navigate({ to: "/fila" });
       return;

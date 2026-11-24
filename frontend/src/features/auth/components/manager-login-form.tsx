@@ -1,5 +1,8 @@
 import { AlertCircle, Building2, KeyRound, Loader2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
+import { client } from "@/api/client";
+import { extractProblemDetail } from "@/api/errors";
+import { meApiV1AuthMeGet } from "@/api/generated/sdk.gen";
 import type { TokenResponse } from "@/api/generated/types.gen";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -7,10 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { setAccessToken } from "@/lib/auth-token";
 import type { StoredManagerSession } from "@/lib/session-storage";
+import { sessionTransport } from "@/lib/session-transport";
 import { useCorporateLogin } from "../api/use-corporate-login";
 import { managerLoginSchema } from "../schemas/auth-schemas";
+import { MfaSetupModal } from "./mfa-setup-modal";
 import { MfaVerifyModal } from "./mfa-verify-modal";
 
 export interface ManagerLoginFormProps {
@@ -22,41 +26,80 @@ export function ManagerLoginForm({ onLoginSuccess, className }: ManagerLoginForm
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState<string | null>(null);
+  const [isHydratingProfile, setIsHydratingProfile] = useState(false);
 
-  const [mfaModalAberto, setMfaModalAberto] = useState(false);
+  const [mfaSetupAberto, setMfaSetupAberto] = useState(false);
+  const [mfaVerifyAberto, setMfaVerifyAberto] = useState(false);
   const [tempToken, setTempToken] = useState<string | null>(null);
+
+  const finalizarLogin = async (token: string) => {
+    setIsHydratingProfile(true);
+    try {
+      const meResponse = await meApiV1AuthMeGet({
+        client,
+        headers: { Authorization: `Bearer ${token}` },
+        throwOnError: true,
+      });
+      const me = meResponse.data;
+
+      if (me.papel !== "GESTOR_UNIDADE" || !me.ativo) {
+        sessionTransport.clearSession("staff");
+        setErro("Acesso restrito a gestores da unidade ativos (perfil GESTOR_UNIDADE).");
+        return;
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+      const session: StoredManagerSession = {
+        usuarioId: me.usuario_id,
+        nome: me.identificador || normalizedEmail,
+        email: normalizedEmail,
+        papel: "GESTOR_UNIDADE",
+      };
+      sessionTransport.activateStaffSession({ role: "GESTOR_UNIDADE", token, session });
+      onLoginSuccess(session);
+    } catch (err) {
+      sessionTransport.clearSession("staff");
+      setErro(
+        extractProblemDetail(
+          err,
+          "Não foi possível carregar o perfil do gestor autenticado. Tente novamente.",
+        ),
+      );
+    } finally {
+      setIsHydratingProfile(false);
+    }
+  };
 
   const { mutate: loginCorporate, isPending } = useCorporateLogin({
     onSuccess: (data: TokenResponse) => {
+      if (data.mfa_setup_requerido) {
+        setTempToken(data.access_token);
+        setMfaSetupAberto(true);
+        return;
+      }
       if (data.mfa_requerido) {
         setTempToken(data.access_token);
-        setMfaModalAberto(true);
-      } else {
-        finalizarLogin(data.access_token);
+        setMfaVerifyAberto(true);
+        return;
       }
+      void finalizarLogin(data.access_token);
     },
     onError: (err) => {
       setErro(
         err.detail ||
           err.message ||
-          "E-mail institucional ou senha incorretos. Apenas gestores com perfil REGULACAO/GESTOR podem acessar.",
+          "E-mail institucional ou senha incorretos. Apenas gestores com perfil GESTOR_UNIDADE podem acessar.",
       );
     },
   });
 
-  const finalizarLogin = (token: string) => {
-    setAccessToken(token);
-    const session: StoredManagerSession = {
-      usuarioId: "018f3a5b-9999-4444-8888-018f3a5b9999",
-      nome: "Gestor da Regulação Municipal",
-      email: email.trim().toLowerCase(),
-      papel: "GESTOR",
-    };
-    onLoginSuccess(session);
+  const handleMfaActivated = () => {
+    setMfaSetupAberto(false);
+    setMfaVerifyAberto(true);
   };
 
   const handleMfaSuccess = (data: TokenResponse) => {
-    finalizarLogin(data.access_token);
+    void finalizarLogin(data.access_token);
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -79,16 +122,18 @@ export function ManagerLoginForm({ onLoginSuccess, className }: ManagerLoginForm
     });
   };
 
+  const isBusy = isPending || isHydratingProfile;
+
   return (
     <>
       <Card className={className}>
         <CardHeader className="space-y-2 text-center pb-4">
           <div className="mx-auto size-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-            <Building2 className="size-6" />
+            <Building2 className="size-6" aria-hidden="true" />
           </div>
           <div className="space-y-1">
             <CardTitle className="text-xl font-bold tracking-tight text-foreground">
-              Acesso à Regulação Municipal
+              Acesso da Gestão da Unidade
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
               Painel de telemetria, controle de cota e gestão da fila SUS em tempo real (RF-10 /
@@ -97,7 +142,7 @@ export function ManagerLoginForm({ onLoginSuccess, className }: ManagerLoginForm
           </div>
           <div className="flex justify-center pt-1">
             <Badge variant="outline" className="text-[11px] py-0 px-2 gap-1 text-muted-foreground">
-              <ShieldCheck className="size-3 text-acr-green" />
+              <ShieldCheck className="size-3 text-acr-green" aria-hidden="true" />
               <span>Acesso Corporativo Seguro • MFA TOTP</span>
             </Badge>
           </div>
@@ -106,7 +151,7 @@ export function ManagerLoginForm({ onLoginSuccess, className }: ManagerLoginForm
         <CardContent className="space-y-4">
           {erro && (
             <Alert variant="destructive" className="py-2.5 text-xs">
-              <AlertCircle className="size-4" />
+              <AlertCircle className="size-4" aria-hidden="true" />
               <AlertDescription className="text-xs">{erro}</AlertDescription>
             </Alert>
           )}
@@ -120,10 +165,10 @@ export function ManagerLoginForm({ onLoginSuccess, className }: ManagerLoginForm
                 id="gestor-email"
                 type="email"
                 autoComplete="username"
-                placeholder="ex: regulacao@saude.gov.br"
+                placeholder="ex: gestor@unidade.saude.gov.br"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={isPending}
+                disabled={isBusy}
                 className="text-xs h-9"
                 required
               />
@@ -140,7 +185,7 @@ export function ManagerLoginForm({ onLoginSuccess, className }: ManagerLoginForm
                 placeholder="••••••••"
                 value={senha}
                 onChange={(e) => setSenha(e.target.value)}
-                disabled={isPending}
+                disabled={isBusy}
                 className="text-xs h-9"
                 required
               />
@@ -148,18 +193,18 @@ export function ManagerLoginForm({ onLoginSuccess, className }: ManagerLoginForm
 
             <Button
               type="submit"
-              disabled={isPending}
+              disabled={isBusy}
               className="w-full text-xs font-semibold h-10 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 mt-2"
             >
-              {isPending ? (
+              {isBusy ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                   <span>Autenticando gestor…</span>
                 </>
               ) : (
                 <>
-                  <KeyRound className="size-4" />
-                  <span>Acessar Painel da Regulação</span>
+                  <KeyRound className="size-4" aria-hidden="true" />
+                  <span>Acessar Painel da Unidade</span>
                 </>
               )}
             </Button>
@@ -168,11 +213,20 @@ export function ManagerLoginForm({ onLoginSuccess, className }: ManagerLoginForm
       </Card>
 
       {tempToken && (
-        <MfaVerifyModal
-          open={mfaModalAberto}
-          onOpenChange={setMfaModalAberto}
+        <MfaSetupModal
+          open={mfaSetupAberto}
+          onOpenChange={setMfaSetupAberto}
           tempToken={tempToken}
-          perfilNome="Gestor Municipal"
+          onActivated={handleMfaActivated}
+        />
+      )}
+
+      {tempToken && (
+        <MfaVerifyModal
+          open={mfaVerifyAberto}
+          onOpenChange={setMfaVerifyAberto}
+          tempToken={tempToken}
+          perfilNome="Gestor da Unidade"
           onSuccess={handleMfaSuccess}
         />
       )}

@@ -2,13 +2,13 @@ import { Link, type LinkProps } from "@tanstack/react-router";
 import { ArrowRight, FileCheck2, HeartPulse } from "lucide-react";
 import type * as React from "react";
 import { Button } from "@/components/ui/button";
-import { LandingFooter } from "@/features/landing/components/landing-footer";
 
 export interface PublicLandingLayoutProps {
   children: React.ReactNode;
+  footer?: React.ReactNode;
 }
 
-export function PublicLandingLayout({ children }: PublicLandingLayoutProps) {
+export function PublicLandingLayout({ children, footer }: PublicLandingLayoutProps) {
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b border-border/80 bg-background/95 backdrop-blur-sm">
@@ -66,7 +66,7 @@ export function PublicLandingLayout({ children }: PublicLandingLayoutProps) {
         {children}
       </main>
 
-      <LandingFooter />
+      {footer}
     </div>
   );
 }

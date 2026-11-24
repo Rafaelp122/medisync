@@ -6,6 +6,7 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 import type { LiveKitTokenResponse } from "@/api/generated/types.gen";
+import { RouteErrorFallback, RoutePendingFallback } from "@/components/route-fallbacks";
 import { defaultQueryClient } from "@/lib/query-client";
 import { isReducedMotionPreferred } from "@/lib/view-transitions";
 import { agendarRoute } from "@/routes/agendar";
@@ -59,6 +60,8 @@ export function createAppRouter(
     context: { queryClient },
     defaultPreload: "intent",
     defaultNotFoundComponent: () => <Navigate to="/" replace />,
+    defaultErrorComponent: RouteErrorFallback,
+    defaultPendingComponent: RoutePendingFallback,
     defaultViewTransition: !isReducedMotionPreferred(),
   });
 }

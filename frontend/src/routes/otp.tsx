@@ -19,12 +19,12 @@ export const otpRoute = createRoute({
     }
 
     const doctor = getStoredDoctorSession();
-    if (doctor) {
+    if (doctor && (!doctor.papel || doctor.papel === "MEDICO")) {
       throw redirect({ to: "/medico" });
     }
 
     const manager = getStoredManagerSession();
-    if (manager) {
+    if (manager?.papel === "GESTOR_UNIDADE") {
       throw redirect({ to: "/gestor" });
     }
 
