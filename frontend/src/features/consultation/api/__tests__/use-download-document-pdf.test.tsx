@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { handleObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGet } from "@/api/generated/msw.gen";
 import { server } from "@/mocks/server";
 import { useDownloadDocumentoPdf } from "../use-download-document-pdf";
 
@@ -13,11 +14,11 @@ describe("useDownloadDocumentoPdf Hook (ADR-011 §2.3, US-09)", () => {
   beforeEach(() => {
     clickedLinks = [];
 
-    window.URL.createObjectURL = vi.fn((_blob: Blob) => {
+    vi.spyOn(window.URL, "createObjectURL").mockImplementation((_blob: Blob | MediaSource) => {
       return `blob:http://localhost/${Math.random().toString(36).slice(2)}`;
     });
 
-    window.URL.revokeObjectURL = vi.fn((_url: string) => {});
+    vi.spyOn(window.URL, "revokeObjectURL").mockImplementation((_url: string) => {});
 
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
       this: HTMLAnchorElement,
@@ -32,10 +33,13 @@ describe("useDownloadDocumentoPdf Hook (ADR-011 §2.3, US-09)", () => {
 
   it("faz o download do PDF criando e revogando blob URL com link DOM temporário", async () => {
     server.use(
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/documents/${MOCK_DOC_ID}/pdf`, () => {
-        return new HttpResponse(new Blob(["%PDF-1.4 mock content"], { type: "application/pdf" }), {
-          headers: { "Content-Type": "application/pdf" },
-        });
+      handleObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGet(() => {
+        return new HttpResponse(
+          new Blob(["%PDF-1.4 mock content"], { type: "application/pdf" }) as never,
+          {
+            headers: { "Content-Type": "application/pdf" },
+          },
+        );
       }),
     );
 
@@ -63,7 +67,7 @@ describe("useDownloadDocumentoPdf Hook (ADR-011 §2.3, US-09)", () => {
 
   it("trata erro de rede sem travar estado downloadingId e expõe ProblemDetailsError", async () => {
     server.use(
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/documents/${MOCK_DOC_ID}/pdf`, () => {
+      handleObterDocumentoPdfApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdPdfGet(() => {
         return new HttpResponse(null, { status: 500 });
       }),
     );

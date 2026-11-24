@@ -1,7 +1,8 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost } from "@/api/generated/msw.gen";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
 import { PrescriptionBuilder } from "../components/prescription-builder";
@@ -10,22 +11,22 @@ import { createDocumentoClinicoResponse, MOCK_ATENDIMENTO_ID } from "./fixtures"
 describe("PrescriptionBuilder Integration Tests (Receita vs Atestado & CFM 2.314)", () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   beforeEach(() => {
     server.use(
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/documents`, async ({ request }) => {
-        const body = (await request.json()) as {
-          tipo_documento: string;
-          justificativa_tempo_inferior?: string;
-        };
-        return HttpResponse.json(
-          createDocumentoClinicoResponse({
-            tipo_documento: body.tipo_documento,
-          }),
-          { status: 201 },
-        );
-      }),
+      handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost(
+        async ({ request }) => {
+          const body = await request.json();
+          return HttpResponse.json(
+            createDocumentoClinicoResponse({
+              tipo_documento: body.tipo_documento,
+            }),
+            { status: 201 },
+          );
+        },
+      ),
     );
   });
 

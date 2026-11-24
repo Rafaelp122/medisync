@@ -4,7 +4,7 @@
 
 ## Contexto
 
-A suíte de testes unitários do MediSync Express opera sob o princípio de feedback ultrarrápido sem dependência de containers (`just test-fast`), executando mais de 600 testes em poucos segundos.
+A suíte de testes unitários do MediSync Express opera sob o princípio de feedback ultrarrápido sem dependência de containers (`just test-fast`), executando mais de 950 testes em poucos segundos.
 Em alinhamento com o Clean Code para Agentes de IA (AGENTS.md) e a arquitetura Hexagonal Pragmática (ADR-001), o projeto adota **Fakes Nomeados sobre Mocks Inline Anônimos**.
 Em vez de instâncias genéricas de `unittest.mock.MagicMock` ou `patch()`, o repositório emprega dublês de teste tipados que implementam fielmente as portas abstratas (`typing.Protocol`) do sistema.
 Essa abordagem assegura checagem de tipos estrita (`basedpyright` em modo estrito), refatorações seguras de contratos e diagnóstico imediato de asserções via estado rastreável.
@@ -18,7 +18,7 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 
 | Dublê Fake | Porta / Contrato Implementado | Métodos Principais | Helpers de Asserção & Estado |
 |---|---|---|---|
-| `FakeAsyncSession` | `sqlalchemy.ext.asyncio.AsyncSession` | `execute()`, `add()`, `add_all()`, `flush()`, `commit()`, `refresh()`, `begin_nested()` | `commits: int`, `executes: int`, `added: list[Any]`, `_results: list[Any]` (respostas FIFO de `FakeResult`). |
+| `FakeAsyncSession` / `FakeAsyncSessionFactory` | `AsyncSession` / `async_sessionmaker` | `execute()`, `add()`, `add_all()`, `flush()`, `commit()`, `refresh()`, `begin_nested()`, `__call__()` | `commits: int`, `executes: int`, `added: list[Any]`, `_results: list[Any]` (respostas FIFO de `FakeResult`) e fábrica `@asynccontextmanager` para sessões efêmeras. |
 | `FakeResult` / `FakeAddedResult` | `sqlalchemy.engine.Result` | `scalar_one_or_none()`, `scalar_one()`, `mappings()` | Retorna valores escalares pré-programados ou simula recarga da entidade recém-adicionada na sessão. |
 | `FakePDFGenerator` | `PDFGeneratorPort` (`src.modules.consultation`) | `gerar_pdf(payload)` | `calls: int`, `payloads: list[Any]` (inspeção de payloads clínicos), `content: bytes` (payload PDF configurado). |
 | `FakeICPBrasilSigner` | `ICPBrasilSignerPort` (`src.modules.consultation`) | `assinar_pdf(pdf_bytes, credenciais, metadata)` | `calls: list[tuple]` (histórico de invocações com bytes e credenciais), `signed_suffix: bytes`. |
@@ -28,16 +28,20 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 | `FakeElegibilidadeNotifier` | `ElegibilidadeNotifierPort` (`src.modules.ambulatory`) | `notificar_falha(evento)` | `eventos_falha: list[ElegibilidadeFalhaEvent]` (histórico ordenado de alertas de recusa/timeout emitidos). |
 
 | `MemoryTokenRevocation` | `TokenRevocationPort` (`src.core.authz`) | `revogar(jti, exp_segundos)`, `marcar_revogado_se_nao_revogado(jti)`, `is_revogado(jti)` | `_revoked: set[str]` (conjunto em memória de identificadores JWT invalidados com `SET NX` lógico). |
-| `MemoryChallengeStore` | `ChallengeStorePort` (`src.modules.auth`) | `store_one_time()`, `consume_one_time()`, `verify_and_increment_otp()` | `entries: dict[str, tuple[str, float]]` com expiração monotônica, `consume_calls: list[str]` e `clear()`. |
+| `MemoryChallengeStore` (`InMemoryChallengeStore`) | `ChallengeStorePort` (`src.modules.auth`) | `store_one_time()`, `consume_one_time()`, `verify_and_increment_otp()` | `entries: dict[str, tuple[str, float]]` com expiração monotônica, `consume_calls: list[str]` e `clear()`. |
+| `FakePatientCredentialRepository` | `PatientCredentialRepositoryPort` (`src.modules.auth`) | `buscar_por_identificador()`, `existe_credencial_paciente()`, `criar_credencial()` | Dicionário `by_key`, histórico `identificador_lookups` e `existe_calls`. |
+| `FakeActiveAttendanceLookup` | `ActiveAttendanceLookupPort` (`src.modules.auth`) | `buscar_atendimento_ativo_paciente()` | Dicionário `_active_map` e histórico `calls: list[UUID]`. |
 | `FakeIdentityReader` | `IdentityReaderPort` (`src.modules.identity`) | `obter_dados_diretorio()`, `buscar_paciente_cadsus()`, `buscar_passkey_por_credencial()` | Somente leitura CQRS (`lookups`, `passkeys`); bloqueia consultas CADSUS sem CPF/CNS ou ambíguas. |
 | `FakeIdentityWriter` | `IdentityWriterPort` (`src.modules.identity`) | `criar_paciente()`, `registrar_passkey_paciente()`, `atualizar_sign_count_passkey()` | Persiste pacientes e mutações de passkeys no `FakeIdentityReader` compartilhado sem commit. |
 | `FakeSmsSenderAdapter` | `SmsSenderPort` (`src.modules.auth`) | `enviar_otp(telefone, codigo)`, `clear()` | `sent_otps: list[dict]` residente em `src/modules/auth/infrastructure/fake_sms_adapter.py` (removido de `identity`). |
-| `FakeAtendimentoReader` | `AtendimentoReaderPort` (`src.modules.consultation`) | `obter_resumo()`, `concluir_atendimento(..., auto_commit=True)`, `liberar_consulta_ativa_medico()`, `atender_chamada()` | `resumo`, `chamada_atendida`, `atendimento_concluido`, `last_auto_commit: bool \| None`, `liberados_consulta: list[UUID]`. |
+| `FakeAtendimentoReader` / `FakeHistoricoAtendimentoReader` | `AtendimentoReaderPort` / `HistoricoAtendimentoReaderPort` (`src.modules.consultation`) | `obter_resumo()`, `concluir_atendimento(..., auto_commit=True)`, `liberar_consulta_ativa_medico()`, `atender_chamada()`, `listar_historico_paciente()` | `resumo`, `chamada_atendida`, `atendimento_concluido`, `last_auto_commit: bool \| None`, `liberados_consulta: list[UUID]`, `chamadas_historico`. |
 | `FakeEmergencyNotifier` | `EmergencyNotifierPort` (`src.modules.triage`) | `notificar_emergencia_samu(alert)`, `clear()` | `sent_alerts: list[EmergencyAlertDTO]`, `error: Exception \| None` (extraído da classe de produção `SamuEmergencyNotifierAdapter`). |
 | `FakeTriagePort` | `TriagePort` (`src.modules.queue`) | `avaliar_risco()`, `registrar_triagem()`, `obter_queixas_por_atendimentos()` | `avaliacoes: list[dict]`, `triagens_registradas: list[dict]`, `queixas: dict[UUID, str \| None]`, `error_avaliar`, `error_registrar`. |
 | `FakeShiftPolicyReader` | `ShiftPolicyReaderPort` (`src.modules.queue`) | `obter_politica_atual()` | `policy: ShiftPolicyDTO` configurável com `alpha_backpressure`, `cota_diaria_maxima`, `tma_padrao_segundos`, `tempo_tolerancia_ring_segundos`. |
+| `FakePacienteAusenteNotifier` | `PacienteAusenteNotifierPort` (`src.modules.queue`) | `emitir_paciente_ausente(event)` | Lista `events: list[PacienteAusenteEvent]` capturada durante resolução de no-show. |
 | `FakeQueueEngine` | `QueueEnginePort` (`src.modules.queue`) | `alocar_proximo()`, `alocar_atendimento()`, `promover_para_consulta()`, `liberar_ring()`, `liberar_consulta()`, `devolver_para_fila()`, `consumir_cota_ou_bloquear()`, `estornar_cota_diaria()`, `adquirir_lock_sweeper()`, `esta_bloqueado_para_reconciliacao()`, `publicar_evento_*()` | Estado completo em memória: `fila_scores`, `locks_medico`, `locks_atendimento`, `locks_consulta_ativa`, `medicos_ativos`, `cota_diaria_usada`, `sweeper_lock_held`, `published_fila`, `published_medico`, `alocar_*_calls`, `sweeper_checks`. |
-| `FakeValkey` / `FakePubSub` | Protocolo Valkey / Redis Pub/Sub | `publish(canal, msg)`, `pubsub()`, `subscribe()`, `listen()`, `zadd()`, `zrange()`, `incr()`, `decr()`, `sadd()`, `ttl()` | Filas `queue.Queue`, `_zsets`, `_kv`, `_ttl`, `_sets` e `FakePipeline` em memória sem infraestrutura externa. |
+| `FakeFilaService` | Contrato `FilaService` / `QueueStorePort` (`tests/doubles.py`) | `admitir_paciente()`, `adquirir_proximo_paciente()`, `obter_posicao_fila()`, `cancelar_atendimento()`, `processar_piora_clinica()`, `regularizar_atendimento()` | Resultados/exceções programáveis (`*_result`) e snapshots em memória para routers da fila. |
+| `FakeValkey` / `FakeLuaValkeyClient` / `FakePipeline` / `FakePubSub` | Protocolo Valkey / Scripts Lua / Pub/Sub | `publish()`, `pubsub()`, `pipeline()`, `script_load()`, `evalsha()`, `eval()`, `zadd()`, `zrange()`, `incr()`, `decr()`, `sadd()`, `ttl()` | Filas `queue.Queue`, `_zsets`, `_kv`, `_ttl`, `_sets`, outcomes e históricos de chamadas (`script_load_calls`, `evalsha_calls`, `eval_calls`). |
 | `FakeAuditTrail` | `AuditTrailPort` (`src.core.audit`) | `record_event(...)`, `get_events_by_type()`, `clear()` | Valida estritamente `AtorTipo`/`AtorPapel` e demais invariantes via `AuditEvent(...)` (rejeitando `"WORKER"`), armazenando `events: list[dict]`. |
 | `FakeBpaDirectory` | `BpaDirectoryPort` (`src.modules.ambulatory`) | `buscar_detalhes_bpa_lote(competencia)` | `registros: list[BpaRegistroDetalheDTO]`, `calls: list[str]`. |
 | `FakeTelemetryReader` | `TelemetryReaderPort` (`src.modules.telemetry`) | `obter_painel_telemetria(config, data_inicio)` | `painel: PainelTelemetriaDTO \| None`, `calls: list[dict]`. |
@@ -76,7 +80,7 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
    - Cada chamada a `enqueue_job()` armazena o nome da função e parâmetros em `.enqueued_jobs` e retorna um `FakeArqJob` com `job_id`.
 
 6. **`FakeEligibilityProvider` e `FakeElegibilidadeNotifier` (`tests/doubles.py`)**:
-   - Dublam a verificação de convênios SUS/Privado e a mensageria de alertas na sala de espera.
+   - Dublam a qualificação cadastral SUS (`SUS-ISENTO`) e a mensageria de alertas na sala de espera.
    - Capturam o tráfego de requisições e falhas para validação de regras de tolerância a falhas (RF-02, RF-05, RT-01).
 
 7. **`MemoryTokenRevocation` (`src/core/authz/revocation.py`)**:
@@ -99,6 +103,7 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 ## Onde no código
 
 - Impl: `tests/doubles.py:FakeAsyncSession`
+- Impl: `tests/doubles.py:FakeAsyncSessionFactory`
 - Impl: `tests/doubles.py:FakePDFGenerator`
 - Impl: `tests/doubles.py:FakeICPBrasilSigner`
 - Impl: `tests/doubles.py:FakeMemoryStorage`
@@ -106,11 +111,20 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Impl: `tests/doubles.py:FakeEligibilityProvider`
 - Impl: `tests/doubles.py:FakeElegibilidadeNotifier`
 - Impl: `tests/doubles.py:FakeAtendimentoReader`
+- Impl: `tests/doubles.py:FakeHistoricoAtendimentoReader`
 - Impl: `tests/doubles.py:FakeEmergencyNotifier`
 - Impl: `tests/doubles.py:FakeTriagePort`
 - Impl: `tests/doubles.py:FakeShiftPolicyReader`
+- Impl: `tests/doubles.py:FakePacienteAusenteNotifier`
 - Impl: `tests/doubles.py:FakeQueueEngine`
+- Impl: `tests/doubles.py:FakeFilaService`
+- Impl: `tests/doubles.py:FakeValkey`
+- Impl: `tests/doubles.py:FakeLuaValkeyClient`
+- Impl: `tests/doubles.py:FakePipeline`
+- Impl: `tests/doubles.py:FakePubSub`
 - Impl: `tests/doubles.py:MemoryChallengeStore`
+- Impl: `tests/doubles.py:FakePatientCredentialRepository`
+- Impl: `tests/doubles.py:FakeActiveAttendanceLookup`
 - Impl: `tests/doubles.py:FakeIdentityReader`
 - Impl: `tests/doubles.py:FakeIdentityWriter`
 - Impl: `tests/doubles.py:FakeAuditTrail`
@@ -131,12 +145,16 @@ Os dublês canônicos comportam-se como simuladores funcionais em memória com z
 - Spec: `src/modules/telemetry/application/ports/config_plantao_port.py:ConfigPlantaoRepositoryPort`
 - Spec: `src/modules/telemetry/application/ports/telemetry_cache_port.py:TelemetryCachePort`
 - Spec: `src/modules/auth/application/ports/challenge_store_port.py:ChallengeStorePort`
+- Spec: `src/modules/auth/application/ports/patient_credential_repository_port.py:PatientCredentialRepositoryPort`
+- Spec: `src/modules/auth/application/ports/active_attendance_lookup_port.py:ActiveAttendanceLookupPort`
 - Spec: `src/modules/auth/application/ports/sms_sender_port.py:SmsSenderPort`
 - Spec: `src/modules/identity/application/ports/identity_reader_port.py:IdentityReaderPort`
 - Spec: `src/modules/identity/application/ports/identity_writer_port.py:IdentityWriterPort`
 - Spec: `src/modules/queue/application/ports/queue_engine_port.py:QueueEnginePort`
 - Spec: `src/modules/queue/application/ports/shift_policy_reader_port.py:ShiftPolicyReaderPort`
 - Spec: `src/modules/queue/application/ports/triage_port.py:TriagePort`
+- Spec: `src/modules/queue/application/ports/paciente_ausente_notifier.py:PacienteAusenteNotifierPort`
+- Spec: `src/modules/consultation/application/ports/atendimento_reader_port.py:HistoricoAtendimentoReaderPort`
 - Spec: `src/modules/triage/application/ports/emergency_notifier.py:EmergencyNotifierPort`
 - Spec: `src/modules/consultation/application/ports/pdf_generator_port.py:PDFGeneratorPort`
 - Spec: `src/modules/consultation/application/ports/icp_brasil_signer_port.py:ICPBrasilSignerPort`

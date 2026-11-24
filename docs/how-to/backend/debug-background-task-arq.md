@@ -4,7 +4,7 @@
 
 ## Contexto
 
-O processamento assíncrono do MediSync Express é executado sobre o ARQ worker conectado ao Valkey (ADR-004). O worker orquestra rotinas em segundo plano cruciais, como expiração de chamadas clínicas (ring timeout), reconciliação de pacientes órfãos na fila e validação assíncrona de elegibilidade.
+O processamento assíncrono do MediSync Express é executado sobre o ARQ worker conectado ao Valkey (ADR-004). O worker orquestra rotinas em segundo plano cruciais, como expiração de chamadas clínicas (ring timeout), reconciliação de pacientes órfãos na fila (`reconciliar_fila_orphans_task`) e diagnóstico de conectividade (`ping_task`).
 
 Quando uma tarefa em background apresenta lentidão, falha silenciosa ou comportamento inesperado, depurar via servidor de produção ou logs dispersos é ineficiente. Este guia apresenta os passos operacionais para depurar tarefas localmente em modo burst, inspecionar a fila no Valkey e isolar falhas de execução.
 

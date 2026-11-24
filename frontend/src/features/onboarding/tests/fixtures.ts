@@ -42,7 +42,7 @@ export function createIntakeFase1Response(overrides?: Partial<Fase1Response>): F
   return {
     paciente_id: MOCK_PACIENTE_ID,
     token: MOCK_INTAKE_TOKEN,
-    status: "TRIADO_AGUARDANDO_ELEGIBILIDADE",
+    status: "APTO_PARA_CHAMADA",
     mensagem: "Acolhimento registrado com sucesso.",
     is_novo_paciente: true,
     ...overrides,
@@ -57,7 +57,7 @@ export function createAdmissaoResponse(overrides?: Partial<AdmissaoResponse>): A
     atendimento_id: MOCK_ATENDIMENTO_ID,
     triagem_id: MOCK_TRIAGEM_ID,
     paciente_id: MOCK_PACIENTE_ID,
-    status_atendimento: "TRIADO_AGUARDANDO_ELEGIBILIDADE",
+    status_atendimento: "APTO_PARA_CHAMADA",
     prioridade_clinica: 3,
     alerta_samu_disparado: false,
     instrucoes: null,

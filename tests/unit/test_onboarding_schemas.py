@@ -57,7 +57,7 @@ def test_fase_1_response_serialization() -> None:
     resp = Fase1Response(
         paciente_id=paciente_id,
         token="token.123",
-        status="TRIADO_AGUARDANDO_ELEGIBILIDADE",
+        status="APTO_PARA_CHAMADA",
         mensagem="Sucesso",
         is_novo_paciente=True,
     )

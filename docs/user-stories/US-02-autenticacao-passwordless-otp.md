@@ -68,13 +68,15 @@
     "codigo": "123456"
   }
   ```
-  *Resposta (`200 OK`):*
+  *Resposta (`200 OK`, `VerificarOtpResponse`):*
   ```json
   {
     "access_token": "eyJhbGciOi...",
     "token_type": "bearer",
+    "expires_in": 900,
+    "paciente_id": "018f3a5b-...",
     "role": "PACIENTE",
-    "paciente_id": "018f3a5b-..."
+    "atendimento_id": null
   }
   ```
 

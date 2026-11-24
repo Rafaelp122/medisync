@@ -91,8 +91,9 @@ ls frontend/src/features/scheduling/tests
 ## 7. Verificação
 
 ```bash
-rg -n "excl_agendamento_slot_ativo|excl_agendamento_paciente_ativo|AttendanceLookupPort|SchedulingService" src/modules/scheduling/
+rg -n "excl_agendamento_slot_ativo|excl_agendamento_paciente_ativo|def concluir|def marcar_falta|AttendanceLookupPort|class SchedulingService" src/modules/scheduling/
 # models.py:455 excl_agendamento_slot_ativo | models.py:469 excl_agendamento_paciente_ativo
+# models.py:652 def concluir | models.py:662 def marcar_falta
 # attendance_lookup_port.py:17 | scheduling_service.py:142
 
 uv run pytest tests/unit/test_scheduling_models.py tests/unit/test_scheduling_service.py tests/unit/test_scheduling_router.py -q --no-cov

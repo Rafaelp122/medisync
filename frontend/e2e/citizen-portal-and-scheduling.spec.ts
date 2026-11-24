@@ -17,7 +17,7 @@ const MOCK_ESPECIALIDADES = [
     codigo: "PSICOLOGIA",
     nome: "Psicologia",
     descricao: "Acompanhamento psicológico agendado com profissionais da equipe eMulti.",
-    duracao_padrao_minutos: 45,
+    duracao_padrao_minutos: 50,
   },
   {
     codigo: "NUTRICAO",
@@ -31,7 +31,7 @@ function buildTomorrowIsoRange() {
   const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
   return {
     slotInicio: `${tomorrow}T14:00:00Z`,
-    slotFim: `${tomorrow}T14:45:00Z`,
+    slotFim: `${tomorrow}T14:50:00Z`,
   };
 }
 
@@ -71,7 +71,7 @@ async function setupCitizenApiMocks(page: Page) {
           especialidade: "PSICOLOGIA",
           slot_inicio: slotInicio,
           slot_fim: slotFim,
-          duracao_minutos: 45,
+          duracao_minutos: 50,
         },
       ]),
     });
@@ -264,7 +264,7 @@ test.describe("Portal do Cidadão, Agendamento eMulti, Validação Pública e WC
     await expect(page.getByRole("heading", { level: 1, name: /agendar consulta/i })).toBeVisible();
 
     await page.getByRole("button", { name: /psicologia/i }).click();
-    const slotButton = page.getByRole("button", { name: /das 14:00 às 14:45/i });
+    const slotButton = page.getByRole("button", { name: /das 14:00 às 14:50/i });
     await expect(slotButton).toBeVisible();
     await slotButton.click();
 
