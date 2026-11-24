@@ -8,7 +8,7 @@ Sob a [ADR-013](../../adrs/ADR-013-Simplificacao-Plataforma-Unica-e-Remocao-RLS.
 
 O controle de acesso aos dados clínicos apoia-se em **RBAC estrito** (`src/core/authz/roles.py:Role`) e **checagem horizontal de titularidade Anti-IDOR** na camada de apresentação e serviços, preservando integralmente a conformidade com o Art. 11 da LGPD e as Resoluções CFM nº 2.314/2022 e nº 1.821/2007 (guarda mínima de 20 anos e trilha imutável `audit_events`).
 
-Este documento cataloga as 16 tabelas criadas pela migração consolidada `migrations/versions/0001_initial_schema.py` e evoluídas incrementalmente pelas migrações subsequentes (como `migrations/versions/0002_add_outorga_tcle_dependentes.py` adicionando `outorga_tcle` em `dependentes`).
+Este documento cataloga as 16 tabelas criadas pela migração consolidada `migrations/versions/0001_initial_schema.py` e evoluídas incrementalmente pelas migrações subsequentes (`migrations/versions/0002_add_outorga_tcle_dependentes.py` adicionando `outorga_tcle` em `dependentes`, e `migrations/versions/0003_scheduling_gist_constraints.py` adicionando exclusões GiST em `agenda_disponibilidades` e `agendamentos`).
 
 ## Conceito
 
@@ -32,15 +32,15 @@ Todas as entidades persistidas utilizam modelos ricos no SQLAlchemy 2.0 (`Mapped
 | `audit_events` | `AuditEvent` | `id` (UUIDv7) | `idx_audit_atendimento`, `idx_audit_ator`, `chk_audit_ator_tipo`, trigger `trg_audit_events_immutable` |
 | `configuracoes_plantao` | `ConfiguracaoPlantao` | `id` (UUIDv7) | Singleton (`uq_configuracoes_plantao_singleton`, `chk_configuracoes_plantao_singleton`), `chk_config_plantao_alpha`, `chk_config_plantao_tma`, `chk_config_plantao_ring`, `chk_config_plantao_modo` |
 | `producoes_ambulatoriais` | `ProducaoAmbulatorial` | `id` (UUIDv7) | `uq_producoes_ambulatoriais_atendimento_id` (1:1), `idx_producao_atendimento`, `idx_producao_competencia` |
-| `agenda_disponibilidades` | `AgendaDisponibilidade` | `id` (UUIDv7) | `idx_agenda_disp_esp`, `idx_agenda_disp_prof`, `chk_agenda_disp_dia_semana`, `chk_agenda_disp_horarios`, `chk_agenda_disp_duracao` |
-| `agendamentos` | `Agendamento` | `id` (UUIDv7) | `excl_agendamento_slot_ativo` (GiST `tstzrange`), `uq_agendamento_slot_ativo` (parcial), `uq_agendamento_atendimento_id`, `idx_agendamentos_paciente`, `idx_agendamentos_profissional` |
+| `agenda_disponibilidades` | `AgendaDisponibilidade` | `id` (UUIDv7) | `excl_agenda_disp_sobreposicao` (GiST `numrange` ativo), `idx_agenda_disp_esp`, `idx_agenda_disp_prof`, `chk_agenda_disp_dia_semana`, `chk_agenda_disp_horarios`, `chk_agenda_disp_duracao` |
+| `agendamentos` | `Agendamento` | `id` (UUIDv7) | `excl_agendamento_slot_ativo` (GiST `tstzrange` profissional), `excl_agendamento_paciente_ativo` (GiST `tstzrange` paciente), `uq_agendamento_slot_ativo` (parcial), `uq_agendamento_atendimento_id`, `idx_agendamentos_paciente`, `idx_agendamentos_profissional` |
 
 ### 2. Grupos Funcionais de Agregados
 
 - **Unidade e Identidade**: `configuracoes_unidade` (singleton CNES/CNPJ/IBGE), `profissionais`, `pacientes`, `dependentes`, `paciente_passkeys` e `usuarios_credenciais`.
 - **Acolhimento e Triagem**: `triagens` com priorização clínica determinística de 1 a 5.
 - **Fila e Atendimento**: `atendimentos` governando o ciclo de vida da consulta virtual (RN01–RN03).
-- **Agenda Programada (eMulti)**: `agenda_disponibilidades` e `agendamentos` com exclusão temporal GiST (`btree_gist`) prevenindo conflitos de horário (`excl_agendamento_slot_ativo`).
+- **Agenda Programada (eMulti)**: `agenda_disponibilidades` e `agendamentos` com exclusões temporais GiST (`btree_gist`) prevenindo janelas sobrepostas (`excl_agenda_disp_sobreposicao`) e conflitos de horário de profissional (`excl_agendamento_slot_ativo`) e paciente (`excl_agendamento_paciente_ativo`).
 - **Ato Médico e Prontuário**: `evolucoes_clinicas`, `documentos_clinicos` e `documento_itens` (`ON DELETE RESTRICT` nas raízes clínicas e `CASCADE` nos itens prescritos).
 - **Produção Ambulatorial SUS**: `producoes_ambulatoriais` consolidando lotes BPA-I / SISAB sob SIGTAP `03.01.01.025-0`.
 - **Auditoria e Telemetria**: `audit_events` (append-only) e `configuracoes_plantao` (parâmetros singleton de escala e backpressure).
@@ -57,6 +57,7 @@ Todas as entidades persistidas utilizam modelos ricos no SQLAlchemy 2.0 (`Mapped
 
 - Impl: `migrations/versions/0001_initial_schema.py:upgrade`
 - Impl: `migrations/versions/0002_add_outorga_tcle_dependentes.py:upgrade`
+- Impl: `migrations/versions/0003_scheduling_gist_constraints.py:upgrade`
 - Impl: `scripts/postgres/01-init-extensions.sql`
 - Impl: `src/core/database.py:Base`
 - Impl: `src/core/uuid7.py:uuid7`
@@ -83,6 +84,8 @@ Todas as entidades persistidas utilizam modelos ricos no SQLAlchemy 2.0 (`Mapped
 - Prova viva: `tests/integration/test_migrations.py:test_zero_rls_policies_and_zero_organizacao_id_columns`
 - Prova viva: `tests/integration/test_migrations.py:test_singleton_constraints_on_unidade_and_plantao`
 - Prova viva: `tests/integration/test_migrations.py:test_audit_immutable_trigger_blocks_mutations`
+- Prova viva: `tests/integration/test_migrations.py:test_gist_exclusion_constraints_registered`
+- Prova viva: `tests/integration/test_scheduling_persistence.py:test_gist_excl_agendamento_paciente_ativo_bloqueia_double_booking`
 - Prova viva: `tests/unit/test_atendimento_model.py:test_criar_atendimento_admissao_direta_sus_apto`
 - Prova viva: `tests/unit/test_audit_model.py:test_audit_event_immutability_hooks_raise_error`
 - Ver: `rg -n "op\.create_table|ExcludeConstraint" migrations/versions/0001_initial_schema.py`

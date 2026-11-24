@@ -10,6 +10,7 @@ from src.modules.scheduling.domain.models import (
     AgendaDisponibilidade,
     Agendamento,
     EspecialidadeAgenda,
+    SlotDisponivelDTO,
     StatusAgendamento,
     normalizar_utc,
 )
@@ -253,8 +254,6 @@ def test_agendamento_iniciar_atendimento_e_cancelar_validos() -> None:
 def test_agendamento_rejeita_transicoes_invalidas_e_nao_expoe_metodos_mortos() -> None:
     ag = _novo_agendamento()
     assert not hasattr(ag, "confirmar")
-    assert not hasattr(ag, "concluir")
-    assert not hasattr(ag, "marcar_falta")
 
     ag.cancelar()
     with pytest.raises(TransicaoAgendamentoInvalidaError, match="CANCELADO"):
@@ -263,6 +262,168 @@ def test_agendamento_rejeita_transicoes_invalidas_e_nao_expoe_metodos_mortos() -
     ag_em_atendimento = _novo_agendamento(status=StatusAgendamento.EM_ATENDIMENTO)
     with pytest.raises(TransicaoAgendamentoInvalidaError, match="EM_ATENDIMENTO"):
         ag_em_atendimento.cancelar()
+
+
+def test_agendamento_concluir_aceita_apenas_em_atendimento() -> None:
+    ag = _novo_agendamento(status=StatusAgendamento.EM_ATENDIMENTO)
+    ag.concluir()
+    assert ag.status == StatusAgendamento.CONCLUIDO.value
+
+    for status_invalido in (
+        StatusAgendamento.AGENDADO,
+        StatusAgendamento.CONFIRMADO,
+        StatusAgendamento.CONCLUIDO,
+        StatusAgendamento.CANCELADO,
+        StatusAgendamento.FALTA,
+    ):
+        ag_invalido = _novo_agendamento(status=status_invalido)
+        with pytest.raises(
+            TransicaoAgendamentoInvalidaError, match=status_invalido.value
+        ):
+            ag_invalido.concluir()
+
+
+def test_agendamento_marcar_falta_aceita_ativos_e_bloqueia_terminais() -> None:
+    for status_valido in (
+        StatusAgendamento.AGENDADO,
+        StatusAgendamento.CONFIRMADO,
+        StatusAgendamento.EM_ATENDIMENTO,
+    ):
+        ag = _novo_agendamento(status=status_valido)
+        ag.marcar_falta()
+        assert ag.status == StatusAgendamento.FALTA.value
+
+    for status_terminal in (
+        StatusAgendamento.CONCLUIDO,
+        StatusAgendamento.CANCELADO,
+        StatusAgendamento.FALTA,
+    ):
+        ag_terminal = _novo_agendamento(status=status_terminal)
+        with pytest.raises(
+            TransicaoAgendamentoInvalidaError, match=status_terminal.value
+        ):
+            ag_terminal.marcar_falta()
+
+
+def test_agenda_disponibilidade_gerar_slots_disponiveis_filtra_passado_e_colisoes() -> (
+    None
+):
+    segunda = date(2026, 11, 16)
+    prof_id = uuid4()
+    outro_prof = uuid4()
+    disp = AgendaDisponibilidade(
+        profissional_id=prof_id,
+        especialidade=EspecialidadeAgenda.NUTRICAO,
+        dia_semana=0,
+        hora_inicio=time(8, 0),
+        hora_fim=time(10, 30),
+        duracao_minutos=30,
+    )
+    # 08:00 < 08:30 (passado -> omitido), 08:30 == agora_utc (mantido),
+    # 09:00 ocupado ativo (omitido), 09:30 cancelado (mantido),
+    # 10:00 outro profissional (mantido)
+    ocupados = [
+        Agendamento(
+            paciente_id=uuid4(),
+            profissional_id=prof_id,
+            especialidade=EspecialidadeAgenda.PSICOLOGIA,
+            slot_inicio=datetime(2026, 11, 16, 9, 0, tzinfo=UTC),
+            slot_fim=datetime(2026, 11, 16, 9, 30, tzinfo=UTC),
+            status=StatusAgendamento.AGENDADO,
+        ),
+        Agendamento(
+            paciente_id=uuid4(),
+            profissional_id=prof_id,
+            especialidade=EspecialidadeAgenda.NUTRICAO,
+            slot_inicio=datetime(2026, 11, 16, 9, 30, tzinfo=UTC),
+            slot_fim=datetime(2026, 11, 16, 10, 0, tzinfo=UTC),
+            status=StatusAgendamento.CANCELADO,
+        ),
+        Agendamento(
+            paciente_id=uuid4(),
+            profissional_id=outro_prof,
+            especialidade=EspecialidadeAgenda.NUTRICAO,
+            slot_inicio=datetime(2026, 11, 16, 10, 0, tzinfo=UTC),
+            slot_fim=datetime(2026, 11, 16, 10, 30, tzinfo=UTC),
+            status=StatusAgendamento.AGENDADO,
+        ),
+    ]
+    slots = disp.gerar_slots_disponiveis(
+        segunda,
+        agora_utc=datetime(2026, 11, 16, 8, 30, tzinfo=UTC),
+        ocupados=ocupados,
+    )
+    assert all(isinstance(s, SlotDisponivelDTO) for s in slots)
+    assert [s.slot_inicio for s in slots] == [
+        datetime(2026, 11, 16, 8, 30, tzinfo=UTC),
+        datetime(2026, 11, 16, 9, 30, tzinfo=UTC),
+        datetime(2026, 11, 16, 10, 0, tzinfo=UTC),
+    ]
+
+
+def test_agenda_disponibilidade_resolver_slot_em_janelas_diagnostica_422_vs_409() -> (
+    None
+):
+    from src.modules.scheduling.domain.exceptions import SlotIndisponivelError
+
+    prof_id = uuid4()
+    segunda = date(2026, 11, 16)
+    disp = AgendaDisponibilidade(
+        profissional_id=prof_id,
+        especialidade=EspecialidadeAgenda.PSICOLOGIA,
+        dia_semana=0,
+        hora_inicio=time(8, 0),
+        hora_fim=time(10, 0),
+        duracao_minutos=50,
+    )
+
+    fim_auto = AgendaDisponibilidade.resolver_slot_em_janelas(
+        [disp],
+        profissional_id=prof_id,
+        especialidade=EspecialidadeAgenda.PSICOLOGIA,
+        slot_inicio_utc=datetime(2026, 11, 16, 8, 50, tzinfo=UTC),
+        slot_fim_explicito=None,
+    )
+    assert fim_auto == datetime(2026, 11, 16, 9, 40, tzinfo=UTC)
+
+    # Desalinhado na grade -> ValidationError (422)
+    with pytest.raises(ValidationError):
+        AgendaDisponibilidade.resolver_slot_em_janelas(
+            [disp],
+            profissional_id=prof_id,
+            especialidade=EspecialidadeAgenda.PSICOLOGIA,
+            slot_inicio_utc=datetime(2026, 11, 16, 8, 15, tzinfo=UTC),
+            slot_fim_explicito=None,
+        )
+
+    # Duração divergente -> ValidationError (422)
+    with pytest.raises(ValidationError):
+        AgendaDisponibilidade.resolver_slot_em_janelas(
+            [disp],
+            profissional_id=prof_id,
+            especialidade=EspecialidadeAgenda.PSICOLOGIA,
+            slot_inicio_utc=datetime(2026, 11, 16, 8, 0, tzinfo=UTC),
+            slot_fim_explicito=datetime(2026, 11, 16, 8, 30, tzinfo=UTC),
+        )
+
+    # Fora da janela (14:00) ou sem agenda no dia -> SlotIndisponivelError (409)
+    with pytest.raises(SlotIndisponivelError):
+        AgendaDisponibilidade.resolver_slot_em_janelas(
+            [disp],
+            profissional_id=prof_id,
+            especialidade=EspecialidadeAgenda.PSICOLOGIA,
+            slot_inicio_utc=datetime(2026, 11, 16, 14, 0, tzinfo=UTC),
+            slot_fim_explicito=None,
+        )
+
+    with pytest.raises(SlotIndisponivelError):
+        AgendaDisponibilidade.resolver_slot_em_janelas(
+            [],
+            profissional_id=prof_id,
+            especialidade=EspecialidadeAgenda.PSICOLOGIA,
+            slot_inicio_utc=datetime.combine(segunda, time(8, 0), tzinfo=UTC),
+            slot_fim_explicito=None,
+        )
 
 
 def test_agendamento_rejeita_slot_fim_menor_ou_igual_a_inicio() -> None:

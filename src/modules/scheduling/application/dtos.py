@@ -4,16 +4,13 @@ from dataclasses import dataclass
 from datetime import datetime, time
 from uuid import UUID
 
+from src.modules.scheduling.domain.models import SlotDisponivelDTO
 
-@dataclass(frozen=True)
-class SlotDisponivelDTO:
-    """Slot livre gerado a partir das janelas de disponibilidade ativas."""
-
-    profissional_id: UUID
-    especialidade: str
-    slot_inicio: datetime
-    slot_fim: datetime
-    duracao_minutos: int
+__all__ = [
+    "AgendarConsultaCommand",
+    "CriarDisponibilidadeCommand",
+    "SlotDisponivelDTO",
+]
 
 
 @dataclass(frozen=True)
