@@ -49,6 +49,7 @@ test.describe("Portais Corporativos (/interno/login, /medico e /gestor)", () => 
   test.beforeEach(async ({ page }) => {
     let activeRole: "MEDICO" | "GESTOR_UNIDADE" = "MEDICO";
     let activeIdentificador = "123456/SP";
+    let currentConfig = { ...MOCK_CONFIG_PLANTAO };
 
     await page.route("**/api/v1/auth/patient/methods", async (route) => {
       await route.fulfill({
@@ -121,13 +122,14 @@ test.describe("Portais Corporativos (/interno/login, /medico e /gestor)", () => 
     await page.route("**/api/v1/telemetria/config-plantao", async (route) => {
       if (route.request().method() === "PUT") {
         const body = (await route.request().postDataJSON()) as Record<string, unknown>;
+        currentConfig = {
+          ...currentConfig,
+          ...body,
+        };
         await route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({
-            ...MOCK_CONFIG_PLANTAO,
-            ...body,
-          }),
+          body: JSON.stringify(currentConfig),
         });
         return;
       }
@@ -135,7 +137,7 @@ test.describe("Portais Corporativos (/interno/login, /medico e /gestor)", () => 
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(MOCK_CONFIG_PLANTAO),
+        body: JSON.stringify(currentConfig),
       });
     });
 
@@ -198,9 +200,30 @@ test.describe("Portais Corporativos (/interno/login, /medico e /gestor)", () => 
     expect(medicoAxe.violations).toEqual([]);
   });
 
-  test("E2E-STAFF-02: Autentica gestor em /interno/login, opera US-11/US-12 em /gestor e valida WCAG 2.1 AA", async ({
+  test("E2E-STAFF-02: Autentica gestor em /interno/login, opera US-11/US-12 (11 campos + Cota Livre SUS) e valida WCAG 2.1 AA", async ({
     page,
   }) => {
+    const putPayloads: Array<Record<string, unknown>> = [];
+    let currentConfig = { ...MOCK_CONFIG_PLANTAO };
+    await page.route("**/api/v1/telemetria/config-plantao", async (route) => {
+      if (route.request().method() === "PUT") {
+        const body = (await route.request().postDataJSON()) as Record<string, unknown>;
+        putPayloads.push(body);
+        currentConfig = { ...currentConfig, ...body };
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(currentConfig),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentConfig),
+      });
+    });
+
     await page.goto("/interno/login");
 
     await page.getByRole("tab", { name: /gestor/i }).click();
@@ -210,13 +233,53 @@ test.describe("Portais Corporativos (/interno/login, /medico e /gestor)", () => 
 
     await expect(page).toHaveURL(/\/gestor$/);
     await expect(page.getByText("Dr. Eduardo Rocha")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /painel de regulação e telemetria sus/i }),
+    ).toBeVisible();
 
-    // US-12: Atualiza política do plantão
+    // US-12: Valida <fieldset>/<legend> WCAG de SLAs e atualiza os 11 campos da política
+    const slaGroup = page.getByRole("group", { name: /metas de sla por classificação acr sus/i });
+    await expect(slaGroup).toBeVisible();
+    await expect(slaGroup.evaluate((el) => el.tagName)).resolves.toBe("FIELDSET");
+
     const medicosInput = page.getByLabel(/médicos ativos planejados/i);
-    await expect(medicosInput).toBeVisible();
+    await expect(medicosInput).toHaveValue("2");
     await medicosInput.fill("5");
+    await page.getByLabel(/fator alpha backpressure/i).fill("1.28");
+    await page.getByLabel(/cota diária máxima/i).fill("400");
+    await page.getByLabel(/tma padrão/i).fill("720");
+    await page.getByLabel(/tolerância de chamada \/ ring/i).fill("30");
+    await page.getByLabel(/modo de operação/i).selectOption("PRIVADO");
+    await page.getByLabel(/sla nível 1/i).fill("1");
+    await page.getByLabel(/sla nível 2/i).fill("15");
+    await page.getByLabel(/sla nível 3/i).fill("45");
+    await page.getByLabel(/sla nível 4/i).fill("90");
+    await page.getByLabel(/sla nível 5/i).fill("180");
+
     await page.getByRole("button", { name: /salvar política do plantão/i }).click();
     await expect(page.getByText(/política do plantão atualizada com sucesso/i)).toBeVisible();
+
+    expect(putPayloads[0]).toEqual({
+      medicos_ativos_planejados: 5,
+      alpha_backpressure: "1.28",
+      cota_diaria_maxima: 400,
+      tma_padrao_segundos: 720,
+      tempo_tolerancia_ring_segundos: 30,
+      modo_operacao: "PRIVADO",
+      sla_minutos_nivel_1: 1,
+      sla_minutos_nivel_2: 15,
+      sla_minutos_nivel_3: 45,
+      sla_minutos_nivel_4: 90,
+      sla_minutos_nivel_5: 180,
+    });
+
+    // US-12: Marca Cota Livre SUS (cota_diaria_maxima: null)
+    const cotaLivreCheckbox = page.getByLabel(/cota livre sus/i);
+    await cotaLivreCheckbox.check();
+    await expect(page.getByLabel(/cota diária máxima/i)).toBeDisabled();
+    await page.getByRole("button", { name: /salvar política do plantão/i }).click();
+    await expect(page.getByText(/\(cota livre sus\)/i)).toBeVisible();
+    expect(putPayloads[1]?.cota_diaria_maxima).toBeNull();
 
     // US-11: Lista e exporta BPA-I (.txt)
     await page.getByLabel(/competência \(yyyymm\)/i).fill("202611");

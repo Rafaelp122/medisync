@@ -108,8 +108,8 @@ ls tests/integration | rg telemetry
 ## 7. Verificação
 
 ```bash
-rg -n "ConfiguracaoPlantao|TelemetryService|SqlTelemetryReader" src/modules/telemetry/
-# models.py:44 class ConfiguracaoPlantao
+rg -n "class ConfiguracaoPlantao|class TelemetryService|class SqlTelemetryReader" src/modules/telemetry/
+# models.py:43 class ConfiguracaoPlantao
 # telemetry_service.py:16 class TelemetryService
 # telemetry_reader_sql.py:16 class SqlTelemetryReader
 

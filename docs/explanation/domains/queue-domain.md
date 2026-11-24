@@ -99,7 +99,7 @@ Métricas derivadas vivem no agregado: `tempo_espera_segundos` (`chamada_iniciad
 - Double-lock previne overbooking nos dois sentidos. Médico ocupado retorna `0` (HTTP 409), atendimento capturado retorna `-1` (retry); nunca meio-estado.
 - TTL de 45s é deadlock breaker, não SLA clínico. Expirou sem conexão, lock some sozinho; fila nunca trava por crash de worker.
 - Despacho de notificação não-bloqueante (best-effort). Falha de rede ou exaustão de cota no rate limiter de notificações nunca aborta nem dá rollback na transação de alocação da fila nem no ring do médico.
-- `calcular_score` no domínio de scoring exige `data_entrada_fila` presente. Sem carimbo de entrada, sem score; `ValidationError` em vez de zero silencioso.
+- `calcular_score` no domínio de scoring (`src/modules/queue/domain/scoring.py`) valida `1 <= prioridade <= 5` (`ValidationError` fora dessa faixa) e aceita `timestamp_epoch: int | float | datetime | None = None`, assumindo `int(datetime.now(UTC).timestamp())` quando `None`; na fila e na regularização, o serviço passa explicitamente `atendimento.data_entrada_fila` para preservar $T_0$.
 - Ato médico nunca cortado — ponte RN06. Nenhum timer, quota ou backpressure transiciona EM_ATENDIMENTO para fora; TMA gera só sinal visual discreto. [Fonte](../product-specification.md) (RN06)
 - Admissão suspensa protege quem já entrou. Transbordo fecha a porta, nunca despeja a sala; contingência vira evento externo, não cancelamento interno.
 - UUIDv7 como PK dá FIFO aproximado até sem score. Inserção ordenada por tempo correlaciona id com chegada; índice de fila refina com prioridade.
@@ -173,8 +173,8 @@ ls tests/unit | rg -i "alocacao|atendimento|admissao|fila|queue"
 rg -n "def calcular_score|def iniciar_chamada|def registrar_ausencia_paciente" src/modules/queue/domain/
 # scoring.py:11 def calcular_score; atendimento.py:214 iniciar_chamada, :271 registrar_ausencia_paciente
 
-ls src/modules/queue/infrastructure/lua/
-# alocar_chamada.lua  alocar_proximo.lua
+rg -n "KEYS\[4\]|class ValkeyQueueEngine" src/modules/queue/infrastructure/
+# alocar_chamada.lua:5 | alocar_proximo.lua:5 | valkey_queue_engine.py:ValkeyQueueEngine
 
 uv run pytest tests/unit/test_alocacao_service.py tests/unit/test_atendimento_model.py -q --no-cov
 ```

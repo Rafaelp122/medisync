@@ -160,8 +160,11 @@ ls tests/unit | rg -E "argon2|jwt|patient_auth|patient_hybrid|webauthn|token_rev
 ## 7. Verificação
 
 ```bash
-rg -n "class UsuarioCredencial|class AuthService|class PatientAuthService|class PatientWebAuthnService" src/modules/auth/
-# usuario_credencial.py:21 | auth_service.py:42 | patient_auth_service.py:94 | patient_webauthn_service.py:57
+rg -n "class UsuarioCredencial|class AuthService|class PatientAuthService|class PatientWebAuthnService|class ChallengeStorePort" src/modules/auth/
+# usuario_credencial.py:21 | auth_service.py:48 | patient_auth_service.py:94 | patient_webauthn_service.py:57 | challenge_store_port.py:9
+
+rg -n "class TokenRevocationPort|def resolve_bearer_principal" src/core/authz/
+# revocation.py:TokenRevocationPort | dependencies.py:resolve_bearer_principal
 
 uv run pytest tests/unit/test_argon2_hasher.py tests/unit/test_jwt_token_service.py tests/unit/test_patient_auth_service.py tests/unit/test_patient_hybrid_auth.py tests/unit/test_patient_webauthn_service.py tests/unit/test_token_revocation.py tests/unit/test_authz_rbac.py -q --no-cov
 # 85 passed

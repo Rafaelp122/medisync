@@ -41,7 +41,7 @@ stateDiagram-v2
     FinalizadoDocumento --> [*]
 ```
 
-`marcar_finalizado` grava `finalizado_em = datetime.now(UTC)` em `src/modules/consultation/domain/models/evolucao_clinica.py` e `src/modules/consultation/domain/models/documento_clinico.py` (estado derivado via `@property is_finalizado`). Serviço chama quando consulta é concluída e delega a transição do atendimento para `QueueStorePort.concluir_atendimento`.
+`marcar_finalizado` grava `finalizado_em = datetime.now(UTC)` em `src/modules/consultation/domain/models/evolucao_clinica.py` e `src/modules/consultation/domain/models/documento_clinico.py` (estado derivado via `@property is_finalizado`). Serviço chama quando consulta é concluída e delega a transição do atendimento para `AtendimentoReaderPort.concluir_atendimento`.
 
 `adicionar_item` só antes de finalizar: serviço bloqueia emissão e mutação quando `is_finalizado` ou atendimento terminal; direto no agregado, itens vinculam `documento_id` após checar Portaria 344/98.
 
@@ -89,6 +89,7 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - `src/modules/consultation/application/ports/pdf_generator_port.py`
 - `src/modules/consultation/application/ports/icp_brasil_signer_port.py`
 - `src/modules/consultation/application/ports/livekit_media_port.py`
+- `src/modules/consultation/application/ports/liveness_verification_port.py`
 - `src/modules/consultation/application/services/clinical_pdf_compiler.py`
 - `src/modules/consultation/application/services/documento_service.py`
 - `src/modules/consultation/application/services/document_validation_service.py`
@@ -98,6 +99,7 @@ CID-10 normaliza para maiúsculas (`J02.9`) e rejeita fora do padrão letra + 2 
 - `src/modules/consultation/presentation/routers/doctor_ws_router.py`
 - `src/modules/consultation/composition.py`
 - `src/modules/consultation/infrastructure/livekit_adapter.py`
+- `src/modules/consultation/infrastructure/liveness_adapter.py`
 - `src/modules/consultation/infrastructure/pyhanko_signer.py`
 - `frontend/src/features/consultation/components/doctor-workstation.tsx`
 - `frontend/src/features/consultation/components/cfm-identity-gate.tsx`
@@ -130,14 +132,14 @@ ls tests/unit | rg -i "consultation|pep|documento|livekit|liveness"
 
 ```bash
 rg -n "def marcar_finalizado|def adicionar_item|def validar_pode_excluir" src/modules/consultation/domain/
-# documento_clinico.py:159 marcar_finalizado, :163 adicionar_item, :181 validar_pode_excluir
-# evolucao_clinica.py:129 marcar_finalizado, :133 validar_pode_excluir
+# documento_clinico.py:194 marcar_finalizado, :224 adicionar_item, :242 validar_pode_excluir
+# evolucao_clinica.py:186 marcar_finalizado, :276 validar_pode_excluir
 
 uv run pytest tests/unit/test_consultation_models.py -q --no-cov
-# 58 passed (2026-10-07)
+# 60 passed
 
 uv run pytest tests/unit/test_clinical_ai_governance.py tests/unit/test_trava_antifraude_atestado.py -q --no-cov
-# 14 passed (2026-11-07)
+# 11 passed
 ```
 
 Sem corrigir código. Divergência entre doc e guardião real exige atualizar doc, nunca relaxar trava clínica.

@@ -1,7 +1,6 @@
 """Unit tests for Valkey config, pool initialization, and telemetry."""
 
-from typing import Any
-from unittest.mock import AsyncMock
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from redis.asyncio import ConnectionPool
@@ -11,6 +10,11 @@ from src.core.valkey import (
     close_valkey_pool,
     get_valkey_pool,
 )
+
+from tests.doubles import FakeValkey
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
 
 
 def test_valkey_config_defaults() -> None:
@@ -62,11 +66,8 @@ async def test_close_valkey_pool() -> None:
 @pytest.mark.asyncio
 async def test_check_valkey_health_healthy() -> None:
     """Verify check_valkey_health parses info and ping successfully."""
-    mock_client = AsyncMock()
-    mock_client.ping.return_value = True
-
-    async def mock_info(section: str | None = None) -> dict[str, Any]:
-        return {
+    fake_client = FakeValkey(
+        info_sections={
             "memory": {
                 "used_memory_human": "2.40M",
                 "used_memory_peak_human": "3.10M",
@@ -76,11 +77,10 @@ async def test_check_valkey_health_healthy() -> None:
                 "valkey_version": "8.0.0",
                 "uptime_in_seconds": 3600,
             },
-        }.get(section or "", {})
+        }
+    )
 
-    mock_client.info.side_effect = mock_info
-
-    health = await check_valkey_health(mock_client)
+    health = await check_valkey_health(cast("Redis", fake_client))
     assert health["status"] == "healthy"
     assert health["ping"] is True
     assert health["version"] == "8.0.0"
@@ -93,19 +93,15 @@ async def test_check_valkey_health_healthy() -> None:
 @pytest.mark.asyncio
 async def test_check_valkey_health_redis_version_fallback() -> None:
     """Verify fallback to redis_version when valkey_version is absent."""
-    mock_client = AsyncMock()
-    mock_client.ping.return_value = True
-
-    async def mock_info(section: str | None = None) -> dict[str, Any]:
-        return {
+    fake_client = FakeValkey(
+        info_sections={
             "memory": {"used_memory_human": "1.00M"},
             "clients": {"connected_clients": 1},
             "server": {"redis_version": "7.2.4", "uptime_in_seconds": 120},
-        }.get(section or "", {})
+        }
+    )
 
-    mock_client.info.side_effect = mock_info
-
-    health = await check_valkey_health(mock_client)
+    health = await check_valkey_health(cast("Redis", fake_client))
     assert health["status"] == "healthy"
     assert health["version"] == "7.2.4"
 
@@ -113,10 +109,9 @@ async def test_check_valkey_health_redis_version_fallback() -> None:
 @pytest.mark.asyncio
 async def test_check_valkey_health_unhealthy_on_exception() -> None:
     """Verify check_valkey_health returns unhealthy on connection failure."""
-    mock_client = AsyncMock()
-    mock_client.ping.side_effect = ConnectionError("Connection refused")
+    fake_client = FakeValkey(ping_error=ConnectionError("Connection refused"))
 
-    health = await check_valkey_health(mock_client)
+    health = await check_valkey_health(cast("Redis", fake_client))
     assert health["status"] == "unhealthy"
     assert health["ping"] is False
     assert "Connection refused" in health["error"]

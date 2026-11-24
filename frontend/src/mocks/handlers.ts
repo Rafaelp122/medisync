@@ -1,4 +1,4 @@
-import { HttpResponse, http } from "msw";
+import { HttpResponse, type HttpResponseResolver, http } from "msw";
 import {
   handleAdmitirPacienteApiV1FilaAdmissaoPost,
   handleEnrichmentFase2ApiV1OnboardingFase2Post,
@@ -17,6 +17,32 @@ import {
   createIntakeFase1Response,
   createViaCepRawResponse,
 } from "@/features/onboarding/tests/fixtures";
+
+/**
+ * Helper explícito para interceptação do serviço externo ViaCEP (ausente no OpenAPI do backend).
+ */
+export function handleViaCepLookup(resolver?: HttpResponseResolver<{ cep: string }, never>) {
+  return http.get<{ cep: string }, never>(
+    "https://viacep.com.br/ws/:cep/json/",
+    resolver ??
+      (({ params }) => {
+        const cep = String(params.cep).replace(/\D/g, "");
+        if (cep === "01310100") {
+          return HttpResponse.json(createViaCepRawResponse());
+        }
+        if (cep === "00000000" || cep === "99999999") {
+          return HttpResponse.json({ erro: "true" });
+        }
+        return HttpResponse.json(
+          createViaCepRawResponse({
+            cep: `${cep.slice(0, 5)}-${cep.slice(5)}`,
+            logradouro: "Rua das Flores",
+            bairro: "Centro",
+          }),
+        );
+      }),
+  );
+}
 
 export const defaultHandlers = [
   handleObterPainelTelemetriaApiV1TelemetriaPainelGet({
@@ -67,20 +93,5 @@ export const defaultHandlers = [
     status: 200,
     body: createEnrichmentFase2Response(),
   }),
-  http.get("https://viacep.com.br/ws/:cep/json/", ({ params }) => {
-    const cep = String(params.cep).replace(/\D/g, "");
-    if (cep === "01310100") {
-      return HttpResponse.json(createViaCepRawResponse());
-    }
-    if (cep === "00000000" || cep === "99999999") {
-      return HttpResponse.json({ erro: "true" });
-    }
-    return HttpResponse.json(
-      createViaCepRawResponse({
-        cep: `${cep.slice(0, 5)}-${cep.slice(5)}`,
-        logradouro: "Rua das Flores",
-        bairro: "Centro",
-      }),
-    );
-  }),
+  handleViaCepLookup(),
 ];
