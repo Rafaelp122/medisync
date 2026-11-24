@@ -2951,6 +2951,112 @@
           }
         }
       }
+    },
+    "/api/v1/scheduling/agendamentos/{agendamento_id}/concluir": {
+      "post": {
+        "tags": [
+          "Agendamento Multiprofissional"
+        ],
+        "summary": "Conclui atendimento cl\u00ednico de um agendamento",
+        "description": "Transiciona o agendamento do profissional de EM_ATENDIMENTO para CONCLUIDO.",
+        "operationId": "concluir_agendamento_api_v1_scheduling_agendamentos__agendamento_id__concluir_post",
+        "security": [
+          {
+            "HTTPBearer": [
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agendamento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "ID do agendamento",
+              "title": "Agendamento Id"
+            },
+            "description": "ID do agendamento"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgendamentoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scheduling/agendamentos/{agendamento_id}/falta": {
+      "post": {
+        "tags": [
+          "Agendamento Multiprofissional"
+        ],
+        "summary": "Registra aus\u00eancia (falta) do paciente no agendamento",
+        "description": "Transiciona o agendamento ativo do profissional para FALTA.",
+        "operationId": "marcar_falta_agendamento_api_v1_scheduling_agendamentos__agendamento_id__falta_post",
+        "security": [
+          {
+            "HTTPBearer": [
+              "MEDICO"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agendamento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "ID do agendamento",
+              "title": "Agendamento Id"
+            },
+            "description": "ID do agendamento"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgendamentoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

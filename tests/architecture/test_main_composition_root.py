@@ -77,6 +77,8 @@ def test_openapi_routes_exact_baseline() -> None:
         "/api/v1/scheduling/agendamentos",
         "/api/v1/scheduling/agendamentos/me",
         "/api/v1/scheduling/agendamentos/{agendamento_id}/cancelar",
+        "/api/v1/scheduling/agendamentos/{agendamento_id}/concluir",
+        "/api/v1/scheduling/agendamentos/{agendamento_id}/falta",
         "/api/v1/scheduling/agendamentos/{agendamento_id}/iniciar",
         "/api/v1/scheduling/disponibilidades",
         "/api/v1/scheduling/especialidades",

@@ -36,7 +36,7 @@ confirmado via busca de imports no código.
 | --- | --- | --- |
 | `src/modules/queue/application/ports/queue_engine_port.py` | queue | `src/modules/queue/application/services/fila_service.py`, `src/modules/queue/application/services/alocacao_service.py`, `src/modules/queue/application/services/controle_admissao_service.py`, `src/modules/queue/infrastructure/valkey_queue_engine.py`, `src/modules/queue/composition.py`, `src/modules/consultation/composition.py` |
 | `src/modules/queue/application/ports/shift_policy_reader_port.py` | queue | `src/modules/queue/application/services/fila_service.py`, `src/modules/queue/composition.py` |
-| `src/modules/queue/application/ports/queue_store_port.py` | queue | `src/modules/queue/composition.py`, `src/modules/consultation/composition.py`, `src/modules/scheduling/composition.py` |
+| `src/modules/queue/application/ports/queue_store_port.py` | queue | `src/modules/queue/composition.py`, `src/modules/consultation/composition.py` (`QueueStorePort`), `src/modules/scheduling/composition.py` (`AtendimentoSnapshotDTO` apenas) |
 | `src/modules/queue/application/ports/notification_port.py` | queue | `src/modules/queue/application/services/alocacao_service.py`, `src/modules/queue/composition.py` |
 | `src/modules/queue/application/ports/paciente_ausente_notifier.py` | queue | `src/modules/queue/application/services/fila_service.py`, `src/worker/tasks/ring_timeout.py` |
 | `src/modules/queue/application/ports/triage_port.py` | queue | `src/modules/queue/application/services/fila_service.py`, `src/modules/queue/composition.py` |
@@ -114,7 +114,7 @@ instanciam service com construtor direto. Cada módulo expõe seu `composition.p
 - `src/modules/triage/composition.py` fia triagem e notificador de emergência SAMU.
 - `src/modules/telemetry/composition.py` fia telemetria, políticas de plantão e `ler_politica_plantao_snapshot`.
 - `src/modules/ambulatory/composition.py` fia produção ambulatorial SUS (`ProducaoAmbulatorialService`) e qualificação cadastral.
-- `src/modules/scheduling/composition.py` fia agenda eMulti e `AttendanceLookupPort` sobre `QueueStorePort`.
+- `src/modules/scheduling/composition.py` fia agenda eMulti e adapta `SqlAttendanceSnapshotReader` (`build_attendance_lookup_reader` de `queue.composition`, usando `AtendimentoSnapshotDTO` de `queue.application` via `QueueAttendanceSnapshotLookupAdapter`) para `AttendanceLookupPort`, mantendo `QueueStorePort` restrito a `consultation`.
 
 ## 6. Grafo confirmado por busca
 

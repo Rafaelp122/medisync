@@ -26,7 +26,7 @@ class AgendamentoNaoEncontradoError(NotFoundError):
 
 
 class SlotIndisponivelError(ConflictError):
-    """Lançada quando há conflito de horário (double-booking) para o profissional.
+    """Lançada quando há conflito de horário, janela sobreposta ou double-booking.
 
     Regras: docs/explanation/domains/scheduling-domain.md
     """

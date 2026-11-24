@@ -38,6 +38,9 @@ from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.infrastructure.active_attendance_reader_sql import (
     SqlActiveAttendanceReader,
 )
+from src.modules.queue.infrastructure.attendance_snapshot_reader_sql import (
+    SqlAttendanceSnapshotReader,
+)
 from src.modules.queue.infrastructure.lua_loader import get_lua_script_manager
 from src.modules.queue.infrastructure.notifications import (
     LoggingNotificationAdapter,
@@ -250,3 +253,14 @@ def build_active_attendance_reader_for_session(
     Regras: ADR-001 e docs/user-stories/US-02-autenticacao-passwordless-otp.md.
     """
     return SqlActiveAttendanceReader(session=session)
+
+
+def build_attendance_lookup_reader(
+    session: AsyncSession,
+) -> SqlAttendanceSnapshotReader:
+    """Instancia leitor SQL leve de atendimentos para módulos consumidores (scheduling).
+
+    Zero dependência de Valkey, LuaScriptManager ou TriageService.
+    Regras: ADR-001 e docs/explanation/domains/scheduling-domain.md.
+    """
+    return SqlAttendanceSnapshotReader(session=session)
