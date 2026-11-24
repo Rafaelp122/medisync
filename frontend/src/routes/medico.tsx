@@ -39,11 +39,11 @@ export const medicoRoute = createRoute({
         <Suspense fallback={<RoutePendingFallback />}>
           <LazyDoctorWorkstationPage
             doctorSession={doctorSession}
-            renderSchedulePanel={
+            renderSchedulePanel={(onAtendimentoIniciado) => (
               <Suspense fallback={<RoutePendingFallback />}>
-                <LazyProfessionalSchedulePanel />
+                <LazyProfessionalSchedulePanel onAtendimentoIniciado={onAtendimentoIniciado} />
               </Suspense>
-            }
+            )}
           />
         </Suspense>
       </ClinicalPageLayout>

@@ -2,6 +2,11 @@ import { waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http, ws } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  handleCancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPost,
+  handleComunicarPioraClinicaApiV1FilaPioraPost,
+  handleObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet,
+} from "@/api/generated/msw.gen";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
 import { VirtualWaitingRoom } from "../components/virtual-waiting-room";
@@ -365,5 +370,122 @@ describe("VirtualWaitingRoom (Integração de Tela - RF-03, RF-06, RN01, RN02)",
         queryByRole("button", { name: /regularizar elegibilidade agora/i }),
       ).not.toBeInTheDocument();
     });
+  });
+
+  it("IT-WAIT-10: PioraClinicaModal envia IDs canônicos de triage (dispneia_grave, dor_toracica_irradiada) via RHF", async () => {
+    const user = userEvent.setup();
+    let capturedBody: { novos_sintomas?: string[] } | null = null;
+
+    server.use(
+      handleComunicarPioraClinicaApiV1FilaPioraPost(async ({ request }) => {
+        capturedBody = await request.json();
+        return HttpResponse.json(MOCK_PIORA_RECLASSIFICADO_RESPONSE, { status: 200 });
+      }),
+    );
+
+    const { getByRole, getByLabelText } = renderWithProviders(
+      <VirtualWaitingRoom session={MOCK_SESSION} />,
+    );
+
+    await user.click(getByRole("button", { name: /relatar piora/i }));
+    await user.click(getByLabelText(/falta de ar intensa/i));
+    await user.click(getByLabelText(/dor ou aperto forte no peito/i));
+    await user.click(getByRole("button", { name: /enviar reavaliação/i }));
+
+    await waitFor(() => {
+      expect(capturedBody?.novos_sintomas).toEqual(["dispneia_grave", "dor_toracica_irradiada"]);
+    });
+  });
+
+  it("IT-WAIT-11: Restaura countdown restante após F5 via chamada_iniciada_em/ttl_segundos e recusa via POST /fila/cancelar", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const now = new Date("2026-11-24T12:00:20.000Z");
+    vi.setSystemTime(now);
+
+    const cancelSpy = vi.fn();
+
+    server.use(
+      handleObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet(() => {
+        return HttpResponse.json({
+          ...MOCK_POSICAO_RESPONSE,
+          status: "CHAMANDO_PACIENTE",
+          chamada_iniciada_em: "2026-11-24T12:00:00.000Z",
+          ttl_segundos: 45,
+        });
+      }),
+      handleCancelarAtendimentoFilaApiV1FilaCancelarAtendimentoIdPost(() => {
+        cancelSpy();
+        return HttpResponse.json({
+          atendimento_id: MOCK_ATENDIMENTO_ID,
+          status: "CANCELADO_PACIENTE",
+          cancelado_em: now.toISOString(),
+          motivo: "Chamada médica recusada pelo paciente",
+        });
+      }),
+    );
+
+    const { getByTestId, getByRole, getByText, queryByRole } = renderWithProviders(
+      <VirtualWaitingRoom session={MOCK_SESSION} />,
+    );
+
+    await waitFor(() => {
+      expect(getByRole("alertdialog")).toBeInTheDocument();
+    });
+    expect(getByTestId("ring-timer")).toHaveTextContent("25s");
+
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.click(getByRole("button", { name: /não posso atender agora|recusar chamada/i }));
+
+    await waitFor(() => {
+      expect(cancelSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(getByText(/atendimento cancelado/i)).toBeInTheDocument();
+  });
+
+  it("IT-WAIT-12: Para polling e WS em estados terminais CANCELADO_PACIENTE, PACIENTE_AUSENTE e CONCLUIDO", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    for (const [terminalStatus, expectedHeading] of [
+      ["CANCELADO_PACIENTE", /atendimento cancelado/i],
+      ["PACIENTE_AUSENTE", /chamada não atendida/i],
+      ["CONCLUIDO", /atendimento concluído/i],
+    ] as const) {
+      let pollCount = 0;
+      let wsClosed = false;
+
+      server.use(
+        queueWs.addEventListener("connection", ({ client }) => {
+          client.send(JSON.stringify({ event: "CONNECTED" }));
+          client.addEventListener("close", () => {
+            wsClosed = true;
+          });
+        }),
+        handleObterPosicaoFilaApiV1FilaPosicaoAtendimentoIdGet(() => {
+          pollCount += 1;
+          return HttpResponse.json({
+            ...MOCK_POSICAO_RESPONSE,
+            status: terminalStatus,
+          });
+        }),
+      );
+
+      const { getByText, unmount } = renderWithProviders(
+        <VirtualWaitingRoom session={MOCK_SESSION} />,
+      );
+
+      await waitFor(() => {
+        expect(getByText(expectedHeading)).toBeInTheDocument();
+      });
+
+      const countAtTerminal = pollCount;
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      expect(pollCount).toBe(countAtTerminal);
+      await waitFor(() => {
+        expect(wsClosed).toBe(true);
+      });
+      unmount();
+    }
   });
 });

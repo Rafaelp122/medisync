@@ -29,6 +29,7 @@ describe("PatientLivenessModal (Captura Facial do Paciente - US-15)", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     if (typeof navigator !== "undefined") {
       if (originalMediaDevicesDescriptor) {
         Object.defineProperty(navigator, "mediaDevices", originalMediaDevicesDescriptor);
@@ -138,5 +139,27 @@ describe("PatientLivenessModal (Captura Facial do Paciente - US-15)", () => {
       status: "REPROVADO",
       detail: "Suspeita de imagem estática na câmera do paciente.",
     });
+  });
+
+  it("exibe countdown regressivo real a partir de challenge.timeout_segundos", async () => {
+    vi.useFakeTimers();
+
+    renderWithProviders(
+      <PatientLivenessModal
+        atendimentoId={MOCK_ATENDIMENTO_ID}
+        token="patient-intake-token"
+        challenge={{
+          challenge_id: "ch_countdown_01",
+          instrucoes_movimento: ["piscar_olhos"],
+          timeout_segundos: 45,
+        }}
+        onResult={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("liveness-timeout-countdown")).toHaveTextContent(/45s/);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(screen.getByTestId("liveness-timeout-countdown")).toHaveTextContent(/42s/);
   });
 });

@@ -32,7 +32,7 @@ import {
 describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)", () => {
   beforeAll(async () => {
     // Pré-carrega o chunk lazy WebRTC para eliminar timeouts intermitentes no IT-DOC-02 em CI/JSDOM
-    await import("../components/livekit-video-call");
+    await import("../components/livekit-media-adapter");
   });
 
   afterEach(() => {
@@ -107,9 +107,16 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
   });
 
   it("IT-DOC-01: Estado inicial sem atendimento exibe aviso, telemetria da fila e botão para chamar próximo", async () => {
-    renderWithProviders(<DoctorWorkstation />);
+    renderWithProviders(
+      <DoctorWorkstation
+        medicoId="018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e"
+        medicoNome="Dra. Helena Costa"
+        crmUf="98765/MG"
+      />,
+    );
 
-    expect(screen.getByText(/dr\. eduardo rocha/i)).toBeInTheDocument();
+    expect(screen.getByText(/dra\. helena costa/i)).toBeInTheDocument();
+    expect(screen.queryByText(/dr\. eduardo rocha/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /chamar próximo paciente/i })).toBeInTheDocument();
     expect(screen.getByText(/nenhum atendimento clínico ativo/i)).toBeInTheDocument();
 
@@ -119,9 +126,15 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
     expect(screen.getByText(/3 pacientes aguardando/i)).toBeInTheDocument();
   });
 
-  it("IT-DOC-02: Chamar próximo aloca paciente e monta a workstation em 3 colunas contínuas", async () => {
+  it("IT-DOC-02: Chamar próximo aloca paciente e monta a workstation em 3 colunas contínuas sem strings hardcoded", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<DoctorWorkstation />);
+    renderWithProviders(
+      <DoctorWorkstation
+        medicoId="018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e"
+        medicoNome="Dra. Helena Costa"
+        crmUf="98765/MG"
+      />,
+    );
 
     const btnChamar = screen.getByRole("button", { name: /chamar próximo paciente/i });
     await user.click(btnChamar);
@@ -148,8 +161,10 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
       },
       { timeout: 5000 },
     );
-    // Identificação do paciente
-    expect(screen.getAllByText(/juliana silva/i).length).toBeGreaterThan(0);
+    // Identificação real/protegida derivada sem hardcoded "Juliana Silva" / "123.***.***-00"
+    expect(screen.queryByText(/juliana silva/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("123.***.***-00")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/paciente #018f3a5b/i).length).toBeGreaterThan(0);
     // Notas SOAP carregadas
     expect(screen.getByLabelText(/subjetivo \(s\)/i)).toBeInTheDocument();
     // TMA dentro do SLA esperado (fixture com 5 minutos decorridos, sem falso estouro)
@@ -529,6 +544,273 @@ describe("Doctor Workstation Integration Tests (US-09, US-10, CFM 2.314, RN06)",
     await waitFor(() => {
       expect(screen.getByText("Login Interno Mock")).toBeInTheDocument();
       expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    });
+  });
+
+  it("IT-DOC-13: Troca Paciente A -> Paciente B remonta ConsultationEncounterProvider sem vazar documentoAssinado ou badge CFM", async () => {
+    const ATENDIMENTO_A = MOCK_ATENDIMENTO_ID;
+    const ATENDIMENTO_B = "018f3a5b-9999-4b2c-8b2c-018f3a5b7b99";
+    const PACIENTE_A = "11111111-1111-4b2c-8b2c-018f3a5b7b11";
+    const PACIENTE_B = "22222222-2222-4b2c-8b2c-018f3a5b7b22";
+    let callCount = 0;
+
+    server.use(
+      http.post("*/api/v1/fila/chamar-proximo", () => {
+        callCount += 1;
+        if (callCount === 1) {
+          return HttpResponse.json(
+            createChamarProximoResponse({
+              atendimento_id: ATENDIMENTO_A,
+              paciente_id: PACIENTE_A,
+            }),
+          );
+        }
+        return HttpResponse.json(
+          createChamarProximoResponse({
+            atendimento_id: ATENDIMENTO_B,
+            paciente_id: PACIENTE_B,
+          }),
+        );
+      }),
+      http.post(`*/api/v1/consultations/${ATENDIMENTO_B}/livekit/token`, () =>
+        HttpResponse.json(createLiveKitTokenResponse({ room_name: `room_${ATENDIMENTO_B}` })),
+      ),
+      http.get(`*/api/v1/consultations/${ATENDIMENTO_B}/prontuario`, () =>
+        HttpResponse.json(createProntuarioResponse({ atendimento_id: ATENDIMENTO_B })),
+      ),
+      http.get(`*/api/v1/consultations/${ATENDIMENTO_B}/soap`, () =>
+        HttpResponse.json(createEvolucaoSoapResponse({ atendimento_id: ATENDIMENTO_B })),
+      ),
+      http.get(`*/api/v1/consultations/${ATENDIMENTO_B}/tma-status`, () =>
+        HttpResponse.json(createTmaStatusResponse()),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(
+      <DoctorWorkstation
+        medicoId="018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e"
+        medicoNome="Dra. Helena Costa"
+        crmUf="98765/MG"
+      />,
+    );
+
+    // 1. Aloca Paciente A, confirma identidade CFM e assina documento no modal
+    await user.click(screen.getByRole("button", { name: /chamar próximo paciente/i }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /confirmar conferência visual/i }),
+      ).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: /confirmar conferência visual/i }));
+    expect(await screen.findByText(/identidade confirmada/i)).toBeInTheDocument();
+
+    // Emite e assina documento para Paciente A
+    await user.type(screen.getByLabelText(/medicamento \/ princípio ativo/i), "Dipirona 500mg");
+    await user.type(screen.getByLabelText(/dosagem/i), "500mg");
+    await user.type(screen.getByLabelText(/posologia/i), "1 cp 6/6h");
+    await user.click(screen.getByRole("button", { name: /adicionar à receita/i }));
+    await waitFor(() => expect(screen.getByText(/itens da prescrição \(1\)/i)).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /emitir prescrição digital/i }));
+    await waitFor(() =>
+      expect(screen.getByText(/receita.*gerada com sucesso/i)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("button", { name: /concluir atendimento & assinar/i }));
+    const tokenInput = await screen.findByLabelText(/token oauth2 \/ otp do psc/i);
+    await user.type(tokenInput, "psc-token-paciente-a");
+    await user.click(screen.getByRole("button", { name: /assinar documento digitalmente/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByText(/documento clínico assinado digitalmente com sucesso/i),
+      ).toBeInTheDocument(),
+    );
+    await user.keyboard("{Escape}");
+
+    // 2. Troca para Paciente B chamando o próximo paciente
+    await user.click(screen.getByRole("button", { name: /chamar próximo paciente/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/paciente #11111111/i)).not.toBeInTheDocument();
+      expect(screen.getAllByText(/paciente #22222222/i).length).toBeGreaterThan(0);
+      expect(screen.queryByText(/identidade confirmada/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/conferência obrigatória/i)).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /emitir prescrição digital/i })).toBeDisabled();
+  });
+
+  it("IT-DOC-14: SoapEditor propaga shouldValidate e shouldDirty no handleCid10Change ao digitar CID-10", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<DoctorWorkstation medicoNome="Dra. Helena Costa" crmUf="98765/MG" />);
+
+    await user.click(screen.getByRole("button", { name: /chamar próximo paciente/i }));
+    const cidInput = await screen.findByLabelText(/cid-10/i);
+
+    await user.type(screen.getByLabelText(/subjetivo \(s\)/i), "Tosse há 3 dias");
+    await user.type(screen.getByLabelText(/plano \(p\)/i), "Repouso e hidratação");
+
+    await user.type(cidInput, "123");
+    await user.click(screen.getByRole("button", { name: /salvar evolução soap/i }));
+    expect(await screen.findByText(/código cid-10 inválido/i)).toBeInTheDocument();
+
+    await user.clear(cidInput);
+    await user.type(cidInput, "j02.9");
+
+    await waitFor(() => {
+      expect(cidInput).toHaveValue("J02.9");
+      expect(screen.queryByText(/código cid-10 inválido/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it("IT-DOC-15: DoctorWorkstationPage conecta onAtendimentoIniciado da agenda abrindo LiveKit + PEP", async () => {
+    const SCHEDULED_ATEND_ID = "018f3a5b-7777-4b2c-8b2c-018f3a5b7777";
+    const SCHEDULED_PAC_ID = "018f3a5b-8888-4b2c-8b2c-018f3a5b8888";
+
+    server.use(
+      http.get("*/api/v1/telemetria/painel", () =>
+        HttpResponse.json(createPainelTelemetriaResponse()),
+      ),
+      http.post(`*/api/v1/consultations/${SCHEDULED_ATEND_ID}/livekit/token`, () =>
+        HttpResponse.json(createLiveKitTokenResponse({ room_name: `room_${SCHEDULED_ATEND_ID}` })),
+      ),
+      http.get(`*/api/v1/consultations/${SCHEDULED_ATEND_ID}/prontuario`, () =>
+        HttpResponse.json(createProntuarioResponse({ atendimento_id: SCHEDULED_ATEND_ID })),
+      ),
+      http.get(`*/api/v1/consultations/${SCHEDULED_ATEND_ID}/soap`, () =>
+        HttpResponse.json(createEvolucaoSoapResponse({ atendimento_id: SCHEDULED_ATEND_ID })),
+      ),
+      http.get(`*/api/v1/consultations/${SCHEDULED_ATEND_ID}/tma-status`, () =>
+        HttpResponse.json(createTmaStatusResponse()),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(
+      <DoctorWorkstationPage
+        doctorSession={{
+          medicoId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e",
+          medicoNome: "Dra. Helena Costa",
+          crmUf: "98765/MG",
+          identificador: "98765/MG",
+        }}
+        renderSchedulePanel={(onAtendimentoIniciado) => (
+          <button
+            type="button"
+            onClick={() =>
+              onAtendimentoIniciado?.({
+                id: "ag-01",
+                paciente_id: SCHEDULED_PAC_ID,
+                profissional_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e",
+                especialidade: "PSICOLOGIA",
+                slot_inicio: "2026-11-24T14:00:00Z",
+                slot_fim: "2026-11-24T14:50:00Z",
+                status: "EM_ATENDIMENTO",
+                observacoes: "Retorno agendado eMulti",
+                atendimento_id: SCHEDULED_ATEND_ID,
+                criado_em: "2026-11-20T10:00:00Z",
+                atualizado_em: "2026-11-24T14:00:00Z",
+              })
+            }
+          >
+            Acionar Agendamento Teste
+          </button>
+        )}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /acionar agendamento teste/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/livekit sfu conectado/i)).toBeInTheDocument();
+      expect(screen.getByText(/retorno agendado emulti/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/subjetivo \(s\)/i)).toBeInTheDocument();
+    });
+  });
+
+  it("IT-DOC-16: Troca Paciente A -> Paciente B limpa token/sala LiveKit de A imediatamente e em falha HTTP 500 para B", async () => {
+    const ATENDIMENTO_A = MOCK_ATENDIMENTO_ID;
+    const ATENDIMENTO_B = "018f3a5b-9999-4b2c-8b2c-018f3a5b7b99";
+    const PACIENTE_A = "11111111-1111-4b2c-8b2c-018f3a5b7b11";
+    const PACIENTE_B = "22222222-2222-4b2c-8b2c-018f3a5b7b22";
+    const ROOM_A = `room_${ATENDIMENTO_A}`;
+    let callCount = 0;
+    const tokenBDeferred: { resolve: (() => void) | null } = { resolve: null };
+
+    server.use(
+      http.post("*/api/v1/fila/chamar-proximo", () => {
+        callCount += 1;
+        if (callCount === 1) {
+          return HttpResponse.json(
+            createChamarProximoResponse({
+              atendimento_id: ATENDIMENTO_A,
+              paciente_id: PACIENTE_A,
+            }),
+          );
+        }
+        return HttpResponse.json(
+          createChamarProximoResponse({
+            atendimento_id: ATENDIMENTO_B,
+            paciente_id: PACIENTE_B,
+          }),
+        );
+      }),
+      http.post(`*/api/v1/consultations/${ATENDIMENTO_A}/livekit/token`, () =>
+        HttpResponse.json(
+          createLiveKitTokenResponse({
+            room_name: ROOM_A,
+            token: "livekit-token-a",
+          }),
+        ),
+      ),
+      http.post(
+        `*/api/v1/consultations/${ATENDIMENTO_B}/livekit/token`,
+        () =>
+          new Promise<Response>((resolve) => {
+            tokenBDeferred.resolve = () =>
+              resolve(HttpResponse.json({ detail: "Falha ao emitir token SFU" }, { status: 500 }));
+          }),
+      ),
+      http.get(`*/api/v1/consultations/${ATENDIMENTO_B}/prontuario`, () =>
+        HttpResponse.json(createProntuarioResponse({ atendimento_id: ATENDIMENTO_B })),
+      ),
+      http.get(`*/api/v1/consultations/${ATENDIMENTO_B}/soap`, () =>
+        HttpResponse.json(createEvolucaoSoapResponse({ atendimento_id: ATENDIMENTO_B })),
+      ),
+      http.get(`*/api/v1/consultations/${ATENDIMENTO_B}/tma-status`, () =>
+        HttpResponse.json(createTmaStatusResponse()),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(
+      <DoctorWorkstation
+        medicoId="018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e"
+        medicoNome="Dra. Helena Costa"
+        crmUf="98765/MG"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /chamar próximo paciente/i }));
+    await waitFor(() => {
+      expect(screen.getByText(ROOM_A)).toBeInTheDocument();
+      expect(screen.getByText(/livekit sfu conectado/i)).toBeInTheDocument();
+    });
+
+    // Troca para Paciente B enquanto emissão do token LiveKit para B ainda está pendente
+    await user.click(screen.getByRole("button", { name: /chamar próximo paciente/i }));
+    await waitFor(() => {
+      expect(screen.getByText(`room_${ATENDIMENTO_B}`)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(ROOM_A)).not.toBeInTheDocument();
+    expect(screen.queryByText(/livekit sfu conectado/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/conectando ao livekit/i)).toBeInTheDocument();
+
+    // Emissão de B falha com HTTP 500 — sala e status de A não podem reaparecer
+    tokenBDeferred.resolve?.();
+    await waitFor(() => {
+      expect(screen.queryByText(ROOM_A)).not.toBeInTheDocument();
+      expect(screen.queryByText(/livekit sfu conectado/i)).not.toBeInTheDocument();
+      expect(screen.getByText(`room_${ATENDIMENTO_B}`)).toBeInTheDocument();
     });
   });
 });

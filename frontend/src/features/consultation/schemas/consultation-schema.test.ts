@@ -113,16 +113,37 @@ describe("Consultation Schemas (Zod Validation - US-09, US-10, CFM 2.314/2022)",
       expect(result.success).toBe(true);
     });
 
-    it("rejeita emissão de receita com lista vazia de itens", () => {
-      const invalidDoc = {
-        tipo_documento: "RECEITA_SIMPLES",
-        itens: [],
-      };
+    it("rejeita emissão de receita simples, C1 ou antimicrobiano com lista vazia de itens", () => {
+      for (const tipo of [
+        "RECEITA_SIMPLES",
+        "RECEITA_CONTROLE_ESPECIAL_C1",
+        "RECEITA_ANTIMICROBIANO",
+      ] as const) {
+        const result = emitirDocumentoSchema.safeParse({
+          tipo_documento: tipo,
+          itens: [],
+        });
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.issues[0]?.message).toMatch(/ao menos um medicamento/i);
+        }
+      }
+    });
 
-      const result = emitirDocumentoSchema.safeParse(invalidDoc);
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues[0]?.message).toMatch(/ao menos um medicamento/i);
+    it("valida emissão de receita C1 e antimicrobiano quando há ao menos um item", () => {
+      for (const tipo of ["RECEITA_CONTROLE_ESPECIAL_C1", "RECEITA_ANTIMICROBIANO"] as const) {
+        const result = emitirDocumentoSchema.safeParse({
+          tipo_documento: tipo,
+          itens: [
+            {
+              medicamento: "Amoxicilina 500mg",
+              dosagem: "500mg",
+              posologia: "1 cp 8/8h",
+              controle_especial: tipo === "RECEITA_CONTROLE_ESPECIAL_C1",
+            },
+          ],
+        });
+        expect(result.success).toBe(true);
       }
     });
 

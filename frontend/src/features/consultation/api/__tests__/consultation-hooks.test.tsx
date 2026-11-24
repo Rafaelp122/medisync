@@ -1,14 +1,18 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import type React from "react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearAccessToken, setAccessToken } from "@/lib/auth-token";
+import { saveStoredDoctorSession } from "@/lib/session-storage";
 import { server } from "@/mocks/server";
 import { useAssinarDocumento } from "../use-assinar-documento";
 import { useChamarProximo } from "../use-chamar-proximo";
+import { useDoctorLogout } from "../use-doctor-logout";
 import { useEmitirDocumento } from "../use-emitir-documento";
 import { useFinalizarConsulta } from "../use-finalizar-consulta";
 import { useLiveKitToken } from "../use-livekit-token";
+import { useVerificarLiveness } from "../use-liveness-check";
 import { usePrescricaoValidator } from "../use-prescricao-validator";
 import { useProntuario } from "../use-prontuario";
 import { useSalvarSoap } from "../use-soap-evolucao";
@@ -264,5 +268,63 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
     await waitFor(() => expect(finalizarResult.current.isSuccess).toBe(true));
     expect(finalizarResult.current.data?.is_finalizado).toBe(true);
+  });
+
+  it("HK-CONS-08: useLiveKitToken, useVerificarLiveness e usePrescricaoValidator validam payload/resposta em runtime via z*.parse()", async () => {
+    const { result: lkResult } = renderHook(() => useLiveKitToken(MOCK_ATENDIMENTO_ID), {
+      wrapper: TestWrapper,
+    });
+    lkResult.current.mutate({
+      participant_id: "nao-e-uuid",
+      role: "medico",
+    });
+    await waitFor(() => expect(lkResult.current.isError).toBe(true));
+
+    const { result: liveResult } = renderHook(() => useVerificarLiveness(MOCK_ATENDIMENTO_ID), {
+      wrapper: TestWrapper,
+    });
+    liveResult.current.mutate({
+      challenge_id: "ab",
+      liveness_payload: "",
+    });
+    await waitFor(() => expect(liveResult.current.isError).toBe(true));
+
+    server.use(
+      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/prescriptions/validate`, () =>
+        HttpResponse.json({ status: "PERMITIDO" }),
+      ),
+    );
+    const { result: prescResult } = renderHook(() => usePrescricaoValidator(MOCK_ATENDIMENTO_ID), {
+      wrapper: TestWrapper,
+    });
+    prescResult.current.mutate({ medicamento: "Dipirona 500mg" });
+    await waitFor(() => expect(prescResult.current.isError).toBe(true));
+  });
+
+  it("HK-CONS-09: useDoctorLogout revoga sessão no backend e limpa storage + queryClient", async () => {
+    const logoutSpy = vi.fn();
+    server.use(
+      http.post("*/api/v1/auth/logout", () => {
+        logoutSpy();
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    setAccessToken("tok-doc");
+    saveStoredDoctorSession({
+      medicoId: MOCK_MEDICO_ID,
+      medicoNome: "Dra. Helena Costa",
+      crmUf: "98765/MG",
+      identificador: "98765/MG",
+    });
+    queryClient.setQueryData(["consultation", "probe"], { ok: true });
+
+    const { result } = renderHook(() => useDoctorLogout(), { wrapper: TestWrapper });
+    await act(async () => {
+      await result.current.mutateAsync();
+    });
+
+    expect(logoutSpy).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData(["consultation", "probe"])).toBeUndefined();
+    clearAccessToken();
   });
 });
