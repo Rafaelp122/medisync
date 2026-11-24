@@ -1,7 +1,11 @@
 import { waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
+import {
+  handleAdmitirPacienteApiV1FilaAdmissaoPost,
+  handleIntakeFase1ApiV1OnboardingFase1Post,
+} from "@/api/generated/msw.gen";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
 import { AcolhimentoFase1Form } from "../components/acolhimento-fase1-form";
@@ -114,7 +118,7 @@ describe("AcolhimentoFase1Form (Integração de Tela - RF-01, RN04)", () => {
 
   it("IT-ONB-04: Resposta do backend 422 EMERGENCIA_CRITICA_SAMU_192 abre modal SAMU 192", async () => {
     server.use(
-      http.post("*/api/v1/fila/admissao", () => {
+      handleAdmitirPacienteApiV1FilaAdmissaoPost(() => {
         return HttpResponse.json(
           {
             status: 422,
@@ -123,7 +127,7 @@ describe("AcolhimentoFase1Form (Integração de Tela - RF-01, RN04)", () => {
             code: "EMERGENCIA_CRITICA_SAMU_192",
           },
           { status: 422 },
-        );
+        ) as never;
       }),
     );
 
@@ -207,7 +211,7 @@ describe("AcolhimentoFase1Form (Integração de Tela - RF-01, RN04)", () => {
 
   it("IT-ONB-07: Resposta HTTP 500 do backend exibe banner humanizado em português com botão Tentar Novamente", async () => {
     server.use(
-      http.post("*/api/v1/onboarding/fase-1", () => {
+      handleIntakeFase1ApiV1OnboardingFase1Post(() => {
         return HttpResponse.json(
           {
             status: 500,
@@ -216,7 +220,7 @@ describe("AcolhimentoFase1Form (Integração de Tela - RF-01, RN04)", () => {
             code: "INTERNAL_SERVER_ERROR",
           },
           { status: 500 },
-        );
+        ) as never;
       }),
     );
 
@@ -333,13 +337,13 @@ describe("AcolhimentoFase1Form (Integração de Tela - RF-01, RN04)", () => {
     const user = userEvent.setup();
     const capture: { payload: Record<string, unknown> | null } = { payload: null };
     server.use(
-      http.post("*/api/v1/onboarding/fase-1", async ({ request }) => {
+      handleIntakeFase1ApiV1OnboardingFase1Post(async ({ request }) => {
         capture.payload = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json(
           {
             paciente_id: MOCK_PACIENTE_ID,
             token: "intake-token-fase1",
-            status: "TRIADO_AGUARDANDO_ELEGIBILIDADE",
+            status: "APTO_PARA_CHAMADA",
             mensagem: "Acolhimento registrado com sucesso.",
             is_novo_paciente: true,
           },

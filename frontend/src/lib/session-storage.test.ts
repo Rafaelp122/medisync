@@ -37,7 +37,7 @@ describe("session-storage", () => {
     tipo: "acolhimento",
     atendimentoId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2d",
     prioridadeClinica: 3,
-    status: "TRIADO_AGUARDANDO_ELEGIBILIDADE",
+    status: "APTO_PARA_CHAMADA",
   };
 
   const mockDoctorSession: StoredDoctorSession = {

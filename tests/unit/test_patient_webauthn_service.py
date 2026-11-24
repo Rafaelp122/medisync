@@ -5,7 +5,6 @@ import hashlib
 import json
 import struct
 from typing import TYPE_CHECKING, cast
-from uuid import UUID
 
 import pytest
 from cryptography.hazmat.primitives import hashes, serialization
@@ -18,9 +17,6 @@ from src.core.uuid7 import uuid7
 from src.modules.auth.application.dtos import (
     WebAuthnAuthVerifyCommand,
     WebAuthnRegisterVerifyCommand,
-)
-from src.modules.auth.application.ports.active_attendance_lookup_port import (
-    ActiveAttendanceLookupPort,
 )
 from src.modules.auth.application.services.patient_webauthn_service import (
     PatientWebAuthnService,
@@ -38,6 +34,7 @@ from src.modules.identity.domain.models.passkey import PacientePasskey
 from src.modules.identity.infrastructure.identity_writer_sql import SqlIdentityWriter
 
 from tests.doubles import (
+    FakeActiveAttendanceLookup,
     FakeAsyncSession,
     FakeAuditTrail,
     FakeIdentityReader,
@@ -51,19 +48,6 @@ if TYPE_CHECKING:
 
 _JWT_SECRET = "test-webauthn-secret-key-min-32-chars-ok"
 _RP_ID = "medisync.app"
-
-
-class FakeActiveAttendanceLookup(ActiveAttendanceLookupPort):
-    """Named in-memory double implementing ActiveAttendanceLookupPort."""
-
-    def __init__(self, active_map: dict[UUID, UUID] | None = None) -> None:
-        self._active_map = dict(active_map or {})
-
-    async def buscar_atendimento_ativo_paciente(
-        self,
-        paciente_id: UUID,
-    ) -> UUID | None:
-        return self._active_map.get(paciente_id)
 
 
 def _b64url(data: bytes) -> str:

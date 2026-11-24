@@ -19,13 +19,7 @@ from src.core.authz.revocation import MemoryTokenRevocation
 from src.core.authz.roles import Role
 from src.core.errors import ForbiddenError, NotFoundError, UnauthorizedError
 from src.core.uuid7 import uuid7
-from src.modules.auth.application.dtos import (
-    LoginCommand,
-    RateLimitResultDTO,
-)
-from src.modules.auth.application.ports.auth_rate_limiter_port import (
-    AuthRateLimiterPort,
-)
+from src.modules.auth.application.dtos import LoginCommand
 from src.modules.auth.application.ports.doctor_presence_port import (
     DoctorPresencePort,
 )
@@ -53,6 +47,7 @@ from src.modules.auth.domain.totp import (
     verify_totp_code,
 )
 from src.modules.auth.infrastructure.jwt_token_service import JWTTokenService
+from src.modules.auth.infrastructure.valkey_rate_limiter import FakeAuthRateLimiter
 
 from tests.doubles import (
     FakeAsyncSession,
@@ -61,30 +56,6 @@ from tests.doubles import (
     FakeResult,
     MemoryChallengeStore,
 )
-
-
-class FakeAuthRateLimiter(AuthRateLimiterPort):
-    """Named fake implementation of AuthRateLimiterPort."""
-
-    def __init__(self, permitido: bool = True) -> None:
-        self.permitido = permitido
-        self.reset_keys: list[str] = []
-
-    async def verificar_e_incrementar(
-        self,
-        chave: str,
-        limite: int = 5,
-        janela_segundos: int = 900,
-    ) -> RateLimitResultDTO:
-        return RateLimitResultDTO(
-            permitido=self.permitido,
-            tentativas_restantes=limite - 1,
-            retry_after_segundos=0 if self.permitido else 900,
-        )
-
-    async def resetar(self, chave: str) -> None:
-        self.reset_keys.append(chave)
-
 
 TEST_JWT_SECRET = "super-secret-key-for-testing-purposes-123456"
 

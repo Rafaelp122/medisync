@@ -92,8 +92,8 @@ ls tests/unit | rg -i "ambulatory"
 ## 7. Verificação
 
 ```bash
-rg -n "APROVADO|SUS-ISENTO" src/modules/ambulatory/
-# sus_adapter.py:24 codigo_autorizacao = "SUS-ISENTO"
+rg -n "SUS-ISENTO|def compilar_remessa" src/modules/ambulatory/
+# sus_adapter.py:28 codigo_autorizacao="SUS-ISENTO" | bpa_formatter.py:265 compilar_remessa
 
 uv run pytest tests/unit/test_ambulatory_production.py tests/unit/test_ambulatory_domain.py -q --no-cov
 ```

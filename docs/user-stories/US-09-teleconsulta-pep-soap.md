@@ -40,7 +40,7 @@
 ### Cenário 4: Gate Mandatório de Conferência de Identidade Visual e Documento Oficial (CFM nº 2.314/2022)
 - **Dado que** o médico plantonista está em videoconferência ativa com a paciente,
 - **Quando** realiza a abertura da teleconsulta,
-- **Então** o médico deve solicitar a apresentação de documento oficial com foto (RG/CNH/CNS) na câmera e registrar no PEP a validação de identidade (`identidade_verificada: true`, `tipo_documento_apresentado: "RG"` ou justificativa formal em caso de impossibilidade/urgência extrema),
+- **Então** o médico deve solicitar a apresentação de documento oficial com foto (RG/CNH/CNS) na câmera e registrar no PEP a validação de identidade (`identidade_verificada: true`, `tipo_documento_verificado: "RG"` ou justificativa formal em caso de impossibilidade/urgência extrema),
 - **E** a interface do prontuário bloqueia preventivamente o comando de finalização e a assinatura de prescrições enquanto a identidade não for confirmada,
 - **E** a confirmação é registrada com carimbo de tempo oficial na evolução clínica do atendimento (ADR-007).
 

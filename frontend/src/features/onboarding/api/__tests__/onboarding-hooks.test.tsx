@@ -1,9 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handleAdmitirPacienteApiV1FilaAdmissaoPost } from "@/api/generated/msw.gen";
+import {
+  handleAdmitirPacienteApiV1FilaAdmissaoPost,
+  handleEnrichmentFase2ApiV1OnboardingFase2Post,
+  handleIntakeFase1ApiV1OnboardingFase1Post,
+} from "@/api/generated/msw.gen";
+import { handleViaCepLookup } from "@/mocks/handlers";
 import { server } from "@/mocks/server";
 import { useAcolhimentoTriagemFlow } from "../../hooks/use-acolhimento-triagem-flow";
 import {
@@ -39,14 +44,12 @@ describe("Hooks de Onboarding Clínico", () => {
   });
   it("HK-01: useIntakeFase1 executa chamada com sucesso", async () => {
     server.use(
-      http.post("*/api/v1/onboarding/fase-1", () => {
-        return HttpResponse.json(
-          createIntakeFase1Response({
-            token: "fake-jwt-intake-token",
-            mensagem: "Acolhimento realizado",
-          }),
-          { status: 201 },
-        );
+      handleIntakeFase1ApiV1OnboardingFase1Post({
+        status: 201,
+        body: createIntakeFase1Response({
+          token: "fake-jwt-intake-token",
+          mensagem: "Acolhimento realizado",
+        }),
       }),
     );
 
@@ -66,7 +69,7 @@ describe("Hooks de Onboarding Clínico", () => {
 
   it("HK-02: useIntakeFase1 trata erro RFC 7807 (422)", async () => {
     server.use(
-      http.post("*/api/v1/onboarding/fase-1", () => {
+      handleIntakeFase1ApiV1OnboardingFase1Post(() => {
         return HttpResponse.json(
           {
             status: 422,
@@ -75,7 +78,7 @@ describe("Hooks de Onboarding Clínico", () => {
             code: "VALIDATION_ERROR",
           },
           { status: 422 },
-        );
+        ) as never;
       }),
     );
 
@@ -95,8 +98,9 @@ describe("Hooks de Onboarding Clínico", () => {
 
   it("HK-03: useAdmitirPaciente executa chamada de admissão e triagem", async () => {
     server.use(
-      http.post("*/api/v1/fila/admissao", () => {
-        return HttpResponse.json(createAdmissaoResponse(), { status: 201 });
+      handleAdmitirPacienteApiV1FilaAdmissaoPost({
+        status: 201,
+        body: createAdmissaoResponse(),
       }),
     );
 
@@ -114,12 +118,12 @@ describe("Hooks de Onboarding Clínico", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.prioridade_clinica).toBe(3);
-    expect(result.current.data?.status_atendimento).toBe("TRIADO_AGUARDANDO_ELEGIBILIDADE");
+    expect(result.current.data?.status_atendimento).toBe("APTO_PARA_CHAMADA");
   });
 
   it("HK-04: useAdmitirPaciente detecta rejeição SAMU 192", async () => {
     server.use(
-      http.post("*/api/v1/fila/admissao", () => {
+      handleAdmitirPacienteApiV1FilaAdmissaoPost(() => {
         return HttpResponse.json(
           {
             status: 422,
@@ -128,7 +132,7 @@ describe("Hooks de Onboarding Clínico", () => {
             code: "EMERGENCIA_CRITICA_SAMU_192",
           },
           { status: 422 },
-        );
+        ) as never;
       }),
     );
 
@@ -149,8 +153,9 @@ describe("Hooks de Onboarding Clínico", () => {
 
   it("HK-05: useEnrichmentFase2 envia dados complementares com sucesso", async () => {
     server.use(
-      http.post("*/api/v1/onboarding/fase-2", () => {
-        return HttpResponse.json(createEnrichmentFase2Response(), { status: 200 });
+      handleEnrichmentFase2ApiV1OnboardingFase2Post({
+        status: 200,
+        body: createEnrichmentFase2Response(),
       }),
     );
 
@@ -167,7 +172,7 @@ describe("Hooks de Onboarding Clínico", () => {
 
   it("HK-06: buscarEnderecoPorCep consulta ViaCEP e retorna dados mapeados", async () => {
     server.use(
-      http.get("https://viacep.com.br/ws/01310100/json/", () => {
+      handleViaCepLookup(() => {
         return HttpResponse.json({
           cep: "01310-100",
           logradouro: "Avenida Paulista",
@@ -184,7 +189,7 @@ describe("Hooks de Onboarding Clínico", () => {
 
   it("HK-07: buscarEnderecoPorCep retorna null para CEP com erro: true", async () => {
     server.use(
-      http.get("https://viacep.com.br/ws/99999999/json/", () => {
+      handleViaCepLookup(() => {
         return HttpResponse.json({ erro: "true" });
       }),
     );
@@ -195,7 +200,7 @@ describe("Hooks de Onboarding Clínico", () => {
 
   it("HK-08: useViaCepQuery atualiza dados via useQuery para CEP de 8 dígitos", async () => {
     server.use(
-      http.get("https://viacep.com.br/ws/01310100/json/", () => {
+      handleViaCepLookup(() => {
         return HttpResponse.json({
           cep: "01310-100",
           logradouro: "Avenida Paulista",
@@ -235,7 +240,7 @@ describe("Hooks de Onboarding Clínico", () => {
     const onAdmitted = vi.fn();
 
     server.use(
-      http.post("*/api/v1/onboarding/fase-1", () => {
+      handleIntakeFase1ApiV1OnboardingFase1Post(() => {
         fase1Spy();
         return HttpResponse.json(createIntakeFase1Response(), { status: 201 });
       }),

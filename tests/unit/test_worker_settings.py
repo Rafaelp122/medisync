@@ -1,13 +1,14 @@
 """Unit tests for ARQ worker settings, context accessors, and failure telemetry."""
 
+import logging
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from redis.asyncio import ConnectionPool, Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from src.core.config import Settings, get_settings
 from src.core.valkey import create_arq_redis_settings
+from src.worker import settings as worker_settings_mod
 from src.worker.context import (
     get_db_session_from_ctx,
     get_session_factory_from_ctx,
@@ -17,7 +18,7 @@ from src.worker.health import check_worker_heartbeat
 from src.worker.settings import WorkerSettings, shutdown, startup
 from src.worker.tasks import monitored_task, on_job_failure
 
-from tests.doubles import FakeValkey
+from tests.doubles import FakeAsyncSession, FakeAsyncSessionFactory, FakeValkey
 
 
 def test_create_arq_redis_settings() -> None:
@@ -90,20 +91,25 @@ async def test_startup_initializes_logging_telemetry_and_pools(
 
 
 @pytest.mark.asyncio
-async def test_shutdown_disposes_pools() -> None:
+async def test_shutdown_disposes_pools(monkeypatch: pytest.MonkeyPatch) -> None:
     """Worker shutdown hook should call pool close and engine dispose."""
     ctx: dict[str, Any] = {}
-    with (
-        patch(
-            "src.worker.settings.close_valkey_pool", new_callable=AsyncMock
-        ) as mock_valkey,
-        patch(
-            "src.worker.settings.dispose_engine", new_callable=AsyncMock
-        ) as mock_dispose,
-    ):
-        await shutdown(ctx)
-        mock_valkey.assert_awaited_once()
-        mock_dispose.assert_awaited_once()
+    closed_valkey = 0
+    disposed_engine = 0
+
+    async def _fake_close_valkey() -> None:
+        nonlocal closed_valkey
+        closed_valkey += 1
+
+    async def _fake_dispose_engine() -> None:
+        nonlocal disposed_engine
+        disposed_engine += 1
+
+    monkeypatch.setattr(worker_settings_mod, "close_valkey_pool", _fake_close_valkey)
+    monkeypatch.setattr(worker_settings_mod, "dispose_engine", _fake_dispose_engine)
+    await shutdown(ctx)
+    assert closed_valkey == 1
+    assert disposed_engine == 1
 
 
 @pytest.mark.asyncio
@@ -111,17 +117,16 @@ async def test_context_accessors_with_populated_ctx(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Context accessors reuse valkey_client or close pool-owned clients."""
-    mock_factory = MagicMock(spec=async_sessionmaker)
-    mock_pool = MagicMock(spec=ConnectionPool)
-    mock_pool.connection_kwargs = {}
+    fake_factory = FakeAsyncSessionFactory(FakeAsyncSession())
+    fake_pool = ConnectionPool(host="localhost", port=6379)
 
     # Case 1: explicit valkey_client injected (not closed by context manager)
     fake_client = FakeValkey()
     ctx_client: dict[str, Any] = {
-        "db_session_factory": mock_factory,
+        "db_session_factory": fake_factory,
         "valkey_client": fake_client,
     }
-    assert get_session_factory_from_ctx(ctx_client) is mock_factory
+    assert get_session_factory_from_ctx(ctx_client) is fake_factory
     async with get_valkey_from_ctx(ctx_client) as yielded:
         assert yielded is fake_client
 
@@ -134,12 +139,12 @@ async def test_context_accessors_with_populated_ctx(
 
     monkeypatch.setattr(Redis, "aclose", _fake_aclose)
     ctx_pool: dict[str, Any] = {
-        "db_session_factory": mock_factory,
-        "valkey_pool": mock_pool,
+        "db_session_factory": fake_factory,
+        "valkey_pool": fake_pool,
     }
     async with get_valkey_from_ctx(ctx_pool) as valkey_client:
         assert isinstance(valkey_client, Redis)
-        assert valkey_client.connection_pool is mock_pool
+        assert valkey_client.connection_pool is fake_pool
     assert closed == 1
 
 
@@ -165,18 +170,18 @@ async def test_context_accessors_fallback(monkeypatch: pytest.MonkeyPatch) -> No
 @pytest.mark.asyncio
 async def test_get_db_session_from_ctx() -> None:
     """get_db_session_from_ctx context manager should yield session from factory."""
-    mock_session = AsyncMock()
-    mock_factory = MagicMock()
-    mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+    fake_session = FakeAsyncSession()
+    fake_factory = FakeAsyncSessionFactory(fake_session)
 
-    ctx: dict[str, Any] = {"db_session_factory": mock_factory}
+    ctx: dict[str, Any] = {"db_session_factory": fake_factory}
     async with get_db_session_from_ctx(ctx) as session:
-        assert session is mock_session
+        assert session is fake_session
 
 
 @pytest.mark.asyncio
-async def test_on_job_failure_logs_diagnostics() -> None:
+async def test_on_job_failure_logs_diagnostics(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Unhandled failure should log error with full contextual information."""
     ctx: dict[str, Any] = {
         "job_try": 2,
@@ -185,17 +190,18 @@ async def test_on_job_failure_logs_diagnostics() -> None:
     }
     error = ValueError("Database connection timeout")
 
-    with patch("src.worker.tasks.logger.error") as mock_log:
+    with caplog.at_level(logging.ERROR, logger="medisync.worker"):
         await on_job_failure(ctx, "job_test_123", error)
 
-    mock_log.assert_called_once()
-    args, kwargs = mock_log.call_args
-    assert args[1] == "job_test_123"
-    assert kwargs["exc_info"] is error
-    assert kwargs["extra"]["job_id"] == "job_test_123"
-    assert kwargs["extra"]["job_try"] == 2
-    assert kwargs["extra"]["error_type"] == "ValueError"
-    assert kwargs["extra"]["error_message"] == "Database connection timeout"
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    assert "job_test_123" in record.getMessage()
+    assert record.exc_info is not None
+    assert record.exc_info[1] is error
+    assert getattr(record, "job_id", None) == "job_test_123"
+    assert getattr(record, "job_try", None) == 2
+    assert getattr(record, "error_type", None) == "ValueError"
+    assert getattr(record, "error_message", None) == "Database connection timeout"
 
 
 @pytest.mark.asyncio

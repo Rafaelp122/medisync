@@ -2,14 +2,13 @@
 
 from collections.abc import Generator
 from typing import TYPE_CHECKING, cast
-from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import Settings
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture(autouse=True)
@@ -87,10 +86,12 @@ def test_get_auth_service_wires_real_adapters(
         ValkeyAuthRateLimiter,
     )
 
+    from tests.doubles import FakeAsyncSession
+
     monkeypatch.setenv("ENVIRONMENT", "development")
     get_settings.cache_clear()
-    session = AsyncMock(spec=AsyncSession)
-    service = get_auth_service(cast("AsyncSession", session))
+    session = cast("AsyncSession", FakeAsyncSession())
+    service = get_auth_service(session)
     assert isinstance(service._hasher, Argon2PasswordHasher)  # pyright: ignore[reportPrivateUsage]
     assert isinstance(service._token_service, JWTTokenService)  # pyright: ignore[reportPrivateUsage]
     assert isinstance(service._rate_limiter, ValkeyAuthRateLimiter)  # pyright: ignore[reportPrivateUsage]
@@ -110,31 +111,31 @@ def test_get_pep_service_wires_real_adapters(
     from src.modules.consultation.infrastructure.pyhanko_signer import PyHankoSigner
     from src.modules.consultation.infrastructure.s3_storage import FakeStorageAdapter
 
+    from tests.doubles import FakeAsyncSession
+
     monkeypatch.setattr(
         composition,
         "get_settings",
         lambda: Settings(STORAGE_BACKEND="fake"),
     )
-    session = AsyncMock(spec=AsyncSession)
-    service = composition.get_pep_service(cast("AsyncSession", session))
+    session = cast("AsyncSession", FakeAsyncSession())
+    service = composition.get_pep_service(session)
     assert isinstance(service._pdf_compiler, ClinicalPdfCompiler)  # pyright: ignore[reportPrivateUsage]
     assert isinstance(service._pdf_compiler._pdf_generator, ReportLabPDFGenerator)  # pyright: ignore[reportPrivateUsage]
     assert isinstance(service._pdf_compiler._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
     assert not hasattr(service, "_signer")
     assert not hasattr(service, "_pdf_generator")
 
-    built = composition.build_pep_service_for_session(cast("AsyncSession", session))
+    built = composition.build_pep_service_for_session(session)
     assert isinstance(built._pdf_compiler, ClinicalPdfCompiler)  # pyright: ignore[reportPrivateUsage]
     assert isinstance(built._pdf_compiler._pdf_generator, ReportLabPDFGenerator)  # pyright: ignore[reportPrivateUsage]
     assert isinstance(built._pdf_compiler._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
 
-    doc_service = composition.get_documento_service(cast("AsyncSession", session))
+    doc_service = composition.get_documento_service(session)
     assert isinstance(doc_service._signer, PyHankoSigner)  # pyright: ignore[reportPrivateUsage]
     assert isinstance(doc_service._pdf_compiler, ClinicalPdfCompiler)  # pyright: ignore[reportPrivateUsage]
 
-    val_service = composition.get_document_validation_service(
-        cast("AsyncSession", session)
-    )
+    val_service = composition.get_document_validation_service(session)
     assert isinstance(val_service._storage, FakeStorageAdapter)  # pyright: ignore[reportPrivateUsage]
     assert val_service._compilador_pdf.__self__ is not doc_service  # pyright: ignore[reportFunctionMemberAccess,reportPrivateUsage]
 
@@ -170,8 +171,6 @@ def test_get_livekit_adapter_from_composition() -> None:
 
 def test_get_onboarding_and_dependente_services() -> None:
     """Identity composition must provide service instances."""
-    from unittest.mock import AsyncMock
-
     from src.modules.identity.application.services.dependente_service import (
         DependenteService,
     )
@@ -183,9 +182,11 @@ def test_get_onboarding_and_dependente_services() -> None:
         get_onboarding_service,
     )
 
-    mock_session = AsyncMock()
-    assert isinstance(get_onboarding_service(session=mock_session), OnboardingService)
-    assert isinstance(get_dependente_service(session=mock_session), DependenteService)
+    from tests.doubles import FakeAsyncSession
+
+    fake_session = cast("AsyncSession", FakeAsyncSession())
+    assert isinstance(get_onboarding_service(session=fake_session), OnboardingService)
+    assert isinstance(get_dependente_service(session=fake_session), DependenteService)
 
 
 def test_get_signed_cache_returns_memory_when_configured(
