@@ -25,7 +25,6 @@ import {
 } from "../schemas/scheduling-schema";
 
 export interface DisponibilidadeFormDialogProps {
-  token?: string;
   onSuccess?: (disponibilidade: DisponibilidadeResponse) => void;
 }
 
@@ -35,7 +34,7 @@ const SELECT_CLASSES =
 /**
  * Modal com formulário validado via Zod para cadastro de janela semanal de agenda do profissional.
  */
-export function DisponibilidadeFormDialog({ token, onSuccess }: DisponibilidadeFormDialogProps) {
+export function DisponibilidadeFormDialog({ onSuccess }: DisponibilidadeFormDialogProps) {
   const [open, setOpen] = useState(false);
 
   const {
@@ -70,7 +69,7 @@ export function DisponibilidadeFormDialog({ token, onSuccess }: DisponibilidadeF
 
   const onSubmit = (data: CriarDisponibilidadeFormData) => {
     cadastrarDisponibilidade(
-      { body: data, token },
+      { body: data },
       {
         onSuccess: (created) => {
           reset();

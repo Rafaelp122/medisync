@@ -15,7 +15,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { StoredPatientSession } from "@/lib/session-storage";
 import { cn } from "@/lib/utils";
-import { type HybridAuthStep, usePatientHybridAuthFlow } from "../api/use-patient-identify";
+import {
+  type HybridAuthStep,
+  usePatientHybridAuthFlow,
+} from "../hooks/use-patient-hybrid-auth-flow";
 import { PatientIdentifyForm, PatientNotFoundPanel } from "./patient-identify-form";
 import { PatientOtpVerifyStep } from "./patient-otp-verify-step";
 

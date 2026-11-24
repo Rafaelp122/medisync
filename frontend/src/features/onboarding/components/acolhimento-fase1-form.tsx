@@ -9,13 +9,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { calcularHashTcle, mascararCNS, mascararCPF, mascararTelefoneBR } from "@/lib/validators";
 import { startSafeViewTransition } from "@/lib/view-transitions";
 import { useAdmitirPaciente } from "../api/use-admitir-paciente";
@@ -541,9 +541,7 @@ export function AcolhimentoFase1Form({
 
                   {/* Sintomas de Toque Rápido */}
                   <div className="space-y-1.5">
-                    <FormLabel className="text-xs text-muted-foreground">
-                      Sintomas comuns:
-                    </FormLabel>
+                    <Label className="text-xs text-muted-foreground">Sintomas comuns:</Label>
                     <div className="flex flex-wrap gap-1.5">
                       {SINTOMAS_COMUNS.map((s) => {
                         const ativo = sintomasSelecionados.includes(s.id);
@@ -624,10 +622,10 @@ export function AcolhimentoFase1Form({
                         </label>
                       </div>
                     </div>
-                    <FormDescription className="text-[11px] text-muted-foreground pl-6">
+                    <p className="text-[11px] text-muted-foreground pl-6">
                       O aceite gera um hash forense SHA-256 anexado de forma imutável ao seu
                       prontuário.
-                    </FormDescription>
+                    </p>
                   </div>
 
                   {/* Barra de Ações: Voltar ou Submeter */}

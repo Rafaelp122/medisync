@@ -4,6 +4,7 @@ import {
   handleEnrichmentFase2ApiV1OnboardingFase2Post,
   handleIntakeFase1ApiV1OnboardingFase1Post,
   handleLoginApiV1AuthLoginPost,
+  handleMeApiV1AuthMeGet,
   handleObterPainelTelemetriaApiV1TelemetriaPainelGet,
   handleRequestOtpApiV1AuthPatientOtpRequestPost,
   handleVerifyOtpApiV1AuthPatientOtpVerifyPost,
@@ -28,6 +29,14 @@ export const defaultHandlers = [
       token_type: "bearer",
       expires_in: 900,
       refresh_expires_in: 604800,
+    },
+  }),
+  handleMeApiV1AuthMeGet({
+    body: {
+      usuario_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e",
+      identificador: "123456/SP",
+      papel: "MEDICO",
+      ativo: true,
     },
   }),
   handleRequestOtpApiV1AuthPatientOtpRequestPost({

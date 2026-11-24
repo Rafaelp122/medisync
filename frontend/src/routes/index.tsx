@@ -1,9 +1,11 @@
-import { createRoute } from "@tanstack/react-router";
-import { PortfolioLandingPage } from "@/features/landing/pages/portfolio-landing-page";
+import { createRoute, lazyRouteComponent } from "@tanstack/react-router";
 import { rootRoute } from "./root";
 
 export const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: PortfolioLandingPage,
+  component: lazyRouteComponent(
+    () => import("@/features/landing/pages/portfolio-landing-page"),
+    "PortfolioLandingPage",
+  ),
 });

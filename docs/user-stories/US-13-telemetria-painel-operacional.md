@@ -22,15 +22,15 @@
 
 ## 2. Critérios de Aceite Formais (Gherkin)
 
-### Cenário 1: Consulta do Painel no Dashboard Gerencial (`/gestor`) (Caso Feliz - Issue #141)
+### Cenário 1: Consulta do Painel no Dashboard Gerencial (`/gestor`) (Caso Feliz - Issue #141 / #167)
 - **Dado que** o plantão possui atendimentos em andamento, concluídos e ausências registradas,
-- **E** o gestor acessa a rota protegida `/gestor` (`frontend/src/routes/gestor.tsx`) com sessão corporativa sem tokens em storage (Issue #144), access token mantido exclusivamente em memória volátil e reidratado via cookie HttpOnly silencioso no F5 (caso contrário o guard `beforeLoad` redireciona para `/interno/login`),
-- **Quando** o painel operacional consulta `GET /api/v1/telemetria/painel`,
+- **E** o **Gestor da Unidade** (`Role.GESTOR_UNIDADE`) acessa a rota protegida `/gestor` (`frontend/src/routes/gestor.tsx`) via `SessionTransport.ensureStaffSession("GESTOR_UNIDADE")`, mantendo o access token exclusivamente em memória privada e reidratando-o via cookie HttpOnly silencioso no F5 (caso contrário redireciona para `/interno/login`),
+- **Quando** a subárvore `PainelMetricasAoVivo` (`frontend/src/features/telemetry/components/painel/painel-metricas-ao-vivo.tsx`) consulta `GET /api/v1/telemetria/painel` via hook compartilhado `usePainelTelemetria` (`frontend/src/api/hooks/use-painel-telemetria.ts`),
 - **Então** o sistema apresenta os indicadores consolidados de desempenho:
   1. Tempo Médio de Espera (TME) geral e estratificado pelos 5 níveis de triagem;
-  2. Tempo Médio de Atendimento (TMA) real geral e detalhado por médico plantonista;
+  2. Tempo Médio de Atendimento (TMA) real geral (com fallback de meta padrão de `600s` quando sem configuração prévia) e detalhado por médico plantonista;
   3. Índice percentual de cumprimento de SLA da unidade ($\ge 95\%$);
-  4. Índices percentuais de ausência (no-show) e de desistências voluntárias;
+  4. Índices percentuais de ausência (no-show) e de desistências voluntárias exibidos diretamente na escala `0..100` em `TaxasOperacionaisCard`, além de **"Cota Livre SUS"** quando sem limite diário;
 - **E** responde com tempo de resposta em tempo hábil para monitoramento operacional (< 100ms em cache).
 
 ### Cenário 2: Verificação do indicador de conformidade de SLA (Meta SMART 1)
@@ -93,7 +93,7 @@
 - [x] **Acesso Clínico ao Painel (NC-TEL-02):** Dependência `require_telemetry_view_auth` permitindo `Role.MEDICO` e `Role.GESTOR_UNIDADE` no `GET /painel`, mantendo `config-plantao` restrito à gestão (`src/modules/telemetry/presentation/dependencies.py`).
 - [x] **Segurança e Singleton Operacional (NC-SEC-01 / ADR-013):** Tabela singleton `configuracoes_plantao` (`singleton_guard IS TRUE`) e controle RBAC sem bypass global validados na suíte de integração com PostgreSQL real (`tests/integration/test_migrations.py` e `tests/integration/test_telemetry_router.py`).
 - [x] **Apresentação:** Router fino `telemetry_router.py` montado em `/api/v1/telemetria/painel`.
-- [x] **Frontend Rota & Painel Gestor (Issue #141 / Issue #144):** Rota declarativa `/gestor` (`frontend/src/routes/gestor.tsx`) com guard `beforeLoad` validando sessão de gestor e reidratação silenciosa de access token via cookie HttpOnly, sem persistência de credenciais em Web Storage.
+- [x] **Frontend Rota & Painel do Gestor da Unidade (Issue #141 / #144 / #167):** Rota `/gestor` (`frontend/src/routes/gestor.tsx`) validando papel `GESTOR_UNIDADE` via `SessionTransport` (`frontend/src/lib/session-transport.ts`), polling de 5s isolado em `PainelMetricasAoVivo` (`frontend/src/features/telemetry/components/painel/painel-metricas-ao-vivo.tsx`) consumindo `usePainelTelemetria` (`frontend/src/api/hooks/use-painel-telemetria.ts`) e fallback de `600s` sem re-renderizar `ConfigPlantaoCard` ou o slot BPA-I.
 - [x] **Testes Automatizados:**
   - `tests/unit/test_telemetry_service.py`
   - `tests/unit/test_telemetry_infra.py`

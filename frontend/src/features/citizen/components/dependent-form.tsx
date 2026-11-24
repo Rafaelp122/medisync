@@ -32,13 +32,12 @@ const GRAUS_PARENTESCO = [
 
 export interface DependentFormProps {
   pacienteId: string;
-  token?: string;
 }
 
 /**
  * Formulário validado (Zod) para cadastro/vínculo de dependente legal ou menor.
  */
-export function DependentForm({ pacienteId, token }: DependentFormProps) {
+export function DependentForm({ pacienteId }: DependentFormProps) {
   const [erroForm, setErroForm] = useState<string | null>(null);
   const [sucessoMsg, setSucessoMsg] = useState<string | null>(null);
   const createDependentMutation = useCreateDependent(pacienteId);
@@ -59,7 +58,7 @@ export function DependentForm({ pacienteId, token }: DependentFormProps) {
     setErroForm(null);
     setSucessoMsg(null);
     try {
-      await createDependentMutation.mutateAsync({ body: values, token });
+      await createDependentMutation.mutateAsync({ body: values });
       setSucessoMsg("Dependente cadastrado e vinculado com sucesso.");
       form.reset({
         grau_parentesco: "FILHO",

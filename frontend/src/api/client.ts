@@ -1,85 +1,46 @@
 import { settings } from "@/config/settings";
-import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/auth-token";
-import {
-  clearStoredDoctorSession,
-  clearStoredManagerSession,
-  clearStoredSession,
-  getStoredDoctorSession,
-  getStoredSession,
-  getStoredToken,
-} from "@/lib/session-storage";
+import { sessionTransport } from "@/lib/session-transport";
 import { toProblemDetailsError } from "./errors";
 import { client } from "./generated/client.gen";
 
 const baseUrl = settings.env.apiBaseUrl;
+const REQUEST_TIMEOUT_MS = 15_000;
 
-function decodeJwtPayload(token?: string | null): Record<string, unknown> | undefined {
-  if (!token || typeof token !== "string") return undefined;
-  const parts = token.split(".");
-  if (parts.length < 2 || !parts[1]) return undefined;
-  try {
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
-    const parsed: unknown = JSON.parse(atob(padded));
-    if (parsed && typeof parsed === "object") {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    return undefined;
-  }
-  return undefined;
+const AUTH_ROUTE_PATHS = [
+  "/api/v1/auth/refresh",
+  "/api/v1/auth/login",
+  "/api/v1/auth/logout",
+  "/api/v1/auth/mfa/verify",
+  "/api/v1/auth/mfa/setup",
+  "/api/v1/auth/mfa/activate",
+  "/api/v1/auth/patient/otp/request",
+  "/api/v1/auth/patient/otp/verify",
+  "/api/v1/auth/patient/login-password",
+  "/api/v1/auth/patient/webauthn/authenticate/options",
+  "/api/v1/auth/patient/webauthn/authenticate/verify",
+] as const;
+
+export function isAuthRoute(url: string): boolean {
+  return AUTH_ROUTE_PATHS.some((path) => url.includes(path));
 }
 
-function hashTokenFingerprint(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
+function createRequestSignal(existing?: AbortSignal | null): AbortSignal | undefined {
+  if (typeof AbortSignal === "undefined" || typeof AbortSignal.timeout !== "function") {
+    return existing ?? undefined;
   }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  if (existing && typeof AbortSignal.any === "function") {
+    return AbortSignal.any([existing, timeoutSignal]);
+  }
+  return existing ?? timeoutSignal;
 }
 
-/**
- * Retorna cabeçalho Authorization explícito apenas quando o caller fornece
- * um token distinto do armazenado em memória/localStorage; caso contrário delega ao interceptor.
- */
-export function resolveExplicitAuthHeaders(token?: string): Record<string, string> | undefined {
-  const explicit = token?.trim();
-  if (!explicit) return undefined;
-  const current = getAccessToken() || getStoredToken();
-  if (explicit === current) return undefined;
-  return { Authorization: `Bearer ${explicit}` };
+export function getSessionQueryScope(): string {
+  return sessionTransport.getQueryScope();
 }
 
-/**
- * Deriva chave de escopo (identidade/sessão) para isolar entradas do TanStack Query.
- */
-export function getSessionQueryScope(explicitToken?: string): string {
-  const trimmedExplicit = explicitToken?.trim();
-  const activeToken = trimmedExplicit || getAccessToken() || getStoredToken();
-
-  const patientSession = getStoredSession();
-  const doctorSession = getStoredDoctorSession();
-  const payload = decodeJwtPayload(activeToken);
-  const jwtSub = typeof payload?.sub === "string" ? payload.sub.trim() : "";
-
-  if (jwtSub) {
-    return `sub:${jwtSub}`;
-  }
-  if (
-    patientSession?.pacienteId &&
-    (!trimmedExplicit || trimmedExplicit === patientSession.token)
-  ) {
-    return `pac:${patientSession.pacienteId}`;
-  }
-  if (doctorSession?.medicoId && (!trimmedExplicit || trimmedExplicit === getAccessToken())) {
-    return `med:${doctorSession.medicoId}`;
-  }
-  if (activeToken) {
-    return `tok:${hashTokenFingerprint(activeToken)}`;
-  }
-
-  return "anon";
+export async function silentRefreshToken(): Promise<string | null> {
+  return sessionTransport.silentRefreshToken();
 }
 
 client.setConfig({
@@ -87,96 +48,54 @@ client.setConfig({
   credentials: "include",
 });
 
-let refreshPromise: Promise<string | null> | null = null;
 const retryRequestClones = new WeakMap<Request, Request>();
 
-/**
- * Executa o silent refresh de forma coordenada via Promise compartilhada (mutex anti-concorrência).
- * Utiliza o cookie HttpOnly refresh_token gerenciado pelo navegador.
- * Regras: RN-AUT-05, RN-AUT-07, OWASP ASVS v4.0 (V3.5.2).
- */
-export async function silentRefreshToken(): Promise<string | null> {
-  if (refreshPromise) {
-    return refreshPromise;
-  }
-
-  refreshPromise = (async () => {
-    try {
-      const refreshUrl = `${baseUrl.replace(/\/+$/, "")}/api/v1/auth/refresh`;
-      const res = await fetch(refreshUrl, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({}),
-      });
-
-      if (!res.ok) {
-        clearAccessToken();
-        clearStoredDoctorSession();
-        clearStoredManagerSession();
-        return null;
-      }
-
-      const data = (await res.json()) as { access_token?: string };
-      if (data.access_token) {
-        setAccessToken(data.access_token);
-        return data.access_token;
-      }
-      return null;
-    } catch {
-      clearAccessToken();
-      clearStoredDoctorSession();
-      clearStoredManagerSession();
-      return null;
-    } finally {
-      refreshPromise = null;
-    }
-  })();
-
-  return refreshPromise;
-}
-
-// Configure client request interceptor to inject dynamic Authorization header
+// Inject active Bearer token from SessionTransport, attach AbortSignal.timeout,
 // and preserve an unconsumed Request clone for safe 401 retries on POST/PUT/PATCH.
-client.interceptors.request.use((request) => {
-  const token = getAccessToken() || getStoredToken();
+client.interceptors.request.use((request, opts) => {
+  const token = sessionTransport.getActiveBearerToken();
   if (token && !request.headers.has("Authorization")) {
     request.headers.set("Authorization", `Bearer ${token}`);
   }
-  if (!request.bodyUsed) {
-    retryRequestClones.set(request, request.clone());
+
+  const signal = createRequestSignal(opts.signal);
+  let nextRequest = request;
+  if (signal) {
+    try {
+      nextRequest = new Request(request, { signal });
+    } catch {
+      // Fallback caso o ambiente Fetch restrinja rewrap de stream sem duplex
+      nextRequest = request;
+    }
   }
-  return request;
+
+  if (!nextRequest.bodyUsed) {
+    retryRequestClones.set(nextRequest, nextRequest.clone());
+  }
+  return nextRequest;
 });
 
-// Configure client response interceptor for silent refresh on 401 with loop protection
+// Silent refresh on 401 strictly for non-auth routes under active corporate staff session.
 client.interceptors.response.use(async (response, request, opts) => {
   const clonedRequest = retryRequestClones.get(request);
   retryRequestClones.delete(request);
 
   if (response.status === 401) {
-    const url = request.url;
-    const isAuthRoute =
-      url.includes("/api/v1/auth/refresh") ||
-      url.includes("/api/v1/auth/login") ||
-      url.includes("/api/v1/auth/logout") ||
-      url.includes("/api/v1/auth/patient/otp/verify");
-
     const alreadyRetried = request.headers.get("X-Retry") === "1";
 
-    if (!isAuthRoute && !alreadyRetried) {
-      const newToken = await silentRefreshToken();
+    if (!isAuthRoute(request.url) && !alreadyRetried && sessionTransport.hasCorporateSession()) {
+      const newToken = await sessionTransport.silentRefreshToken();
       if (newToken) {
         const headers = new Headers(request.headers);
         headers.set("Authorization", `Bearer ${newToken}`);
         headers.set("X-Retry", "1");
 
         const retryBase = clonedRequest && !clonedRequest.bodyUsed ? clonedRequest : request;
+        const retrySignal = createRequestSignal(opts.signal);
         const retryRequest = new Request(retryBase, {
           headers,
           credentials: "include",
+          ...(retrySignal ? { signal: retrySignal } : {}),
         });
 
         const retryFetch = opts.fetch ?? fetch;
@@ -187,14 +106,12 @@ client.interceptors.response.use(async (response, request, opts) => {
   return response;
 });
 
-// Configure client error interceptor to convert RFC 7807 responses into ProblemDetailsError and purge session on 401
-client.interceptors.error.use((error, response) => {
+// Convert RFC 7807 / network / timeout errors into ProblemDetailsError and purge session on terminal 401.
+client.interceptors.error.use((error, response, request) => {
   const status = response?.status ?? 500;
-  if (status === 401) {
-    clearStoredSession();
-    clearStoredDoctorSession();
-    clearStoredManagerSession();
-    clearAccessToken();
+  const url = request?.url ?? "";
+  if (status === 401 && !isAuthRoute(url)) {
+    sessionTransport.clearSession("all");
   }
   return toProblemDetailsError(error, status);
 });

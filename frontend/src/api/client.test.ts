@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/auth-token";
-import { saveStoredDoctorSession, saveStoredSession } from "@/lib/session-storage";
-import { client, getSessionQueryScope } from "./client";
+import {
+  getStoredDoctorSession,
+  getStoredManagerSession,
+  saveStoredDoctorSession,
+  saveStoredManagerSession,
+} from "@/lib/session-storage";
+import { sessionTransport } from "@/lib/session-transport";
+import { client, getSessionQueryScope, isAuthRoute } from "./client";
+import { isProblemDetailsError } from "./errors";
 
 function toRequest(input: RequestInfo | URL, init?: RequestInit): Request {
   return input instanceof Request ? input : new Request(input, init);
@@ -39,7 +46,7 @@ describe("client interceptor (Authorization Bearer & Token Handler)", () => {
 
   it("UT-CLI-02: fallback para token de paciente quando memória volátil for nula", async () => {
     clearAccessToken();
-    saveStoredSession({
+    sessionTransport.activatePatientSession({
       token: "patient-jwt-token-123",
       pacienteId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
       role: "PACIENTE",
@@ -159,15 +166,35 @@ describe("client interceptor (Authorization Bearer & Token Handler)", () => {
     expect(localStorage.getItem("medisync_doctor_session")).toBeNull();
   });
 
-  it("UT-CLI-06: getSessionQueryScope isola chaves por sub JWT, sessão ou token sem prefixo de tenant", () => {
+  it("UT-CLI-06: getSessionQueryScope isola chaves por sub JWT ou sessão ativa", () => {
     expect(getSessionQueryScope()).toBe("anon");
 
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
     const payloadA = btoa(JSON.stringify({ sub: "pac-1" }));
     const payloadB = btoa(JSON.stringify({ sub: "pac-2" }));
-    expect(getSessionQueryScope(`${header}.${payloadA}.sig`)).toBe("sub:pac-1");
-    expect(getSessionQueryScope(`${header}.${payloadB}.sig`)).toBe("sub:pac-2");
-    expect(getSessionQueryScope("opaque-token-a")).not.toBe(getSessionQueryScope("opaque-token-b"));
+
+    sessionTransport.activatePatientSession({
+      token: `${header}.${payloadA}.sig`,
+      pacienteId: "pac-1",
+      role: "PACIENTE",
+      tipo: "acolhimento",
+    });
+    expect(getSessionQueryScope()).toBe("sub:pac-1");
+
+    sessionTransport.activatePatientSession({
+      token: `${header}.${payloadB}.sig`,
+      pacienteId: "pac-2",
+      role: "PACIENTE",
+      tipo: "acolhimento",
+    });
+    expect(getSessionQueryScope()).toBe("sub:pac-2");
+
+    sessionTransport.clearSession("all");
+    setAccessToken("opaque-token-a");
+    const scopeA = getSessionQueryScope();
+    setAccessToken("opaque-token-b");
+    const scopeB = getSessionQueryScope();
+    expect(scopeA).not.toBe(scopeB);
   });
 
   it("UT-CLI-07: retry 401 em POST preserva o body JSON após silentRefreshToken sem erro de ReadableStream consumido", async () => {
@@ -263,5 +290,198 @@ describe("client interceptor (Authorization Bearer & Token Handler)", () => {
   it("UT-CLI-09: expõe window.__medisyncClient em modo test", () => {
     const exposed = (window as unknown as { __medisyncClient?: typeof client }).__medisyncClient;
     expect(exposed).toBe(client);
+  });
+
+  it("UT-CLI-10: rotação T1 -> T2 em chamadas consecutivas à agenda não mantém header stale", async () => {
+    setAccessToken("T1-token");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => {
+        return new Response(JSON.stringify({ access_token: "T2-token" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    let firstCall = 0;
+    const secondCallAuths: Array<string | null> = [];
+
+    await client.get({
+      url: "/api/v1/scheduling/agenda/dia",
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const req = toRequest(input, init);
+        firstCall += 1;
+        if (firstCall === 1) {
+          expect(req.headers.get("Authorization")).toBe("Bearer T1-token");
+          return new Response(JSON.stringify({ detail: "Expired" }), { status: 401 });
+        }
+        expect(req.headers.get("Authorization")).toBe("Bearer T2-token");
+        return new Response(JSON.stringify([]), { status: 200 });
+      },
+    });
+
+    await client.get({
+      url: "/api/v1/scheduling/agenda/dia",
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const req = toRequest(input, init);
+        secondCallAuths.push(req.headers.get("Authorization"));
+        return new Response(JSON.stringify([]), { status: 200 });
+      },
+    });
+
+    expect(secondCallAuths).toEqual(["Bearer T2-token"]);
+  });
+
+  it("UT-CLI-11: isAuthRoute reconhece login-password, webauthn verify e mfa/verify sem apagar sessão em 401", async () => {
+    expect(isAuthRoute("/api/v1/auth/patient/login-password")).toBe(true);
+    expect(isAuthRoute("/api/v1/auth/patient/webauthn/authenticate/verify")).toBe(true);
+    expect(isAuthRoute("/api/v1/auth/mfa/verify")).toBe(true);
+
+    setAccessToken("staff-session-should-stay");
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    for (const authPath of [
+      "/api/v1/auth/patient/login-password",
+      "/api/v1/auth/patient/webauthn/authenticate/verify",
+      "/api/v1/auth/mfa/verify",
+    ]) {
+      await expect(
+        client.post({
+          url: authPath,
+          body: {},
+          throwOnError: true,
+          fetch: async () => new Response(JSON.stringify({ detail: "Invalid" }), { status: 401 }),
+        }),
+      ).rejects.toBeDefined();
+    }
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("staff-session-should-stay");
+  });
+
+  it("UT-CLI-12: sessão de paciente em 401 não aciona /auth/refresh e notifica invalidate listeners", async () => {
+    sessionTransport.activatePatientSession({
+      token: "pac-jwt-expired",
+      pacienteId: "pac-1",
+      role: "PACIENTE",
+      tipo: "acolhimento",
+    });
+
+    const invalidatedSpy = vi.fn();
+    const unsubscribe = sessionTransport.subscribeInvalidated(invalidatedSpy);
+    const globalFetchSpy = vi.fn();
+    vi.stubGlobal("fetch", globalFetchSpy);
+
+    try {
+      await client.get({
+        url: "/api/v1/scheduling/agendamentos/me",
+        throwOnError: true,
+        fetch: async () =>
+          new Response(JSON.stringify({ detail: "Unauthorized" }), { status: 401 }),
+      });
+    } catch {
+      // ProblemDetailsError esperado
+    } finally {
+      unsubscribe();
+    }
+
+    expect(globalFetchSpy).not.toHaveBeenCalled();
+    expect(invalidatedSpy).toHaveBeenCalledTimes(1);
+    expect(getSessionQueryScope()).toBe("anon");
+  });
+
+  it("UT-CLI-13: anexa AbortSignal de timeout e converte TimeoutError em ProblemDetailsError 504", async () => {
+    let receivedSignal: AbortSignal | undefined;
+
+    await expect(
+      client.get({
+        url: "/api/v1/clinical/slow-endpoint",
+        throwOnError: true,
+        fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+          const req = toRequest(input, init);
+          receivedSignal = req.signal;
+          throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+        },
+      }),
+    ).rejects.toSatisfy((err: unknown) => {
+      return isProblemDetailsError(err) && err.status === 504 && err.code === "TIMEOUT";
+    });
+
+    expect(receivedSignal).toBeDefined();
+  });
+
+  it("UT-CLI-14: paciente ativa sessão corporativa -> clearSession('staff') -> sem token residual e queryScope 'anon'", () => {
+    sessionTransport.activatePatientSession({
+      token: "pac-jwt-antigo",
+      pacienteId: "pac-99",
+      role: "PACIENTE",
+      tipo: "acolhimento",
+    });
+
+    sessionTransport.activateStaffSession({
+      role: "MEDICO",
+      token: "med-jwt-ativo",
+      session: {
+        medicoId: "med-99",
+        medicoNome: "987654/SP",
+        crmUf: "987654/SP",
+        identificador: "987654/SP",
+        papel: "MEDICO",
+      },
+    });
+
+    expect(sessionTransport.getActiveBearerToken()).toBe("med-jwt-ativo");
+
+    sessionTransport.clearSession("staff");
+
+    expect(sessionTransport.getActiveBearerToken()).toBeNull();
+    expect(sessionTransport.getQueryScope()).toBe("anon");
+    expect(localStorage.getItem("medisync_session")).toBeNull();
+  });
+
+  it("UT-CLI-15: com slots staff residuais, activatePatientSession limpa slots corporativos e 401 não chama /auth/refresh", async () => {
+    saveStoredDoctorSession({
+      medicoId: "med-residual",
+      medicoNome: "Dr. Residual",
+      crmUf: "11111/SP",
+      identificador: "11111/SP",
+      papel: "MEDICO",
+    });
+    saveStoredManagerSession({
+      usuarioId: "mgr-residual",
+      nome: "Gestor Residual",
+      email: "mgr@saude.gov.br",
+      papel: "GESTOR_UNIDADE",
+    });
+
+    sessionTransport.activatePatientSession({
+      token: "pac-jwt-limpo",
+      pacienteId: "pac-42",
+      role: "PACIENTE",
+      tipo: "acolhimento",
+    });
+
+    expect(getStoredDoctorSession()).toBeNull();
+    expect(getStoredManagerSession()).toBeNull();
+    expect(sessionTransport.hasCorporateSession()).toBe(false);
+
+    const refreshSpy = vi.fn();
+    vi.stubGlobal("fetch", refreshSpy);
+
+    await expect(
+      client.get({
+        url: "/api/v1/scheduling/agendamentos/me",
+        throwOnError: true,
+        fetch: async () =>
+          new Response(JSON.stringify({ detail: "Unauthorized" }), { status: 401 }),
+      }),
+    ).rejects.toBeDefined();
+
+    expect(refreshSpy).not.toHaveBeenCalled();
+    expect(sessionTransport.getActiveBearerToken()).toBeNull();
+    expect(sessionTransport.getQueryScope()).toBe("anon");
   });
 });

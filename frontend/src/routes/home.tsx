@@ -1,7 +1,13 @@
-import { createRoute, redirect } from "@tanstack/react-router";
-import { CitizenHomePage } from "@/features/citizen/pages/citizen-home-page";
+import { createRoute, lazyRouteComponent, redirect } from "@tanstack/react-router";
+import { Suspense } from "react";
+import { RoutePendingFallback } from "@/components/route-fallbacks";
 import { getStoredSession, type StoredPatientSession } from "@/lib/session-storage";
 import { rootRoute } from "./root";
+
+const LazyCitizenHomePage = lazyRouteComponent(
+  () => import("@/features/citizen/pages/citizen-home-page"),
+  "CitizenHomePage",
+);
 
 export const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -15,6 +21,10 @@ export const homeRoute = createRoute({
   },
   component: function HomeRouteComponent() {
     const { session } = homeRoute.useRouteContext() as { session: StoredPatientSession };
-    return <CitizenHomePage session={session} />;
+    return (
+      <Suspense fallback={<RoutePendingFallback />}>
+        <LazyCitizenHomePage session={session} />
+      </Suspense>
+    );
   },
 });

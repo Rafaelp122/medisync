@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { settings } from "@/config/settings";
-import { isWebAuthnSupported } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
+import { isWebAuthnSupported } from "@/lib/webauthn";
 import { usePasskeyRegister } from "../api/use-passkey-register";
 
 export interface PasskeyInvitationCardProps {

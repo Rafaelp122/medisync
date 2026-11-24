@@ -47,12 +47,6 @@ export type AdmissaoRequest = {
      */
     tcle_hash?: string | null;
     /**
-     * Medicos Ativos
-     *
-     * Médicos ativos no plantão para cálculo de backpressure
-     */
-    medicos_ativos?: number;
-    /**
      * Cpf
      *
      * CPF do paciente (opcional)
@@ -221,13 +215,13 @@ export type AssinarDocumentoResponse = {
 /**
  * AutenticarCadsusRequest
  *
- * Payload to authenticate patient via CADSUS / Gov.br civil registry.
+ * Payload to authenticate patient via CADSUS / Gov.br with 2nd civil factor.
  */
 export type AutenticarCadsusRequest = {
     /**
      * Cpf
      *
-     * CPF do paciente (opcional se CNS fornecido)
+     * CPF do paciente (requer nome_mae ou cns adicional)
      */
     cpf?: string | null;
     /**
@@ -239,13 +233,13 @@ export type AutenticarCadsusRequest = {
     /**
      * Data Nascimento
      *
-     * Data de nascimento do paciente (AAAA-MM-DD)
+     * Data de nascimento do paciente (AAAA-MM-DD, obrigatória)
      */
-    data_nascimento?: string | null;
+    data_nascimento: string;
     /**
      * Nome Mae
      *
-     * Nome completo da mãe para desambiguação
+     * Nome da mãe (obrigatório quando autenticando apenas por CPF)
      */
     nome_mae?: string | null;
 };
@@ -407,67 +401,67 @@ export type ConfigPlantaoRequest = {
      *
      * Número planejado de médicos ativos no plantão
      */
-    medicos_ativos_planejados?: number;
+    medicos_ativos_planejados: number;
     /**
      * Alpha Backpressure
      *
      * Fator de sobrecarga (alpha) do plantão (entre 1.20 e 1.30)
      */
-    alpha_backpressure?: number | string;
+    alpha_backpressure: number | string;
     /**
      * Cota Diaria Maxima
      *
      * Cota máxima diária de atendimentos (ou null para ilimitado)
      */
-    cota_diaria_maxima?: number | null;
+    cota_diaria_maxima: number | null;
     /**
      * Tma Padrao Segundos
      *
      * Tempo Médio de Atendimento planejado em segundos (mínimo 60s)
      */
-    tma_padrao_segundos?: number;
+    tma_padrao_segundos: number;
     /**
      * Tempo Tolerancia Ring Segundos
      *
      * Tolerância de ring em segundos antes de timeout (mínimo 10s)
      */
-    tempo_tolerancia_ring_segundos?: number;
+    tempo_tolerancia_ring_segundos: number;
     /**
      * Modo Operacao
      *
      * Modo de operação do plantão (SUS ou PRIVADO)
      */
-    modo_operacao?: 'SUS' | 'PRIVADO';
+    modo_operacao: 'SUS' | 'PRIVADO';
     /**
      * Sla Minutos Nivel 1
      *
      * SLA nível 1 (Vermelho - Emergência) em minutos
      */
-    sla_minutos_nivel_1?: number;
+    sla_minutos_nivel_1: number;
     /**
      * Sla Minutos Nivel 2
      *
      * SLA nível 2 (Laranja - Muito Urgente) em minutos
      */
-    sla_minutos_nivel_2?: number;
+    sla_minutos_nivel_2: number;
     /**
      * Sla Minutos Nivel 3
      *
      * SLA nível 3 (Amarelo - Urgente) em minutos
      */
-    sla_minutos_nivel_3?: number;
+    sla_minutos_nivel_3: number;
     /**
      * Sla Minutos Nivel 4
      *
      * SLA nível 4 (Verde - Pouco Urgente) em minutos
      */
-    sla_minutos_nivel_4?: number;
+    sla_minutos_nivel_4: number;
     /**
      * Sla Minutos Nivel 5
      *
      * SLA nível 5 (Azul - Não Urgente) em minutos
      */
-    sla_minutos_nivel_5?: number;
+    sla_minutos_nivel_5: number;
 };
 
 /**
@@ -624,6 +618,12 @@ export type CriarDependenteRequest = {
      * Telefone de contato do dependente (opcional, herda do titular)
      */
     telefone?: string | null;
+    /**
+     * Outorga Tcle
+     *
+     * Outorga explícita de TCLE pelo responsável legal (obrigatória para menores de 18 anos)
+     */
+    outorga_tcle?: boolean;
 };
 
 /**
@@ -706,6 +706,10 @@ export type DependenteDetalheResponse = {
      * Vinculado Em
      */
     vinculado_em: string;
+    /**
+     * Outorga Tcle
+     */
+    outorga_tcle?: boolean;
 };
 
 /**
@@ -734,6 +738,10 @@ export type DependenteResponse = {
      * Vinculado Em
      */
     vinculado_em: string;
+    /**
+     * Outorga Tcle
+     */
+    outorga_tcle?: boolean;
 };
 
 /**
@@ -1099,6 +1107,12 @@ export type Fase2Request = {
      */
     paciente_id: string;
     /**
+     * Nome Social
+     *
+     * Nome social do paciente (CFM 1.821/2007 e SUS)
+     */
+    nome_social?: string | null;
+    /**
      * Nome Mae
      *
      * Nome completo da mãe do paciente (CFM 1.821/2007)
@@ -1146,12 +1160,6 @@ export type Fase2Request = {
      * Unidade Federativa (UF)
      */
     estado: string;
-    /**
-     * Nome Social
-     *
-     * Nome social do paciente (CFM 1.821/2007 e SUS)
-     */
-    nome_social?: string | null;
     /**
      * Alergias
      *
@@ -1991,15 +1999,9 @@ export type PioraClinicaResponse = {
     /**
      * Prioridade Clinica
      *
-     * Nova prioridade clínica pós-reavaliação
+     * Prioridade clínica consolidada pós-reavaliação
      */
     prioridade_clinica: number;
-    /**
-     * Nova Prioridade
-     *
-     * Nova prioridade clínica pós-reavaliação (canônico US-06)
-     */
-    nova_prioridade?: number | null;
     /**
      * Status Atendimento
      *
@@ -2030,18 +2032,12 @@ export type PioraClinicaResponse = {
      * Instruções de redirecionamento ou emergência imediata
      */
     instrucoes?: string | null;
-    /**
-     * Orientacoes Emergencia
-     *
-     * Instruções de emergência imediata (canônico US-06)
-     */
-    orientacoes_emergencia?: string | null;
 };
 
 /**
  * PosicaoFilaResponse
  *
- * Resposta com a posição ordinal e estimativa de espera na fila.
+ * Resposta com posição ordinal, timer de chamada e estimativa de espera.
  */
 export type PosicaoFilaResponse = {
     /**
@@ -2074,6 +2070,24 @@ export type PosicaoFilaResponse = {
      * Tempo de espera estimado em segundos
      */
     tempo_estimado_segundos: number | null;
+    /**
+     * Prioridade Clinica
+     *
+     * Classificação de risco Manchester (1=Emergência a 5=Não Urgente)
+     */
+    prioridade_clinica: number;
+    /**
+     * Chamada Iniciada Em
+     *
+     * Timestamp de início do toque de chamada (para countdown após F5)
+     */
+    chamada_iniciada_em?: string | null;
+    /**
+     * Ttl Segundos
+     *
+     * Tolerância em segundos da janela de toque ativa
+     */
+    ttl_segundos?: number | null;
 };
 
 /**
@@ -4645,3 +4659,67 @@ export type IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIn
 };
 
 export type IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponse = IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponses[keyof IniciarAtendimentoAgendadoApiV1SchedulingAgendamentosAgendamentoIdIniciarPostResponses];
+
+export type ConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostData = {
+    body?: never;
+    path: {
+        /**
+         * Agendamento Id
+         *
+         * ID do agendamento
+         */
+        agendamento_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scheduling/agendamentos/{agendamento_id}/concluir';
+};
+
+export type ConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostError = ConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostErrors[keyof ConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostErrors];
+
+export type ConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgendamentoResponse;
+};
+
+export type ConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostResponse = ConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostResponses[keyof ConcluirAgendamentoApiV1SchedulingAgendamentosAgendamentoIdConcluirPostResponses];
+
+export type MarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostData = {
+    body?: never;
+    path: {
+        /**
+         * Agendamento Id
+         *
+         * ID do agendamento
+         */
+        agendamento_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scheduling/agendamentos/{agendamento_id}/falta';
+};
+
+export type MarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostError = MarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostErrors[keyof MarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostErrors];
+
+export type MarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgendamentoResponse;
+};
+
+export type MarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostResponse = MarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostResponses[keyof MarcarFaltaAgendamentoApiV1SchedulingAgendamentosAgendamentoIdFaltaPostResponses];
