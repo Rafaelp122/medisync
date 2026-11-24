@@ -1,57 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   admissaoSchema,
+  clinicalTriageFormSchema,
   enrichmentFase2Schema,
+  intakeFase1FormSchema,
   intakeFase1Schema,
-  solicitarOtpSchema,
-  verificarOtpSchema,
 } from "./onboarding-schema";
-
-describe("Schemas Zod de Onboarding OTP", () => {
-  it("UT-10: solicitarOtpSchema aceita payload válido", () => {
-    const result = solicitarOtpSchema.safeParse({
-      telefone: "(11) 98765-4321",
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.telefone).toBe("+5511987654321");
-    }
-  });
-
-  it("UT-11: solicitarOtpSchema rejeita telefone inválido com mensagem canônica em português", () => {
-    const result = solicitarOtpSchema.safeParse({
-      telefone: "1133334444",
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues[0].message).toContain(
-        "Telefone inválido; informe DDD + 9 dígitos",
-      );
-    }
-  });
-
-  it("UT-12: verificarOtpSchema aceita código de 6 dígitos numéricos", () => {
-    const result = verificarOtpSchema.safeParse({
-      telefone: "+5511987654321",
-      codigo: "123456",
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("UT-13: verificarOtpSchema rejeita código alfanumérico ou com menos de 6 dígitos", () => {
-    const resultShort = verificarOtpSchema.safeParse({
-      telefone: "+5511987654321",
-      codigo: "12345",
-    });
-    expect(resultShort.success).toBe(false);
-
-    const resultAlpha = verificarOtpSchema.safeParse({
-      telefone: "+5511987654321",
-      codigo: "12345a",
-    });
-    expect(resultAlpha.success).toBe(false);
-  });
-});
 
 describe("Schema Zod IntakeFase1 (Acolhimento Rápido)", () => {
   const tcleValido64 = "a".repeat(64);
@@ -220,5 +174,41 @@ describe("Schema Zod EnrichmentFase2 (Enriquecimento CFM 1.821/2007)", () => {
       estado: "SP",
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("Schemas de Formulário de Triagem sem dummy TCLE", () => {
+  it("UT-SCH-09: clinicalTriageFormSchema exige aceite real do TCLE (true)", () => {
+    const rejected = clinicalTriageFormSchema.safeParse({
+      queixa_principal: "Febre alta há 2 dias",
+      sintomas: ["febre"],
+      escala_dor: 5,
+      aceite_tcle: false,
+    });
+    expect(rejected.success).toBe(false);
+
+    const accepted = clinicalTriageFormSchema.safeParse({
+      queixa_principal: "Febre alta há 2 dias",
+      sintomas: ["febre"],
+      escala_dor: 5,
+      aceite_tcle: true,
+    });
+    expect(accepted.success).toBe(true);
+  });
+
+  it("UT-SCH-10: intakeFase1FormSchema aceita nome_social opcional e valida aceite_tcle", () => {
+    const result = intakeFase1FormSchema.safeParse({
+      nome_completo: "Juliana Silva",
+      nome_social: "Júlia Silva",
+      data_nascimento: "1990-05-15",
+      telefone: "(11) 98765-4321",
+      cpf: "52998224725",
+      queixa_principal: "Febre alta e dor",
+      aceite_tcle: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.nome_social).toBe("Júlia Silva");
+    }
   });
 });

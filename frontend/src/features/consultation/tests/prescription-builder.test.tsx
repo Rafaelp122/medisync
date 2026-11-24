@@ -1,13 +1,17 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
 import { PrescriptionBuilder } from "../components/prescription-builder";
 import { createDocumentoClinicoResponse, MOCK_ATENDIMENTO_ID } from "./fixtures";
 
 describe("PrescriptionBuilder Integration Tests (Receita vs Atestado & CFM 2.314)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     server.use(
       http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/documents`, async ({ request }) => {
@@ -157,5 +161,35 @@ describe("PrescriptionBuilder Integration Tests (Receita vs Atestado & CFM 2.314
       expect(screen.getByText(/atestado médico #.* gerado com sucesso/i)).toBeInTheDocument();
       expect(handleIssued).toHaveBeenCalled();
     });
+  });
+
+  it("IT-PRESC-06: AtestadoForm atualiza contagem localmente por atendimentoIniciadoEm e destrava aos 180s sem re-render pai", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const startedAt = "2026-11-24T12:00:00.000Z";
+    vi.setSystemTime(new Date("2026-11-24T12:02:57.000Z")); // 177s decorridos
+
+    renderWithProviders(
+      <PrescriptionBuilder
+        atendimentoId={MOCK_ATENDIMENTO_ID}
+        identidadeVerificada={true}
+        atendimentoIniciadoEm={startedAt}
+      />,
+    );
+
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.click(screen.getByRole("tab", { name: /atestado médico/i }));
+
+    expect(screen.getByText(/a consulta durou 177s/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /emitir atestado médico/i })).toBeDisabled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_500);
+    });
+
+    expect(
+      screen.queryByText(/trava temporal antifraude \(cfm nº 2\.314\/2022\)/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /emitir atestado médico/i })).toBeEnabled();
+    vi.useRealTimers();
   });
 });

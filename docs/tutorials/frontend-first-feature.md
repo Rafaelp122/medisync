@@ -7,11 +7,11 @@
 Neste tutorial, você aprenderá a construir uma nova fatia vertical de frontend no MediSync Express seguindo os princípios de design da [ADR-011](../adrs/ADR-011-Arquitetura-Frontend-SPA-PWA-e-Estrategia-de-Testes.md):
 - **Zero DTO Duplication**: Consumo de tipos estritos gerados diretamente do OpenAPI do FastAPI via Hey API (`@hey-api/openapi-ts`).
 - **Desacoplamento Headless**: Isolamento de lógica de rede e estado em Custom Hooks do TanStack Query.
-- **Formulários Acessíveis e Tipados**: Validação em runtime com `react-hook-form` + `zod`.
+- **Formulários Acessíveis e Tipados**: Validação em runtime com `zod` (derivado de `zod.gen.ts`).
 - **Componentes Compostos**: Primitivas visuais sem boolean props abusivas (`shadcn/ui`).
 - **Troféu de Testes**: Teste de integração de tela montando componentes reais com simulação de rede via Mock Service Worker (MSW).
 
-Utilizaremos como exemplo canônico o fluxo de solicitação de OTP de onboarding do paciente ([US-02](../user-stories/US-02-autenticacao-passwordless-otp.md)) na pasta `frontend/src/features/onboarding/`.
+Utilizaremos como exemplo canônico o fluxo de identificação única do cidadão (IAM Híbrido — [US-02](../user-stories/US-02-autenticacao-passwordless-otp.md)) na pasta `frontend/src/features/auth/`.
 
 ---
 
@@ -31,7 +31,7 @@ pnpm add -D @hey-api/openapi-ts msw
 
 ### Configuração do Hey API
 
-O Hey API é configurado em `frontend/openapi-ts.config.ts` com os 4 plugins oficiais:
+O Hey API é configurado em `frontend/openapi-ts.config.ts` gerando tipos, SDK, validadores Zod e handlers MSW:
 
 ```typescript
 import { defineConfig } from '@hey-api/openapi-ts';
@@ -51,63 +51,77 @@ export default defineConfig({
 Sempre que o backend FastAPI adicionar ou modificar endpoints, execute:
 
 ```bash
-pnpm generate:api
+just frontend-generate
 ```
 
-Isso gera automaticamente em `frontend/src/api/generated/`:
-- `types.gen.ts`: Interfaces estritas dos schemas Pydantic (ex.: `SolicitarOtpPacienteRequest`).
-- `zod.gen.ts`: Schemas Zod convertidos automaticamente dos models Pydantic (ex.: `zSolicitarOtpPacienteRequest`).
-- `msw.gen.ts`: Factories de mock tipadas para MSW v2 (ex.: `solicitarOtpPacienteMock`).
-- `services.gen.ts`: Funções de chamada HTTP tipadas (`solicitarOtpPaciente`).
-
-> **Regra Pétrea:** Proibido redigitar ou criar interfaces manuais ou schemas Zod do zero para dados que vêm do backend. Use sempre os tipos e schemas gerados em `@/api/generated`.
+Isso gera automaticamente em `frontend/src/api/generated/` (sempre importados diretamente dos arquivos `.gen`, proibindo barrel imports):
+- `types.gen.ts`: Interfaces estritas dos schemas Pydantic (ex.: `IdentificarPacienteRequest`).
+- `zod.gen.ts`: Schemas Zod convertidos automaticamente dos models Pydantic (ex.: `zIdentificarPacienteRequest`).
+- `sdk.gen.ts`: Funções tipadas de requisição baseadas em `@hey-api/client-fetch` (ex.: `postAuthPatientIdentify`).
+- `msw.gen.ts`: Factories tipadas de interceptação MSW para testes (ex.: `handlePostAuthPatientIdentify`).
 
 ---
 
-## Passo 2: Estender o schema Zod gerado para o formulário
+## Passo 2: Definir Schema de Validação Zod (Derivado de `zod.gen.ts`)
 
-Em vez de redeclarar o schema Zod manualmente, importe o schema correspondente gerado pelo plugin `zod` em `frontend/src/api/generated/zod.gen.ts` e apenas refine com mensagens em português e validações algorítmicas locais:
-
-Em `frontend/src/features/onboarding/schemas/onboarding-schema.ts`:
+Em vez de duplicar regras manualmente, estenda o schema gerado pelo backend em `frontend/src/features/auth/schemas/patient-hybrid-auth-schemas.ts`:
 
 ```typescript
-import { z } from 'zod';
-import { zSolicitarOtpPacienteRequest } from '@/api/generated/zod.gen';
-import { validarTelefoneBR } from '@/lib/validators';
+import { z } from "zod";
+import { zIdentificarPacienteRequest } from "@/api/generated/zod.gen";
+import { validarCPF } from "@/lib/validators";
 
-// Estende o schema Zod gerado automaticamente pelo Hey API a partir do Pydantic:
-export const solicitarOtpSchema = zSolicitarOtpPacienteRequest.extend({
-  telefone: zSolicitarOtpPacienteRequest.shape.telefone.refine(
-    validarTelefoneBR,
-    'Telefone inválido; informe DDD + 9 dígitos'
-  ),
+const EMAIL_SCHEMA = z.string().email("Informe um endereço de e-mail válido.");
+
+export const patientIdentifySchema = zIdentificarPacienteRequest.extend({
+  identificador: z
+    .string()
+    .trim()
+    .min(3, "Informe seu CPF (11 dígitos) ou e-mail cadastrado.")
+    .refine(
+      (val) => (val.includes("@") ? EMAIL_SCHEMA.safeParse(val).success : validarCPF(val)),
+      { message: "Informe um CPF válido (11 dígitos) ou um e-mail válido." },
+    ),
 });
-
-export type SolicitarOtpFormData = z.infer<typeof solicitarOtpSchema>;
 ```
 
 ---
 
-## Passo 3: Implementar o Custom Hook Headless
+## Passo 3: Criar Custom Hook com TanStack Query
 
-Em `frontend/src/features/onboarding/api/use-solicitar-otp.ts`, encapsule a mutação do TanStack Query. O hook gerencia o ciclo de vida, loading e interceptação de erros RFC 7807 (evitando barrel imports da raiz):
+Encapsule a mutação HTTP em `frontend/src/features/auth/api/use-patient-identify.ts`. Nenhum componente React faz `fetch` direto:
 
 ```typescript
-import { useMutation } from '@tanstack/react-query';
-import { solicitarOtpPaciente } from '@/api/generated/services.gen';
-import type { SolicitarOtpPacienteResponse } from '@/api/generated/types.gen';
+import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
+import { client } from "@/api/client";
+import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
+import { postAuthPatientIdentify } from "@/api/generated/sdk.gen";
+import type {
+  IdentificarPacienteRequest,
+  IdentificarPacienteResponse,
+} from "@/api/generated/types.gen";
 
-export function useSolicitarOtp() {
-  return useMutation<SolicitarOtpPacienteResponse, Error, { telefone: string }>({
-    mutationFn: async ({ telefone }) => {
-      const response = await solicitarOtpPaciente({
-        body: { telefone },
-      });
-      if (response.error) {
-        throw new Error(response.error.detail || 'Falha ao solicitar código SMS');
+export function usePatientIdentify(
+  options?: UseMutationOptions<
+    IdentificarPacienteResponse,
+    ProblemDetailsError,
+    IdentificarPacienteRequest
+  >,
+) {
+  return useMutation<IdentificarPacienteResponse, ProblemDetailsError, IdentificarPacienteRequest>({
+    mutationFn: async (body: IdentificarPacienteRequest) => {
+      try {
+        const response = await postAuthPatientIdentify({
+          client,
+          body,
+          throwOnError: true,
+        });
+        return response.data;
+      } catch (err) {
+        throw toProblemDetailsError(err);
       }
-      return response.data;
     },
+    ...options,
   });
 }
 ```
@@ -116,126 +130,86 @@ export function useSolicitarOtp() {
 
 ## Passo 4: Criar o Componente Visual com `shadcn/ui`
 
-Em `frontend/src/features/onboarding/components/solicitar-otp-form.tsx`, implemente a camada visual utilizando `react-hook-form` e primitivas do `shadcn/ui`:
+Em `frontend/src/features/auth/components/patient-identify-form.tsx`, implemente a camada visual consumindo `usePatientIdentify` e primitivas do `shadcn/ui` com alvos mínimos de `44px`:
 
 ```tsx
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { solicitarOtpSchema, type SolicitarOtpFormData } from '../schemas/onboarding-schema';
-import { useSolicitarOtp } from '../api/use-solicitar-otp';
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { IdentificarPacienteResponse } from "@/api/generated/types.gen";
+import { usePatientIdentify } from "../api/use-patient-identify";
+import {
+  normalizarIdentificadorCidadao,
+  patientIdentifySchema,
+} from "../schemas/patient-hybrid-auth-schemas";
 
-interface SolicitarOtpFormProps {
-  onSuccess: (telefone: string) => void;
-}
-
-export function SolicitarOtpForm({ onSuccess }: SolicitarOtpFormProps) {
-  const form = useForm<SolicitarOtpFormData>({
-    resolver: zodResolver(solicitarOtpSchema),
-    defaultValues: { telefone: '' },
+export function PatientIdentifyForm({
+  onIdentified,
+}: {
+  onIdentified: (payload: { identificador: string; response: IdentificarPacienteResponse }) => void;
+}) {
+  const [identificador, setIdentificador] = useState("");
+  const identifyMutation = usePatientIdentify({
+    onSuccess: (response) =>
+      onIdentified({ identificador: normalizarIdentificadorCidadao(identificador), response }),
   });
 
-  const { mutate, isPending, error } = useSolicitarOtp();
-
-  function onSubmit(values: SolicitarOtpFormData) {
-    mutate(values, {
-      onSuccess: () => onSuccess(values.telefone),
-    });
-  }
-
+  // Valida via patientIdentifySchema e chama identifyMutation.mutate(...)
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="telefone"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Celular (com DDD)</FormLabel>
-              <FormControl>
-                <Input placeholder="(11) 98765-4321" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {error ? (
-          <div role="alert" className="text-sm font-medium text-destructive">
-            {error.message}
-          </div>
-        ) : null}
-
-        <Button type="submit" disabled={isPending} className="w-full">
-          {isPending ? 'Enviando código...' : 'Receber código SMS'}
-        </Button>
-      </form>
-    </Form>
+    <form className="space-y-4" noValidate>
+      <Label htmlFor="patient-identificador">CPF ou E-mail</Label>
+      <Input
+        id="patient-identificador"
+        value={identificador}
+        onChange={(e) => setIdentificador(e.target.value)}
+      />
+      <Button type="submit" disabled={identifyMutation.isPending} className="w-full min-h-[44px]">
+        Continuar
+      </Button>
+    </form>
   );
 }
 ```
 
 ---
 
-## Passo 5: Teste de Integração de Tela com MSW
+## Passo 5: Escrever Teste de Integração de Tela com MSW
 
-Em `frontend/src/features/onboarding/tests/solicitar-otp-form.test.tsx`, monte o componente real e interaja como o usuário, simulando a rede via Mock Service Worker:
+Em `frontend/src/features/auth/tests/patient-hybrid-auth.test.tsx`, teste a tela montada usando a factory tipada `handlePostAuthPatientIdentify` gerada em `msw.gen.ts`:
 
 ```tsx
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { server } from '@/mocks/server';
-import { solicitarOtpPacienteMock } from '@/api/generated/msw.gen';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { SolicitarOtpForm } from '../components/solicitar-otp-form';
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { HttpResponse } from "msw";
+import { describe, expect, it, vi } from "vitest";
+import { handlePostAuthPatientIdentify } from "@/api/generated/msw.gen";
+import { server } from "@/mocks/server";
+import { renderWithProviders } from "@/test/utils";
+import { PatientHybridAuthCard } from "../components/patient-hybrid-auth-card";
 
-function renderWithClient(ui: React.ReactElement) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
-}
-
-describe('SolicitarOtpForm', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('avança no fluxo com sucesso ao submeter telefone válido', async () => {
-    const onSuccess = vi.fn();
-
-    // Mock tipado gerado automaticamente pelo Hey API (plugin msw):
+describe("PatientHybridAuthCard", () => {
+  it("identifica cidadão por CPF usando MSW v2", async () => {
+    let identifiedCpf = "";
     server.use(
-      solicitarOtpPacienteMock({
-        response: {
-          status: 200,
-          data: { mensagem: 'OTP enviado com sucesso', expira_em_segundos: 300 },
-        },
-      })
+      handlePostAuthPatientIdentify(async ({ request }) => {
+        const body = await request.json();
+        identifiedCpf = body.identificador;
+        return HttpResponse.json({
+          possui_conta: true,
+          metodos_disponiveis: ["otp", "senha", "passkey"],
+          telefone_mascarado: "(11) 9****-4321",
+          govbr_habilitado: false,
+        });
+      }),
     );
 
-    renderWithClient(<SolicitarOtpForm onSuccess={onSuccess} />);
+    renderWithProviders(<PatientHybridAuthCard onAuthenticated={vi.fn()} />);
     const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/cpf ou e-mail/i), "52998224725");
+    await user.click(screen.getByRole("button", { name: /continuar/i }));
 
-    await user.type(screen.getByLabelText(/celular/i), '11987654321');
-    await user.click(screen.getByRole('button', { name: /receber código/i }));
-
-    await waitFor(() => {
-      expect(onSuccess).toHaveBeenCalledWith('11987654321');
-    });
-  });
-
-  it('exibe erro de validação Zod para telefone inválido sem bater na rede', async () => {
-    renderWithClient(<SolicitarOtpForm onSuccess={vi.fn()} />);
-    const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText(/celular/i), '123');
-    await user.click(screen.getByRole('button', { name: /receber código/i }));
-
-    expect(await screen.findByText(/telefone inválido/i)).toBeInTheDocument();
+    await waitFor(() => expect(identifiedCpf).toBe("52998224725"));
   });
 });
 ```
@@ -248,5 +222,6 @@ Execute o portão de qualidade do frontend via `justfile`:
 
 ```bash
 just frontend-check
+just audit-frontend
 just frontend-test
 ```
