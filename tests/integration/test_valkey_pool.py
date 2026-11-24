@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock
+from typing import cast
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -14,6 +14,8 @@ from src.core.valkey import (
     get_valkey_pool,
 )
 from src.main import create_app
+
+from tests.doubles import FakeValkey
 
 
 @pytest.fixture(autouse=True)
@@ -95,10 +97,9 @@ async def test_healthz_endpoint_handles_valkey_failure() -> None:
     """Verify /healthz gracefully degrades when Valkey connection fails."""
     test_app = create_app()
 
-    async def broken_client() -> AsyncMock:
-        mock = AsyncMock(spec=Redis)
-        mock.ping.side_effect = ConnectionError("Simulated Valkey Outage")
-        return mock
+    async def broken_client() -> AsyncGenerator[Redis, None]:
+        client = FakeValkey(ping_error=ConnectionError("Simulated Valkey Outage"))
+        yield cast("Redis", client)
 
     test_app.dependency_overrides[get_valkey_client] = broken_client
 

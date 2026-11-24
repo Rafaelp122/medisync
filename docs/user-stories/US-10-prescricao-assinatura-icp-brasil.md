@@ -47,7 +47,7 @@
 * **Finalização de Documento e Assinatura:** `POST /api/v1/consultations/{atendimento_id}/documents/{documento_id}/sign`
 * **Download Público de Documento:** `GET /api/v1/documents/download/{token_validacao}`
 * **Validação Pública de Autenticidade:** `GET /api/v1/documents/validate/{token_validacao}`
-  *Resposta (`200 OK`, `ValidarDocumentoResponse`):*
+  *Resposta (`200 OK`, `ValidarDocumentoResponse` — mantendo campo `organizacao_nome` preenchido por `ConfiguracaoUnidade.nome_fantasia`):*
   ```json
   {
     "documento_id": "0195a1b2-0000-7000-8000-000000000001",
@@ -58,7 +58,7 @@
     "emissor_medico_nome": "Dr. Eduardo Rocha",
     "emissor_medico_crm": "123456",
     "emissor_medico_uf": "SP",
-    "organizacao_nome": "MediSync Telemedicina",
+    "organizacao_nome": "MediSync Pronto-Atendimento Virtual",
     "paciente_nome_mascarado": "M**** S****",
     "paciente_cpf_mascarado": "123.***.***-00",
     "assinatura_digital_valida": true,

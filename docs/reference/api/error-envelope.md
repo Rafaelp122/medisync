@@ -115,6 +115,8 @@ Notas de semântica:
 - Impl: `src/modules/auth/domain/exceptions.py:WebAuthnChallengeInvalidoError`
 - Impl: `src/modules/auth/domain/exceptions.py:PasskeyNaoEncontradaError`
 - Impl: `src/modules/auth/domain/exceptions.py:IdentificacaoRateLimitExcedidoError`
+- Impl: `src/modules/ambulatory/domain/exceptions.py:CompetenciaInvalidaError`
+- Impl: `src/modules/ambulatory/domain/exceptions.py:ProducaoNaoEncontradaError`
 - Impl: `src/modules/scheduling/domain/exceptions.py:AgendamentoNaoEncontradoError`
 - Impl: `src/modules/scheduling/domain/exceptions.py:TransicaoAgendamentoInvalidaError`
 - Impl: `src/modules/scheduling/domain/exceptions.py:SlotIndisponivelError`

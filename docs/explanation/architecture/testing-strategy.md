@@ -32,7 +32,7 @@ A estratégia de testes adota dois pilares fundamentais:
 * **Dependências Externas:** Zero contêineres Docker, zero rede, zero I/O de disco.
 * **Escopo:**
   * Regras de negócio de modelos ricos (transições de status de atendimento, cálculo de score 64-bit, bloqueio de medicamentos Portaria 344/98).
-  * Casos de uso e Services com dublês de teste canônicos (`tests/doubles.py` e mocks tipados).
+  * Casos de uso e Services com Fakes nomeados em memória (`tests/doubles.py`), sem `MagicMock` ou `patch()` sobre portas hexagonais.
   * Testes de arquitetura AST (`tests/architecture/test_routers_are_thin.py` e `tach check`), garantindo que routers permaneçam finos e camadas modulares sejam respeitadas.
 
 ### Camada I: Integração sobre Infraestrutura Real (`tests/integration/`)
@@ -66,7 +66,7 @@ No MediSync, a infraestrutura de banco de teste é gerenciada canonicamente:
 O comando `just check` implementa a ordem estrita **Fail-Fast** unificada:
 
 ```
-scan-secrets -> docs-check -> audit-ai-code -> fmt -> lint -> typecheck -> tach -> test-unit -> test-integration
+scan-secrets -> docs-check -> audit-ai-code -> audit-frontend -> fmt -> lint -> frontend-check -> typecheck -> tach -> test-unit -> test-integration -> frontend-test
 ```
 
 1. **`just scan-secrets` (Gitleaks):** Audita o repositório prevenindo vazamento de credenciais e chaves (~1.2s).
@@ -76,8 +76,9 @@ scan-secrets -> docs-check -> audit-ai-code -> fmt -> lint -> typecheck -> tach 
 5. **`just lint` (Ruff):** Detecta problemas estáticos e aplica correções seguras em <1s.
 6. **`just typecheck` (Basedpyright):** Validação estrita de tipos (`typeCheckingMode = "strict"` em `src/` e `tests/`).
 7. **`just tach` (Tach):** Validação estrita de fronteiras modulares hexagonais.
-8. **`just test-unit` (Pytest + Cov):** 611 testes unitários e de arquitetura com checagem de cobertura (mínimo de 85%).
-9. **`just test-integration` (Pytest):** Testes ponta a ponta sobre contêineres reais (Postgres, Valkey, LiveKit, MinIO).
+8. **`just test-unit` (Pytest + Cov):** 994 testes unitários e de arquitetura com checagem de cobertura (mínimo de 85%).
+9. **`just test-integration` (Pytest):** 200 testes ponta a ponta sobre contêineres reais (Postgres, Valkey, LiveKit, MinIO).
+10. **`just frontend-check` & `just frontend-test` (Biome + TypeScript + Vitest + MSW v2):** Checagem estática e 328 testes de unidade e tela do frontend SPA/PWA.
 
 > **Dica de DX:** Em desenvolvimento ativo sem Docker local, utilize `just check-fast`, que executa as etapas 1 a 7 e roda `test-fast` (100% em memória, zero Docker) em ~15 segundos.
 
@@ -95,7 +96,7 @@ No frontend SPA/PWA ([ADR-011](../../adrs/ADR-011-Arquitetura-Frontend-SPA-PWA-e
     /---------\  - Telas completas montadas em jsdom com simulação HTTP declarativa
    /     U     \ Unitários Puros (Vitest)
   /-------------\ - Algoritmos de CPF/CNS, validadores locais e schemas Zod
- /       S       \ Análise Estática (TypeScript strict + ESLint)
+ /       S       \ Análise Estática (TypeScript strict + Biome)
 /-----------------\ - Contratos tipados e schemas gerados via Hey API (@hey-api/openapi-ts)
 ```
 
@@ -103,7 +104,7 @@ No frontend SPA/PWA ([ADR-011](../../adrs/ADR-011-Arquitetura-Frontend-SPA-PWA-e
 
 * **Fidelidade Comportamental**: Proibido mockar componentes React ou hooks de negócio. O teste monta a árvore visual real em ambiente `jsdom` e simula a rede na camada de transporte via **Mock Service Worker (MSW v2)**, utilizando factories tipadas de `@/api/generated/msw.gen`.
 * **Interações Reais do Usuário**: Utilização exclusiva de `@testing-library/user-event` (`userEvent.setup()`) para simular digitação e cliques reais.
-* **Fake Timers**: Contagens regressivas de tela (como cooldown de 60s para reenvio de OTP) utilizam `vi.useFakeTimers()` e `vi.advanceTimersByTime()` para avanço determinístico sem lentidão.
+* **Fake Timers**: Contagens regressivas de tela (como cooldown de 60s para reenvio de OTP) utilizam `vi.useFakeTimers()` e `await vi.advanceTimersByTimeAsync()` com teardown mandatório em `afterEach(() => vi.useRealTimers())`.
 * **Unitários Puros**: Reservados para funções matemáticas e algoritmos de validação (algoritmo módulo 11 de CPF, CNS brasileiro, máscaras e cálculos de tempo).
 
 ### 5.2 Camada E2E, Colaboração e Acessibilidade (Playwright)

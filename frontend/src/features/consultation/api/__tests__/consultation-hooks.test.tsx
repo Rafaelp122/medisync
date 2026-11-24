@@ -1,8 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import type React from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  handleAssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPost,
+  handleChamarProximoPacienteApiV1FilaChamarProximoPost,
+  handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost,
+  handleFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePost,
+  handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost,
+  handleLogoutApiV1AuthLogoutPost,
+  handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet,
+  handleSalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPost,
+  handleValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost,
+} from "@/api/generated/msw.gen";
 import { clearAccessToken, setAccessToken } from "@/lib/auth-token";
 import { saveStoredDoctorSession } from "@/lib/session-storage";
 import { server } from "@/mocks/server";
@@ -37,10 +48,15 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
     queryClient.clear();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+    clearAccessToken();
+  });
+
   it("HK-CONS-01: useChamarProximo adquire paciente da fila virtual", async () => {
     server.use(
-      http.post("*/api/v1/fila/chamar-proximo", () => {
-        return HttpResponse.json({
+      handleChamarProximoPacienteApiV1FilaChamarProximoPost({
+        body: {
           alocado: true,
           atendimento_id: MOCK_ATENDIMENTO_ID,
           paciente_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
@@ -49,7 +65,8 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
           status: "EM_ATENDIMENTO",
           chamada_iniciada_em: "2026-11-01T12:00:00Z",
           ttl_segundos: 900,
-        });
+          mensagem: "Paciente alocado com sucesso.",
+        },
       }),
     );
 
@@ -63,14 +80,14 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
   it("HK-CONS-02: useLiveKitToken emite token WebRTC SFU assinado", async () => {
     server.use(
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/livekit/token`, () => {
-        return HttpResponse.json({
+      handleGenerateTeleconsultaRoomTokenApiV1ConsultationsAtendimentoIdLivekitTokenPost({
+        body: {
           token: "fake-jwt-livekit-token",
-          room_name: "atend_123",
+          room_name: `atend_${MOCK_ATENDIMENTO_ID}`,
           participant_identity: `medico_${MOCK_MEDICO_ID}`,
           server_url: "wss://livekit.medisync.local",
           expires_in: 3600,
-        });
+        },
       }),
     );
 
@@ -92,13 +109,13 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
   it("HK-CONS-03: useProntuario carrega prontuário e histórico clínico", async () => {
     server.use(
-      http.get(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/prontuario`, () => {
-        return HttpResponse.json({
+      handleObterProntuarioProtegidoApiV1ConsultationsAtendimentoIdProntuarioGet({
+        body: {
           atendimento_id: MOCK_ATENDIMENTO_ID,
           is_finalizado: false,
           evolucao: null,
           documentos: [],
-        });
+        },
       }),
     );
 
@@ -113,8 +130,8 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
   it("HK-CONS-04: useSalvarSoap persiste evolução clínica SOAP", async () => {
     server.use(
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/soap`, () => {
-        return HttpResponse.json({
+      handleSalvarEvolucaoSoapApiV1ConsultationsAtendimentoIdSoapPost({
+        body: {
           id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b30",
           atendimento_id: MOCK_ATENDIMENTO_ID,
           medico_id: MOCK_MEDICO_ID,
@@ -124,7 +141,7 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
           conduta: "Prescrito Amoxicilina.",
           registrado_em: "2026-11-01T12:05:00Z",
           is_finalizado: false,
-        });
+        },
       }),
     );
 
@@ -144,10 +161,9 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
   it("HK-CONS-05: usePrescricaoValidator valida medicamento contra Portaria 344/98", async () => {
     server.use(
-      http.post(
-        `*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/prescriptions/validate`,
+      handleValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost(
         async ({ request }) => {
-          const body = (await request.json()) as { medicamento: string };
+          const body = await request.json();
           if (body.medicamento.toLowerCase().includes("zolpidem")) {
             return HttpResponse.json(
               {
@@ -158,7 +174,7 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
                 code: "PRESCRICAO_FISICA_OBRIGATORIA",
               },
               { status: 422 },
-            );
+            ) as never;
           }
           return HttpResponse.json({
             status: "PERMITIDO",
@@ -186,33 +202,28 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
   it("HK-CONS-06: useEmitirDocumento e useAssinarDocumento concluem fluxo de receita ICP-Brasil", async () => {
     server.use(
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/documents`, () => {
-        return HttpResponse.json(
-          {
-            id: MOCK_DOC_ID,
-            atendimento_id: MOCK_ATENDIMENTO_ID,
-            medico_id: MOCK_MEDICO_ID,
-            tipo_documento: "RECEITA_SIMPLES",
-            chave_s3: "prescricoes/doc.pdf",
-            is_finalizado: false,
-            itens: [],
-          },
-          { status: 201 },
-        );
-      }),
-      http.post(
-        `*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/documents/${MOCK_DOC_ID}/sign`,
-        () => {
-          return HttpResponse.json({
-            documento_id: MOCK_DOC_ID,
-            tipo_documento: "RECEITA_SIMPLES",
-            sha256_hash: "abcd1234ef5678",
-            assinado_em: "2026-11-01T12:10:00Z",
-            tamanho_bytes: 10240,
-            status: "ASSINADO",
-          });
+      handleEmitirDocumentoClinicoApiV1ConsultationsAtendimentoIdDocumentsPost({
+        status: 201,
+        body: {
+          id: MOCK_DOC_ID,
+          atendimento_id: MOCK_ATENDIMENTO_ID,
+          medico_id: MOCK_MEDICO_ID,
+          tipo_documento: "RECEITA_SIMPLES",
+          chave_s3: "prescricoes/doc.pdf",
+          is_finalizado: false,
+          itens: [],
         },
-      ),
+      }),
+      handleAssinarDocumentoApiV1ConsultationsAtendimentoIdDocumentsDocumentoIdSignPost({
+        body: {
+          documento_id: MOCK_DOC_ID,
+          tipo_documento: "RECEITA_SIMPLES",
+          sha256_hash: "abcd1234ef5678",
+          assinado_em: "2026-11-01T12:10:00Z",
+          tamanho_bytes: 10240,
+          status: "ASSINADO",
+        },
+      }),
     );
 
     const { result: emitirResult } = renderHook(() => useEmitirDocumento(MOCK_ATENDIMENTO_ID), {
@@ -250,13 +261,13 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
 
   it("HK-CONS-07: useFinalizarConsulta respeita imutabilidade e telemetria (RN06)", async () => {
     server.use(
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/finalize`, () => {
-        return HttpResponse.json({
+      handleFinalizarConsultaApiV1ConsultationsAtendimentoIdFinalizePost({
+        body: {
           status: "FINALIZADO",
           atendimento_id: MOCK_ATENDIMENTO_ID,
           is_finalizado: true,
           mensagem: "Consulta finalizada com sucesso.",
-        });
+        },
       }),
     );
 
@@ -290,8 +301,8 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
     await waitFor(() => expect(liveResult.current.isError).toBe(true));
 
     server.use(
-      http.post(`*/api/v1/consultations/${MOCK_ATENDIMENTO_ID}/prescriptions/validate`, () =>
-        HttpResponse.json({ status: "PERMITIDO" }),
+      handleValidarPrescricaoMedicamentoApiV1ConsultationsAtendimentoIdPrescriptionsValidatePost(
+        () => HttpResponse.json({ status: "PERMITIDO" } as never),
       ),
     );
     const { result: prescResult } = renderHook(() => usePrescricaoValidator(MOCK_ATENDIMENTO_ID), {
@@ -304,7 +315,7 @@ describe("Consultation API Hooks (US-09, US-10, RF-07, RN06)", () => {
   it("HK-CONS-09: useDoctorLogout revoga sessão no backend e limpa storage + queryClient", async () => {
     const logoutSpy = vi.fn();
     server.use(
-      http.post("*/api/v1/auth/logout", () => {
+      handleLogoutApiV1AuthLogoutPost(() => {
         logoutSpy();
         return new HttpResponse(null, { status: 204 });
       }),

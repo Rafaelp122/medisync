@@ -2,7 +2,6 @@
 
 import asyncio
 from collections.abc import AsyncGenerator, Callable
-from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -18,6 +17,7 @@ from src.core.database import get_session_factory
 from src.core.valkey import close_valkey_pool
 from src.main import app
 
+from tests.doubles import FakeAsyncSession
 from tests.helpers import (
     auth_headers,
 )
@@ -74,15 +74,9 @@ def authed_client_factory() -> AuthedClientFactory:
 
 
 @pytest.fixture
-def mock_db_session() -> AsyncMock:
-    """Provide a strictly typed AsyncMock of AsyncSession for fast unit tests."""
-    session = AsyncMock(spec=AsyncSession)
-    session.add = MagicMock()
-    session.flush = AsyncMock()
-    session.commit = AsyncMock()
-    session.refresh = AsyncMock()
-    session.execute = AsyncMock()
-    return session
+def fake_db_session() -> FakeAsyncSession:
+    """Provide an in-memory FakeAsyncSession for fast unit tests."""
+    return FakeAsyncSession()
 
 
 @pytest.fixture

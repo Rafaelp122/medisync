@@ -4,7 +4,7 @@
 
 ## Contexto
 
-O Pronto Atendimento Virtual (PA Virtual) do MediSync Express opera um ciclo assistencial crítico que conecta múltiplos domínios de negócio sob requisitos rigorosos de disponibilidade, governança clínica e conformidade legal (Resoluções CFM nº 2.314/2022 e CFM nº 2.299/2021, além da LGPD). Quando um paciente busca socorro na plataforma, sua sessão transita sequencialmente por cinco fronteiras modulares independentes: acolhimento e classificação de risco, admissão com elegibilidade em fila, alocação médica sem concorrência destrutiva, teleconsulta com prontuário estruturado e emissão documental com assinatura digital em nuvem.
+O Pronto Atendimento Virtual (PA Virtual) do MediSync Express opera um ciclo assistencial crítico que conecta múltiplos domínios de negócio sob requisitos rigorosos de disponibilidade, governança clínica e conformidade legal (Resoluções CFM nº 2.314/2022 e CFM nº 2.299/2021, além da LGPD). Quando um paciente busca socorro na plataforma, sua sessão transita sequencialmente por cinco fronteiras modulares independentes: acolhimento e classificação de risco, admissão direta 100% SUS em fila, alocação médica sem concorrência destrutiva, teleconsulta com prontuário estruturado e emissão documental com assinatura digital em nuvem.
 
 Este tutorial adota a metodologia Diátaxis orientada ao aprendizado prático: guiamos o desenvolvedor passo a passo pela simulação e inspeção de cada transição de estado da jornada clínica completa. Você aprenderá como os módulos colaboram por meio de eventos, comandos e portas abstratas, comprovando o funcionamento fim a fim através de baterias executáveis de testes de integração.
 
@@ -88,7 +88,7 @@ Após o diagnóstico, o médico prescreve medicamentos e sela o atendimento com 
 - Spec: `docs/adrs/ADR-001-Hexagonal-Pragmatico-Modelos-Ricos-Protocols-e-Tach.md`
 - Spec: `docs/adrs/ADR-002-Alocacao-Atomica-Valkey-Lua.md`
 - Spec: `docs/adrs/ADR-006-Assinatura-Digital-ICP-Brasil-Nuvem-PSC.md`
-- Prova viva: `tests/integration/test_admissao_integrada_flow.py:test_admissao_integrada_persists_both_models_and_enqueues_arq_job`
+- Prova viva: `tests/integration/test_admissao_integrada_flow.py:test_admissao_integrada_persists_both_models_and_ingests_zset`
 - Prova viva: `tests/integration/test_admissao_integrada_flow.py:test_admissao_integrada_emergencia_samu_dispatches_alert_and_blocks_db`
 - Prova viva: `tests/integration/test_lua_scripts.py:test_alocar_chamada_adr002_scenarios`
 - Prova viva: `tests/integration/test_ring_timeout_flow.py:test_alocar_chamada_schedules_arq_job_in_valkey`
@@ -115,8 +115,8 @@ Cada teste atua como prova viva de uma etapa crítica da teleconsulta:
 
 1. **Admissão e Fila (`test_admissao_integrada_flow.py`):**
    - Comprova a persistência atômica das entidades relacionais `Atendimento` e `Triagem`.
-   - Verifica o agendamento do job ARQ e a promoção do atendimento para `APTO_PARA_CHAMADA`.
-   - Inspeciona a presença do score 64-bit ordenado no ZSET do Valkey.
+   - Verifica a admissão direta em `APTO_PARA_CHAMADA` sem dependência de worker assíncrono de elegibilidade.
+   - Inspeciona a presença do score 64-bit ordenado no ZSET `fila:aptos` do Valkey.
 
 2. **Salvaguarda SAMU (`test_admissao_integrada_flow.py`):**
    - Comprova que sintomas críticos disparam o adaptador de notificação do SAMU 192.

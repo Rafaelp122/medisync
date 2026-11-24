@@ -21,6 +21,9 @@ from src.core.errors import ConflictError, NotFoundError, ValidationError
 from src.core.uuid7 import uuid7
 from src.modules.ambulatory.application.dtos import BpaRegistroDetalheDTO
 from src.modules.ambulatory.application.ports.bpa_directory_port import BpaDirectoryPort
+from src.modules.auth.application.ports.active_attendance_lookup_port import (
+    ActiveAttendanceLookupPort,
+)
 from src.modules.auth.application.ports.password_hasher_port import PasswordHasherPort
 from src.modules.auth.application.ports.patient_credential_repository_port import (
     PatientCredentialRepositoryPort,
@@ -30,6 +33,7 @@ from src.modules.auth.infrastructure.valkey_challenge_store import (
     InMemoryChallengeStore,
 )
 from src.modules.consultation.application.ports.atendimento_reader_port import (
+    AtendimentoHistoricoDTO,
     AtendimentoReaderPort,
     AtendimentoResumoDTO,
 )
@@ -47,8 +51,28 @@ from src.modules.identity.application.ports.identity_reader_port import (
 from src.modules.identity.application.ports.identity_writer_port import (
     IdentityWriterPort,
 )
+from src.modules.queue.application.dtos import (
+    AdmissaoAtendimentoCommand,
+    AdmissaoAtendimentoResult,
+    AdquirirProximoPacienteCommand,
+    AlocacaoChamadaResult,
+    CancelarAtendimentoResult,
+    PioraClinicaInput,
+    PioraClinicaResult,
+    PosicaoFilaResult,
+    RegularizacaoFilaCommand,
+    RegularizacaoFilaResult,
+)
 from src.modules.queue.application.ports.allocation_port import AlocacaoCodigo
+from src.modules.queue.application.ports.paciente_ausente_notifier import (
+    PacienteAusenteEvent,
+    PacienteAusenteNotifierPort,
+)
 from src.modules.queue.application.ports.queue_engine_port import QueueEnginePort
+from src.modules.queue.application.ports.queue_store_port import (
+    AtendimentoHistoricoQueueDTO,
+    AtendimentoSnapshotDTO,
+)
 from src.modules.queue.application.ports.shift_policy_reader_port import (
     ShiftPolicyDTO,
     ShiftPolicyReaderPort,
@@ -280,15 +304,30 @@ class FakeAsyncSession:
             raise
 
 
+class FakeAsyncSessionFactory:
+    """In-memory async_sessionmaker double yielding a scripted FakeAsyncSession."""
+
+    def __init__(self, session: FakeAsyncSession) -> None:
+        self._session = session
+
+    @asynccontextmanager
+    async def __call__(self) -> AsyncGenerator[FakeAsyncSession, None]:
+        yield self._session
+
+
 class FakePubSub:
     """Thread-safe in-memory Pub/Sub double for forward_pubsub_to_websocket."""
 
     def __init__(self, queues: dict[str, queue_module.Queue[str]]) -> None:
         self._queues = queues
         self._channel: str | None = None
+        self.subscribed_channels: list[str] = []
+        self.unsubscribed_channels: list[str] = []
+        self.closed: bool = False
 
     async def subscribe(self, channel: str) -> None:
         self._channel = channel
+        self.subscribed_channels.append(channel)
         if channel not in self._queues:
             self._queues[channel] = queue_module.Queue()
 
@@ -304,10 +343,49 @@ class FakePubSub:
             yield {"type": "message", "data": data}
 
     async def unsubscribe(self, channel: str) -> None:
-        return None
+        self.unsubscribed_channels.append(channel)
 
     async def aclose(self) -> None:
-        return None
+        self.closed = True
+
+
+class FakeWebSocket:
+    """In-memory FastAPI WebSocket double for forward_pubsub_to_websocket tests."""
+
+    def __init__(
+        self,
+        *,
+        incoming_messages: Sequence[dict[str, Any]] = (),
+        on_send_json: Callable[[dict[str, Any]], None] | None = None,
+        on_send_text: Callable[[str], None] | None = None,
+    ) -> None:
+        self.accepted: bool = False
+        self.sent_json: list[dict[str, Any]] = []
+        self.sent_text: list[str] = []
+        self._incoming: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        for msg in incoming_messages:
+            self._incoming.put_nowait(msg)
+        self._on_send_json = on_send_json
+        self._on_send_text = on_send_text
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def send_json(self, data: dict[str, Any]) -> None:
+        self.sent_json.append(data)
+        if self._on_send_json is not None:
+            self._on_send_json(data)
+
+    async def send_text(self, data: str) -> None:
+        self.sent_text.append(data)
+        if self._on_send_text is not None:
+            self._on_send_text(data)
+
+    def push_disconnect(self) -> None:
+        self._incoming.put_nowait({"type": "websocket.disconnect"})
+
+    async def receive(self) -> dict[str, Any]:
+        return await self._incoming.get()
 
 
 class FakePipeline:
@@ -370,12 +448,27 @@ class FakePipeline:
 class FakeValkey:
     """Minimal Valkey double supporting pubsub, sorted sets, locks, and pipelines."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        ping_result: bool = True,
+        ping_error: Exception | None = None,
+        info_sections: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
         self._queues: dict[str, queue_module.Queue[str]] = {}
         self._zsets: dict[str, dict[str, float]] = {}
         self._kv: dict[str, Any] = {}
         self._ttl: dict[str, int] = {}
         self._sets: dict[str, set[str]] = {}
+        self._ping_result = ping_result
+        self._ping_error = ping_error
+        self._info_sections: dict[str, dict[str, Any]] = dict(info_sections or {})
+        self.closed: bool = False
+        self.aclose_calls: int = 0
+        self.publish_calls: list[tuple[str, str]] = []
+        self.set_calls: list[tuple[str, Any, int | None]] = []
+        self.exists_calls: list[tuple[str, ...]] = []
+        self.last_pubsub: FakePubSub | None = None
 
     def delete_sync(self, *keys: str) -> int:
         deleted = 0
@@ -453,12 +546,16 @@ class FakeValkey:
         return self.delete_sync(*names)
 
     async def exists(self, *names: str) -> int:
+        self.exists_calls.append(names)
         return self.exists_sync(*names)
 
     async def set(self, name: str, value: Any, *args: Any, **kwargs: Any) -> bool:
+        ex_raw = kwargs.get("ex")
+        ex_val = int(ex_raw) if ex_raw is not None else None
+        self.set_calls.append((name, value, ex_val))
         stored = self.set_sync(name, value, nx=bool(kwargs.get("nx", False)))
-        if stored and "ex" in kwargs and kwargs["ex"] is not None:
-            self._ttl[name] = int(kwargs["ex"])
+        if stored and ex_val is not None:
+            self._ttl[name] = ex_val
         return stored
 
     async def ttl(self, name: str) -> int:
@@ -501,13 +598,28 @@ class FakeValkey:
         return set(self._sets.get(name, set()))
 
     def pubsub(self) -> FakePubSub:
-        return FakePubSub(self._queues)
+        ps = FakePubSub(self._queues)
+        self.last_pubsub = ps
+        return ps
 
     async def publish(self, channel: str, message: str) -> int:
+        self.publish_calls.append((channel, message))
         if channel not in self._queues:
             self._queues[channel] = queue_module.Queue()
         self._queues[channel].put(message)
         return 1
+
+    async def ping(self) -> bool:
+        if self._ping_error is not None:
+            raise self._ping_error
+        return self._ping_result
+
+    async def info(self, section: str | None = None) -> dict[str, Any]:
+        return dict(self._info_sections.get(section or "", {}))
+
+    async def aclose(self) -> None:
+        self.closed = True
+        self.aclose_calls += 1
 
     async def zadd(
         self,
@@ -796,8 +908,11 @@ class FakeAtendimentoReader(AtendimentoReaderPort):
         resumo: AtendimentoResumoDTO | None = None,
         error_obter_resumo: Exception | None = None,
         error_concluir_atendimento: Exception | None = None,
+        *,
+        resumos: dict[UUID, AtendimentoResumoDTO] | None = None,
     ) -> None:
         self.resumo = resumo
+        self._resumos: dict[UUID, AtendimentoResumoDTO] = dict(resumos or {})
         self.error_obter_resumo = error_obter_resumo
         self.error_concluir_atendimento = error_concluir_atendimento
         self.chamada_atendida = False
@@ -812,7 +927,7 @@ class FakeAtendimentoReader(AtendimentoReaderPort):
             raise self.error_obter_resumo
         if self.resumo is not None and self.resumo.atendimento_id == atendimento_id:
             return self.resumo
-        return None
+        return self._resumos.get(atendimento_id)
 
     async def concluir_atendimento(
         self,
@@ -844,6 +959,28 @@ class FakeAtendimentoReader(AtendimentoReaderPort):
                 chamada_iniciada_em=self.resumo.chamada_iniciada_em,
                 criado_em=self.resumo.criado_em,
             )
+
+
+class FakeHistoricoAtendimentoReader(FakeAtendimentoReader):
+    """In-memory double implementing AtendimentoReaderPort and Historico port."""
+
+    def __init__(
+        self,
+        resumo: AtendimentoResumoDTO | None = None,
+        *,
+        resumos: dict[UUID, AtendimentoResumoDTO] | None = None,
+        historico: Sequence[AtendimentoHistoricoDTO] = (),
+    ) -> None:
+        super().__init__(resumo=resumo, resumos=resumos)
+        self._historico: list[AtendimentoHistoricoDTO] = list(historico)
+        self.chamadas_historico: list[UUID] = []
+
+    async def listar_historico_paciente(
+        self,
+        paciente_id: UUID,
+    ) -> list[AtendimentoHistoricoDTO]:
+        self.chamadas_historico.append(paciente_id)
+        return [item for item in self._historico if item.paciente_id == paciente_id]
 
 
 def _matches_cadsus_candidate(
@@ -2015,3 +2152,134 @@ class FakeCloudPSCOAuth2Client:
             digest_bytes, digest_algorithm="sha256", use_pades=True
         )
         return base64.b64encode(cast("bytes", cms_obj.dump())).decode("ascii")
+
+
+def _resolve_fake_outcome[T](outcome: T | BaseException | None, method_name: str) -> T:
+    if isinstance(outcome, BaseException):
+        raise outcome
+    if outcome is None:
+        raise AssertionError(
+            f"FakeFilaService.{method_name} chamado sem resultado configurado."
+        )
+    return outcome
+
+
+class FakePacienteAusenteNotifier(PacienteAusenteNotifierPort):
+    """Canonical in-memory PacienteAusenteNotifierPort double."""
+
+    def __init__(self) -> None:
+        self.events: list[PacienteAusenteEvent] = []
+
+    async def emitir_paciente_ausente(self, event: PacienteAusenteEvent) -> None:
+        self.events.append(event)
+
+
+class FakeActiveAttendanceLookup(ActiveAttendanceLookupPort):
+    """Canonical in-memory ActiveAttendanceLookupPort double."""
+
+    def __init__(self, active_map: dict[UUID, UUID] | None = None) -> None:
+        self._active_map = dict(active_map or {})
+        self.calls: list[UUID] = []
+
+    async def buscar_atendimento_ativo_paciente(
+        self,
+        paciente_id: UUID,
+    ) -> UUID | None:
+        self.calls.append(paciente_id)
+        return self._active_map.get(paciente_id)
+
+
+class FakeFilaService:
+    """Canonical in-memory FilaService and QueueStorePort test double."""
+
+    def __init__(
+        self,
+        *,
+        admitir_result: AdmissaoAtendimentoResult | BaseException | None = None,
+        adquirir_result: AlocacaoChamadaResult | BaseException | None = None,
+        posicao_result: PosicaoFilaResult | BaseException | None = None,
+        cancelar_result: CancelarAtendimentoResult | BaseException | None = None,
+        piora_result: PioraClinicaResult | BaseException | None = None,
+        regularizar_result: RegularizacaoFilaResult | BaseException | None = None,
+        snapshots: dict[UUID, AtendimentoSnapshotDTO] | None = None,
+        historico: Sequence[AtendimentoHistoricoQueueDTO] = (),
+    ) -> None:
+        self.admitir_result = admitir_result
+        self.adquirir_result = adquirir_result
+        self.posicao_result = posicao_result
+        self.cancelar_result = cancelar_result
+        self.piora_result = piora_result
+        self.regularizar_result = regularizar_result
+        self.snapshots: dict[UUID, AtendimentoSnapshotDTO] = dict(snapshots or {})
+        self.historico: list[AtendimentoHistoricoQueueDTO] = list(historico)
+        self.admitir_calls: list[tuple[AdmissaoAtendimentoCommand, bool]] = []
+        self.adquirir_calls: list[AdquirirProximoPacienteCommand] = []
+        self.posicao_calls: list[UUID] = []
+        self.cancelar_calls: list[tuple[UUID, str]] = []
+        self.piora_calls: list[PioraClinicaInput] = []
+        self.regularizar_calls: list[RegularizacaoFilaCommand] = []
+        self.buscar_calls: list[UUID] = []
+        self.historico_calls: list[UUID] = []
+
+    async def admitir_paciente(
+        self,
+        command: AdmissaoAtendimentoCommand,
+        *,
+        raise_on_emergency: bool = True,
+    ) -> AdmissaoAtendimentoResult:
+        self.admitir_calls.append((command, raise_on_emergency))
+        return _resolve_fake_outcome(self.admitir_result, "admitir_paciente")
+
+    async def adquirir_proximo_paciente(
+        self,
+        command: AdquirirProximoPacienteCommand,
+    ) -> AlocacaoChamadaResult | None:
+        self.adquirir_calls.append(command)
+        if isinstance(self.adquirir_result, BaseException):
+            raise self.adquirir_result
+        return self.adquirir_result
+
+    async def obter_posicao_e_estimativa(
+        self,
+        atendimento_id: UUID,
+    ) -> PosicaoFilaResult:
+        self.posicao_calls.append(atendimento_id)
+        return _resolve_fake_outcome(self.posicao_result, "obter_posicao_e_estimativa")
+
+    async def cancelar_atendimento_paciente(
+        self,
+        atendimento_id: UUID,
+        motivo: str = "Desistência voluntária pelo paciente",
+    ) -> CancelarAtendimentoResult:
+        self.cancelar_calls.append((atendimento_id, motivo))
+        return _resolve_fake_outcome(
+            self.cancelar_result, "cancelar_atendimento_paciente"
+        )
+
+    async def processar_piora_clinica(
+        self,
+        input_data: PioraClinicaInput,
+    ) -> PioraClinicaResult:
+        self.piora_calls.append(input_data)
+        return _resolve_fake_outcome(self.piora_result, "processar_piora_clinica")
+
+    async def regularizar_atendimento(
+        self,
+        command: RegularizacaoFilaCommand,
+    ) -> RegularizacaoFilaResult:
+        self.regularizar_calls.append(command)
+        return _resolve_fake_outcome(self.regularizar_result, "regularizar_atendimento")
+
+    async def buscar_atendimento(
+        self,
+        atendimento_id: UUID,
+    ) -> AtendimentoSnapshotDTO | None:
+        self.buscar_calls.append(atendimento_id)
+        return self.snapshots.get(atendimento_id)
+
+    async def listar_historico_paciente(
+        self,
+        paciente_id: UUID,
+    ) -> list[AtendimentoHistoricoQueueDTO]:
+        self.historico_calls.append(paciente_id)
+        return [item for item in self.historico if item.paciente_id == paciente_id]

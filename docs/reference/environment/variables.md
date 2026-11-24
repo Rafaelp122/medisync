@@ -66,7 +66,7 @@ As variáveis `MINIO_*` pertencem exclusivamente à infraestrutura de desenvolvi
 | `MINIO_USE_SSL` | `docker-compose.yml` | `false` em dev local |
 
 Cobertura do `.env.example`: 3 (core) + 6 (postgres) + 3 (valkey) + 5 (livekit) + 8 (minio compose) + 3 (frontend vite) = 28 vars. 17 são lidas pelo `CommonSettings` da aplicação; as 8 de MinIO são consumidas exclusivamente pelo Docker Compose local; as 3 `VITE_*` são consumidas pelo cliente web frontend.
-Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3_*`, `JWT_*`, `PSC_*`) usam defaults sem precisar exportar em dev; documentar aqui só quando virarem obrigatórios.
+Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3_*`, `JWT_*`, `PSC_*`) usam defaults sem precisar exportar em dev; documentar aqui só quando virarem obrigatórios. *(Nota pós-Issue #161: configurações especulativas `S3_PRESIGNED_EXPIRATION_SECONDS`, `PSC_CLIENT_ID` e `PSC_CLIENT_SECRET` foram podadas de `CommonSettings`.)*
 
 ### 6. Seletores de Adaptadores e Backends (Opcionais)
 
@@ -77,7 +77,7 @@ Extras só em `src/core/config.py` (pool `DB_*`, `VALKEY_*` tuning, `ARQ_*`, `S3
 | `VALIDATION_RATE_LIMIT_BACKEND` | `src/core/config.py:CommonSettings.VALIDATION_RATE_LIMIT_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona validador na consulta |
 | `SIGNED_CACHE_BACKEND` | `src/core/config.py:CommonSettings.SIGNED_CACHE_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona cache distribuído de documentos assinados no módulo consultation |
 | `TELEMETRY_CACHE_BACKEND` | `src/core/config.py:CommonSettings.TELEMETRY_CACHE_BACKEND` | `valkey`, `memory` | `valkey` | Seleciona cache na telemetria |
-| `SAMU_WEBHOOK_URL` | `src/core/config.py:CommonSettings.SAMU_WEBHOOK_URL` | URL HTTP(S) | `""` | Despacho de emergência 192 em triagem |
+| `SAMU_WEBHOOK_URL` | `src/core/config.py:CommonSettings.SAMU_WEBHOOK_URL` | URL HTTP(S) ou `None` | `None` | Despacho de emergência 192 em triagem |
 | `NOTIFICATION_PROVIDER` | `src/core/config.py:CommonSettings.NOTIFICATION_PROVIDER` | `console`, `fake`, `noop` | `console` | Adaptador concreto de mensageria SMS/WhatsApp |
 | `NOTIFICATION_RATE_LIMIT_CAPACITY` | `src/core/config.py:CommonSettings.NOTIFICATION_RATE_LIMIT_CAPACITY` | Inteiro $\ge 1$ | `5` | Capacidade máxima de tokens (burst) por telefone |
 | `NOTIFICATION_RATE_LIMIT_REFILL_RATE` | `src/core/config.py:CommonSettings.NOTIFICATION_RATE_LIMIT_REFILL_RATE` | Float $\ge 0.0$ | `0.05` | Reposição de tokens por segundo (~1 a cada 20s) |

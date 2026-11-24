@@ -6,7 +6,7 @@
 
 A telemedicina no Brasil é estritamente regulamentada pelas Resoluções CFM nº 1.821/2007 e CFM nº 2.314/2022, bem como pela Lei Geral de Proteção de Dados (LGPD, Art. 11, dados sensíveis de saúde). Toda transição de estado clínico, alocação de plantonista, admissão de paciente, emissão ou assinatura de documento e encerramento de teleconsulta deve ser registrada em trilha imutável (*append-only*), vinculada à transação da ação clínica antes do commit.
 
-Este catálogo define a taxonomia canônica dos 20 eventos clínicos e operacionais do MediSync Express distribuídos entre os módulos `auth`, `queue`, `consultation` e `ambulatory`.
+Este catálogo define a taxonomia canônica dos 21 eventos clínicos e operacionais do MediSync Express distribuídos entre os módulos `auth`, `queue`, `consultation` e `ambulatory`.
 
 ## Conceito
 
@@ -16,11 +16,11 @@ Este catálogo define a taxonomia canônica dos 20 eventos clínicos e operacion
 2. **Imutabilidade Física:** A tabela `audit_events` é protegida pela trigger de banco de dados `trg_prevent_audit_mutation`, que bloqueia comandos `UPDATE` e `DELETE` em tempo de execução com exceção RestrictViolation.
 3. **Não-Repúdio e Proveniência:** Cada evento registra o identificador do ator (`ator_id`), tipo (`ator_tipo`), papel funcional (`ator_papel`), hash do consentimento (`tcle_hash`), transição de estado (`estado_anterior` e `novo_estado`) e payload contextual.
 
-### Taxonomia Canônica dos 20 Eventos
+### Taxonomia Canônica dos 21 Eventos
 
 | Tipo de Evento | Módulo | Ator Canônico | Papel | Descrição Clínica |
 |---|---|---|---|---|
-| `LOGIN_MFA_SUCESSO` | `auth` | `PROFISSIONAL` | `MEDICO` | Autenticação com sucesso via segundo fator obrigatório (TOTP) para médicos ou gestores (ADR-012). |
+| `LOGIN_MFA_SUCESSO` | `auth` | `PROFISSIONAL` | `MEDICO` | Autenticação com sucesso via segundo fator obrigatório (TOTP) para médicos ou gestores (ADR-012). *Nota: Evento reservado/planejado no catálogo; no presente estágio, `AuthService.verificar_mfa_login` (`src/modules/auth/application/services/auth_service.py`) ainda não emite registro em `audit_events`.* |
 | `ADMISSAO_PACIENTE` | `queue` | `PACIENTE` | `PACIENTE` | Admissão pós-triagem clínica na fila virtual com registro de protocolo e prioridade ACR/SUS. |
 | `ELEGIBILIDADE_CONFIRMADA` | `queue` | `SISTEMA` | `SISTEMA` | Confirmação de qualificação cadastral SUS (CADSUS/CPF), habilitando chamada médica. |
 | `CHAMADA_INICIADA` | `queue` | `PROFISSIONAL` | `MEDICO` | Plantonista aciona paciente; início da janela de ring de 45 segundos. |
@@ -40,6 +40,7 @@ Este catálogo define a taxonomia canônica dos 20 eventos clínicos e operacion
 | `PASSKEY_REGISTRADA` | `auth` | `PACIENTE` | `PACIENTE` | Cadastro de credencial WebAuthn / Passkey FIDO2 vinculada ao prontuário do paciente (US-14). |
 | `LOGIN_PASSKEY_SUCESSO` | `auth` | `PACIENTE` | `PACIENTE` | Autenticação passwordless em 1 toque via asserção Passkey sem SMS OTP (US-14). |
 | `PRODUCAO_AMBULATORIAL_CONSOLIDADA` | `ambulatory` | `SISTEMA` | `WORKER_ARQ` | Consolidação pós-consulta em lote BPA-I / SISAB sob SIGTAP 03.01.01.025-0 e CNES 160/006. |
+| `PRODUCAO_PENDENCIA_CADASTRAL` | `ambulatory` | `SISTEMA` | `WORKER_ARQ` | Sinalização de pendência cadastral (CNS/CPF ou data de nascimento ausentes) detectada durante a consolidação ambulatorial (`PENDENCIA_CADASTRAL`). |
 
 ### Contrato de Dados do Evento
 
@@ -52,7 +53,7 @@ O schema da trilha de auditoria é normalizado conforme o modelo `AuditEvent`:
 - `atendimento_id`: UUIDv7 correlacionando eventos clínicos do atendimento (ou `null` para eventos transversais/administrativos).
 - `estado_anterior` / `novo_estado`: Transições de status da máquina de estados clínica.
 - `tcle_hash`: Hash SHA-256 (64 hex) do Termo de Consentimento Livre e Esclarecido.
-- `payload`: JSONB contendo metadados específicos do evento (ex.: `triagem_id`, `cid10`, `sha256_hash`, `chave_s3`, `codigo_autorizacao`, `sigtap`, `cnes`, `diff_forense`, `duracao_segundos`, `justificativa`, `justificativa_aceita`).
+- `payload`: JSONB contendo metadados específicos do evento (ex.: `triagem_id`, `cid10`, `sha256_hash`, `chave_s3`, `codigo_autorizacao`, `codigo_sigtap`, `cnes`, `competencia`, `motivo`, `diff_forense`, `duracao_segundos`, `justificativa`, `justificativa_aceita`).
 - `ip_origem`: Endereço IP do solicitante para rastreabilidade de acesso forense.
 
 ### Especificação dos Payloads Forenses Críticos

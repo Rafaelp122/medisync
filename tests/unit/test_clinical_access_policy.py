@@ -1,7 +1,6 @@
 """Unit tests for Tier 3 Contextual Clinical ABAC/ReBAC policy (CFM 2.314/2022)."""
 
-from unittest.mock import AsyncMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from src.core.errors import ForbiddenError, NotFoundError
@@ -12,33 +11,33 @@ from src.modules.consultation.application.ports.atendimento_reader_port import (
     AtendimentoResumoDTO,
 )
 
+from tests.doubles import FakeAtendimentoReader
+
 
 def _make_reader(
     atend_id: object = None,
     medico_id: object = None,
     status: str = "EM_ATENDIMENTO",
     tcle_hash: str | None = "a" * 64,
-) -> AsyncMock:
-    from uuid import UUID
-
+) -> FakeAtendimentoReader:
     aid = atend_id if isinstance(atend_id, UUID) else uuid4()
     mid = medico_id if isinstance(medico_id, UUID) else uuid4()
-    reader = AsyncMock()
-    reader.obter_resumo.return_value = AtendimentoResumoDTO(
-        atendimento_id=aid,
-        medico_id=mid,
-        status=status,
-        tcle_hash=tcle_hash,
-        is_terminal=status in {"CONCLUIDO", "PACIENTE_AUSENTE", "CANCELADO_PACIENTE"},
+    return FakeAtendimentoReader(
+        resumo=AtendimentoResumoDTO(
+            atendimento_id=aid,
+            medico_id=mid,
+            status=status,
+            tcle_hash=tcle_hash,
+            is_terminal=status
+            in {"CONCLUIDO", "PACIENTE_AUSENTE", "CANCELADO_PACIENTE"},
+        )
     )
-    return reader
 
 
 @pytest.mark.asyncio
 async def test_clinical_access_not_found() -> None:
     """Verify NotFoundError is raised when attendance record does not exist."""
-    reader = AsyncMock()
-    reader.obter_resumo.return_value = None
+    reader = FakeAtendimentoReader(resumo=None)
 
     with pytest.raises(NotFoundError, match="não encontrado"):
         await ClinicalAccessPolicy.validar_acesso_clinico(

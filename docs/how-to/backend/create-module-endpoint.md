@@ -84,7 +84,7 @@ Run:
 just test-fast
 ```
 
-Expected: suite verde (600+ testes unitários e de arquitetura em paralelo, 100% em memória).
+Expected: suite verde (990+ testes unitários e de arquitetura em paralelo, 100% em memória).
 
 ## Ver também
 

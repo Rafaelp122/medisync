@@ -431,23 +431,13 @@ class TestAmbulatoryProducaoAdapter:
     async def test_adapter_obtem_cnes_do_diretorio(self) -> None:
         from src.modules.consultation.application.ports.document_directory_port import (
             DadosVerificacaoDirectory,
-            DocumentDirectoryPort,
         )
         from src.modules.consultation.composition import AmbulatoryProducaoAdapter
 
+        from tests.doubles import FakeDocumentDirectory
+
         fake_session = FakeAsyncSession(results=[FakeResult(None)])
         prod_svc = ProducaoAmbulatorialService(session=fake_session)  # pyright: ignore[reportArgumentType]
-
-        class FakeDocumentDirectory(DocumentDirectoryPort):
-            def __init__(self, dados: DadosVerificacaoDirectory) -> None:
-                self._dados = dados
-
-            async def obter_dados_verificacao(
-                self,
-                medico_id: object,
-                atendimento_id: object,
-            ) -> DadosVerificacaoDirectory:
-                return self._dados
 
         fake_dados = DadosVerificacaoDirectory(
             organizacao_nome="Unidade SUS",
@@ -458,7 +448,7 @@ class TestAmbulatoryProducaoAdapter:
             paciente_cpf="111.111.111-11",
             cnes="3333333",
         )
-        fake_dir = FakeDocumentDirectory(fake_dados)
+        fake_dir = FakeDocumentDirectory(dados=fake_dados)
 
         adapter = AmbulatoryProducaoAdapter(
             producao_service=prod_svc, directory=fake_dir

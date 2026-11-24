@@ -30,7 +30,7 @@ describe("HistoryPage (/historico)", () => {
           },
           {
             atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b12",
-            status: "CANCELADO",
+            status: "CANCELADO_PACIENTE",
             prioridade_clinica: 5,
             queixa_principal: "Consulta cancelada pelo paciente",
             criado_em: "2026-11-08T09:00:00Z",
@@ -49,7 +49,7 @@ describe("HistoryPage (/historico)", () => {
             profissional_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b88",
             especialidade: "PSICOLOGIA",
             slot_inicio: "2026-11-20T10:00:00Z",
-            slot_fim: "2026-11-20T10:45:00Z",
+            slot_fim: "2026-11-20T10:50:00Z",
             status: "AGENDADO",
             observacoes: "Primeira sessão de acolhimento psicológico",
             atendimento_id: null,
@@ -75,12 +75,12 @@ describe("HistoryPage (/historico)", () => {
             profissional_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b88",
             especialidade: "PSICOLOGIA",
             slot_inicio: "2026-11-17T11:00:00Z",
-            slot_fim: "2026-11-17T11:45:00Z",
+            slot_fim: "2026-11-17T11:50:00Z",
             status: "FALTA",
             observacoes: "Paciente não compareceu",
             atendimento_id: null,
             criado_em: "2026-11-10T10:00:00Z",
-            atualizado_em: "2026-11-17T11:45:00Z",
+            atualizado_em: "2026-11-17T11:50:00Z",
           },
         ],
       }),
@@ -100,7 +100,7 @@ describe("HistoryPage (/historico)", () => {
     expect(screen.getAllByText("Psicologia")).toHaveLength(2);
     expect(screen.getByText("Nutrição")).toBeInTheDocument();
     expect(screen.getByText(/primeira sessão de acolhimento psicológico/i)).toBeInTheDocument();
-    expect(screen.getByText(/20\/11\/2026, 10:00 até 20\/11\/2026, 10:45/)).toBeInTheDocument();
+    expect(screen.getByText(/20\/11\/2026, 10:00 até 20\/11\/2026, 10:50/)).toBeInTheDocument();
     expect(screen.getByText("Concluído")).toBeInTheDocument();
     expect(screen.getByText("Falta")).toBeInTheDocument();
   });

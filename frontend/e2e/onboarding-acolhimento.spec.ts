@@ -8,6 +8,8 @@ const INITIAL_PATIENT_SESSION = {
   token: "fake-jwt-citizen-token-e2e",
 };
 
+const VALID_THREE_PART_JWT = "fake-header.fake-payload.fake-signature";
+
 test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript((sessionData) => {
@@ -15,6 +17,19 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
         window.localStorage.setItem("medisync_session", JSON.stringify(sessionData));
       }
     }, INITIAL_PATIENT_SESSION);
+
+    await page.route("**/api/v1/auth/patient/methods", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          govbr_oidc_enabled: false,
+          passkeys_enabled: true,
+          otp_enabled: true,
+          password_fallback_enabled: true,
+        }),
+      });
+    });
 
     await page.route("**/api/v1/scheduling/especialidades", async (route) => {
       await route.fulfill({
@@ -24,16 +39,16 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
       });
     });
 
-    // Intercepta rotas do backend e ViaCEP
+    // Intercepta rotas do backend e ViaCEP com contratos OpenAPI vigentes
     await page.route("**/api/v1/onboarding/fase-1", async (route) => {
       await route.fulfill({
-        status: 200,
+        status: 201,
         contentType: "application/json",
         body: JSON.stringify({
           paciente_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
           token: "fake-jwt-intake-token-e2e",
-          status: "TRIADO_AGUARDANDO_ELEGIBILIDADE",
-          mensagem: "Acolhimento e triagem realizados com sucesso.",
+          status: "APTO_PARA_CHAMADA",
+          mensagem: "Acolhimento registrado com sucesso.",
           is_novo_paciente: true,
         }),
       });
@@ -45,11 +60,13 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
         contentType: "application/json",
         body: JSON.stringify({
           atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
-          protocolo: "MED-2026-0001",
-          posicao_fila: 3,
-          previsao_minutos: 15,
-          status: "AGUARDANDO_TRIAGEM",
+          triagem_id: "018f3a5b-1111-4b2c-8b2c-018f3a5b7b2c",
+          paciente_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
+          status_atendimento: "APTO_PARA_CHAMADA",
           prioridade_clinica: 3,
+          alerta_samu_disparado: false,
+          instrucoes: null,
+          tcle_hash: "a".repeat(64),
         }),
       });
     });
@@ -59,8 +76,19 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          status: "CONCLUIDO",
-          dados_completos: true,
+          paciente_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
+          nome_completo: "Juliana Silva",
+          nome_social: null,
+          nome_mae: "Maria Silva",
+          sexo_biologico: "F",
+          cep: "01310100",
+          logradouro: "Avenida Paulista",
+          numero: "1000",
+          bairro: "Bela Vista",
+          cidade: "São Paulo",
+          estado: "SP",
+          alergias: [],
+          status: "CADASTRO_COMPLETO",
         }),
       });
     });
@@ -87,13 +115,13 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
         contentType: "application/json",
         body: JSON.stringify({
           atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
-          status: "AGUARDANDO_ATENDIMENTO",
+          status: "APTO_PARA_CHAMADA",
           posicao: 2,
-          total_na_fila: 8,
+          total_aguardando: 8,
+          tempo_estimado_segundos: 600,
           prioridade_clinica: 3,
-          nivel_acr_label: "Urgente (Amarelo)",
-          cor_acr_hex: "#EAB308",
-          tempo_estimado_minutos: 10,
+          chamada_iniciada_em: null,
+          ttl_segundos: null,
         }),
       });
     });
@@ -104,7 +132,7 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
         contentType: "application/json",
         body: JSON.stringify({
           atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
-          status: "CANCELADO",
+          status: "CANCELADO_PACIENTE",
           cancelado_em: new Date().toISOString(),
           motivo: "Desistência voluntária pelo paciente",
         }),
@@ -151,7 +179,12 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
       page.getByRole("heading", { name: /completar prontuário regulatório/i }),
     ).toBeVisible();
 
-    // Preencher dados da Fase 2
+    // Preencher dados da Fase 2 (validando <fieldset>/<legend> WCAG de Sexo Biológico)
+    const sexoGroup = page.getByRole("group", { name: /sexo biológico/i });
+    await expect(sexoGroup).toBeVisible();
+    await expect(sexoGroup.evaluate((el) => el.tagName)).resolves.toBe("FIELDSET");
+    await sexoGroup.getByRole("radio", { name: /feminino/i }).check();
+
     await page.getByLabel(/nome completo da mãe/i).fill("Maria Silva");
     await page.getByLabel(/cep/i).fill("01310100");
 
@@ -239,8 +272,8 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
   test("E2E-ONB-03: Salvaguarda SAMU 192 ao receber HTTP 422 EMERGENCIA_CRITICA_SAMU_192", async ({
     page,
   }) => {
-    // Simula backend retornando 422 de emergência médica
-    await page.route("**/api/v1/onboarding/fase-1", async (route) => {
+    // Simula backend retornando 422 de emergência médica em /fila/admissao
+    await page.route("**/api/v1/fila/admissao", async (route) => {
       await route.fulfill({
         status: 422,
         contentType: "application/json",
@@ -277,16 +310,109 @@ test.describe("Acolhimento Rápido, TCLE e Salvaguarda SAMU 192 (E2E)", () => {
     await expect(modal.getByRole("button", { name: /selecionei por engano/i })).not.toBeVisible();
   });
 
-  test("E2E-A11Y-01: Auditoria de Acessibilidade WCAG 2.1 AA na tela de Onboarding", async ({
+  test("E2E-ONB-04: Cidadão autenticado com JWT 3-partes em /triagem pula Fase 1 e preserva JWT até /fila", async ({
+    page,
+  }) => {
+    let fase1Called = false;
+    let capturedAuthHeader: string | null = null;
+
+    await page.addInitScript(
+      (sessionData) => {
+        window.localStorage.setItem("medisync_session", JSON.stringify(sessionData));
+      },
+      {
+        tipo: "otp",
+        role: "PACIENTE",
+        pacienteId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
+        token: VALID_THREE_PART_JWT,
+      },
+    );
+
+    await page.route("**/api/v1/onboarding/fase-1", async (route) => {
+      fase1Called = true;
+      await route.fulfill({ status: 500, body: "{}" });
+    });
+
+    await page.route("**/api/v1/fila/admissao", async (route) => {
+      capturedAuthHeader = route.request().headers().authorization ?? null;
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          atendimento_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
+          triagem_id: "018f3a5b-1111-4b2c-8b2c-018f3a5b7b2c",
+          paciente_id: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2c",
+          status_atendimento: "APTO_PARA_CHAMADA",
+          prioridade_clinica: 3,
+          alerta_samu_disparado: false,
+          instrucoes: null,
+          tcle_hash: "a".repeat(64),
+        }),
+      });
+    });
+
+    await page.goto("/triagem");
+
+    // Não deve exibir identificação civil nem acionar /onboarding/fase-1
+    await expect(page.getByLabel(/o que você está sentindo\?/i)).toBeVisible();
+    await expect(page.getByLabel(/nome completo/i)).toHaveCount(0);
+
+    await page.getByLabel(/o que você está sentindo\?/i).fill("Dor abdominal leve sem febre");
+    await page.getByLabel(/concordo com o termo de consentimento/i).check();
+    await page.getByRole("button", { name: /entrar na fila virtual/i }).click();
+
+    await expect(
+      page.getByRole("heading", { name: /completar prontuário regulatório/i }),
+    ).toBeVisible();
+    expect(fase1Called).toBe(false);
+    expect(capturedAuthHeader).toBe(`Bearer ${VALID_THREE_PART_JWT}`);
+
+    await page.getByRole("button", { name: /completar mais tarde/i }).click();
+    await expect(page).toHaveURL(/\/fila$/);
+
+    const sessionAfter = await page.evaluate(() =>
+      JSON.parse(window.localStorage.getItem("medisync_session") ?? "{}"),
+    );
+    expect(sessionAfter.token).toBe(VALID_THREE_PART_JWT);
+    expect(sessionAfter.token.split(".")).toHaveLength(3);
+  });
+
+  test("E2E-A11Y-01: Auditoria de Acessibilidade WCAG 2.1 AA nas Etapas 1, 2 e Fase 2 do Onboarding", async ({
     page,
   }) => {
     await page.goto("/triagem");
 
-    const accessibilityScanResults = await new AxeBuilder({ page })
+    // Etapa 1: Identificação
+    const step1Scan = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
       .analyze();
+    expect(step1Scan.violations, "Violações WCAG na Etapa 1").toEqual([]);
 
-    expect(accessibilityScanResults.violations).toEqual([]);
+    await page.getByLabel(/nome completo/i).fill("Juliana Silva");
+    await page.getByLabel(/documento de identificação \(cpf\)/i).fill("52998224725");
+    await page.getByLabel(/telefone celular/i).fill("11987654321");
+    await page.getByLabel(/data de nascimento/i).fill("1990-05-15");
+    await page.getByRole("button", { name: /continuar para triagem/i }).click();
+
+    // Etapa 2: Triagem Clínica & TCLE
+    await expect(page.getByLabel(/queixa principal/i)).toBeVisible();
+    const step2Scan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(step2Scan.violations, "Violações WCAG na Etapa 2").toEqual([]);
+
+    await page.getByLabel(/queixa principal/i).fill("Cefaleia moderada");
+    await page.getByLabel(/concordo com o termo de consentimento/i).check();
+    await page.getByRole("button", { name: /entrar na fila virtual/i }).click();
+
+    // Fase 2: Enriquecimento Regulatório (<fieldset>/<legend> de Sexo Biológico)
+    await expect(
+      page.getByRole("heading", { name: /completar prontuário regulatório/i }),
+    ).toBeVisible();
+    const fase2Scan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(fase2Scan.violations, "Violações WCAG na Fase 2").toEqual([]);
   });
 
   test("E2E-A11Y-02: Respeito estrito a prefers-reduced-motion", async ({ page }) => {

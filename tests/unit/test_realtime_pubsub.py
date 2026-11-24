@@ -1,12 +1,10 @@
 """Unit tests for realtime Pub/Sub channel naming, formatting, and forwarder."""
 
 import asyncio
-from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock, MagicMock
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import pytest
-from fastapi import WebSocketDisconnect
 from src.core.realtime import (
     forward_pubsub_to_websocket,
     publish_realtime_event,
@@ -17,6 +15,12 @@ from src.modules.consultation.application.realtime_channels import (
 from src.modules.queue.application.realtime_channels import (
     channel_queue_patient,
 )
+
+from tests.doubles import FakeValkey, FakeWebSocket
+
+if TYPE_CHECKING:
+    from fastapi import WebSocket
+    from redis.asyncio import Redis
 
 
 def test_canonical_channel_names() -> None:
@@ -33,71 +37,45 @@ def test_canonical_channel_names() -> None:
 @pytest.mark.asyncio
 async def test_publish_realtime_event() -> None:
     """Verify JSON serialization and publishing to Valkey channel."""
-    mock_valkey = AsyncMock()
-    mock_valkey.publish.return_value = 2
+    fake_valkey = FakeValkey()
 
     channel = "medisync:pubsub:test"
     payload = {"event": "TEST", "data": 123}
 
-    res = await publish_realtime_event(mock_valkey, channel, payload)
+    res = await publish_realtime_event(cast("Redis", fake_valkey), channel, payload)
 
-    assert res == 2
-    mock_valkey.publish.assert_called_once()
-    call_args = mock_valkey.publish.call_args[0]
-    assert call_args[0] == channel
-    assert '"event": "TEST"' in call_args[1]
+    assert res == 1
+    assert len(fake_valkey.publish_calls) == 1
+    published_channel, published_json = fake_valkey.publish_calls[0]
+    assert published_channel == channel
+    assert '"event": "TEST"' in published_json
 
 
 @pytest.mark.asyncio
 async def test_forward_pubsub_to_websocket_lifecycle_and_cleanup() -> None:
     """Verify message forwarding and clean unsubscription on disconnect."""
-
-    mock_valkey = MagicMock()
-    mock_pubsub = MagicMock()
-    mock_valkey.pubsub.return_value = mock_pubsub
-
-    mock_pubsub.subscribe = AsyncMock()
-    mock_pubsub.unsubscribe = AsyncMock()
-    mock_pubsub.aclose = AsyncMock()
-
-    # Generator simulating 1 pubsub message then hanging/cancelled
-    async def mock_listen() -> AsyncGenerator[dict[str, str], None]:
-        yield {"type": "message", "data": '{"event": "MSG1"}'}
-        # Wait until cancelled
-        await asyncio.sleep(10)
-
-    mock_pubsub.listen = mock_listen
-
-    mock_ws = AsyncMock()
-    mock_ws.send_json = AsyncMock()
-    mock_ws.send_text = AsyncMock()
-
-    # Simulate client disconnect on receive
-    async def mock_receive() -> dict[str, str]:
-        await asyncio.sleep(0.05)
-        raise WebSocketDisconnect()
-
-    mock_ws.receive = mock_receive
-
+    fake_valkey = FakeValkey()
     channel = "medisync:pubsub:queue:123"
     initial_payload = {"event": "CONNECTED"}
 
+    await fake_valkey.publish(channel, '{"event": "MSG1"}')
+
+    fake_ws = FakeWebSocket(
+        on_send_text=lambda _text: fake_ws.push_disconnect(),
+    )
+
     await forward_pubsub_to_websocket(
-        valkey=mock_valkey,
+        valkey=cast("Redis", fake_valkey),
         channel=channel,
-        websocket=mock_ws,
+        websocket=cast("WebSocket", fake_ws),
         initial_payload=initial_payload,
     )
 
-    # 1. Initial payload sent
-    mock_ws.send_json.assert_called_once_with(initial_payload)
-
-    # 2. Message from pubsub forwarded
-    mock_ws.send_text.assert_called_once_with('{"event": "MSG1"}')
-
-    # 3. Clean cleanup on disconnect
-    mock_pubsub.unsubscribe.assert_called_once_with(channel)
-    mock_pubsub.aclose.assert_called_once()
+    assert fake_ws.sent_json == [initial_payload]
+    assert fake_ws.sent_text == ['{"event": "MSG1"}']
+    assert fake_valkey.last_pubsub is not None
+    assert channel in fake_valkey.last_pubsub.unsubscribed_channels
+    assert fake_valkey.last_pubsub.closed is True
 
 
 @pytest.mark.asyncio
@@ -105,34 +83,15 @@ async def test_forward_pubsub_to_websocket_heartbeat(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify that forward_pubsub_to_websocket sends periodic heartbeat pings."""
-    mock_valkey = MagicMock()
-    mock_pubsub = MagicMock()
-    mock_valkey.pubsub.return_value = mock_pubsub
-    mock_pubsub.subscribe = AsyncMock()
-    mock_pubsub.unsubscribe = AsyncMock()
-    mock_pubsub.aclose = AsyncMock()
-
-    async def mock_listen() -> AsyncGenerator[dict[str, str], None]:
-        await asyncio.sleep(10)
-        yield {"type": "message", "data": "{}"}
-
-    mock_pubsub.listen = mock_listen
-
-    mock_ws = AsyncMock()
+    fake_valkey = FakeValkey()
     heartbeat_triggered = asyncio.Event()
 
-    async def tracking_send_json(payload: dict[str, str]) -> None:
+    def _on_send_json(payload: dict[str, object]) -> None:
         if payload.get("type") == "ping":
             heartbeat_triggered.set()
+            fake_ws.push_disconnect()
 
-    mock_ws.send_json = AsyncMock(side_effect=tracking_send_json)
-    mock_ws.send_text = AsyncMock()
-
-    async def mock_receive() -> dict[str, str]:
-        await heartbeat_triggered.wait()
-        raise WebSocketDisconnect()
-
-    mock_ws.receive = mock_receive
+    fake_ws = FakeWebSocket(on_send_json=_on_send_json)
 
     real_sleep = asyncio.sleep
 
@@ -145,9 +104,9 @@ async def test_forward_pubsub_to_websocket_heartbeat(
     monkeypatch.setattr(asyncio, "sleep", fast_sleep)
 
     await forward_pubsub_to_websocket(
-        valkey=mock_valkey,
+        valkey=cast("Redis", fake_valkey),
         channel="medisync:pubsub:queue:test",
-        websocket=mock_ws,
+        websocket=cast("WebSocket", fake_ws),
     )
 
     assert heartbeat_triggered.is_set()

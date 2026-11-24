@@ -1,7 +1,7 @@
 """Integration tests for ARQ worker lifecycle, connection sharing, and heartbeats."""
 
+import logging
 from typing import Any, cast
-from unittest.mock import patch
 
 import pytest
 from arq.connections import create_pool
@@ -71,6 +71,17 @@ async def test_arq_worker_publishes_heartbeat_key() -> None:
         await pool.aclose()
 
 
+class _RecordingLogHandler(logging.Handler):
+    """Named logging handler capturing LogRecords emitted by medisync.worker."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
 @pytest.mark.asyncio
 async def test_arq_worker_unhandled_failure_logging() -> None:
     """Unhandled exceptions in tasks should be logged with full context."""
@@ -80,35 +91,40 @@ async def test_arq_worker_unhandled_failure_logging() -> None:
         raise RuntimeError("Controlled catastrophic test failure")
 
     pool = await create_pool(WorkerSettings.redis_settings)
+    worker_logger = logging.getLogger("medisync.worker")
+    handler = _RecordingLogHandler()
+    worker_logger.addHandler(handler)
     try:
-        with patch("src.worker.tasks.logger.error") as mock_log:
-            job = await pool.enqueue_job("deliberate_failing_task")
-            assert job is not None
+        job = await pool.enqueue_job("deliberate_failing_task")
+        assert job is not None
 
-            worker = create_worker(
-                WorkerSettings,  # pyright: ignore[reportArgumentType]
-                functions=[
-                    func(
-                        cast("Any", deliberate_failing_task),
-                        name="deliberate_failing_task",
-                    )
-                ],
-                burst=True,
-                redis_pool=pool,
-            )
-            await worker.main()
+        worker = create_worker(
+            WorkerSettings,  # pyright: ignore[reportArgumentType]
+            functions=[
+                func(
+                    cast("Any", deliberate_failing_task),
+                    name="deliberate_failing_task",
+                )
+            ],
+            burst=True,
+            redis_pool=pool,
+        )
+        await worker.main()
 
-            assert worker.jobs_failed >= 1
-            mock_log.assert_called_once()
-            args, kwargs = mock_log.call_args
-            assert args[1] == job.job_id
-            assert kwargs["extra"]["job_id"] == job.job_id
-            assert kwargs["extra"]["error_type"] == "RuntimeError"
-            assert (
-                kwargs["extra"]["error_message"]
-                == "Controlled catastrophic test failure"
-            )
+        assert worker.jobs_failed >= 1
+        matching = [
+            r for r in handler.records if getattr(r, "job_id", None) == job.job_id
+        ]
+        assert len(matching) == 1
+        record = matching[0]
+        assert job.job_id in record.getMessage()
+        assert getattr(record, "error_type", None) == "RuntimeError"
+        assert (
+            getattr(record, "error_message", None)
+            == "Controlled catastrophic test failure"
+        )
     finally:
+        worker_logger.removeHandler(handler)
         await pool.aclose()
 
 

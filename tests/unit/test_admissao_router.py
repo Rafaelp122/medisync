@@ -1,7 +1,6 @@
 """Unit tests for patient queue admission router (Anti-IDOR and ADR-001/ADR-008)."""
 
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -11,8 +10,9 @@ from src.core.config import get_settings
 from src.core.security import create_intake_token
 from src.main import create_app
 from src.modules.queue.application.dtos import AdmissaoAtendimentoResult
-from src.modules.queue.application.services.fila_service import FilaService
 from src.modules.queue.composition import get_fila_service
+
+from tests.doubles import FakeFilaService
 
 
 def _make_intake_token(paciente_id: UUID) -> str:
@@ -33,9 +33,8 @@ async def test_admissao_sucesso_com_token_intake() -> None:
     triagem_id = uuid4()
 
     tcle_hash = "b" * 64
-    mock_service = MagicMock(spec=FilaService)
-    mock_service.admitir_paciente = AsyncMock(
-        return_value=AdmissaoAtendimentoResult(
+    fake_service = FakeFilaService(
+        admitir_result=AdmissaoAtendimentoResult(
             atendimento_id=atendimento_id,
             triagem_id=triagem_id,
             paciente_id=paciente_id,
@@ -47,7 +46,7 @@ async def test_admissao_sucesso_com_token_intake() -> None:
         )
     )
 
-    app.dependency_overrides[get_fila_service] = lambda: mock_service
+    app.dependency_overrides[get_fila_service] = lambda: fake_service
 
     try:
         token = _make_intake_token(paciente_id)
@@ -74,7 +73,7 @@ async def test_admissao_sucesso_com_token_intake() -> None:
             assert data["status_atendimento"] == "APTO_PARA_CHAMADA"
             assert data["prioridade_clinica"] == 3
             assert data["tcle_hash"] == tcle_hash
-            mock_service.admitir_paciente.assert_awaited_once()
+            assert len(fake_service.admitir_calls) == 1
     finally:
         app.dependency_overrides.clear()
 
@@ -85,9 +84,8 @@ async def test_admissao_sucesso_com_token_jwt_paciente() -> None:
     app = create_app()
     paciente_id = uuid4()
 
-    mock_service = MagicMock(spec=FilaService)
-    mock_service.admitir_paciente = AsyncMock(
-        return_value=AdmissaoAtendimentoResult(
+    fake_service = FakeFilaService(
+        admitir_result=AdmissaoAtendimentoResult(
             atendimento_id=uuid4(),
             triagem_id=uuid4(),
             paciente_id=paciente_id,
@@ -97,7 +95,7 @@ async def test_admissao_sucesso_com_token_jwt_paciente() -> None:
             instrucoes=None,
         )
     )
-    app.dependency_overrides[get_fila_service] = lambda: mock_service
+    app.dependency_overrides[get_fila_service] = lambda: fake_service
 
     try:
         token = _make_jwt_token(paciente_id, papel="PACIENTE")
@@ -113,6 +111,7 @@ async def test_admissao_sucesso_com_token_jwt_paciente() -> None:
                 },
             )
             assert resp.status_code == 201
+            assert len(fake_service.admitir_calls) == 1
     finally:
         app.dependency_overrides.clear()
 
