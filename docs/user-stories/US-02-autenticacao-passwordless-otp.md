@@ -110,7 +110,7 @@
 
 ### 5.3 Troféu de Testes do Frontend
 - **Integração de Tela (Vitest + RTL + MSW v2):**
-  - `frontend/src/features/onboarding/tests/solicitar-otp-form.test.tsx`, `frontend/src/features/onboarding/tests/verificar-otp-form.test.tsx` e `frontend/src/features/auth/tests/patient-hybrid-auth.test.tsx`.
+  - `frontend/src/features/auth/tests/patient-hybrid-auth.test.tsx` e `frontend/src/features/auth/tests/session-persistence.test.tsx`.
   - `frontend/src/App.test.tsx`: validação de rotas, guards e login OTP do cidadão.
   - Simulação HTTP na camada de transporte via factory tipada `solicitarOtpPacienteMock` (`@/api/generated/msw.gen`).
   - Avanço determinístico do cooldown de 60s via `vi.useFakeTimers()` e `await vi.advanceTimersByTimeAsync(60_000)` com teardown mandatório em `afterEach(() => vi.useRealTimers())`.

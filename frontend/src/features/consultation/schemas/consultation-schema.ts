@@ -59,7 +59,7 @@ export const emitirDocumentoSchema = zEmitirDocumentoRequest
     itens: z.array(itemPrescricaoSchema).optional().default([]),
   })
   .superRefine((data, ctx) => {
-    if (data.tipo_documento === "RECEITA_SIMPLES" && (!data.itens || data.itens.length === 0)) {
+    if (data.tipo_documento.startsWith("RECEITA_") && (!data.itens || data.itens.length === 0)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "A receita deve conter ao menos um medicamento",

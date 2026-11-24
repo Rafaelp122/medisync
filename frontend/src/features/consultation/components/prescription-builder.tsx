@@ -1,5 +1,5 @@
 import { AlertCircle, FileCheck2, Loader2, Pill } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   DocumentoClinicoResponse,
   ItemPrescricaoRequest,
@@ -8,42 +8,70 @@ import type {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import { useEmitirDocumento } from "../api/use-emitir-documento";
+import { useOptionalConsultationEncounter } from "../context/consultation-encounter-provider";
 import type { LivenessResultMessage } from "../lib/liveness-channel";
 import { CameraLivenessCheck } from "./camera-liveness-check";
 import { AtestadoForm } from "./prescription/atestado-form";
+import { PrescriptionDocumentTabs } from "./prescription/prescription-document-tabs";
 import { PrescriptionForm } from "./prescription/prescription-form";
 import { PrescriptionItemsList } from "./prescription/prescription-items-list";
 
 export interface PrescriptionBuilderProps {
   atendimentoId: string;
-  identidadeVerificada: boolean;
-  isReadOnly?: boolean;
+  identidadeVerificada?: boolean;
+  accessMode?: "editable" | "readonly";
   onPrescriptionIssued?: (doc: DocumentoClinicoResponse) => void;
   onSendLivenessChallenge?: (challenge: LivenessChallengeResponse) => void;
   remoteLivenessResult?: LivenessResultMessage | null;
   token?: string;
   duracaoSegundos?: number;
+  atendimentoIniciadoEm?: string | null;
+}
+
+function atingiuTempoMinimo(
+  atendimentoIniciadoEm?: string | null,
+  duracaoSegundos?: number,
+): boolean {
+  if (atendimentoIniciadoEm) {
+    const inicioMs = new Date(atendimentoIniciadoEm).getTime();
+    if (!Number.isNaN(inicioMs)) {
+      return Math.floor((Date.now() - inicioMs) / 1000) >= 180;
+    }
+  }
+  return (duracaoSegundos ?? 0) >= 180;
 }
 
 /**
  * Construtor Composto de Documentos Clínicos Digitais (Receita e Atestado).
- * Decomposto em Compound Components (ADR-011 §2.4) para manter coesão e teto de complexidade.
+ * Delega tick temporal de 180s ao componente folha `AtestadoForm`.
  * Regras: RF-07, US-10, CFM nº 2.314/2022, Portaria SVS/MS 344/98.
  */
 export function PrescriptionBuilder({
   atendimentoId,
   identidadeVerificada,
-  isReadOnly = false,
+  accessMode,
   onPrescriptionIssued,
   onSendLivenessChallenge,
   remoteLivenessResult,
   token,
   duracaoSegundos,
+  atendimentoIniciadoEm,
 }: PrescriptionBuilderProps) {
+  const encounter = useOptionalConsultationEncounter();
+  const effectiveMode = accessMode ?? (encounter?.isFinalizado ? "readonly" : "editable");
+  const isLocked = effectiveMode === "readonly";
+  const resolvedIdentidadeVerificada =
+    identidadeVerificada ?? encounter?.identidadeVerificada ?? false;
+  const resolvedToken = token ?? encounter?.atendimento.token;
+  const resolvedStartedAt = atendimentoIniciadoEm ?? encounter?.atendimento.chamadaIniciadaEm;
+  const resolvedLivenessResult = remoteLivenessResult ?? encounter?.livenessResult ?? null;
+
   const [tipoDocumento, setTipoDocumento] = useState<"RECEITA_SIMPLES" | "ATESTADO_MEDICO">(
     "RECEITA_SIMPLES",
+  );
+  const [tempoMinimoAtingido, setTempoMinimoAtingido] = useState<boolean>(() =>
+    atingiuTempoMinimo(resolvedStartedAt, duracaoSegundos),
   );
   const [justificativaTempoInferior, setJustificativaTempoInferior] = useState("");
   const [itens, setItens] = useState<ItemPrescricaoRequest[]>([]);
@@ -52,34 +80,31 @@ export function PrescriptionBuilder({
   const [livenessHash, setLivenessHash] = useState<string | null>(null);
   const [justificativaExcecaoLiveness, setJustificativaExcecaoLiveness] = useState("");
 
+  useEffect(() => {
+    setTempoMinimoAtingido(atingiuTempoMinimo(resolvedStartedAt, duracaoSegundos));
+  }, [resolvedStartedAt, duracaoSegundos]);
+
   const { mutate: emitirDocumento, isPending: isEmitting } = useEmitirDocumento(atendimentoId);
 
   const isAtestado = tipoDocumento === "ATESTADO_MEDICO";
-  const duracaoConsulta = duracaoSegundos ?? 0;
-  const exigeJustificativa = isAtestado && duracaoConsulta < 180;
+  const exigeJustificativa = isAtestado && !tempoMinimoAtingido;
   const justificativaValida = !exigeJustificativa || justificativaTempoInferior.trim().length >= 15;
   const exigeProvaDeVida = !isAtestado && itens.some((item) => Boolean(item.controle_especial));
   const livenessSatisfeita =
     !exigeProvaDeVida || Boolean(livenessHash) || justificativaExcecaoLiveness.trim().length >= 10;
   const effectiveTipoDocumento = exigeProvaDeVida ? "RECEITA_CONTROLE_ESPECIAL_C1" : tipoDocumento;
 
-  const handleAddItem = (novoItem: ItemPrescricaoRequest) => {
-    setItens((prev) => [...prev, novoItem]);
-  };
-
-  const handleRemoveItem = (index: number) => {
-    if (isReadOnly) return;
-    setItens((prev) => prev.filter((_, i) => i !== index));
-  };
-
   const handleEmitirDocumento = () => {
-    if (isReadOnly || !identidadeVerificada) return;
+    if (isLocked || !resolvedIdentidadeVerificada) return;
     setErroSanitario(null);
     setSucessoEmissao(null);
 
     if (!isAtestado && itens.length === 0) return;
 
-    if (isAtestado && exigeJustificativa && !justificativaValida) {
+    const precisaJustificativaAgora =
+      isAtestado && !atingiuTempoMinimo(resolvedStartedAt, duracaoSegundos);
+
+    if (precisaJustificativaAgora && justificativaTempoInferior.trim().length < 15) {
       setErroSanitario(
         "A consulta durou menos de 180s. A justificativa médica circunstanciada deve conter no mínimo 15 caracteres (CFM nº 2.314/2022).",
       );
@@ -95,34 +120,28 @@ export function PrescriptionBuilder({
 
     emitirDocumento(
       {
-        token,
+        token: resolvedToken,
         tipo_documento: effectiveTipoDocumento,
         itens: isAtestado ? (itens.length > 0 ? itens : undefined) : itens,
-        justificativa_tempo_inferior:
-          isAtestado && exigeJustificativa ? justificativaTempoInferior.trim() : undefined,
-        liveness_verificacao_hash: exigeProvaDeVida ? (livenessHash ?? undefined) : undefined,
+        justificativa_tempo_inferior: precisaJustificativaAgora
+          ? justificativaTempoInferior.trim()
+          : undefined,
+        liveness_verificacao_hash: exigeProvaDeVida ? livenessHash : undefined,
         justificativa_excecao_liveness:
-          exigeProvaDeVida && justificativaExcecaoLiveness.trim()
-            ? justificativaExcecaoLiveness.trim()
-            : undefined,
+          exigeProvaDeVida && !livenessHash ? justificativaExcecaoLiveness.trim() : undefined,
       },
       {
         onSuccess: (doc) => {
           setSucessoEmissao(
             isAtestado
-              ? `Atestado médico #${doc.id.substring(0, 8)} gerado com sucesso. Prossiga para assinatura ICP-Brasil.`
-              : `Receita digital #${doc.id.substring(0, 8)} gerada com sucesso. Prossiga para assinatura ICP-Brasil.`,
+              ? `Atestado médico #${doc.id.substring(0, 8)} gerado com sucesso.`
+              : `Receita digital #${doc.id.substring(0, 8)} gerada com sucesso.`,
           );
-          if (!isAtestado) {
-            setItens([]);
-          }
-          setJustificativaTempoInferior("");
-          setLivenessHash(null);
-          setJustificativaExcecaoLiveness("");
+          encounter?.setDocumentoPendente(doc);
           onPrescriptionIssued?.(doc);
         },
         onError: (err) => {
-          setErroSanitario(err.detail || "Erro ao emitir documento clínico digital.");
+          setErroSanitario(err.detail || "Falha ao emitir documento clínico digital.");
         },
       },
     );
@@ -146,51 +165,16 @@ export function PrescriptionBuilder({
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-3.5">
-        {/* Seletor do Tipo de Documento */}
-        {!isReadOnly && (
-          <div
-            role="tablist"
-            aria-label="Tipo de documento clínico"
-            className="flex items-center gap-1 p-1 bg-muted rounded-md"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={!isAtestado}
-              onClick={() => {
-                setTipoDocumento("RECEITA_SIMPLES");
-                setErroSanitario(null);
-              }}
-              className={cn(
-                "flex-1 py-1 px-2.5 rounded text-xs font-medium transition-[background-color,color,box-shadow]",
-                !isAtestado
-                  ? "bg-background text-foreground shadow-xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Receita Simples
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={isAtestado}
-              onClick={() => {
-                setTipoDocumento("ATESTADO_MEDICO");
-                setErroSanitario(null);
-              }}
-              className={cn(
-                "flex-1 py-1 px-2.5 rounded text-xs font-medium transition-[background-color,color,box-shadow]",
-                isAtestado
-                  ? "bg-background text-foreground shadow-xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Atestado Médico
-            </button>
-          </div>
+        {!isLocked && (
+          <PrescriptionDocumentTabs
+            selected={tipoDocumento}
+            onSelect={(tipo) => {
+              setTipoDocumento(tipo);
+              setErroSanitario(null);
+            }}
+          />
         )}
 
-        {/* Alerta de erro sanitário / substância proibida com offending value */}
         {erroSanitario && (
           <Alert variant="destructive" className="py-2 text-xs">
             <AlertCircle className="size-4" />
@@ -199,7 +183,6 @@ export function PrescriptionBuilder({
           </Alert>
         )}
 
-        {/* Mensagem de sucesso de emissão */}
         {sucessoEmissao && (
           <Alert className="py-2 text-xs border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200">
             <FileCheck2 className="size-4 text-emerald-600 mr-2 inline" />
@@ -209,60 +192,63 @@ export function PrescriptionBuilder({
 
         {isAtestado ? (
           <AtestadoForm
-            duracaoConsulta={duracaoConsulta}
-            exigeJustificativa={exigeJustificativa}
+            duracaoConsulta={duracaoSegundos}
+            atendimentoIniciadoEm={resolvedStartedAt}
             justificativaTempoInferior={justificativaTempoInferior}
             onJustificativaChange={setJustificativaTempoInferior}
-            isReadOnly={isReadOnly}
+            onTempoMinimoAtingido={() => setTempoMinimoAtingido(true)}
+            accessMode={effectiveMode}
           />
         ) : (
           <>
             <PrescriptionForm
               atendimentoId={atendimentoId}
-              token={token}
-              isReadOnly={isReadOnly}
-              onAddItem={handleAddItem}
+              token={resolvedToken}
+              accessMode={effectiveMode}
+              onAddItem={(novoItem) => setItens((prev) => [...prev, novoItem])}
               onError={setErroSanitario}
             />
 
             <PrescriptionItemsList
               itens={itens}
-              onRemoveItem={handleRemoveItem}
-              isReadOnly={isReadOnly}
+              onRemoveItem={(index) => {
+                if (!isLocked) {
+                  setItens((prev) => prev.filter((_, i) => i !== index));
+                }
+              }}
+              accessMode={effectiveMode}
             />
 
-            {exigeProvaDeVida && !isReadOnly && (
+            {exigeProvaDeVida && !isLocked && (
               <CameraLivenessCheck
                 atendimentoId={atendimentoId}
-                token={token}
+                token={resolvedToken}
                 approvedHash={livenessHash}
                 justificativaExcecao={justificativaExcecaoLiveness}
                 onApproved={setLivenessHash}
                 onJustificativaChange={setJustificativaExcecaoLiveness}
                 onSendChallenge={onSendLivenessChallenge}
-                remoteResult={remoteLivenessResult}
-                isReadOnly={isReadOnly}
+                remoteResult={resolvedLivenessResult}
+                accessMode={effectiveMode}
               />
             )}
           </>
         )}
 
-        {/* Alerta explicativo se a identidade não estiver confirmada */}
-        {!identidadeVerificada && !isReadOnly && (
+        {!resolvedIdentidadeVerificada && !isLocked && (
           <p className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-2 rounded border border-amber-200 dark:border-amber-800">
             A emissão da receita digital está bloqueada até a conclusão da conferência visual de
             identidade oficial (RG/CNH/CNS) sob o CFM nº 2.314/2022.
           </p>
         )}
 
-        {/* Botão de Emissão */}
-        {!isReadOnly && (
+        {!isLocked && (
           <Button
             type="button"
             size="sm"
             onClick={handleEmitirDocumento}
             disabled={
-              !identidadeVerificada ||
+              !resolvedIdentidadeVerificada ||
               isEmitting ||
               (!isAtestado && itens.length === 0) ||
               (isAtestado && exigeJustificativa && !justificativaValida) ||

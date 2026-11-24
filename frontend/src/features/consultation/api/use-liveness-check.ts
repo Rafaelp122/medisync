@@ -10,6 +10,11 @@ import type {
   LivenessVerifyRequest,
   LivenessVerifyResponse,
 } from "@/api/generated/types.gen";
+import {
+  zLivenessChallengeResponse,
+  zLivenessVerifyRequest,
+  zLivenessVerifyResponse,
+} from "@/api/generated/zod.gen";
 
 export interface SolicitarDesafioLivenessParams {
   token?: string;
@@ -55,7 +60,7 @@ export function useSolicitarDesafioLiveness(
               throwOnError: true,
             },
           );
-        return response.data;
+        return zLivenessChallengeResponse.parse(response.data);
       } catch (err) {
         throw toProblemDetailsError(err);
       }
@@ -66,6 +71,7 @@ export function useSolicitarDesafioLiveness(
 
 /**
  * Hook headless de mutação para verificar frames de prova de vida facial (US-15).
+ * Valida entrada e resposta em runtime contra os contratos `zod.gen`.
  * @see docs/user-stories/US-15-prova-de-vida-facial-liveness.md
  */
 export function useVerificarLiveness(
@@ -77,19 +83,20 @@ export function useVerificarLiveness(
   >,
 ) {
   return useMutation<LivenessVerifyResponse, ProblemDetailsError, VerificarLivenessParams>({
-    mutationFn: async ({ token, ...body }: VerificarLivenessParams) => {
+    mutationFn: async ({ token, ...rawBody }: VerificarLivenessParams) => {
       try {
+        const parsedBody = zLivenessVerifyRequest.parse(rawBody);
         const response =
           await verificarLivenessPrescricaoApiV1ConsultationsAtendimentoIdPrescriptionsLivenessVerifyPost(
             {
               client,
               path: { atendimento_id: atendimentoId },
-              body,
+              body: parsedBody,
               headers: buildHeaders(token),
               throwOnError: true,
             },
           );
-        return response.data;
+        return zLivenessVerifyResponse.parse(response.data);
       } catch (err) {
         throw toProblemDetailsError(err);
       }

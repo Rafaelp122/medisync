@@ -1,10 +1,12 @@
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ProblemDetailsError } from "@/api/errors";
 import {
   handlePostAuthPatientWebauthnRegisterOptions,
   handlePostAuthPatientWebauthnRegisterVerify,
 } from "@/api/generated/msw.gen";
+import { registerPatientPasskeyCredential } from "@/lib/webauthn";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
 import { PasskeyInvitationCard } from "../components/passkey-invitation-card";
@@ -140,7 +142,10 @@ describe("PasskeyInvitationCard (Convite Não-Bloqueante de Biometria - US-14)",
     });
 
     const { getByRole, findByRole } = renderWithProviders(
-      <PasskeyInvitationCard token="intake-token.assinatura" />,
+      <PasskeyInvitationCard
+        token="intake-token.assinatura"
+        onRegisterPasskey={registerPatientPasskeyCredential}
+      />,
     );
 
     const btnAtivar = getByRole("button", { name: /ativar biometria deste aparelho/i });
@@ -160,5 +165,33 @@ describe("PasskeyInvitationCard (Convite Não-Bloqueante de Biometria - US-14)",
       }),
     );
     expect(capturedPublicKey).toBeTruthy();
+  });
+
+  it("IT-PASS-07: Falha em onRegisterPasskey exibe alerta acessível sem vazar unhandled rejection", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("PublicKeyCredential", class FakePublicKeyCredential {});
+    Object.defineProperty(navigator, "credentials", {
+      value: { create: vi.fn() },
+      configurable: true,
+    });
+
+    const failingRegister = vi.fn().mockRejectedValue(
+      new ProblemDetailsError({
+        status: 400,
+        title: "Bad Request",
+        detail: "Dispositivo não suportou atestação biométrica.",
+      }),
+    );
+
+    const { getByRole, findByRole } = renderWithProviders(
+      <PasskeyInvitationCard token="intake-token.assinatura" onRegisterPasskey={failingRegister} />,
+    );
+
+    await user.click(getByRole("button", { name: /ativar biometria deste aparelho/i }));
+
+    expect(await findByRole("alert")).toHaveTextContent(
+      /dispositivo não suportou atestação biométrica/i,
+    );
+    expect(failingRegister).toHaveBeenCalledWith({ token: "intake-token.assinatura" });
   });
 });
