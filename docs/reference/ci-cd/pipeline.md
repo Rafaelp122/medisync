@@ -17,7 +17,7 @@ O pipeline é acionado nos eventos `push` e `pull_request` direcionados à branc
 | Job | Escopo / Responsabilidade | Comandos Executados | Dependências Externas |
 | :--- | :--- | :--- | :--- |
 | `detect-changes` | Filtragem de caminhos alterados via `dorny/paths-filter` | Mapeamento de diff em `backend`, `frontend` e `docs` | Nenhuma |
-| `code-quality` | Formatação, tipos, fronteiras, links e auditorias de clean code | `scripts/docs_check.py`<br>`scripts/audit_ai_clean_code.py`<br>`scripts/audit_frontend_guidelines.py`<br>`uv run ruff check .`<br>`uv run basedpyright`<br>`uv run tach check` | Python 3.14 + uv (em memória) |
+| `code-quality` | Formatação, tipos, fronteiras, links e auditorias (`backend`, `frontend` e `docs`) | `scripts/docs_check.py`<br>`scripts/audit_ai_clean_code.py`<br>`scripts/audit_frontend_guidelines.py`<br>`uv run ruff check .`<br>`uv run basedpyright`<br>`uv run tach check` | Python 3.14 + uv (em memória) |
 | `database-migrations` | Aplicação de DDL e detecção de drift entre models e schema | `uv run alembic upgrade head`<br>`uv run alembic check` | Postgres 17 (Service Container) |
 | `unit-tests` | Regras clínicas, modelos ricos e AST routers | `uv run pytest tests/unit tests/architecture -n auto --cov=src` | Python 3.14 + uv (em memória) |
 | `frontend-quality` | Tipos, linting e paridade de contratos OpenAPI | `uv run python -c "..." > openapi.json`<br>`pnpm --dir frontend generate:api`<br>`pnpm --dir frontend run check` | Node.js 24 + pnpm 10 + Python 3.14 |
@@ -48,7 +48,7 @@ O repositório adota política de atualização automatizada com escalonamento d
 ### Composite Actions Reutilizáveis (`.github/actions/`)
 
 A infraestrutura adota duas composite actions locais para padronizar versões de runtimes e políticas de cache:
-1. **`.github/actions/setup-python-uv`**: Encapsula `astral-sh/setup-uv@v5` (cache com hash de `uv.lock`) e `actions/setup-python@v5` (Python 3.14).
+1. **`.github/actions/setup-python-uv`**: Encapsula `astral-sh/setup-uv@v5` (cache com hash de `uv.lock`), `actions/setup-python@v5` (Python 3.14) e exporta `UV_FROZEN=1` em `$GITHUB_ENV` após `uv sync --frozen` para manter todos os `uv run` subsequentes determinísticos sem mutar `uv.lock`.
 2. **`.github/actions/setup-node-pnpm`**: Encapsula `pnpm/action-setup@v4` (pnpm 10) e `actions/setup-node@v4` (Node.js 24 com cache de `frontend/pnpm-lock.yaml`).
 
 ### Concorrência e Cancelamento Preventivo

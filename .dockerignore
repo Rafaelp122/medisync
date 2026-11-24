@@ -28,6 +28,9 @@ htmlcov/
 scratch/
 docs/
 
+# Frontend SPA/PWA (não utilizado no contêiner backend Python)
+frontend/
+
 # IDE files
 .idea/
 .vscode/

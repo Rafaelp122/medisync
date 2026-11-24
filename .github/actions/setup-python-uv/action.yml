@@ -28,3 +28,7 @@ runs:
       if: inputs.sync == 'true'
       shell: bash
       run: uv sync --frozen
+
+    - name: Freeze uv lock resolution for subsequent commands
+      shell: bash
+      run: echo "UV_FROZEN=1" >> "$GITHUB_ENV"
