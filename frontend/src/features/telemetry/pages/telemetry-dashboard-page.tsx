@@ -1,17 +1,21 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { client } from "@/api/client";
 import { logoutApiV1AuthLogoutPost } from "@/api/generated/sdk.gen";
 import { PainelGestor } from "@/features/telemetry/components/painel-gestor";
-import { clearAccessToken } from "@/lib/auth-token";
-import { clearStoredManagerSession, type StoredManagerSession } from "@/lib/session-storage";
+import type { StoredManagerSession } from "@/lib/session-storage";
+import { sessionTransport } from "@/lib/session-transport";
 
 export interface TelemetryDashboardPageProps {
   managerSession: StoredManagerSession;
-  token?: string;
+  renderBpaCard?: ReactNode;
 }
 
-export function TelemetryDashboardPage({ managerSession, token }: TelemetryDashboardPageProps) {
+export function TelemetryDashboardPage({
+  managerSession,
+  renderBpaCard,
+}: TelemetryDashboardPageProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -21,13 +25,16 @@ export function TelemetryDashboardPage({ managerSession, token }: TelemetryDashb
     } catch {
       // Falha de rede não impede expurgo local
     }
-    clearAccessToken();
-    clearStoredManagerSession();
+    sessionTransport.clearSession("staff");
     queryClient.clear();
     navigate({ to: "/interno/login" });
   };
 
   return (
-    <PainelGestor token={token} gestorNome={managerSession.nome} onLogout={handleManagerLogout} />
+    <PainelGestor
+      gestorNome={managerSession.nome}
+      onLogout={handleManagerLogout}
+      renderBpaCard={renderBpaCard}
+    />
   );
 }

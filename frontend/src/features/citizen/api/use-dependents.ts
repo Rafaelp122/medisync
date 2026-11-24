@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { client, getSessionQueryScope, resolveExplicitAuthHeaders } from "@/api/client";
+import { client, getSessionQueryScope } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
   cadastrarDependenteApiV1PacientesIdDependentesPost,
@@ -22,13 +22,12 @@ import type {
  */
 export function useDependents(
   pacienteId: string,
-  token?: string,
   options?: Omit<
     UseQueryOptions<DependenteDetalheResponse[], ProblemDetailsError>,
     "queryKey" | "queryFn"
   >,
 ) {
-  const scopeKey = getSessionQueryScope(token);
+  const scopeKey = getSessionQueryScope();
   return useQuery<DependenteDetalheResponse[], ProblemDetailsError>({
     queryKey: ["citizen", "dependents", pacienteId, scopeKey],
     queryFn: async () => {
@@ -36,7 +35,6 @@ export function useDependents(
         const response = await listarDependentesApiV1PacientesIdDependentesGet({
           client,
           path: { id: pacienteId },
-          headers: resolveExplicitAuthHeaders(token),
           throwOnError: true,
         });
         return response.data;
@@ -51,7 +49,6 @@ export function useDependents(
 
 export interface CreateDependentParams {
   body: CriarDependenteRequest;
-  token?: string;
 }
 
 /**
@@ -64,13 +61,12 @@ export function useCreateDependent(
   const queryClient = useQueryClient();
 
   return useMutation<DependenteResponse, ProblemDetailsError, CreateDependentParams>({
-    mutationFn: async ({ body, token }: CreateDependentParams) => {
+    mutationFn: async ({ body }: CreateDependentParams) => {
       try {
         const response = await cadastrarDependenteApiV1PacientesIdDependentesPost({
           client,
           path: { id: pacienteId },
           body,
-          headers: resolveExplicitAuthHeaders(token),
           throwOnError: true,
         });
         return response.data;

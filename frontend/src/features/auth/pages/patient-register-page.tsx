@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { PatientRegisterForm } from "@/features/auth/components/patient-register-form";
-import { type StoredPatientSession, saveStoredSession } from "@/lib/session-storage";
+import type { StoredPatientSession } from "@/lib/session-storage";
 
 /**
  * Página pública de auto-cadastro do cidadão (/cadastro) com confirmação OTP inicial.
@@ -10,7 +10,6 @@ export function PatientRegisterPage() {
   const navigate = useNavigate();
 
   const handleAuthenticated = (session: StoredPatientSession) => {
-    saveStoredSession(session);
     if (session.atendimentoId) {
       void navigate({ to: "/fila" });
       return;

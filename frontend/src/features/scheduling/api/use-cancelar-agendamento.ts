@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation, useQueryClient } from "@tanstack/react-query";
-import { client, resolveExplicitAuthHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { cancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPost } from "@/api/generated/sdk.gen";
 import type { AgendamentoResponse } from "@/api/generated/types.gen";
@@ -7,7 +7,6 @@ import { MEUS_AGENDAMENTOS_QUERY_KEY_PREFIX } from "@/api/hooks/use-meus-agendam
 
 export interface CancelarAgendamentoParams {
   agendamentoId: string;
-  token?: string;
 }
 
 /**
@@ -20,13 +19,12 @@ export function useCancelarAgendamento(
 
   return useMutation<AgendamentoResponse, ProblemDetailsError, CancelarAgendamentoParams>({
     ...options,
-    mutationFn: async ({ agendamentoId, token }: CancelarAgendamentoParams) => {
+    mutationFn: async ({ agendamentoId }: CancelarAgendamentoParams) => {
       try {
         const response =
           await cancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPost({
             client,
             path: { agendamento_id: agendamentoId },
-            headers: resolveExplicitAuthHeaders(token),
             throwOnError: true,
           });
         return response.data;

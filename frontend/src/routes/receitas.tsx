@@ -1,7 +1,13 @@
-import { createRoute, redirect } from "@tanstack/react-router";
-import { PrescriptionsPage } from "@/features/citizen/pages/prescriptions-page";
+import { createRoute, lazyRouteComponent, redirect } from "@tanstack/react-router";
+import { Suspense } from "react";
+import { RoutePendingFallback } from "@/components/route-fallbacks";
 import { getStoredSession, type StoredPatientSession } from "@/lib/session-storage";
 import { rootRoute } from "./root";
+
+const LazyPrescriptionsPage = lazyRouteComponent(
+  () => import("@/features/citizen/pages/prescriptions-page"),
+  "PrescriptionsPage",
+);
 
 export const receitasRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -15,6 +21,10 @@ export const receitasRoute = createRoute({
   },
   component: function ReceitasRouteComponent() {
     const { session } = receitasRoute.useRouteContext() as { session: StoredPatientSession };
-    return <PrescriptionsPage session={session} />;
+    return (
+      <Suspense fallback={<RoutePendingFallback />}>
+        <LazyPrescriptionsPage session={session} />
+      </Suspense>
+    );
   },
 });

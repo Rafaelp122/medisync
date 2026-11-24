@@ -1,33 +1,28 @@
 import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
-import { client } from "@/api/client";
+import { client, getSessionQueryScope } from "@/api/client";
 import { type ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import { obterPainelTelemetriaApiV1TelemetriaPainelGet } from "@/api/generated/sdk.gen";
 import type { PainelTelemetriaResponse } from "@/api/generated/types.gen";
 
+export const PAINEL_TELEMETRIA_QUERY_KEY_PREFIX = ["telemetria", "painel"] as const;
+
 /**
- * Hook headless para consulta do painel operacional e telemetria da fila virtual.
- * Monitora contagem de pacientes aguardando (total_pacientes_fila) e métricas do plantão.
- * Regras: RF-03, RF-10, US-13 e ADR-011.
+ * Hook headless canônico para consulta do painel operacional de telemetria (RF-10, US-13).
+ * Compartilhado entre a Estação do Médico e o Painel do Gestor com escopo de sessão.
  */
 export function usePainelTelemetria(
-  token?: string,
   options?: Omit<
     UseQueryOptions<PainelTelemetriaResponse, ProblemDetailsError>,
     "queryKey" | "queryFn"
   >,
 ) {
+  const scopeKey = getSessionQueryScope();
   return useQuery<PainelTelemetriaResponse, ProblemDetailsError>({
-    queryKey: ["telemetria-painel"],
+    queryKey: [...PAINEL_TELEMETRIA_QUERY_KEY_PREFIX, scopeKey],
     queryFn: async () => {
       try {
-        const headers: Record<string, string> = {};
-        if (token) {
-          headers.Authorization = `Bearer ${token}`;
-        }
-
         const response = await obterPainelTelemetriaApiV1TelemetriaPainelGet({
           client,
-          headers,
           throwOnError: true,
         });
         return response.data;
@@ -35,7 +30,7 @@ export function usePainelTelemetria(
         throw toProblemDetailsError(err);
       }
     },
-    refetchInterval: 10000, // Atualização a cada 10 segundos para visibilidade da fila
+    refetchInterval: 5000,
     ...options,
   });
 }

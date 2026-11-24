@@ -1,12 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
 import { type PerfilStaffAuth, StaffAuthCard } from "@/features/auth/components/staff-auth-card";
-import {
-  type StoredDoctorSession,
-  type StoredManagerSession,
-  saveStoredDoctorSession,
-  saveStoredManagerSession,
-} from "@/lib/session-storage";
 
 export interface InternalLoginPageProps {
   initialPerfil?: PerfilStaffAuth;
@@ -19,13 +13,11 @@ export interface InternalLoginPageProps {
 export function InternalLoginPage({ initialPerfil = "medico" }: InternalLoginPageProps) {
   const navigate = useNavigate();
 
-  const handleDoctorLogin = (session: StoredDoctorSession) => {
-    saveStoredDoctorSession(session);
+  const handleDoctorLogin = () => {
     void navigate({ to: "/medico" });
   };
 
-  const handleManagerLogin = (session: StoredManagerSession) => {
-    saveStoredManagerSession(session);
+  const handleManagerLogin = () => {
     void navigate({ to: "/gestor" });
   };
 

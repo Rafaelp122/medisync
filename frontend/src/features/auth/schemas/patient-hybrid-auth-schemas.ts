@@ -8,7 +8,7 @@ import {
   zSolicitarOtpRequest,
   zVerificarOtpRequest,
 } from "@/api/generated/zod.gen";
-import { type StoredPatientSession, saveStoredSession } from "@/lib/session-storage";
+import type { StoredPatientSession } from "@/lib/session-storage";
 import {
   formatarTelefoneE164,
   limparDigitos,
@@ -17,22 +17,16 @@ import {
 } from "@/lib/validators";
 
 /**
- * Converte a resposta de autenticação do paciente em StoredPatientSession e persiste no storage.
+ * Converte a resposta de autenticação do paciente em contrato `StoredPatientSession`.
  */
-export function persistirSessaoPaciente(
-  data: VerificarOtpResponse,
-  onAuthenticated?: (session: StoredPatientSession) => void,
-): StoredPatientSession {
-  const session: StoredPatientSession = {
+export function toStoredPatientSession(data: VerificarOtpResponse): StoredPatientSession {
+  return {
     tipo: "otp",
     role: data.role ?? "PACIENTE",
     pacienteId: data.paciente_id,
     token: data.access_token,
     atendimentoId: data.atendimento_id ?? undefined,
   };
-  saveStoredSession(session);
-  onAuthenticated?.(session);
-  return session;
 }
 
 const EMAIL_SCHEMA = z.string().email("Informe um endereço de e-mail válido.");

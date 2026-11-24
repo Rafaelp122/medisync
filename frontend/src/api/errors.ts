@@ -1,9 +1,17 @@
+export interface InvalidParam {
+  name: string;
+  reason: string;
+}
+
 export interface ProblemDetails {
   type?: string;
   title?: string;
   status: number;
   detail: string;
   instance?: string;
+  code?: string;
+  request_id?: string;
+  invalid_params?: ReadonlyArray<InvalidParam>;
   [key: string]: unknown;
 }
 
@@ -23,7 +31,15 @@ export class ProblemDetailsError extends Error {
   }
 
   get code(): string | undefined {
-    return this.problem.code as string | undefined;
+    return typeof this.problem.code === "string" ? this.problem.code : undefined;
+  }
+
+  get requestId(): string | undefined {
+    return typeof this.problem.request_id === "string" ? this.problem.request_id : undefined;
+  }
+
+  get invalidParams(): ReadonlyArray<InvalidParam> | undefined {
+    return Array.isArray(this.problem.invalid_params) ? this.problem.invalid_params : undefined;
   }
 }
 
@@ -31,9 +47,64 @@ export function isProblemDetailsError(error: unknown): error is ProblemDetailsEr
   return error instanceof ProblemDetailsError;
 }
 
+function isNetworkFailureMessage(message: string): boolean {
+  return (
+    message.includes("Failed to fetch") ||
+    message.includes("NetworkError") ||
+    message.includes("Load failed")
+  );
+}
+
+function getErrorName(error: unknown): string | undefined {
+  if (typeof error === "object" && error !== null && "name" in error) {
+    const name = (error as { name?: unknown }).name;
+    return typeof name === "string" ? name : undefined;
+  }
+  return undefined;
+}
+
+function getErrorMessage(error: unknown): string | undefined {
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const msg = (error as { message?: unknown }).message;
+    return typeof msg === "string" ? msg : undefined;
+  }
+  return undefined;
+}
+
 export function toProblemDetailsError(error: unknown, statusFallback = 500): ProblemDetailsError {
   if (error instanceof ProblemDetailsError) {
     return error;
+  }
+  const errorName = getErrorName(error);
+  const errorMessage = getErrorMessage(error);
+
+  if (errorName === "TimeoutError") {
+    return new ProblemDetailsError({
+      status: 504,
+      title: "Tempo de resposta esgotado",
+      detail: errorMessage || "Tempo limite da requisição esgotado.",
+      code: "TIMEOUT",
+    });
+  }
+  if (errorName === "AbortError") {
+    return new ProblemDetailsError({
+      status: 408,
+      title: "Requisição cancelada",
+      detail: errorMessage || "A requisição foi cancelada antes de ser concluída.",
+      code: "ABORTED",
+    });
+  }
+
+  if (error instanceof Error) {
+    const obj = error as unknown as Record<string, unknown>;
+    if (typeof obj.status !== "number" && typeof obj.detail !== "string") {
+      const detail = error.message || "Erro de comunicação com o servidor";
+      return new ProblemDetailsError({
+        status: statusFallback,
+        detail,
+        ...(isNetworkFailureMessage(detail) ? { code: "NETWORK_ERROR" } : {}),
+      });
+    }
   }
   if (typeof error === "object" && error !== null) {
     const obj = error as Record<string, unknown>;
@@ -45,9 +116,9 @@ export function toProblemDetailsError(error: unknown, statusFallback = 500): Pro
           ? obj.title
           : "Erro inesperado na requisição";
     return new ProblemDetailsError({
+      ...obj,
       status,
       detail,
-      ...obj,
     });
   }
   return new ProblemDetailsError({
@@ -95,8 +166,8 @@ export interface HumanizedError {
 }
 
 /**
- * Traduz erros técnicos (RFC 7807, Network, 500) em mensagens acolhedoras
- * e acionáveis em português para a interface do paciente.
+ * Traduz erros técnicos (RFC 7807, Network, Timeout, 403, 429, 5xx) em mensagens
+ * acolhedoras e acionáveis em português para a interface.
  */
 export function getHumanizedErrorMessage(
   error: unknown,
@@ -118,12 +189,7 @@ export function getHumanizedErrorMessage(
   }
 
   // Falha de Conexão ou Rede
-  if (
-    rawDetail.includes("Failed to fetch") ||
-    rawDetail.includes("NetworkError") ||
-    rawDetail.includes("Load failed") ||
-    code === "NETWORK_ERROR"
-  ) {
+  if (isNetworkFailureMessage(rawDetail) || code === "NETWORK_ERROR") {
     return {
       title: "Falha de conexão com a internet",
       detail:
@@ -142,7 +208,41 @@ export function getHumanizedErrorMessage(
     };
   }
 
-  // Erros de Servidor (500, 502, 503) ou código INTERNAL_SERVER_ERROR
+  // Permissão negada (403 Forbidden)
+  if (status === 403 || code === "FORBIDDEN") {
+    return {
+      title: "Acesso não autorizado",
+      detail:
+        rawDetail && rawDetail !== fallback && rawDetail !== "Forbidden"
+          ? rawDetail
+          : "Seu perfil não possui permissão para executar esta operação.",
+      retryable: false,
+    };
+  }
+
+  // Limite de taxa excedido (429 Too Many Requests)
+  if (status === 429 || code === "RATE_LIMIT_EXCEEDED" || code === "TOO_MANY_REQUESTS") {
+    return {
+      title: "Muitas tentativas em sequência",
+      detail:
+        rawDetail && rawDetail !== fallback && rawDetail !== "Too Many Requests"
+          ? rawDetail
+          : "Muitas requisições em sequência. Aguarde alguns instantes antes de tentar novamente.",
+      retryable: true,
+    };
+  }
+
+  // Indisponibilidade momentânea de gateway/upstream (502, 503)
+  if (status === 502 || status === 503) {
+    return {
+      title: "Serviço temporariamente indisponível",
+      detail:
+        "O serviço está passando por uma breve instabilidade de comunicação. Por favor, tente novamente em instantes.",
+      retryable: true,
+    };
+  }
+
+  // Erros internos de Servidor (500+) ou código INTERNAL_SERVER_ERROR
   if (
     status >= 500 ||
     code === "INTERNAL_SERVER_ERROR" ||
@@ -151,12 +251,12 @@ export function getHumanizedErrorMessage(
     return {
       title: "Instabilidade temporária no servidor",
       detail:
-        "Tivemos uma oscilação temporária ao conectar com a triagem médica. Seus dados continuam preenchidos. Por favor, tente novamente.",
+        "Tivemos uma oscilação temporária ao comunicar com nossos servidores. Por favor, tente novamente em alguns instantes — seus dados continuam preenchidos.",
       retryable: true,
     };
   }
 
-  // Erros de Validação ou Regras de Domínio Clínicas (400, 422)
+  // Erros de Validação ou Regras de Domínio Clínicas (400, 409, 422)
   return {
     title: "Atenção aos dados informados",
     detail: rawDetail,

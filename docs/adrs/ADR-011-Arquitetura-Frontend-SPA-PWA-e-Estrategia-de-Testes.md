@@ -85,10 +85,10 @@ Adotamos a **Opção 3: Arquitetura de Frontend SPA/PWA com React 19, Hey API e 
 * **Acessibilidade Clínica Automatizada (WCAG 2.1 AA)**: Auditoria contínua com `@axe-core/playwright` configurado com tags canônicas `['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']` e validação de supressão de animações para pacientes sensíveis sob `@media (prefers-reduced-motion: reduce)`.
 * **Padrões Canônicos**: Detalhados em [Frontend Testing Patterns](../reference/testing/frontend-testing-patterns.md).
 
-### 4.4 Decomposição em Rotas Declarativas, Route Guards e Deep Linking (Issue #141)
-Para eliminar monolitos de estado (*god components*) na raiz do frontend, a navegação é orquestrada por rotas tipadas em `frontend/src/routes/`:
+### 4.4 Decomposição em Rotas Declarativas, Route Guards, SessionTransport e Slices (Issue #141 / #167)
+Para eliminar monolitos de estado (*god components*) e vazamento de tokens stale na borda HTTP, a navegação e o transporte obedecem às seguintes fronteiras:
 1. **Mapa de Rotas Canônico (Portal Público, Portal Cidadão & Equipe Interna):**
-   - `/`: Landing Page pública de portfólio e apresentação 100% SUS do MediSync Express (`PortfolioLandingPage`, com links para `/home`, `/cadastro`, `/entrar` e `/validar`, sem exposição da área interna).
+   - `/`: Landing Page pública de portfólio e apresentação 100% SUS do MediSync Express (`PortfolioLandingPage`, com `PublicLandingLayout` recebendo `footer` via composição e links para `/home`, `/cadastro`, `/entrar` e `/validar`).
    - `/home`: Portal fechado autenticado do cidadão/paciente (`CitizenHomePage`), centralizando fila ativa, agendamentos eMulti, histórico de atendimentos e receitas digitais.
    - `/entrar`: Entrada do cidadão (`PatientAuthPage` / `PatientHybridAuthCard` — IAM Híbrido: identificação única anti-enumeração, OTP SMS, Passkeys WebAuthn, senha opcional e Gov.br opcional via `GOVBR_OIDC_ENABLED`).
    - `/cadastro`: Auto-cadastro civil do cidadão no portal SUS (`PatientRegisterPage` / `PatientRegisterForm` com e-mail obrigatório, senha opcional e disparo inicial de OTP).
@@ -103,15 +103,17 @@ Para eliminar monolitos de estado (*god components*) na raiz do frontend, a nave
    - `/receitas`: Visualização e download de receitas digitais, atestados e documentos ICP-Brasil (`PrescriptionsPage`).
    - `/perfil`: Dados cadastrais CFM do cidadão, dependentes legais e gerenciamento de Passkeys (`ProfilePage`).
    - `/validar` e `/validar/$token`: Portal público de verificação de autenticidade de prescrições e atestados ICP-Brasil (`DocumentValidationPage` por QR Code / hash SHA-256, com preenchimento automático de token na rota parametrizada).
-   - `/medico`: Estação de trabalho clínica do médico plantonista (`DoctorWorkstationPage` + `ProfessionalSchedulePanel`) protegida por guarda de sessão médica e cookie de refresh (redireciona para `/interno/login` se ausente).
-   - `/gestor`: Painel operacional de telemetria e gestão da unidade (`TelemetryDashboardPage`), redirecionando para `/interno/login` se não autenticado.
-2. **Route Guards Síncronos (`beforeLoad`):**
-   - Interceptação de transição antes da renderização de componentes com `throw redirect({ to: '...' })`.
-   - Leitura de sessões isolada nos helpers puros de `frontend/src/lib/session-storage.ts`.
-3. **Passagem Segura de Credenciais de Mídia:**
-   - Tokens WebRTC de chamada (`LiveKitTokenResponse`) são passados via *Router Navigation State* e *Session Storage*, impedindo exposição em query strings ou URLs (ADR-010).
-4. **Composition Root Enxuto:**
-   - `frontend/src/App.tsx` atua exclusivamente como composição global de providers (`QueryClientProvider` e `RouterProvider`) em menos de 30 linhas.
+   - `/medico`: Estação de trabalho clínica do médico plantonista (`DoctorWorkstationPage` + `ProfessionalSchedulePanel`) protegida por guarda `SessionTransport.ensureStaffSession("MEDICO")` e hidratada via `GET /api/v1/auth/me` (redireciona para `/interno/login` se ausente ou papel divergente).
+   - `/gestor`: Painel operacional de telemetria e gestão da unidade (`TelemetryDashboardPage` com slot `ProducaoBpaCard` de `features/ambulatory/`), protegido por `SessionTransport.ensureStaffSession("GESTOR_UNIDADE")`.
+2. **Route Guards Assíncronos e Transporte Unificado (`SessionTransport`):**
+   - `frontend/src/lib/session-transport.ts` encapsula o access token corporativo em memória privada, o silent refresh com mutex + `AbortSignal.timeout`, a validação estrita de papel (`MEDICO` / `GESTOR_UNIDADE`), a invalidação de cache `QueryClient` em 401 terminal (`subscribeInvalidated`) e o escopo dinâmico `getQueryScope()` sem passar props `token` estáticas para componentes ou hooks.
+   - `frontend/src/router.tsx` utiliza code-splitting via `lazyRouteComponent` por rota e fallback explícito em `defaultErrorComponent` / `defaultPendingComponent`.
+3. **Hooks Compartilhados e Segregação por Feature:**
+   - Hooks consumidos por mais de um bounded context (ex.: `frontend/src/api/hooks/use-painel-telemetria.ts`, `use-especialidades.ts`, `use-meus-agendamentos.ts`) residem em `frontend/src/api/hooks/`, eliminando imports cruzados entre `features/*` (como `features/ambulatory/` isolado de `features/telemetry/`).
+4. **Passagem Segura de Credenciais de Mídia:**
+   - Tokens WebRTC de chamada (`LiveKitTokenResponse`) são passados via *Router Navigation State* (`HistoryState` em `router.tsx`) e *Session Storage*, impedindo exposição em query strings ou URLs (ADR-010).
+5. **Composition Root Enxuto:**
+   - `frontend/src/App.tsx` atua exclusivamente como composição global de providers (`QueryClientProvider` conectado a `sessionTransport.subscribeInvalidated` e `RouterProvider`) em menos de 40 linhas.
 
 ---
 

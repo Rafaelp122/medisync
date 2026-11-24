@@ -9,14 +9,13 @@ import { formatarDataBR, getGrauParentescoLabel } from "@/lib/formatters";
 
 export interface DependentsSectionProps {
   pacienteId: string;
-  token?: string;
 }
 
 /**
  * Seção de listagem e gestão de dependentes legais/menores do cidadão titular.
  */
-export function DependentsSection({ pacienteId, token }: DependentsSectionProps) {
-  const dependentsQuery = useDependents(pacienteId, token);
+export function DependentsSection({ pacienteId }: DependentsSectionProps) {
+  const dependentsQuery = useDependents(pacienteId);
   const dependentes = dependentsQuery.data ?? [];
 
   return (
@@ -85,7 +84,7 @@ export function DependentsSection({ pacienteId, token }: DependentsSectionProps)
             </ul>
           )}
 
-          <DependentForm pacienteId={pacienteId} token={token} />
+          <DependentForm pacienteId={pacienteId} />
         </CardContent>
       </Card>
     </section>

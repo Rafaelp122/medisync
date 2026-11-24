@@ -47,16 +47,16 @@ export function MfaVerifyModal({
     e.preventDefault();
     setErro(null);
 
-    const validation = mfaVerifySchema.safeParse({ codigo: codigo.trim() });
+    const validation = mfaVerifySchema.safeParse({
+      temp_token: tempToken,
+      codigo: codigo.trim(),
+    });
     if (!validation.success) {
       setErro(validation.error.issues[0]?.message ?? "Código inválido");
       return;
     }
 
-    verifyMfa({
-      temp_token: tempToken,
-      codigo: validation.data.codigo,
-    });
+    verifyMfa(validation.data);
   };
 
   const handleCodigoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -69,7 +69,7 @@ export function MfaVerifyModal({
       <DialogContent className="sm:max-w-md bg-card text-foreground border-border">
         <DialogHeader className="text-center space-y-2">
           <div className="mx-auto size-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-            <ShieldCheck className="size-6 text-primary" />
+            <ShieldCheck className="size-6 text-primary" aria-hidden="true" />
           </div>
           <DialogTitle className="text-lg font-bold">
             Autenticação em Duas Etapas (MFA / TOTP)
@@ -82,7 +82,7 @@ export function MfaVerifyModal({
 
         {erro && (
           <Alert variant="destructive" className="py-2.5 text-xs">
-            <AlertCircle className="size-4" />
+            <AlertCircle className="size-4" aria-hidden="true" />
             <AlertDescription className="text-xs">{erro}</AlertDescription>
           </Alert>
         )}
@@ -103,7 +103,6 @@ export function MfaVerifyModal({
               onChange={handleCodigoChange}
               maxLength={6}
               disabled={isPending}
-              autoFocus
               className="text-center text-xl font-mono tracking-widest h-12 w-48 mx-auto"
             />
           </div>
@@ -115,12 +114,12 @@ export function MfaVerifyModal({
           >
             {isPending ? (
               <>
-                <Loader2 className="size-4 animate-spin" />
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 <span>Validando token…</span>
               </>
             ) : (
               <>
-                <KeyRound className="size-4" />
+                <KeyRound className="size-4" aria-hidden="true" />
                 <span>Confirmar e Acessar</span>
               </>
             )}

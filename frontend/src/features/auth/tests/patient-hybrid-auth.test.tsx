@@ -1,7 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleGetAuthPatientMethods,
   handlePostAuthPatientIdentify,
@@ -22,6 +22,7 @@ const MOCK_ATENDIMENTO_ID = "018f3a5b-aaaa-bbbb-cccc-018f3a5b9999";
 describe("IAM Híbrido do Cidadão — PatientHybridAuthCard e PatientRegisterForm", () => {
   beforeEach(() => {
     clearStoredSession();
+    vi.stubGlobal("PublicKeyCredential", class FakePublicKeyCredential {});
     server.use(
       handleGetAuthPatientMethods({
         body: {
@@ -345,5 +346,34 @@ describe("IAM Híbrido do Cidadão — PatientHybridAuthCard e PatientRegisterFo
       expect(screen.getByText("(21) 9****-8877")).toBeInTheDocument();
     });
     expect(screen.queryByRole("button", { name: /gov\.br/i })).not.toBeInTheDocument();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("Não exibe botão de Passkey quando o navegador não suporta WebAuthn (&& isWebAuthnSupported)", async () => {
+    vi.stubGlobal("PublicKeyCredential", undefined);
+    server.use(
+      handlePostAuthPatientIdentify({
+        body: {
+          possui_conta: true,
+          metodos_disponiveis: ["otp", "passkey"],
+          telefone_mascarado: "(11) 9****-4321",
+          govbr_habilitado: false,
+        },
+      }),
+    );
+
+    renderWithProviders(<PatientHybridAuthCard onAuthenticated={vi.fn()} />);
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/cpf ou e-mail/i), "52998224725");
+    await user.click(screen.getByRole("button", { name: /continuar/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("(11) 9****-4321")).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: /passkey/i })).not.toBeInTheDocument();
   });
 });
