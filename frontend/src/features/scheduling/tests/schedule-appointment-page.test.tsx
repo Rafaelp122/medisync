@@ -1,7 +1,7 @@
 import { waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getSessionQueryScope } from "@/api/client";
 import {
   handleCancelarAgendamentoApiV1SchedulingAgendamentosAgendamentoIdCancelarPost,
@@ -12,6 +12,7 @@ import {
 } from "@/api/generated/msw.gen";
 import type { AgendamentoResponse } from "@/api/generated/types.gen";
 import { MEUS_AGENDAMENTOS_QUERY_KEY_PREFIX } from "@/api/hooks/use-meus-agendamentos";
+import { sessionTransport } from "@/lib/session-transport";
 import { server } from "@/mocks/server";
 import { renderWithProviders } from "@/test/utils";
 import { ScheduleAppointmentPage } from "../pages/schedule-appointment-page";
@@ -25,11 +26,22 @@ import {
 
 describe("ScheduleAppointmentPage (Jornada de Agendamento do Paciente)", () => {
   beforeEach(() => {
+    localStorage.clear();
+    sessionTransport.activatePatientSession({
+      token: "paciente-token",
+      pacienteId: "pac-padrao",
+      role: "PACIENTE",
+      tipo: "acolhimento",
+    });
     server.use(
       handleListarEspecialidadesApiV1SchedulingEspecialidadesGet({
         body: MOCK_ESPECIALIDADES,
       }),
     );
+  });
+
+  afterEach(() => {
+    sessionTransport.clearSession("all");
   });
 
   it("executa fluxo completo: escolher especialidade -> buscar slots -> agendar -> visualizar -> cancelar", async () => {
@@ -76,7 +88,7 @@ describe("ScheduleAppointmentPage (Jornada de Agendamento do Paciente)", () => {
     );
 
     const { getByRole, getByLabelText, getByText, findByRole, queryByRole } = renderWithProviders(
-      <ScheduleAppointmentPage token="paciente-token" />,
+      <ScheduleAppointmentPage />,
     );
 
     // 1. Escolhe especialidade Psicologia
@@ -123,7 +135,7 @@ describe("ScheduleAppointmentPage (Jornada de Agendamento do Paciente)", () => {
     );
 
     const { findByRole } = renderWithProviders(
-      <ScheduleAppointmentPage initialEspecialidade="nutricao" token="paciente-token" />,
+      <ScheduleAppointmentPage initialEspecialidade="nutricao" />,
     );
 
     const btnNutricao = await findByRole("button", { name: /nutrição/i });
@@ -154,7 +166,7 @@ describe("ScheduleAppointmentPage (Jornada de Agendamento do Paciente)", () => {
     );
 
     const { findByRole, getByRole, getByText } = renderWithProviders(
-      <ScheduleAppointmentPage initialEspecialidade="PSICOLOGIA" token="paciente-token" />,
+      <ScheduleAppointmentPage initialEspecialidade="PSICOLOGIA" />,
     );
 
     const btnSlot = await findByRole("button", { name: /09:00 às 09:50/i });
@@ -179,7 +191,7 @@ describe("ScheduleAppointmentPage (Jornada de Agendamento do Paciente)", () => {
     );
 
     const { getByLabelText, findByRole, getByText } = renderWithProviders(
-      <ScheduleAppointmentPage initialEspecialidade="PSICOLOGIA" token="paciente-token" />,
+      <ScheduleAppointmentPage initialEspecialidade="PSICOLOGIA" />,
     );
 
     const inputDataFim = getByLabelText(/data final/i);
@@ -206,12 +218,32 @@ describe("ScheduleAppointmentPage (Jornada de Agendamento do Paciente)", () => {
       }),
     );
 
-    const scopeA = getSessionQueryScope("token-paciente-a");
-    const scopeB = getSessionQueryScope("token-paciente-b");
+    sessionTransport.activatePatientSession({
+      token: "token-paciente-a",
+      pacienteId: "pac-a",
+      role: "PACIENTE",
+      tipo: "acolhimento",
+    });
+    const scopeA = getSessionQueryScope();
+
+    sessionTransport.activatePatientSession({
+      token: "token-paciente-b",
+      pacienteId: "pac-b",
+      role: "PACIENTE",
+      tipo: "acolhimento",
+    });
+    const scopeB = getSessionQueryScope();
     expect(scopeA).not.toBe(scopeB);
 
+    sessionTransport.activatePatientSession({
+      token: "token-paciente-a",
+      pacienteId: "pac-a",
+      role: "PACIENTE",
+      tipo: "acolhimento",
+    });
+
     const { findByRole, getByRole, queryClient } = renderWithProviders(
-      <ScheduleAppointmentPage initialEspecialidade="PSICOLOGIA" token="token-paciente-a" />,
+      <ScheduleAppointmentPage initialEspecialidade="PSICOLOGIA" />,
     );
 
     await findByRole("button", { name: /09:00 às 09:50/i });

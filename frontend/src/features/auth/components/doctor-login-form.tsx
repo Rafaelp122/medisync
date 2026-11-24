@@ -1,5 +1,8 @@
 import { AlertCircle, KeyRound, Loader2, Stethoscope } from "lucide-react";
 import { useState } from "react";
+import { client } from "@/api/client";
+import { extractProblemDetail } from "@/api/errors";
+import { meApiV1AuthMeGet } from "@/api/generated/sdk.gen";
 import type { TokenResponse } from "@/api/generated/types.gen";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -8,10 +11,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { settings } from "@/config/settings";
-import { setAccessToken } from "@/lib/auth-token";
 import type { StoredDoctorSession } from "@/lib/session-storage";
+import { sessionTransport } from "@/lib/session-transport";
 import { useCorporateLogin } from "../api/use-corporate-login";
 import { doctorLoginSchema } from "../schemas/auth-schemas";
+import { MfaSetupModal } from "./mfa-setup-modal";
 import { MfaVerifyModal } from "./mfa-verify-modal";
 
 export interface DoctorLoginFormProps {
@@ -24,18 +28,66 @@ export function DoctorLoginForm({ onLoginSuccess, className }: DoctorLoginFormPr
   const [uf, setUf] = useState("SP");
   const [senha, setSenha] = useState(settings.env.isDemoMode ? settings.demo.doctorPassword : "");
   const [erro, setErro] = useState<string | null>(null);
+  const [isHydratingProfile, setIsHydratingProfile] = useState(false);
 
-  const [mfaModalAberto, setMfaModalAberto] = useState(false);
+  const [mfaSetupAberto, setMfaSetupAberto] = useState(false);
+  const [mfaVerifyAberto, setMfaVerifyAberto] = useState(false);
   const [tempToken, setTempToken] = useState<string | null>(null);
+
+  const finalizarLogin = async (token: string) => {
+    setIsHydratingProfile(true);
+    try {
+      const meResponse = await meApiV1AuthMeGet({
+        client,
+        headers: { Authorization: `Bearer ${token}` },
+        throwOnError: true,
+      });
+      const me = meResponse.data;
+
+      if (me.papel !== "MEDICO" || !me.ativo) {
+        sessionTransport.clearSession("staff");
+        setErro(
+          "Acesso restrito a médicos plantonistas ativos (perfil MEDICO). Verifique suas credenciais.",
+        );
+        return;
+      }
+
+      const crmUf = `${crm.trim()}/${uf.trim().toUpperCase()}`;
+      const session: StoredDoctorSession = {
+        medicoId: me.usuario_id,
+        medicoNome: me.identificador || crmUf,
+        crmUf,
+        identificador: me.identificador,
+        papel: "MEDICO",
+      };
+      sessionTransport.activateStaffSession({ role: "MEDICO", token, session });
+      onLoginSuccess(session);
+    } catch (err) {
+      sessionTransport.clearSession("staff");
+      setErro(
+        extractProblemDetail(
+          err,
+          "Não foi possível carregar o perfil do médico autenticado. Tente novamente.",
+        ),
+      );
+    } finally {
+      setIsHydratingProfile(false);
+    }
+  };
 
   const { mutate: loginCorporate, isPending } = useCorporateLogin({
     onSuccess: (data: TokenResponse) => {
+      if (data.mfa_setup_requerido) {
+        setTempToken(data.access_token);
+        setMfaSetupAberto(true);
+        return;
+      }
       if (data.mfa_requerido) {
         setTempToken(data.access_token);
-        setMfaModalAberto(true);
-      } else {
-        finalizarLogin(data.access_token);
+        setMfaVerifyAberto(true);
+        return;
       }
+      void finalizarLogin(data.access_token);
     },
     onError: (err) => {
       setErro(
@@ -46,19 +98,13 @@ export function DoctorLoginForm({ onLoginSuccess, className }: DoctorLoginFormPr
     },
   });
 
-  const finalizarLogin = (token: string) => {
-    setAccessToken(token);
-    const session: StoredDoctorSession = {
-      medicoId: "018f3a5b-7b2c-4b2c-8b2c-018f3a5b7b2e",
-      medicoNome: "Dr. Eduardo Rocha",
-      crmUf: `${crm.trim()}/${uf.toUpperCase()}`,
-      identificador: `${crm.trim()}/${uf.toUpperCase()}`,
-    };
-    onLoginSuccess(session);
+  const handleMfaActivated = () => {
+    setMfaSetupAberto(false);
+    setMfaVerifyAberto(true);
   };
 
   const handleMfaSuccess = (data: TokenResponse) => {
-    finalizarLogin(data.access_token);
+    void finalizarLogin(data.access_token);
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -98,12 +144,14 @@ export function DoctorLoginForm({ onLoginSuccess, className }: DoctorLoginFormPr
     });
   };
 
+  const isBusy = isPending || isHydratingProfile;
+
   return (
     <>
       <Card className={className}>
         <CardHeader className="space-y-2 text-center pb-4">
           <div className="mx-auto size-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-            <Stethoscope className="size-6" />
+            <Stethoscope className="size-6" aria-hidden="true" />
           </div>
           <div className="space-y-1">
             <CardTitle className="text-xl font-bold tracking-tight text-foreground">
@@ -124,7 +172,7 @@ export function DoctorLoginForm({ onLoginSuccess, className }: DoctorLoginFormPr
         <CardContent className="space-y-4">
           {erro && (
             <Alert variant="destructive" className="py-2.5 text-xs">
-              <AlertCircle className="size-4" />
+              <AlertCircle className="size-4" aria-hidden="true" />
               <AlertDescription className="text-xs">{erro}</AlertDescription>
             </Alert>
           )}
@@ -141,7 +189,7 @@ export function DoctorLoginForm({ onLoginSuccess, className }: DoctorLoginFormPr
                   placeholder="ex: 123456"
                   value={crm}
                   onChange={(e) => setCrm(e.target.value)}
-                  disabled={isPending}
+                  disabled={isBusy}
                   className="text-xs h-9"
                   required
                 />
@@ -158,7 +206,7 @@ export function DoctorLoginForm({ onLoginSuccess, className }: DoctorLoginFormPr
                   placeholder="SP"
                   value={uf}
                   onChange={(e) => setUf(e.target.value.toUpperCase())}
-                  disabled={isPending}
+                  disabled={isBusy}
                   className="text-xs h-9 text-center uppercase"
                   required
                 />
@@ -176,7 +224,7 @@ export function DoctorLoginForm({ onLoginSuccess, className }: DoctorLoginFormPr
                 placeholder="••••••••"
                 value={senha}
                 onChange={(e) => setSenha(e.target.value)}
-                disabled={isPending}
+                disabled={isBusy}
                 className="text-xs h-9"
                 required
               />
@@ -184,17 +232,17 @@ export function DoctorLoginForm({ onLoginSuccess, className }: DoctorLoginFormPr
 
             <Button
               type="submit"
-              disabled={isPending}
+              disabled={isBusy}
               className="w-full text-xs font-semibold h-10 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 mt-2"
             >
-              {isPending ? (
+              {isBusy ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                   <span>Autenticando plantonista…</span>
                 </>
               ) : (
                 <>
-                  <KeyRound className="size-4" />
+                  <KeyRound className="size-4" aria-hidden="true" />
                   <span>Entrar no Plantão</span>
                 </>
               )}
@@ -208,10 +256,10 @@ export function DoctorLoginForm({ onLoginSuccess, className }: DoctorLoginFormPr
                 variant="ghost"
                 size="sm"
                 onClick={handlePreencherDemo}
-                disabled={isPending}
+                disabled={isBusy}
                 className="text-xs h-8 text-muted-foreground hover:text-foreground"
               >
-                Preencher credenciais demo (Dr. Eduardo Rocha)
+                Preencher credenciais de demonstração
               </Button>
             </div>
           )}
@@ -219,9 +267,18 @@ export function DoctorLoginForm({ onLoginSuccess, className }: DoctorLoginFormPr
       </Card>
 
       {tempToken && (
+        <MfaSetupModal
+          open={mfaSetupAberto}
+          onOpenChange={setMfaSetupAberto}
+          tempToken={tempToken}
+          onActivated={handleMfaActivated}
+        />
+      )}
+
+      {tempToken && (
         <MfaVerifyModal
-          open={mfaModalAberto}
-          onOpenChange={setMfaModalAberto}
+          open={mfaVerifyAberto}
+          onOpenChange={setMfaVerifyAberto}
           tempToken={tempToken}
           perfilNome="Médico Plantonista"
           onSuccess={handleMfaSuccess}

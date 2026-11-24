@@ -84,5 +84,6 @@
 - [x] **DTOs de Aplicação (ADR-008):** `ConsolidarTeleconsultaCommand`, `BpaArquivoExportadoDTO`, `BpaPendenciaCadastral` e `BpaRegistroDetalheDTO` em `src/modules/ambulatory/application/dtos.py` (sem `BpaProducaoDTO`/`ListaProducaoAmbulatorialDTO`).
 - [x] **Composition Root de Ambulatory:** `src/modules/ambulatory/composition.py` exportando `get_producao_ambulatorial_service` e `ProducaoServiceDep`.
 - [x] **Camada de Apresentação HTTP Fina:** Schemas em `presentation/schemas.py`, autenticação em `presentation/dependencies.py` e rotas em `presentation/routers/producao_router.py`.
+- [x] **Frontend Ambulatory (Issue #167):** Slice dedicado em `frontend/src/features/ambulatory/api/use-producao-bpa.ts` (`useProducaoBpa`, `useExportarBpa`) e `frontend/src/features/ambulatory/components/producao-bpa-card.tsx` (`ProducaoBpaCard`, injetado via slot na rota `/gestor` em `frontend/src/routes/gestor.tsx`), inicializado com competência UTC (`getCompetenciaAtualUtc`), extração de CNES por `Content-Disposition` ou linha `03` (`extractCnesFromBpaContent`) e testes em `frontend/src/features/ambulatory/tests/producao-bpa-card.test.tsx`.
 - [x] **Testes Automatizados:** Testes unitários e de integração em `tests/unit/test_ambulatory_domain.py`, `test_ambulatory_production_service.py`, `test_ambulatory_router.py` e `tests/integration/test_ambulatory_integration.py`.
 

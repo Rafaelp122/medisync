@@ -87,8 +87,8 @@ export function AboutAuthorSection() {
               Outros Projetos
             </h2>
             <p className="text-sm sm:text-base text-muted-foreground">
-              Espaço estruturado para destacar outros sistemas, bibliotecas e estudos de caso do
-              autor.
+              Arquiteturas hexagonais, plataformas de alta concorrência e ferramentas de engenharia
+              voltadas à saúde digital.
             </p>
           </div>
 

@@ -26,6 +26,7 @@ export const MOCK_POSICAO_RESPONSE: PosicaoFilaResponse = {
   posicao: 4,
   total_aguardando: 6,
   tempo_estimado_segundos: 900,
+  prioridade_clinica: 3,
 };
 
 export const MOCK_LIVEKIT_TOKEN_RESPONSE: LiveKitTokenResponse = {
@@ -39,7 +40,6 @@ export const MOCK_LIVEKIT_TOKEN_RESPONSE: LiveKitTokenResponse = {
 export const MOCK_PIORA_RECLASSIFICADO_RESPONSE: PioraClinicaResponse = {
   atendimento_id: MOCK_ATENDIMENTO_ID,
   prioridade_clinica: 2,
-  nova_prioridade: 2,
   status_atendimento: "APTO_PARA_CHAMADA",
   alerta_samu_disparado: false,
   redirecionado_emergencia: false,
@@ -50,11 +50,9 @@ export const MOCK_PIORA_RECLASSIFICADO_RESPONSE: PioraClinicaResponse = {
 export const MOCK_PIORA_SAMU_RESPONSE: PioraClinicaResponse = {
   atendimento_id: MOCK_ATENDIMENTO_ID,
   prioridade_clinica: 1,
-  nova_prioridade: 1,
   status_atendimento: "REDIRECIONADO_SAMU",
   alerta_samu_disparado: true,
   redirecionado_emergencia: true,
   nova_posicao: null,
-  instrucoes: "Sinais de risco iminente de morte.",
-  orientacoes_emergencia: "Ligue imediatamente para o SAMU 192 ou dirija-se à UPA mais próxima.",
+  instrucoes: "Ligue imediatamente para o SAMU 192 ou dirija-se à UPA mais próxima.",
 };

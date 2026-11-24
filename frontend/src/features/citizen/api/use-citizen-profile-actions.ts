@@ -1,5 +1,5 @@
 import { type UseMutationOptions, useMutation } from "@tanstack/react-query";
-import { client, resolveExplicitAuthHeaders } from "@/api/client";
+import { client } from "@/api/client";
 import { ProblemDetailsError, toProblemDetailsError } from "@/api/errors";
 import {
   postAuthPatientWebauthnRegisterOptions,
@@ -9,7 +9,6 @@ import type { WebAuthnRegisterVerifyResponse } from "@/api/generated/types.gen";
 import { base64UrlToUint8Array, bufferToBase64Url } from "@/lib/webauthn";
 
 export interface CitizenPasskeyParams {
-  token?: string;
   deviceName?: string;
 }
 
@@ -24,7 +23,7 @@ export function useCitizenPasskeyRegister(
   >,
 ) {
   return useMutation<WebAuthnRegisterVerifyResponse, ProblemDetailsError, CitizenPasskeyParams>({
-    mutationFn: async ({ token, deviceName }: CitizenPasskeyParams) => {
+    mutationFn: async ({ deviceName }: CitizenPasskeyParams = {}) => {
       try {
         if (
           typeof navigator === "undefined" ||
@@ -36,10 +35,8 @@ export function useCitizenPasskeyRegister(
           });
         }
 
-        const headers = resolveExplicitAuthHeaders(token);
         const optionsRes = await postAuthPatientWebauthnRegisterOptions({
           client,
-          headers,
           throwOnError: true,
         });
         const creationOpts = optionsRes.data;
@@ -90,7 +87,6 @@ export function useCitizenPasskeyRegister(
 
         const verifyRes = await postAuthPatientWebauthnRegisterVerify({
           client,
-          headers,
           body: {
             id: credential.id,
             rawId: bufferToBase64Url(credential.rawId),

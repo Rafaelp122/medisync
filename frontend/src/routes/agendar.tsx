@@ -1,6 +1,7 @@
-import { createRoute, redirect } from "@tanstack/react-router";
+import { createRoute, lazyRouteComponent, redirect } from "@tanstack/react-router";
+import { Suspense } from "react";
 import { z } from "zod";
-import { ScheduleAppointmentPage } from "@/features/scheduling/pages/schedule-appointment-page";
+import { RoutePendingFallback } from "@/components/route-fallbacks";
 import { CitizenShellLayout } from "@/layouts/citizen-shell-layout";
 import { getStoredSession, type StoredPatientSession } from "@/lib/session-storage";
 import { rootRoute } from "./root";
@@ -8,6 +9,11 @@ import { rootRoute } from "./root";
 const agendarSearchSchema = z.object({
   especialidade: z.string().optional(),
 });
+
+const LazyScheduleAppointmentPage = lazyRouteComponent(
+  () => import("@/features/scheduling/pages/schedule-appointment-page"),
+  "ScheduleAppointmentPage",
+);
 
 export const agendarRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -25,10 +31,9 @@ export const agendarRoute = createRoute({
     const search = agendarRoute.useSearch();
     return (
       <CitizenShellLayout session={session}>
-        <ScheduleAppointmentPage
-          initialEspecialidade={search.especialidade}
-          token={session.token}
-        />
+        <Suspense fallback={<RoutePendingFallback />}>
+          <LazyScheduleAppointmentPage initialEspecialidade={search.especialidade} />
+        </Suspense>
       </CitizenShellLayout>
     );
   },

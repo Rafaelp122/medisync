@@ -5,16 +5,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCitizenPasskeyRegister } from "@/features/citizen/api/use-citizen-profile-actions";
-import { isWebAuthnSupported } from "@/lib/formatters";
-
-export interface ProfilePasskeySectionProps {
-  token?: string;
-}
+import { isWebAuthnSupported } from "@/lib/webauthn";
 
 /**
  * Gerenciamento de biometria Passkey (WebAuthn FIDO2) na página de perfil do cidadão.
  */
-export function ProfilePasskeySection({ token }: ProfilePasskeySectionProps) {
+export function ProfilePasskeySection() {
   const [registrado, setRegistrado] = useState(false);
   const [erroPasskey, setErroPasskey] = useState<string | null>(null);
   const registerMutation = useCitizenPasskeyRegister();
@@ -23,7 +19,7 @@ export function ProfilePasskeySection({ token }: ProfilePasskeySectionProps) {
   const handleAtivar = async () => {
     setErroPasskey(null);
     try {
-      await registerMutation.mutateAsync({ token });
+      await registerMutation.mutateAsync({});
       setRegistrado(true);
     } catch (err) {
       setErroPasskey(

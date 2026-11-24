@@ -11,18 +11,27 @@ import type {
   MfaSetupResponse,
 } from "@/api/generated/types.gen";
 
+export interface MfaSetupParams {
+  tempToken?: string;
+}
+
 /**
  * Hook headless de mutação para gerar segredo TOTP Base32 e URI otpauth:// (MFA Setup).
+ * Aceita token temporário `mfa_pending` quando disparado durante o primeiro login.
  * Regras canônicas: RN-AUT-04, RN-AUT-08 e ADR-011.
  */
 export function useMfaSetup(
-  options?: UseMutationOptions<MfaSetupResponse, ProblemDetailsError, void>,
+  options?: UseMutationOptions<MfaSetupResponse, ProblemDetailsError, MfaSetupParams | undefined>,
 ) {
-  return useMutation<MfaSetupResponse, ProblemDetailsError, void>({
-    mutationFn: async () => {
+  return useMutation<MfaSetupResponse, ProblemDetailsError, MfaSetupParams | undefined>({
+    mutationFn: async (params?: MfaSetupParams) => {
       try {
+        const headers = params?.tempToken
+          ? { Authorization: `Bearer ${params.tempToken}` }
+          : undefined;
         const response = await mfaSetupApiV1AuthMfaSetupPost({
           client,
+          headers,
           throwOnError: true,
         });
         return response.data;
@@ -34,19 +43,26 @@ export function useMfaSetup(
   });
 }
 
+export interface MfaActivateParams {
+  body: MfaAtivarRequest;
+  tempToken?: string;
+}
+
 /**
  * Hook headless de mutação para validar o primeiro código TOTP e ativar o MFA do profissional.
  * Regras canônicas: RN-AUT-04, RN-AUT-08 e ADR-011.
  */
 export function useMfaActivate(
-  options?: UseMutationOptions<MfaAtivarResponse, ProblemDetailsError, MfaAtivarRequest>,
+  options?: UseMutationOptions<MfaAtivarResponse, ProblemDetailsError, MfaActivateParams>,
 ) {
-  return useMutation<MfaAtivarResponse, ProblemDetailsError, MfaAtivarRequest>({
-    mutationFn: async (body: MfaAtivarRequest) => {
+  return useMutation<MfaAtivarResponse, ProblemDetailsError, MfaActivateParams>({
+    mutationFn: async ({ body, tempToken }: MfaActivateParams) => {
       try {
+        const headers = tempToken ? { Authorization: `Bearer ${tempToken}` } : undefined;
         const response = await mfaActivateApiV1AuthMfaActivatePost({
           client,
           body,
+          headers,
           throwOnError: true,
         });
         return response.data;
